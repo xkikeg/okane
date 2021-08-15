@@ -1,0 +1,15 @@
+[package]
+name = "okane"
+version = "0.1.0"
+authors = ["xkikeg"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+chrono = "0.4"
+quick-xml = { version = "0.21", features = [ "serialize" ] }
+rust_decimal = "1.15"
+#rust_decimal_macros = "1.15"
+serde = { version = "1.0", features = [ "derive" ] }
+serde_with = { version = "1.9", features = [ "chrono" ] }
