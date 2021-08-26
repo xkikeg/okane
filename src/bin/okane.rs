@@ -7,7 +7,6 @@ use std::error;
 use std::ffi::OsStr;
 use std::fmt;
 use std::fs::File;
-use std::io::Read;
 use std::path::Path;
 
 use encoding_rs_io::DecodeReaderBytesBuilder;
@@ -80,7 +79,7 @@ impl From<quick_xml::DeError> for ConvertError {
 fn try_main() -> Result<(), ConvertError> {
     let args: Vec<String> = env::args().collect();
     let path = Path::new(&args[1]);
-    let mut file = File::open(&path)?;
+    let file = File::open(&path)?;
     // Use dedicated flags or config systems instead.
     match path.extension().and_then(OsStr::to_str) {
         Some("csv") => {
@@ -99,9 +98,12 @@ fn try_main() -> Result<(), ConvertError> {
             return Ok(());
         }
         Some("xml") => {
-            let mut ser = String::new();
-            file.read_to_string(&mut ser)?;
-            let res = okane::converter::iso_camt053::print_camt(ser)?;
+            let character_encoder = encoding_rs::Encoding::for_label(b"UTF_8")
+                .ok_or(ConvertError::InvalidFlag("--encoding"))?;
+            let decoded = DecodeReaderBytesBuilder::new()
+                .encoding(Some(character_encoder))
+                .build(file);
+            let res = okane::converter::iso_camt053::print_camt(std::io::BufReader::new(decoded))?;
             println!("{}", res);
             return Ok(());
         }
