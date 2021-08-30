@@ -1,8 +1,3 @@
-extern crate chrono;
-extern crate quick_xml;
-extern crate rust_decimal;
-extern crate serde;
-
 use quick_xml::de::DeError;
 use rust_decimal::Decimal;
 use serde::Deserialize;
