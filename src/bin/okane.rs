@@ -4,7 +4,7 @@ use std::fs::File;
 use std::path::Path;
 
 use encoding_rs_io::DecodeReaderBytesBuilder;
-use okane::converter::ConvertError;
+use okane::import::ImportError;
 
 fn main() {
     if let Err(err) = try_main() {
@@ -18,7 +18,7 @@ enum Format {
     IsoCamt,
 }
 
-fn try_main() -> Result<(), ConvertError> {
+fn try_main() -> Result<(), ImportError> {
     let args: Vec<String> = env::args().collect();
     let path = Path::new(&args[1]);
     let file = File::open(&path)?;
@@ -26,29 +26,29 @@ fn try_main() -> Result<(), ConvertError> {
     let format = match path.extension().and_then(OsStr::to_str) {
         Some("csv") => Ok(Format::CSV),
         Some("xml") => Ok(Format::IsoCamt),
-        _ => Err(ConvertError::UnknownFormat),
+        _ => Err(ImportError::UnknownFormat),
     }?;
     let encoding = match format {
         Format::CSV => "Shift_JIS",
         Format::IsoCamt => "UTF-8",
     };
     let character_encoder = encoding_rs::Encoding::for_label(encoding.as_bytes())
-        .ok_or(ConvertError::InvalidFlag("--encoding"))?;
+        .ok_or(ImportError::InvalidFlag("--encoding"))?;
     let mut decoded = DecodeReaderBytesBuilder::new()
         .encoding(Some(character_encoder))
         .build(file);
     match format {
         Format::CSV => {
-            use okane::converter::Converter;
-            let c = okane::converter::csv::CSVConverter{};
-            let xacts = c.convert(&mut decoded)?;
+            use okane::import::Importer;
+            let c = okane::import::csv::CSVImporter{};
+            let xacts = c.import(&mut decoded)?;
             for xact in &xacts {
                 println!("{}", xact);
             }
             return Ok(());
         }
         Format::IsoCamt => {
-            let res = okane::converter::iso_camt053::print_camt(std::io::BufReader::new(decoded))?;
+            let res = okane::import::iso_camt053::print_camt(std::io::BufReader::new(decoded))?;
             println!("{}", res);
             return Ok(());
         }

@@ -1,6 +1,6 @@
-pub struct CSVConverter {}
+pub struct CSVImporter {}
 
-use super::ConvertError;
+use super::ImportError;
 use crate::data;
 use data::parse_comma_decimal;
 
@@ -9,8 +9,8 @@ use log::warn;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-impl super::Converter for CSVConverter {
-    fn convert<R: std::io::Read>(&self, r: &mut R) -> Result<Vec<data::Transaction>, ConvertError> {
+impl super::Importer for CSVImporter {
+    fn import<R: std::io::Read>(&self, r: &mut R) -> Result<Vec<data::Transaction>, ImportError> {
         let mut res = Vec::new();
         let mut rdr = csv::ReaderBuilder::new()
             .delimiter(b',')
@@ -18,7 +18,7 @@ impl super::Converter for CSVConverter {
         for may_record in rdr.records() {
             let r = may_record?;
             if r.len() != 6 {
-                return Err(ConvertError::Other("unexpected csv length".to_string()));
+                return Err(ImportError::Other("unexpected csv length".to_string()));
             }
             let date = NaiveDate::parse_from_str(r.get(0).unwrap(), "%Y年%m月%d日")?;
             let payee = r.get(1).unwrap();
@@ -55,7 +55,7 @@ impl super::Converter for CSVConverter {
                 });
             } else {
                 // warning log or error?
-                return Err(ConvertError::Other("credit and debit both zero".to_string()));
+                return Err(ImportError::Other("credit and debit both zero".to_string()));
             }
             res.push(data::Transaction{date: date, payee: payee.to_string(), posts: posts});
         }
