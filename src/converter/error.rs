@@ -10,6 +10,8 @@ pub enum ConvertError {
     XML(quick_xml::DeError),
     InvalidFlag(&'static str),
     // Unknown(Box<dyn std::error::Error>),
+    InvalidDatetime(chrono::ParseError),
+    InvalidDecimal(rust_decimal::Error),
     Other(String),
     UnknownFormat,
 }
@@ -23,6 +25,8 @@ impl fmt::Display for ConvertError {
             ConvertError::InvalidFlag(name) => write!(f, "invalid flag {}", name),
             // ConvertError::Unknown(x) =>
             //   write!(f, "unknown error"),
+            ConvertError::InvalidDatetime(_) => write!(f, "invalid datetime"),
+            ConvertError::InvalidDecimal(_) => write!(f, "invalid decimal"),
             ConvertError::Other(ref x) => write!(f, "other: {}", x),
             ConvertError::UnknownFormat => write!(f, "unknown format"),
         }
@@ -37,6 +41,8 @@ impl error::Error for ConvertError {
             ConvertError::XML(ref e) => Some(e),
             ConvertError::InvalidFlag(_) => None,
             // ConvertError::Unknown(e) => Some(&e),
+            ConvertError::InvalidDatetime(ref e) => Some(e),
+            ConvertError::InvalidDecimal(ref e) => Some(e),
             ConvertError::Other(_) => None,
             ConvertError::UnknownFormat => None,
         }
@@ -49,6 +55,12 @@ impl From<std::io::Error> for ConvertError {
     }
 }
 
+impl From<chrono::ParseError> for ConvertError {
+    fn from(err: chrono::ParseError) -> ConvertError {
+        ConvertError::InvalidDatetime(err)
+    }
+}
+
 impl From<CsvError> for ConvertError {
     fn from(err: CsvError) -> ConvertError {
         ConvertError::CSV(err)
@@ -58,5 +70,11 @@ impl From<CsvError> for ConvertError {
 impl From<quick_xml::DeError> for ConvertError {
     fn from(err: quick_xml::DeError) -> ConvertError {
         ConvertError::XML(err)
+    }
+}
+
+impl From<rust_decimal::Error> for ConvertError {
+    fn from(err: rust_decimal::Error) -> ConvertError {
+        ConvertError::InvalidDecimal(err)
     }
 }

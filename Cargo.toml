@@ -11,8 +11,10 @@ chrono = "0.4"
 csv = "1"
 encoding_rs = "0.8"
 encoding_rs_io = "0.1"
+env_logger = "0.9"
+log = "0.4"
 quick-xml = { version = "0.21", features = [ "serialize" ] }
 rust_decimal = "1.15"
-#rust_decimal_macros = "1.15"
+rust_decimal_macros = "1.15"
 serde = { version = "1.0", features = [ "derive" ] }
 serde_with = { version = "1.9", features = [ "chrono" ] }
