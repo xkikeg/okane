@@ -8,7 +8,9 @@ pub enum ImportError {
     IO(std::io::Error),
     CSV(CsvError),
     XML(quick_xml::DeError),
+    YAML(serde_yaml::Error),
     InvalidFlag(&'static str),
+    InvalidConfig(&'static str),
     // Unknown(Box<dyn std::error::Error>),
     InvalidDatetime(chrono::ParseError),
     InvalidDecimal(rust_decimal::Error),
@@ -22,7 +24,9 @@ impl fmt::Display for ImportError {
             ImportError::IO(_) => write!(f, "failed to perform IO"),
             ImportError::CSV(_) => write!(f, "failed to parse CSV"),
             ImportError::XML(_) => write!(f, "failed to parse XML"),
+            ImportError::YAML(_) => write!(f, "failed to parse YAML"),
             ImportError::InvalidFlag(name) => write!(f, "invalid flag {}", name),
+            ImportError::InvalidConfig(detail) => write!(f, "invalid config {}", detail),
             // ImportError::Unknown(x) =>
             //   write!(f, "unknown error"),
             ImportError::InvalidDatetime(_) => write!(f, "invalid datetime"),
@@ -39,7 +43,9 @@ impl error::Error for ImportError {
             ImportError::IO(ref e) => Some(e),
             ImportError::CSV(ref e) => Some(e),
             ImportError::XML(ref e) => Some(e),
+            ImportError::YAML(ref e) => Some(e),
             ImportError::InvalidFlag(_) => None,
+            ImportError::InvalidConfig(_) => None,
             // ImportError::Unknown(e) => Some(&e),
             ImportError::InvalidDatetime(ref e) => Some(e),
             ImportError::InvalidDecimal(ref e) => Some(e),
@@ -70,6 +76,12 @@ impl From<CsvError> for ImportError {
 impl From<quick_xml::DeError> for ImportError {
     fn from(err: quick_xml::DeError) -> ImportError {
         ImportError::XML(err)
+    }
+}
+
+impl From<serde_yaml::Error> for ImportError {
+    fn from(err: serde_yaml::Error) -> ImportError {
+        ImportError::YAML(err)
     }
 }
 

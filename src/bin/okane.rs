@@ -8,7 +8,11 @@ use okane::import::ImportError;
 
 fn main() {
     if let Err(err) = try_main() {
+        use std::error::Error;
         eprintln!("{}", err);
+        if let Some(src) = err.source() {
+            eprintln!("Caused by {}", src);
+        }
         std::process::exit(1);
     }
 }
@@ -20,7 +24,10 @@ enum Format {
 
 fn try_main() -> Result<(), ImportError> {
     let args: Vec<String> = env::args().collect();
-    let path = Path::new(&args[1]);
+    let config_file = File::open(Path::new(&args[1]))?;
+    let config_set = okane::import::config::load_from_yaml(config_file)?;
+    let config_entry = config_set.entries.get(0).unwrap();
+    let path = Path::new(&args[2]);
     let file = File::open(&path)?;
     // Use dedicated flags or config systems instead.
     let format = match path.extension().and_then(OsStr::to_str) {
@@ -41,7 +48,7 @@ fn try_main() -> Result<(), ImportError> {
         Format::CSV => {
             use okane::import::Importer;
             let c = okane::import::csv::CSVImporter{};
-            let xacts = c.import(&mut decoded)?;
+            let xacts = c.import(&mut decoded, config_entry)?;
             for xact in &xacts {
                 println!("{}", xact);
             }
