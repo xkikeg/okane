@@ -80,15 +80,31 @@ impl super::Importer for CSVImporter {
                 return Err(ImportError::Other("unexpected csv length".to_string()));
             }
             let date = NaiveDate::parse_from_str(r.get(fm.date).unwrap(), "%Y年%m月%d日")?;
-            let payee = r.get(fm.payee).unwrap();
+            let mut payee = r.get(fm.payee).unwrap();
+            let mut account = None;
+            let mut code = None;
             let has_credit = r.get(fm.credit).unwrap() != "";
             let has_debit = r.get(fm.debit).unwrap() != "";
             let balance = parse_comma_decimal(r.get(fm.balance).unwrap())?;
             let mut posts = Vec::new();
+            for rw in &config.rewrite {
+                let re = regex::Regex::new(rw.payee.as_str()).or(Err(ImportError::InvalidConfig("cannot compile regex")))?;
+                if let Some(c) = re.captures(payee) {
+                    if let Some(p) = c.name("payee") {
+                        payee = p.as_str();
+                    }
+                    if let Some(p) = c.name("code") {
+                        code = Some(p.as_str());
+                    }
+                    if let Some(a) = &rw.account {
+                        account = Some(a.as_str());
+                    }
+                }
+            }
             if has_credit {
                 let credit: Decimal = parse_comma_decimal(r.get(fm.credit).unwrap())?;
                 posts.push(data::Post {
-                    account: "Incomes:Unknown".to_string(),
+                    account: account.unwrap_or("Incomes:Unknown").to_string(),
                     amount: data::Amount {
                         value: -credit,
                         commodity: config.commodity.clone(),
@@ -96,7 +112,7 @@ impl super::Importer for CSVImporter {
                     balance: None,
                 });
                 posts.push(data::Post {
-                    account: "Assets:Banks:MyBank".to_string(),
+                    account: config.account.clone(),
                     amount: data::Amount {
                         value: credit,
                         commodity: config.commodity.clone(),
@@ -109,7 +125,7 @@ impl super::Importer for CSVImporter {
             } else if has_debit {
                 let debit: Decimal = parse_comma_decimal(r.get(fm.debit).unwrap())?;
                 posts.push(data::Post {
-                    account: "Assets:Banks:MyBank".to_string(),
+                    account: config.account.clone(),
                     amount: data::Amount {
                         value: -debit,
                         commodity: config.commodity.clone(),
@@ -120,7 +136,7 @@ impl super::Importer for CSVImporter {
                     }),
                 });
                 posts.push(data::Post {
-                    account: "Expenses:Unknown".to_string(),
+                    account: account.unwrap_or("Expenses:Unknown").to_string(),
                     amount: data::Amount {
                         value: debit,
                         commodity: config.commodity.clone(),
@@ -133,6 +149,7 @@ impl super::Importer for CSVImporter {
             }
             res.push(data::Transaction {
                 date: date,
+                code: code.map(str::to_string),
                 payee: payee.to_string(),
                 posts: posts,
             });

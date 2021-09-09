@@ -16,6 +16,8 @@ pub struct ConfigEntry {
     pub commodity: String,
     pub field: HashMap<FieldKey, String>,
     pub format: FormatSpec,
+    #[serde(default)]
+    pub rewrite: Vec<RewriteRule>,
 }
 
 /// Key represents the field abstracted way.
@@ -41,6 +43,19 @@ pub enum FieldKey {
 pub struct FormatSpec {
     /// Specify the date format, in chrono::format::strftime compatible format.
     pub date: String,
+}
+
+/// RewriteRule specifies the rewrite rule matched against transaction.
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct RewriteRule {
+    // Regular expression that matches with payee. It must be the entire match.
+    // It can have named pattern to replace these fields.
+    // - code
+    // - payee
+    pub payee: String,
+
+    // Account of the transaction matching against the rule.
+    pub account: Option<String>,
 }
 
 use super::error::ImportError;

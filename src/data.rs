@@ -4,6 +4,7 @@ use std::fmt;
 #[derive(Debug, PartialEq)]
 pub struct Transaction {
     pub date: chrono::NaiveDate,
+    pub code: Option<String>,
     pub payee: String,
     pub posts: Vec<Post>,
 }
@@ -28,9 +29,17 @@ pub fn parse_comma_decimal(x: &str) -> Result<Decimal, rust_decimal::Error> {
 
 impl fmt::Display for Transaction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "{} {}", self.date.format("%Y/%m/%d"), self.payee)?;
+        write!(f, "{}", self.date.format("%Y/%m/%d"))?;
+        if let Some(code) = &self.code {
+            write!(f, " ({})", code)?;
+        }
+        writeln!(f, " {}", self.payee)?;
         for post in &self.posts {
-            writeln!(f, "    {}{:>width$} {}", post.account, post.amount.value, post.amount.commodity, width = 48 - post.account.len())?;
+            write!(f, "    {}{:>width$} {}", post.account, post.amount.value, post.amount.commodity, width = 48 - post.account.len())?;
+            if let Some(balance) = &post.balance {
+                write!(f, " = {} {}", balance.value, balance.commodity)?;
+            }
+            writeln!(f, "")?;
         }
         return Ok(());
     }

@@ -272,6 +272,7 @@ dependencies = [
  "env_logger",
  "log",
  "quick-xml",
+ "regex",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
