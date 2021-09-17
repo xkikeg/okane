@@ -60,6 +60,60 @@ fn resolve_fields(
     });
 }
 
+struct RewriteElement {
+    payee: regex::Regex,
+    account: Option<String>,
+}
+/// Holds rewrite config to provide rewrite method.
+struct Rewriter {
+    elems: Vec<RewriteElement>,
+}
+
+fn new_rewriter(config: &config::ConfigEntry) -> Result<Rewriter, ImportError> {
+    let mut elems = Vec::new();
+    for rw in &config.rewrite {
+        let re = regex::Regex::new(rw.payee.as_str())
+            .or(Err(ImportError::InvalidConfig("cannot compile regex")))?;
+            elems.push(RewriteElement{payee: re, account: rw.account.clone()});
+    }
+    return Ok(Rewriter {
+        elems: elems,
+    });
+}
+
+struct Fragment {
+    payee: String,
+    code: Option<String>,
+    account: Option<String>,
+}
+
+impl Rewriter {
+    fn rewrite(&self, payee: &str) -> Fragment {
+        let mut payee = payee;
+        let mut code = None;
+        let mut account = None;
+        for elem in &self.elems {
+            let res = elem.payee.captures(payee);
+            if let Some(c) = res {
+                if let Some(p) = c.name("payee") {
+                    payee = p.as_str();
+                }
+                if let Some(p) = c.name("code") {
+                    code = Some(p.as_str().to_string());
+                }
+                if let Some(a) = &elem.account {
+                    account = Some(a.clone());
+                }
+            }
+        }
+        return Fragment{
+            payee: payee.to_string(),
+            code: code,
+            account: account,
+        };
+    }
+}
+
 impl super::Importer for CSVImporter {
     fn import<R: std::io::Read>(
         &self,
@@ -74,42 +128,27 @@ impl super::Importer for CSVImporter {
         let header = rdr.headers()?;
         let fm = resolve_fields(&config.field, header)?;
         let size = fm.max();
+        let rewriter = new_rewriter(config)?;
         for may_record in rdr.records() {
             let r = may_record?;
             if r.len() <= size {
                 return Err(ImportError::Other("unexpected csv length".to_string()));
             }
             let date = NaiveDate::parse_from_str(r.get(fm.date).unwrap(), "%Y年%m月%d日")?;
-            let mut payee = r.get(fm.payee).unwrap();
-            let mut account = None;
-            let mut code = None;
+            let payee = r.get(fm.payee).unwrap();
             let has_credit = r.get(fm.credit).unwrap() != "";
             let has_debit = r.get(fm.debit).unwrap() != "";
             let balance = parse_comma_decimal(r.get(fm.balance).unwrap())?;
             let mut posts = Vec::new();
-            for rw in &config.rewrite {
-                let re = regex::Regex::new(rw.payee.as_str())
-                    .or(Err(ImportError::InvalidConfig("cannot compile regex")))?;
-                if let Some(c) = re.captures(payee) {
-                    if let Some(p) = c.name("payee") {
-                        payee = p.as_str();
-                    }
-                    if let Some(p) = c.name("code") {
-                        code = Some(p.as_str());
-                    }
-                    if let Some(a) = &rw.account {
-                        account = Some(a.as_str());
-                    }
-                }
-            }
-            let post_clear = match &account {
+            let fragment = rewriter.rewrite(payee);
+            let post_clear = match &fragment.account {
                 Some(_) => data::ClearState::Uncleared,
                 None => data::ClearState::Pending,
             };
             if has_credit {
                 let credit: Decimal = parse_comma_decimal(r.get(fm.credit).unwrap())?;
                 posts.push(data::Post {
-                    account: account.unwrap_or("Incomes:Unknown").to_string(),
+                    account: fragment.account.unwrap_or("Incomes:Unknown".to_string()),
                     clear_state: post_clear,
                     amount: data::Amount {
                         value: -credit,
@@ -144,7 +183,7 @@ impl super::Importer for CSVImporter {
                     }),
                 });
                 posts.push(data::Post {
-                    account: account.unwrap_or("Expenses:Unknown").to_string(),
+                    account: fragment.account.unwrap_or("Expenses:Unknown".to_string()),
                     clear_state: post_clear,
                     amount: data::Amount {
                         value: debit,
@@ -159,8 +198,8 @@ impl super::Importer for CSVImporter {
             res.push(data::Transaction {
                 date: date,
                 clear_state: data::ClearState::Cleared,
-                code: code.map(str::to_string),
-                payee: payee.to_string(),
+                code: fragment.code,
+                payee: fragment.payee,
                 posts: posts,
             });
         }
