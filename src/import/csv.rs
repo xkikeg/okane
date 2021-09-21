@@ -89,6 +89,7 @@ fn new_rewriter(config: &config::ConfigEntry) -> Result<Rewriter, ImportError> {
     return Ok(Rewriter { elems: elems });
 }
 
+#[derive(Debug)]
 struct Fragment {
     payee: String,
     code: Option<String>,
@@ -101,8 +102,7 @@ impl Rewriter {
         let mut code = None;
         let mut account = None;
         for elem in &self.elems {
-            let res = elem.payee.captures(payee);
-            if let Some(c) = res {
+            if let Some(c) = elem.payee.captures(payee) {
                 if let Some(p) = c.name("payee") {
                     payee = p.as_str();
                 }
@@ -142,7 +142,7 @@ impl super::Importer for CSVImporter {
             if r.len() <= size {
                 return Err(ImportError::Other("unexpected csv length".to_string()));
             }
-            let date = NaiveDate::parse_from_str(r.get(fm.date).unwrap(), "%Y年%m月%d日")?;
+            let date = NaiveDate::parse_from_str(r.get(fm.date).unwrap(), config.format.date.as_str())?;
             let payee = r.get(fm.payee).unwrap();
             let has_credit = r.get(fm.credit).unwrap() != "";
             let has_debit = r.get(fm.debit).unwrap() != "";

@@ -130,7 +130,7 @@ mod tests {
         account: Liabilities:OkaneCard
         commodity: JPY
         format:
-          date: "%Y年%m月%d日"
+          date: "%Y/%m/%d"
           skip_last_line: true
           fields:
             date: 0
