@@ -126,7 +126,7 @@ impl super::Importer for CSVImporter {
             return Err(ImportError::Other("no header of CSV".to_string()));
         }
         let header = rdr.headers()?;
-        let fm = resolve_fields(&config.field, header)?;
+        let fm = resolve_fields(&config.format.field, header)?;
         let size = fm.max();
         let rewriter = new_rewriter(config)?;
         for may_record in rdr.records() {
