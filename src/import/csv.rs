@@ -1,6 +1,5 @@
-pub struct CSVImporter {}
-
 use super::config;
+use super::single_entry;
 use super::ImportError;
 use crate::data;
 use data::parse_comma_decimal;
@@ -8,6 +7,117 @@ use data::parse_comma_decimal;
 use chrono::NaiveDate;
 use log::{info, warn};
 use rust_decimal::Decimal;
+
+pub struct CSVImporter {}
+
+impl super::Importer for CSVImporter {
+    fn import<R: std::io::Read>(
+        &self,
+        r: &mut R,
+        config: &config::ConfigEntry,
+    ) -> Result<Vec<single_entry::Txn>, ImportError> {
+        let mut res = Vec::new();
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(r);
+        if !rdr.has_headers() {
+            return Err(ImportError::Other("no header of CSV".to_string()));
+        }
+        let header = rdr.headers()?;
+        let fm = resolve_fields(&config.format.fields, header)?;
+        let size = fm.max();
+        let rewriter = new_rewriter(config)?;
+        for may_record in rdr.records() {
+            let r = may_record?;
+            let pos = r.position().expect("csv record position");
+            if r.len() <= size {
+                return Err(ImportError::Other(format!(
+                    "csv record length too short at line {}",
+                    pos.line()
+                )));
+            }
+            let datestr = r.get(fm.date).unwrap();
+            if datestr.is_empty() {
+                info!("skip empty date at line {}", pos.line());
+                continue;
+            }
+            let date = NaiveDate::parse_from_str(datestr, config.format.date.as_str())?;
+            let original_payee = r.get(fm.payee).unwrap();
+            let has_credit = r.get(fm.credit).unwrap() != "";
+            let has_debit = r.get(fm.debit).unwrap() != "";
+            let balance = parse_comma_decimal(r.get(fm.balance).unwrap())?;
+            let mut posts = Vec::new();
+            let fragment = rewriter.rewrite(original_payee);
+            let post_clear = match &fragment.account {
+                Some(_) => data::ClearState::Uncleared,
+                None => {
+                    warn!(
+                        "account unmatched at line {}, payee={}",
+                        pos.line(),
+                        original_payee
+                    );
+                    data::ClearState::Pending
+                }
+            };
+            if has_credit {
+                let credit: Decimal = parse_comma_decimal(r.get(fm.credit).unwrap())?;
+                posts.push(data::Post {
+                    account: fragment.account.unwrap_or("Incomes:Unknown".to_string()),
+                    clear_state: post_clear,
+                    amount: data::Amount {
+                        value: -credit,
+                        commodity: config.commodity.clone(),
+                    },
+                    balance: None,
+                });
+                posts.push(data::Post {
+                    account: config.account.clone(),
+                    clear_state: data::ClearState::Uncleared,
+                    amount: data::Amount {
+                        value: credit,
+                        commodity: config.commodity.clone(),
+                    },
+                    balance: Some(data::Amount {
+                        value: balance,
+                        commodity: config.commodity.clone(),
+                    }),
+                });
+            } else if has_debit {
+                let debit: Decimal = parse_comma_decimal(r.get(fm.debit).unwrap())?;
+                posts.push(data::Post {
+                    account: config.account.clone(),
+                    clear_state: data::ClearState::Uncleared,
+                    amount: data::Amount {
+                        value: -debit,
+                        commodity: config.commodity.clone(),
+                    },
+                    balance: Some(data::Amount {
+                        value: balance,
+                        commodity: config.commodity.clone(),
+                    }),
+                });
+                posts.push(data::Post {
+                    account: fragment.account.unwrap_or("Expenses:Unknown".to_string()),
+                    clear_state: post_clear,
+                    amount: data::Amount {
+                        value: debit,
+                        commodity: config.commodity.clone(),
+                    },
+                    balance: None,
+                });
+            } else {
+                // warning log or error?
+                return Err(ImportError::Other("credit and debit both zero".to_string()));
+            }
+            res.push(data::Transaction {
+                date: date,
+                clear_state: data::ClearState::Cleared,
+                code: fragment.code,
+                payee: fragment.payee,
+                posts: posts,
+            });
+        }
+        return Ok(res);
+    }
+}
 
 #[derive(PartialEq, Debug)]
 struct FieldMap {
@@ -120,111 +230,6 @@ impl Rewriter {
             code: code,
             account: account,
         };
-    }
-}
-
-impl super::Importer for CSVImporter {
-    fn import<R: std::io::Read>(
-        &self,
-        r: &mut R,
-        config: &config::ConfigEntry,
-    ) -> Result<Vec<data::Transaction>, ImportError> {
-        let mut res = Vec::new();
-        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(r);
-        if !rdr.has_headers() {
-            return Err(ImportError::Other("no header of CSV".to_string()));
-        }
-        let header = rdr.headers()?;
-        let fm = resolve_fields(&config.format.fields, header)?;
-        let size = fm.max();
-        let rewriter = new_rewriter(config)?;
-        for may_record in rdr.records() {
-            let r = may_record?;
-            let pos = r.position().expect("csv record position");
-            if r.len() <= size {
-                return Err(ImportError::Other(format!(
-                    "csv record length too short at line {}",
-                    pos.line()
-                )));
-            }
-            let datestr = r.get(fm.date).unwrap();
-            if datestr.is_empty() {
-                info!("skip empty date at line {}", pos.line());
-                continue;
-            }
-            let date = NaiveDate::parse_from_str(datestr, config.format.date.as_str())?;
-            let original_payee = r.get(fm.payee).unwrap();
-            let has_credit = r.get(fm.credit).unwrap() != "";
-            let has_debit = r.get(fm.debit).unwrap() != "";
-            let balance = parse_comma_decimal(r.get(fm.balance).unwrap())?;
-            let mut posts = Vec::new();
-            let fragment = rewriter.rewrite(original_payee);
-            let post_clear = match &fragment.account {
-                Some(_) => data::ClearState::Uncleared,
-                None => {
-                    warn!("account unmatched at line {}, payee={}", pos.line(), original_payee);
-                    data::ClearState::Pending
-                }
-            };
-            if has_credit {
-                let credit: Decimal = parse_comma_decimal(r.get(fm.credit).unwrap())?;
-                posts.push(data::Post {
-                    account: fragment.account.unwrap_or("Incomes:Unknown".to_string()),
-                    clear_state: post_clear,
-                    amount: data::Amount {
-                        value: -credit,
-                        commodity: config.commodity.clone(),
-                    },
-                    balance: None,
-                });
-                posts.push(data::Post {
-                    account: config.account.clone(),
-                    clear_state: data::ClearState::Uncleared,
-                    amount: data::Amount {
-                        value: credit,
-                        commodity: config.commodity.clone(),
-                    },
-                    balance: Some(data::Amount {
-                        value: balance,
-                        commodity: config.commodity.clone(),
-                    }),
-                });
-            } else if has_debit {
-                let debit: Decimal = parse_comma_decimal(r.get(fm.debit).unwrap())?;
-                posts.push(data::Post {
-                    account: config.account.clone(),
-                    clear_state: data::ClearState::Uncleared,
-                    amount: data::Amount {
-                        value: -debit,
-                        commodity: config.commodity.clone(),
-                    },
-                    balance: Some(data::Amount {
-                        value: balance,
-                        commodity: config.commodity.clone(),
-                    }),
-                });
-                posts.push(data::Post {
-                    account: fragment.account.unwrap_or("Expenses:Unknown".to_string()),
-                    clear_state: post_clear,
-                    amount: data::Amount {
-                        value: debit,
-                        commodity: config.commodity.clone(),
-                    },
-                    balance: None,
-                });
-            } else {
-                // warning log or error?
-                return Err(ImportError::Other("credit and debit both zero".to_string()));
-            }
-            res.push(data::Transaction {
-                date: date,
-                clear_state: data::ClearState::Cleared,
-                code: fragment.code,
-                payee: fragment.payee,
-                posts: posts,
-            });
-        }
-        return Ok(res);
     }
 }
 

@@ -1,5 +1,7 @@
-use rust_decimal::Decimal;
+use std::cmp::Ordering;
 use std::fmt;
+
+use rust_decimal::Decimal;
 
 #[derive(Debug, PartialEq)]
 pub struct Transaction {
@@ -34,10 +36,51 @@ pub struct Post {
     pub balance: Option<Amount>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Amount {
     pub value: Decimal,
     pub commodity: String,
+}
+
+impl Amount {
+    pub fn is_zero(&self) -> bool {
+        self.value.is_zero()
+    }
+    pub fn is_sign_positive(&self) -> bool {
+        self.value.is_sign_positive()
+    }
+    pub fn is_sign_negative(&self) -> bool {
+        self.value.is_sign_negative()
+    }
+}
+
+/// # Examples
+///
+/// ```
+/// let x = Amount{
+///     value: rust_decimal::Decimal::from(-5),
+///     commodity: "JPY".to_string(),
+/// };
+/// let y = -x;
+/// ```
+impl std::ops::Neg for Amount {
+    type Output = Amount;
+    fn neg(self) -> Amount {
+        Amount {
+            value: -self.value,
+            commodity: self.commodity,
+        }
+    }
+}
+
+impl PartialOrd for Amount {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        if self.commodity != other.commodity {
+            None
+        } else {
+            Some(self.value.cmp(&other.value))
+        }
+    }
 }
 
 pub fn parse_comma_decimal(x: &str) -> Result<Decimal, rust_decimal::Error> {
