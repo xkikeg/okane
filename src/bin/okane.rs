@@ -7,6 +7,7 @@ use encoding_rs_io::DecodeReaderBytesBuilder;
 use okane::import::ImportError;
 
 fn main() {
+    env_logger::init();
     if let Err(err) = try_main() {
         use std::error::Error;
         eprintln!("{}", err);

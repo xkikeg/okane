@@ -16,7 +16,12 @@ log = "0.4"
 quick-xml = { version = "0.22", features = [ "serialize" ] }
 regex = "1"
 rust_decimal = "1.15"
-rust_decimal_macros = "1.15"
 serde = { version = "1.0", features = [ "derive" ] }
 serde_with = { version = "1.9", features = [ "chrono" ] }
 serde_yaml = "0.8"
+
+[dev-dependencies]
+indoc = "1.0"
+maplit = "1.0"
+rust_decimal_macros = "1.15"
+pretty_assertions = "0.7"
