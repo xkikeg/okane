@@ -91,7 +91,6 @@ pub fn load_from_yaml<R: std::io::Read>(r: R) -> Result<ConfigSet, ImportError> 
 mod tests {
     use super::*;
     use indoc::indoc;
-    use std::io::BufReader;
 
     #[test]
     fn test_parse_csv_label_config() {
@@ -113,7 +112,7 @@ mod tests {
               - payee: 外貨普通預金（.*）(?:へ|より)振替
                 account: Assets:Wire:Okane
         "#};
-        let config = load_from_yaml(BufReader::new(input.as_bytes())).unwrap();
+        let config = load_from_yaml(input.as_bytes()).unwrap();
         assert_eq!(config.entries[0].account, "Assets:Banks:Okane");
         let date = config.entries[0]
             .format
@@ -131,7 +130,6 @@ mod tests {
         commodity: JPY
         format:
           date: "%Y/%m/%d"
-          skip_last_line: true
           fields:
             date: 0
             payee: 1
@@ -139,7 +137,7 @@ mod tests {
             amount: 2
         rewrite: []
         "#};
-        let config = load_from_yaml(BufReader::new(input.as_bytes())).unwrap();
+        let config = load_from_yaml(input.as_bytes()).unwrap();
         assert_eq!(config.entries[0].account, "Liabilities:OkaneCard");
         let field_amount = config.entries[0]
             .format
