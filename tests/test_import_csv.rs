@@ -17,16 +17,15 @@ fn test_import_csv_index() {
     init();
     let config = config::ConfigEntry {
         path: "/path/to/match".into(),
-        account: "Assets:Okane Bank".to_string(),
+        account: "Liabilities:Okane Card".to_string(),
+        account_type: config::AccountType::Liability,
         commodity: "USD".to_string(),
         format: config::FormatSpec {
             date: "%Y-%m-%d".to_string(),
             fields: hashmap! {
                 FieldKey::Date => FieldPos::Index(0),
-                FieldKey::Credit => FieldPos::Index(1),
-                FieldKey::Debit => FieldPos::Index(2),
-                FieldKey::Balance => FieldPos::Index(3),
-                FieldKey::Payee => FieldPos::Index(4),
+                FieldKey::Amount => FieldPos::Index(1),
+                FieldKey::Payee => FieldPos::Index(2),
             },
         },
         rewrite: vec![
@@ -35,8 +34,8 @@ fn test_import_csv_index() {
                 account: None,
             },
             config::RewriteRule {
-                payee: r#"五反田ATM"#.to_string(),
-                account: Some("Assets:Cash".to_string()),
+                payee: r#"cashback"#.to_string(),
+                account: Some("Incomes:Misc".to_string()),
             },
             config::RewriteRule {
                 payee: r#"Migros"#.to_string(),
@@ -45,10 +44,10 @@ fn test_import_csv_index() {
         ],
     };
     let input = indoc! {r#"
-        this,is,header
-        2021-9-1,50.00,,123.45,五反田ATM
-        2021-9-2,,28.00,95.45,Debit Card 31415 Migros
-        2021-9-3,,1.45,94.00,Debit Card 14142 FooBar
+        header
+        2021-9-1,-50.00,cashback
+        2021-9-2,28.00,Debit Card 31415 Migros
+        2021-9-3,1.45,Debit Card 14142 FooBar
         ,,,,
     "#};
     let mut r = input.as_bytes();
@@ -58,10 +57,10 @@ fn test_import_csv_index() {
             date: chrono::NaiveDate::from_ymd(2021, 9, 1),
             clear_state: data::ClearState::Cleared,
             code: None,
-            payee: "五反田ATM".to_string(),
+            payee: "cashback".to_string(),
             posts: vec![
                 data::Post {
-                    account: "Assets:Cash".to_string(),
+                    account: "Incomes:Misc".to_string(),
                     clear_state: data::ClearState::Uncleared,
                     amount: data::Amount {
                         value: dec!(-50.00),
@@ -70,16 +69,13 @@ fn test_import_csv_index() {
                     balance: None,
                 },
                 data::Post {
-                    account: "Assets:Okane Bank".to_string(),
+                    account: "Liabilities:Okane Card".to_string(),
                     clear_state: data::ClearState::Uncleared,
                     amount: data::Amount {
                         value: dec!(50.00),
                         commodity: "USD".to_string(),
                     },
-                    balance: Some(data::Amount {
-                        value: dec!(123.45),
-                        commodity: "USD".to_string(),
-                    }),
+                    balance: None,
                 },
             ],
         },
@@ -90,16 +86,13 @@ fn test_import_csv_index() {
             payee: "Migros".to_string(),
             posts: vec![
                 data::Post {
-                    account: "Assets:Okane Bank".to_string(),
+                    account: "Liabilities:Okane Card".to_string(),
                     clear_state: data::ClearState::Uncleared,
                     amount: data::Amount {
                         value: dec!(-28.00),
                         commodity: "USD".to_string(),
                     },
-                    balance: Some(data::Amount {
-                        value: dec!(95.45),
-                        commodity: "USD".to_string(),
-                    }),
+                    balance: None,
                 },
                 data::Post {
                     account: "Expenses:Grocery".to_string(),
@@ -119,16 +112,13 @@ fn test_import_csv_index() {
             payee: "FooBar".to_string(),
             posts: vec![
                 data::Post {
-                    account: "Assets:Okane Bank".to_string(),
+                    account: "Liabilities:Okane Card".to_string(),
                     clear_state: data::ClearState::Uncleared,
                     amount: data::Amount {
                         value: dec!(-1.45),
                         commodity: "USD".to_string(),
                     },
-                    balance: Some(data::Amount {
-                        value: dec!(94.00),
-                        commodity: "USD".to_string(),
-                    }),
+                    balance: None,
                 },
                 data::Post {
                     account: "Expenses:Unknown".to_string(),
@@ -151,6 +141,7 @@ fn test_import_csv_label() {
     let config = config::ConfigEntry {
         path: "/path/to/match".into(),
         account: "Assets:Okane Bank".to_string(),
+        account_type: config::AccountType::Asset,
         commodity: "USD".to_string(),
         format: config::FormatSpec {
             date: "%Y/%m/%d".to_string(),
