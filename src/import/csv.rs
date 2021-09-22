@@ -44,33 +44,17 @@ impl super::Importer for CSVImporter {
             let has_credit = r.get(fm.credit).unwrap() != "";
             let has_debit = r.get(fm.debit).unwrap() != "";
             let balance = parse_comma_decimal(r.get(fm.balance).unwrap())?;
-            let mut posts = Vec::new();
             let fragment = rewriter.rewrite(original_payee);
-            let post_clear = match &fragment.account {
-                Some(_) => data::ClearState::Uncleared,
-                None => {
-                    warn!(
-                        "account unmatched at line {}, payee={}",
-                        pos.line(),
-                        original_payee
-                    );
-                    data::ClearState::Pending
-                }
-            };
+            if fragment.account.is_none() {
+                warn!("account unmatched at line {}, payee={}", pos.line(), original_payee);
+            }
             if has_credit {
                 let credit: Decimal = parse_comma_decimal(r.get(fm.credit).unwrap())?;
-                posts.push(data::Post {
-                    account: fragment.account.unwrap_or("Incomes:Unknown".to_string()),
-                    clear_state: post_clear,
-                    amount: data::Amount {
-                        value: -credit,
-                        commodity: config.commodity.clone(),
-                    },
-                    balance: None,
-                });
-                posts.push(data::Post {
-                    account: config.account.clone(),
-                    clear_state: data::ClearState::Uncleared,
+                res.push(single_entry::Txn {
+                    date: date,
+                    code: fragment.code,
+                    payee: fragment.payee,
+                    dest_account: fragment.account,
                     amount: data::Amount {
                         value: credit,
                         commodity: config.commodity.clone(),
@@ -82,9 +66,11 @@ impl super::Importer for CSVImporter {
                 });
             } else if has_debit {
                 let debit: Decimal = parse_comma_decimal(r.get(fm.debit).unwrap())?;
-                posts.push(data::Post {
-                    account: config.account.clone(),
-                    clear_state: data::ClearState::Uncleared,
+                res.push(single_entry::Txn {
+                    date: date,
+                    code: fragment.code,
+                    payee: fragment.payee,
+                    dest_account: fragment.account,
                     amount: data::Amount {
                         value: -debit,
                         commodity: config.commodity.clone(),
@@ -94,26 +80,10 @@ impl super::Importer for CSVImporter {
                         commodity: config.commodity.clone(),
                     }),
                 });
-                posts.push(data::Post {
-                    account: fragment.account.unwrap_or("Expenses:Unknown".to_string()),
-                    clear_state: post_clear,
-                    amount: data::Amount {
-                        value: debit,
-                        commodity: config.commodity.clone(),
-                    },
-                    balance: None,
-                });
             } else {
                 // warning log or error?
                 return Err(ImportError::Other("credit and debit both zero".to_string()));
             }
-            res.push(data::Transaction {
-                date: date,
-                clear_state: data::ClearState::Cleared,
-                code: fragment.code,
-                payee: fragment.payee,
-                posts: posts,
-            });
         }
         return Ok(res);
     }

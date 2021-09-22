@@ -36,7 +36,7 @@ pub struct Post {
     pub balance: Option<Amount>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Amount {
     pub value: Decimal,
     pub commodity: String,
@@ -57,11 +57,16 @@ impl Amount {
 /// # Examples
 ///
 /// ```
-/// let x = Amount{
-///     value: rust_decimal::Decimal::from(-5),
+/// use rust_decimal_macros::dec;
+/// let x = okane::data::Amount{
+///     value: dec!(-5),
 ///     commodity: "JPY".to_string(),
 /// };
-/// let y = -x;
+/// let y = -x.clone();
+/// assert_eq!(x.value, dec!(-5));
+/// assert_eq!(x.commodity, "JPY");
+/// assert_eq!(y.value, dec!(5));
+/// assert_eq!(y.commodity, "JPY");
 /// ```
 impl std::ops::Neg for Amount {
     type Output = Amount;

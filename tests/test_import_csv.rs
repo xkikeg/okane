@@ -2,7 +2,6 @@ use okane::data;
 use okane::import;
 use okane::import::config;
 use okane::import::config::{FieldKey, FieldPos};
-use okane::import::Importer;
 
 use indoc::indoc;
 use maplit::hashmap;
@@ -52,9 +51,8 @@ fn test_import_csv_index() {
         2021-9-3,,1.45,94.00,Debit Card 14142 FooBar
         ,,,,
     "#};
-    let importer = import::csv::CSVImporter {};
     let mut r = input.as_bytes();
-    let transactions = importer.import(&mut r, &config).unwrap();
+    let transactions = import::import(&mut r, import::Format::CSV, &config).unwrap();
     let want = vec![
         data::Transaction {
             date: chrono::NaiveDate::from_ymd(2021, 9, 1),
@@ -185,9 +183,8 @@ fn test_import_csv_label() {
         2021/09/02,Debit Card 31415 Migros,,28.00,95.45
         2021/09/03,Debit Card 14142 FooBar,,1.45,94.00
     "#};
-    let importer = import::csv::CSVImporter {};
     let mut r = input.as_bytes();
-    let transactions = importer.import(&mut r, &config).unwrap();
+    let transactions = import::import(&mut r, import::Format::CSV, &config).unwrap();
     let want = vec![
         data::Transaction {
             date: chrono::NaiveDate::from_ymd(2021, 9, 1),

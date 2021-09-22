@@ -1,4 +1,3 @@
-use super::config;
 use super::ImportError;
 use crate::data;
 
@@ -7,23 +6,23 @@ use chrono::NaiveDate;
 /// Represents single-entry transaction, associated with the particular account.
 pub struct Txn {
     /// Date of the transaction happened.
-    date: NaiveDate,
+    pub date: NaiveDate,
 
     /// Code of the transcation for tracking.
-    code: Option<String>,
+    pub code: Option<String>,
 
     /// Payee (or payer) of the transaction.
-    payee: String,
+    pub payee: String,
     
     /// Destination account.
-    dest_account: Option<String>,
+    pub dest_account: Option<String>,
 
     /// Amount of the transaction, applied for the associated account.
     /// For bank account, positive means deposit, negative means withdraw.
     /// For credit card account, negative means expense, positive means payment to the card.
-    amount: data::Amount,
+    pub amount: data::Amount,
 
-    balance: Option<data::Amount>,
+    pub balance: Option<data::Amount>,
 }
 
 impl Txn {
@@ -37,7 +36,7 @@ impl Txn {
             posts.push(data::Post {
                 account: self.dest_account.unwrap_or("Incomes:Unknown".to_string()),
                 clear_state: post_clear,
-                amount: -self.amount,
+                amount: -self.amount.clone(),
                 balance: None,
             });
             posts.push(data::Post {
@@ -50,7 +49,7 @@ impl Txn {
             posts.push(data::Post {
                 account: src_account.to_string(),
                 clear_state: data::ClearState::Uncleared,
-                amount: self.amount,
+                amount: self.amount.clone(),
                 balance: self.balance,
             });
             posts.push(data::Post {
