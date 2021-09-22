@@ -4,7 +4,9 @@ use std::fs::File;
 use std::path::Path;
 
 use encoding_rs_io::DecodeReaderBytesBuilder;
+
 use okane::import::ImportError;
+use okane::import::Format;
 
 fn main() {
     env_logger::init();
@@ -18,11 +20,6 @@ fn main() {
     }
 }
 
-enum Format {
-    CSV,
-    IsoCamt,
-}
-
 fn try_main() -> Result<(), ImportError> {
     let args: Vec<String> = env::args().collect();
     let config_file = File::open(Path::new(&args[1]))?;
@@ -33,12 +30,12 @@ fn try_main() -> Result<(), ImportError> {
     // Use dedicated flags or config systems instead.
     let format = match path.extension().and_then(OsStr::to_str) {
         Some("csv") => Ok(Format::CSV),
-        Some("xml") => Ok(Format::IsoCamt),
+        Some("xml") => Ok(Format::IsoCamt053),
         _ => Err(ImportError::UnknownFormat),
     }?;
     let encoding = match format {
         Format::CSV => "Shift_JIS",
-        Format::IsoCamt => "UTF-8",
+        Format::IsoCamt053 => "UTF-8",
     };
     let character_encoder = encoding_rs::Encoding::for_label(encoding.as_bytes())
         .ok_or(ImportError::InvalidFlag("--encoding"))?;
@@ -47,15 +44,13 @@ fn try_main() -> Result<(), ImportError> {
         .build(file);
     match format {
         Format::CSV => {
-            use okane::import::Importer;
-            let c = okane::import::csv::CSVImporter{};
-            let xacts = c.import(&mut decoded, config_entry)?;
+            let xacts = okane::import::import(&mut decoded, format, config_entry)?;
             for xact in &xacts {
                 println!("{}", xact);
             }
             return Ok(());
         }
-        Format::IsoCamt => {
+        Format::IsoCamt053 => {
             let res = okane::import::iso_camt053::print_camt(std::io::BufReader::new(decoded))?;
             println!("{}", res);
             return Ok(());
