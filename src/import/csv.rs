@@ -41,51 +41,73 @@ impl super::Importer for CSVImporter {
             }
             let date = NaiveDate::parse_from_str(datestr, config.format.date.as_str())?;
             let original_payee = r.get(fm.payee).unwrap();
-            let has_credit = r.get(fm.credit).unwrap() != "";
-            let has_debit = r.get(fm.debit).unwrap() != "";
-            let balance = parse_comma_decimal(r.get(fm.balance).unwrap())?;
+            let amount = fm.value.get_amount(config.account_type, &r)?;
+            let balance = fm
+                .balance
+                .map(|b| parse_comma_decimal(r.get(b).unwrap()))
+                .transpose()?;
             let fragment = rewriter.rewrite(original_payee);
             if fragment.account.is_none() {
-                warn!("account unmatched at line {}, payee={}", pos.line(), original_payee);
+                warn!(
+                    "account unmatched at line {}, payee={}",
+                    pos.line(),
+                    original_payee
+                );
             }
-            if has_credit {
-                let credit: Decimal = parse_comma_decimal(r.get(fm.credit).unwrap())?;
-                res.push(single_entry::Txn {
-                    date: date,
-                    code: fragment.code,
-                    payee: fragment.payee,
-                    dest_account: fragment.account,
-                    amount: data::Amount {
-                        value: credit,
-                        commodity: config.commodity.clone(),
-                    },
-                    balance: Some(data::Amount {
-                        value: balance,
-                        commodity: config.commodity.clone(),
-                    }),
-                });
-            } else if has_debit {
-                let debit: Decimal = parse_comma_decimal(r.get(fm.debit).unwrap())?;
-                res.push(single_entry::Txn {
-                    date: date,
-                    code: fragment.code,
-                    payee: fragment.payee,
-                    dest_account: fragment.account,
-                    amount: data::Amount {
-                        value: -debit,
-                        commodity: config.commodity.clone(),
-                    },
-                    balance: Some(data::Amount {
-                        value: balance,
-                        commodity: config.commodity.clone(),
-                    }),
-                });
-            } else {
-                // warning log or error?
-                return Err(ImportError::Other("credit and debit both zero".to_string()));
-            }
+            res.push(single_entry::Txn {
+                date: date,
+                code: fragment.code,
+                payee: fragment.payee,
+                dest_account: fragment.account,
+                amount: data::Amount {
+                    value: amount,
+                    commodity: config.commodity.clone(),
+                },
+                balance: balance.map(|v| data::Amount {
+                    value: v,
+                    commodity: config.commodity.clone(),
+                }),
+            });
         }
         return Ok(res);
+    }
+}
+
+#[derive(PartialEq, Debug)]
+enum FieldMapValues {
+    CreditDebit { credit: usize, debit: usize },
+    Amount(usize),
+}
+
+impl FieldMapValues {
+    fn max(&self) -> usize {
+        match self {
+            FieldMapValues::CreditDebit { credit, debit } => std::cmp::max(*credit, *debit),
+            FieldMapValues::Amount(amount) => *amount,
+        }
+    }
+
+    fn get_amount(&self, at: config::AccountType, r: &csv::StringRecord) -> Result<Decimal, ImportError> {
+        match self {
+            FieldMapValues::CreditDebit { credit, debit } => {
+                let credit = r.get(*credit).unwrap();
+                let debit = r.get(*debit).unwrap();
+                if !credit.is_empty() {
+                    return Ok(parse_comma_decimal(credit)?);
+                } else if !debit.is_empty() {
+                    return Ok(-parse_comma_decimal(debit)?);
+                } else {
+                    return Err(ImportError::Other("credit and debit both zero".to_string()));
+                }
+            }
+            FieldMapValues::Amount(a) => {
+                let amount = parse_comma_decimal(r.get(*a).unwrap())?;
+                Ok(match at {
+                    config::AccountType::Asset => amount,
+                    config::AccountType::Liability => -amount,
+                })
+            },
+        }
     }
 }
 
@@ -93,17 +115,21 @@ impl super::Importer for CSVImporter {
 struct FieldMap {
     date: usize,
     payee: usize,
-    credit: usize,
-    debit: usize,
-    balance: usize,
+    value: FieldMapValues,
+    balance: Option<usize>,
 }
 
 impl FieldMap {
     fn max(&self) -> usize {
-        return *[self.date, self.payee, self.credit, self.debit, self.balance]
-            .iter()
-            .max()
-            .unwrap();
+        return *[
+            self.date,
+            self.payee,
+            self.value.max(),
+            self.balance.unwrap_or(0),
+        ]
+        .iter()
+        .max()
+        .unwrap();
     }
 }
 
@@ -130,21 +156,27 @@ fn resolve_fields(
     let payee = ki
         .get(&config::FieldKey::Payee)
         .ok_or(ImportError::InvalidConfig("no Payee field specified"))?;
-    let credit = ki
-        .get(&config::FieldKey::Credit)
-        .ok_or(ImportError::InvalidConfig("no Credit field specified"))?;
-    let debit = ki
-        .get(&config::FieldKey::Debit)
-        .ok_or(ImportError::InvalidConfig("no Debit field specified"))?;
-    let balance = ki
-        .get(&config::FieldKey::Balance)
-        .ok_or(ImportError::InvalidConfig("no Balance field specified"))?;
+    let amount = ki.get(&config::FieldKey::Amount);
+    let credit = ki.get(&config::FieldKey::Credit);
+    let debit = ki.get(&config::FieldKey::Debit);
+    let value = match amount {
+        Some(&a) => Ok(FieldMapValues::Amount(a)),
+        None => credit
+            .zip(debit)
+            .map(|(c, d)| FieldMapValues::CreditDebit {
+                credit: *c,
+                debit: *d,
+            })
+            .ok_or(ImportError::InvalidConfig(
+                "either amount or credit/debit pair should be set",
+            )),
+    }?;
+    let balance = ki.get(&config::FieldKey::Balance);
     return Ok(FieldMap {
         date: *date,
         payee: *payee,
-        credit: *credit,
-        debit: *debit,
-        balance: *balance,
+        value: value,
+        balance: balance.cloned(),
     });
 }
 
@@ -208,6 +240,7 @@ mod tests {
     use super::*;
     use config::*;
     use maplit::hashmap;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_resolve_fields_label_credit_debit() {
@@ -228,34 +261,30 @@ mod tests {
             FieldMap {
                 date: 0,
                 payee: 1,
-                credit: 2,
-                debit: 3,
-                balance: 4,
+                value: FieldMapValues::CreditDebit {
+                    credit: 2,
+                    debit: 3
+                },
+                balance: Some(4),
             }
         );
     }
 
     #[test]
-    #[ignore]
     fn test_resolve_fields_index_amount() {
         let config: HashMap<FieldKey, FieldPos> = hashmap! {
             FieldKey::Date => FieldPos::Index(0),
             FieldKey::Payee => FieldPos::Index(1),
             FieldKey::Amount => FieldPos::Index(2),
         };
-        let got = resolve_fields(
-            &config,
-            &csv::StringRecord::from(vec!["日付", "摘要", "お預け入れ額", "お引き出し額", "残高"]),
-        )
-        .unwrap();
+        let got = resolve_fields(&config, &csv::StringRecord::from(vec!["unrelated"])).unwrap();
         assert_eq!(
             got,
             FieldMap {
                 date: 0,
                 payee: 1,
-                credit: 2,
-                debit: 3,
-                balance: 4,
+                value: FieldMapValues::Amount(2),
+                balance: None,
             }
         );
     }

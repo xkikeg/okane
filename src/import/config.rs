@@ -13,10 +13,20 @@ pub struct ConfigSet {
 pub struct ConfigEntry {
     pub path: std::path::PathBuf,
     pub account: String,
+    pub account_type: AccountType,
     pub commodity: String,
     pub format: FormatSpec,
     #[serde(default)]
     pub rewrite: Vec<RewriteRule>,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum AccountType {
+    /// Account is an asset, +amount will increase the amount.
+    Asset,
+    /// Account is a liability, +amount will decrease the amount.
+    Liability,
 }
 
 /// FormatSpec describes the several format used in import target.
@@ -97,6 +107,7 @@ mod tests {
         let input = indoc! {r#"
             path: bank/okanebank/
             account: Assets:Banks:Okane
+            account_type: asset
             commodity: JPY
             format:
               date: "%Y年%m月%d日"
@@ -127,6 +138,7 @@ mod tests {
         let input = indoc! {r#"
         path: card/okanecard/
         account: Liabilities:OkaneCard
+        account_type: liability
         commodity: JPY
         format:
           date: "%Y/%m/%d"
