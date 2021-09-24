@@ -5,8 +5,8 @@ use std::path::Path;
 
 use encoding_rs_io::DecodeReaderBytesBuilder;
 
-use okane::import::ImportError;
 use okane::import::Format;
+use okane::import::ImportError;
 
 fn main() {
     env_logger::init();
@@ -22,9 +22,15 @@ fn main() {
 
 fn try_main() -> Result<(), ImportError> {
     let args: Vec<String> = env::args().collect();
-    let config_file = File::open(Path::new(&args[1]))?;
+    let config_path = Path::new(&args[1]);
+    let config_file = File::open(config_path)?;
     let config_set = okane::import::config::load_from_yaml(config_file)?;
-    let config_entry = config_set.entries.get(0).unwrap();
+    let config_entry = config_set
+        .select(config_path)
+        .ok_or(ImportError::Other(format!(
+            "config matching {} not found",
+            config_path.display()
+        )))?;
     let path = Path::new(&args[2]);
     let file = File::open(&path)?;
     // Use dedicated flags or config systems instead.

@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use std::collections::HashMap;
+use std::path::Path;
+
+use log::warn;
 
 /// Set of config covering several paths.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -8,10 +11,34 @@ pub struct ConfigSet {
     pub entries: Vec<ConfigEntry>,
 }
 
+impl ConfigSet {
+    pub fn select(&self, p: &Path) -> Option<&ConfigEntry> {
+        let fp: &str = match p.to_str() {
+            None => {
+                warn!("invalid Unicode path: {}", p.display());
+                None
+            }
+            Some(x) => Some(x),
+        }?;
+        fn has_matches<'a>(entry: &'a ConfigEntry, fp: &str) -> Option<(usize, &'a ConfigEntry)> {
+            if fp.contains(&entry.path) {
+                Some((fp.len(), entry))
+            } else {
+                None
+            }
+        }
+        self.entries
+            .iter()
+            .filter_map(|x| has_matches(x, fp))
+            .max_by_key(|x| x.0)
+            .map(|x| x.1)
+    }
+}
+
 /// One entry corresponding to particular file.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConfigEntry {
-    pub path: std::path::PathBuf,
+    pub path: String,
     pub account: String,
     pub account_type: AccountType,
     pub commodity: String,
@@ -101,6 +128,65 @@ pub fn load_from_yaml<R: std::io::Read>(r: R) -> Result<ConfigSet, ImportError> 
 mod tests {
     use super::*;
     use indoc::indoc;
+    use maplit::hashmap;
+    use pretty_assertions::assert_eq;
+
+    /// Create minimal ConfigEntry for testing ConfigSet::select.
+    fn create_config_entry(path: &str) -> ConfigEntry {
+        ConfigEntry {
+            account: "Account".to_owned(),
+            path: path.to_owned(),
+            account_type: AccountType::Asset,
+            commodity: "JPY".to_owned(),
+            format: FormatSpec {
+                date: "%Y%m%d".to_owned(),
+                fields: hashmap! {},
+            },
+            rewrite: vec![],
+        }
+    }
+
+    #[test]
+    fn test_config_select_single_match() {
+        let config_set = ConfigSet {
+            entries: vec![
+                create_config_entry("/path/to/foo"),
+                create_config_entry("/path/to/bar"),
+            ],
+        };
+        assert_eq!(
+            Some(&config_set.entries[0]),
+            config_set.select(Path::new("/path/to/foo/202109.csv")),
+        );
+    }
+
+    #[test]
+    fn test_config_select_multi_match() {
+        let config_set = &ConfigSet {
+            entries: vec![
+                create_config_entry("/path/to"),
+                create_config_entry("/path/to/foo"),
+            ],
+        };
+        assert_eq!(
+            Some(&config_set.entries[1]),
+            config_set.select(Path::new("/path/to/foo/202109.csv"))
+        );
+    }
+
+    #[test]
+    fn test_config_select_no_match() {
+        let config_set = ConfigSet {
+            entries: vec![
+                create_config_entry("/path/to/foo"),
+                create_config_entry("/path/to/bar"),
+            ],
+        };
+        assert_eq!(
+            None,
+            config_set.select(Path::new("/path/to/baz/202109.csv"))
+        );
+    }
 
     #[test]
     fn test_parse_csv_label_config() {
