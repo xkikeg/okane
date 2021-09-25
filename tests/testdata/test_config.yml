@@ -1,0 +1,37 @@
+path: testdata/index_amount.csv
+encoding: UTF-8
+account: "Liabilities:Okane Card"
+account_type: liability
+commodity: USD
+format:
+  date: "%Y-%m-%d"
+  fields:
+    date: 0
+    amount: 1
+    payee: 2
+rewrite:
+  - payee: Debit Card (?P<code>\d+) (?P<payee>.*)
+  - payee: cashback
+    account: Incomes:Misc
+  - payee: Migros
+    account: Expenses:Grocery
+---
+path: testdata/label_credit_debit.csv
+encoding: UTF-8
+account: Assets:Okane Bank
+account_type: asset
+commodity: JPY
+format:
+  date: "%Y/%m/%d"
+  fields:
+    date: 日付
+    payee: 摘要
+    debit: 引き出し額
+    credit: 預け入れ額
+    balance: 口座残高
+rewrite:
+  - payee: Debit Card (?P<code>\d+) (?P<payee>.*)
+  - payee: 五反田ATM
+    account: Assets:Cash
+  - payee: Migros
+    account: Expenses:Grocery

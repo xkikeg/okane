@@ -4,6 +4,8 @@ use super::ImportError;
 use crate::data;
 use data::parse_comma_decimal;
 
+use std::collections::HashMap;
+
 use chrono::NaiveDate;
 use log::{info, warn};
 use rust_decimal::Decimal;
@@ -87,7 +89,11 @@ impl FieldMapValues {
         }
     }
 
-    fn get_amount(&self, at: config::AccountType, r: &csv::StringRecord) -> Result<Decimal, ImportError> {
+    fn get_amount(
+        &self,
+        at: config::AccountType,
+        r: &csv::StringRecord,
+    ) -> Result<Decimal, ImportError> {
         match self {
             FieldMapValues::CreditDebit { credit, debit } => {
                 let credit = r.get(*credit).unwrap();
@@ -106,7 +112,7 @@ impl FieldMapValues {
                     config::AccountType::Asset => amount,
                     config::AccountType::Liability => -amount,
                 })
-            },
+            }
         }
     }
 }
@@ -133,19 +139,36 @@ impl FieldMap {
     }
 }
 
-use std::collections::HashMap;
-
 fn resolve_fields(
     config_mapping: &HashMap<config::FieldKey, config::FieldPos>,
     header: &csv::StringRecord,
 ) -> Result<FieldMap, ImportError> {
     let hm: HashMap<&str, usize> = header.iter().enumerate().map(|(k, v)| (v, k)).collect();
+    let mut actual_labels: Vec<&str> = hm.keys().cloned().collect();
+    actual_labels.sort();
+    let mut not_found_labels: Vec<&str> = config_mapping
+        .iter()
+        .filter_map(|kv| match &kv.1 {
+            config::FieldPos::Label(label) if !hm.contains_key(label.as_str()) => {
+                Some(label.as_str())
+            }
+            _ => None,
+        })
+        .collect();
+    not_found_labels.sort();
+    if !not_found_labels.is_empty() {
+        return Err(ImportError::Other(format!(
+            "specified labels not found: {} actual labels: {}",
+            not_found_labels.join(","),
+            actual_labels.join(",")
+        )));
+    }
     let ki: HashMap<config::FieldKey, usize> = config_mapping
         .iter()
         .filter_map(|(&k, pos)| {
             match &pos {
-                config::FieldPos::Index(i) => Some(*i as usize),
-                config::FieldPos::Label(label) => hm.get(label.as_str()).map(Clone::clone),
+                config::FieldPos::Index(i) => Some(*i),
+                config::FieldPos::Label(label) => hm.get(label.as_str()).cloned(),
             }
             .map(|i| (k, i))
         })

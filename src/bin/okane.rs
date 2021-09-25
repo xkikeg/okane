@@ -23,15 +23,15 @@ fn main() {
 fn try_main() -> Result<(), ImportError> {
     let args: Vec<String> = env::args().collect();
     let config_path = Path::new(&args[1]);
+    let path = Path::new(&args[2]);
     let config_file = File::open(config_path)?;
     let config_set = okane::import::config::load_from_yaml(config_file)?;
     let config_entry = config_set
-        .select(config_path)
+        .select(path)
         .ok_or(ImportError::Other(format!(
             "config matching {} not found",
-            config_path.display()
+            path.display()
         )))?;
-    let path = Path::new(&args[2]);
     let file = File::open(&path)?;
     // Use dedicated flags or config systems instead.
     let format = match path.extension().and_then(OsStr::to_str) {
@@ -39,14 +39,8 @@ fn try_main() -> Result<(), ImportError> {
         Some("xml") => Ok(Format::IsoCamt053),
         _ => Err(ImportError::UnknownFormat),
     }?;
-    let encoding = match format {
-        Format::CSV => "Shift_JIS",
-        Format::IsoCamt053 => "UTF-8",
-    };
-    let character_encoder = encoding_rs::Encoding::for_label(encoding.as_bytes())
-        .ok_or(ImportError::InvalidFlag("--encoding"))?;
     let mut decoded = DecodeReaderBytesBuilder::new()
-        .encoding(Some(character_encoder))
+        .encoding(Some(config_entry.encoding.as_encoding()))
         .build(file);
     match format {
         Format::CSV => {

@@ -93,6 +93,7 @@ pub struct FormatSpec {
     /// Specify the date format, in chrono::format::strftime compatible format.
     pub date: String,
     /// Mapping from abstracted field key to abstracted position.
+    #[serde(default)]
     pub fields: HashMap<FieldKey, FieldPos>,
 }
 
@@ -125,7 +126,7 @@ pub enum FieldKey {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum FieldPos {
-    Index(i32),
+    Index(usize),
     Label(String),
 }
 

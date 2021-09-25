@@ -21,7 +21,10 @@ serde_with = { version = "1.9", features = [ "chrono" ] }
 serde_yaml = "0.8"
 
 [dev-dependencies]
+assert_cmd = "2.0"
+# assert_fs = "1.0"
 indoc = "1.0"
+lazy_static = "1.4"
 maplit = "1.0"
-rust_decimal_macros = "1.15"
 pretty_assertions = "0.7"
+rust_decimal_macros = "1.15"
