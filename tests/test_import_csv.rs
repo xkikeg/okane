@@ -17,6 +17,7 @@ fn test_import_csv_index() {
     init();
     let config = config::ConfigEntry {
         path: "/path/to/match".into(),
+        encoding: config::Encoding(encoding_rs::UTF_8),
         account: "Liabilities:Okane Card".to_string(),
         account_type: config::AccountType::Liability,
         commodity: "USD".to_string(),
@@ -140,6 +141,7 @@ fn test_import_csv_label() {
     init();
     let config = config::ConfigEntry {
         path: "/path/to/match".into(),
+        encoding: config::Encoding(encoding_rs::UTF_8),
         account: "Assets:Okane Bank".to_string(),
         account_type: config::AccountType::Asset,
         commodity: "USD".to_string(),

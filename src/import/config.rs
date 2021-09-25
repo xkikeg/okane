@@ -1,9 +1,9 @@
-use serde::{Deserialize, Serialize};
-
 use std::collections::HashMap;
 use std::path::Path;
 
 use log::warn;
+use serde::de::Error;
+use serde::{Deserialize, Serialize};
 
 /// Set of config covering several paths.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -39,12 +39,43 @@ impl ConfigSet {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConfigEntry {
     pub path: String,
+    pub encoding: Encoding,
     pub account: String,
     pub account_type: AccountType,
     pub commodity: String,
     pub format: FormatSpec,
     #[serde(default)]
     pub rewrite: Vec<RewriteRule>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Encoding(pub &'static encoding_rs::Encoding);
+
+impl Encoding {
+    pub fn as_encoding(&self) -> &'static encoding_rs::Encoding {
+        self.0
+    }
+}
+
+impl Serialize for Encoding {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_bytes(self.0.name().as_bytes())
+    }
+}
+
+impl<'de> Deserialize<'de> for Encoding {
+    fn deserialize<D>(deserializer: D) -> Result<Encoding, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s: String = Deserialize::deserialize(deserializer)?;
+        encoding_rs::Encoding::for_label(s.as_bytes())
+            .ok_or(D::Error::custom(format!("unknown encoding {}", s)))
+            .map(Encoding)
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
@@ -135,6 +166,7 @@ mod tests {
     fn create_config_entry(path: &str) -> ConfigEntry {
         ConfigEntry {
             account: "Account".to_owned(),
+            encoding: Encoding(encoding_rs::UTF_8),
             path: path.to_owned(),
             account_type: AccountType::Asset,
             commodity: "JPY".to_owned(),
@@ -192,6 +224,7 @@ mod tests {
     fn test_parse_csv_label_config() {
         let input = indoc! {r#"
             path: bank/okanebank/
+            encoding: Shift_JIS
             account: Assets:Banks:Okane
             account_type: asset
             commodity: JPY
@@ -223,6 +256,7 @@ mod tests {
     fn test_parse_csv_index_config() {
         let input = indoc! {r#"
         path: card/okanecard/
+        encoding: UTF-8
         account: Liabilities:OkaneCard
         account_type: liability
         commodity: JPY
