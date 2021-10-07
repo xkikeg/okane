@@ -18,7 +18,7 @@ impl super::Importer for CSVImporter {
         r: &mut R,
         config: &config::ConfigEntry,
     ) -> Result<Vec<single_entry::Txn>, ImportError> {
-        let mut res = Vec::new();
+        let mut res: Vec<single_entry::Txn> = Vec::new();
         let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(r);
         if !rdr.has_headers() {
             return Err(ImportError::Other("no header of CSV".to_string()));
@@ -56,20 +56,23 @@ impl super::Importer for CSVImporter {
                     original_payee
                 );
             }
-            res.push(single_entry::Txn {
-                date: date,
-                code: fragment.code,
-                payee: fragment.payee,
-                dest_account: fragment.account,
-                amount: data::Amount {
+            let mut txn = single_entry::Txn::new(
+                date,
+                fragment.payee,
+                data::Amount {
                     value: amount,
                     commodity: config.commodity.clone(),
                 },
-                balance: balance.map(|v| data::Amount {
-                    value: v,
+            );
+            txn.code_option(fragment.code)
+                .dest_account_option(fragment.account);
+            if let Some(b) = balance {
+                txn.balance(data::Amount {
+                    value: b,
                     commodity: config.commodity.clone(),
-                }),
-            });
+                });
+            }
+            res.push(txn);
         }
         return Ok(res);
     }
@@ -226,14 +229,14 @@ fn new_rewriter(config: &config::ConfigEntry) -> Result<Rewriter, ImportError> {
 }
 
 #[derive(Debug)]
-struct Fragment {
-    payee: String,
-    code: Option<String>,
-    account: Option<String>,
+struct Fragment<'a> {
+    payee: &'a str,
+    code: Option<&'a str>,
+    account: Option<&'a str>,
 }
 
 impl Rewriter {
-    fn rewrite(&self, payee: &str) -> Fragment {
+    fn rewrite<'a>(&'a self, payee: &'a str) -> Fragment<'a> {
         let mut payee = payee;
         let mut code = None;
         let mut account = None;
@@ -243,15 +246,15 @@ impl Rewriter {
                     payee = p.as_str();
                 }
                 if let Some(p) = c.name("code") {
-                    code = Some(p.as_str().to_string());
+                    code = Some(p.as_str());
                 }
                 if let Some(a) = &elem.account {
-                    account = Some(a.clone());
+                    account = Some(a.as_str());
                 }
             }
         }
         return Fragment {
-            payee: payee.to_string(),
+            payee: payee,
             code: code,
             account: account,
         };

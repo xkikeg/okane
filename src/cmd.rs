@@ -11,7 +11,10 @@ pub struct ImportCmd<'c> {
 }
 
 impl<'c> ImportCmd<'c> {
-    pub fn run<W>(&self, w: &mut W) -> Result<(), ImportError> where W: std::io::Write {
+    pub fn run<W>(&self, w: &mut W) -> Result<(), ImportError>
+    where
+        W: std::io::Write,
+    {
         let config_file = File::open(self.config_path)?;
         let config_set = import::config::load_from_yaml(config_file)?;
         let config_entry = config_set
