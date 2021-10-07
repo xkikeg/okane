@@ -13,7 +13,7 @@ pub struct Txn {
 
     /// Payee (or payer) of the transaction.
     pub payee: String,
-    
+
     /// Destination account.
     pub dest_account: Option<String>,
 
@@ -26,7 +26,43 @@ pub struct Txn {
 }
 
 impl Txn {
-    pub fn to_double_entry(self, src_account: &str) -> Result<data::Transaction, ImportError> {
+    pub fn new<'a>(date: NaiveDate, payee: &str, amount: data::Amount) -> Txn {
+        Txn {
+            date: date,
+            code: None,
+            payee: payee.to_string(),
+            dest_account: None,
+            amount: amount,
+            balance: None,
+        }
+    }
+
+    pub fn code_option<'a>(&'a mut self, code: Option<&str>) -> &'a mut Txn {
+        self.code = code.map(str::to_string);
+        self
+    }
+
+    pub fn code<'a>(&'a mut self, code: &str) -> &'a mut Txn {
+        self.code = Some(code.to_string());
+        self
+    }
+
+    pub fn dest_account_option<'a>(&'a mut self, dest_account: Option<&str>) -> &'a mut Txn {
+        self.dest_account = dest_account.map(str::to_string);
+        self
+    }
+
+    pub fn dest_account<'a>(&'a mut self, dest_account: &str) -> &'a mut Txn {
+        self.dest_account = Some(dest_account.to_string());
+        self
+    }
+
+    pub fn balance<'a>(&'a mut self, balance: data::Amount) -> &'a mut Txn {
+        self.balance = Some(balance);
+        self
+    }
+
+    pub fn to_double_entry(&self, src_account: &str) -> Result<data::Transaction, ImportError> {
         let mut posts = Vec::new();
         let post_clear = match &self.dest_account {
             Some(_) => data::ClearState::Uncleared,
@@ -34,7 +70,10 @@ impl Txn {
         };
         if self.amount.is_sign_positive() {
             posts.push(data::Post {
-                account: self.dest_account.unwrap_or("Incomes:Unknown".to_string()),
+                account: self
+                    .dest_account
+                    .clone()
+                    .unwrap_or("Incomes:Unknown".to_string()),
                 clear_state: post_clear,
                 amount: -self.amount.clone(),
                 balance: None,
@@ -42,20 +81,23 @@ impl Txn {
             posts.push(data::Post {
                 account: src_account.to_string(),
                 clear_state: data::ClearState::Uncleared,
-                amount: self.amount,
-                balance: self.balance,
+                amount: self.amount.clone(),
+                balance: self.balance.clone(),
             });
         } else if self.amount.is_sign_negative() {
             posts.push(data::Post {
                 account: src_account.to_string(),
                 clear_state: data::ClearState::Uncleared,
                 amount: self.amount.clone(),
-                balance: self.balance,
+                balance: self.balance.clone(),
             });
             posts.push(data::Post {
-                account: self.dest_account.unwrap_or("Expenses:Unknown".to_string()),
+                account: self
+                    .dest_account
+                    .clone()
+                    .unwrap_or("Expenses:Unknown".to_string()),
                 clear_state: post_clear,
-                amount: -self.amount,
+                amount: -self.amount.clone(),
                 balance: None,
             });
         } else {
@@ -65,8 +107,8 @@ impl Txn {
         return Ok(data::Transaction {
             date: self.date,
             clear_state: data::ClearState::Cleared,
-            code: self.code,
-            payee: self.payee,
+            code: self.code.clone(),
+            payee: self.payee.clone(),
             posts: posts,
         });
     }
