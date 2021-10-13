@@ -218,12 +218,16 @@ struct Rewriter {
 fn new_rewriter(config: &config::ConfigEntry) -> Result<Rewriter, ImportError> {
     let mut elems = Vec::new();
     for rw in &config.rewrite {
-        let re = regex::Regex::new(rw.payee.as_str())
-            .or(Err(ImportError::InvalidConfig("cannot compile regex")))?;
-        elems.push(RewriteElement {
-            payee: re,
-            account: rw.account.clone(),
-        });
+        match rw {
+            config::RewriteRule::LegacyRule { payee, account } => {
+                let re = regex::Regex::new(payee.as_str())
+                    .or(Err(ImportError::InvalidConfig("cannot compile regex")))?;
+                elems.push(RewriteElement {
+                    payee: re,
+                    account: account.clone(),
+                });
+            }
+        }
     }
     return Ok(Rewriter { elems: elems });
 }

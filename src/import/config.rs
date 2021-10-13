@@ -132,15 +132,18 @@ pub enum FieldPos {
 
 /// RewriteRule specifies the rewrite rule matched against transaction.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct RewriteRule {
-    // Regular expression that matches with payee. It must be the entire match.
-    // It can have named pattern to replace these fields.
-    // - code
-    // - payee
-    pub payee: String,
+#[serde(untagged)]
+pub enum RewriteRule {
+    LegacyRule {
+        // Regular expression that matches with payee. It must be the entire match.
+        // It can have named pattern to replace these fields.
+        // - code
+        // - payee
+        payee: String,
 
-    // Account of the transaction matching against the rule.
-    pub account: Option<String>,
+        // Account of the transaction matching against the rule.
+        account: Option<String>,
+    },
 }
 
 use super::error::ImportError;
