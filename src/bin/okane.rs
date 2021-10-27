@@ -14,8 +14,10 @@ fn main() {
     if let Err(err) = try_main() {
         use std::error::Error;
         eprintln!("{}", err);
-        if let Some(src) = err.source() {
+        let mut cur: &dyn Error = &err;
+        while let Some(src) = cur.source() {
             eprintln!("Caused by {}", src);
+            cur = src;
         }
         std::process::exit(1);
     }
@@ -49,7 +51,8 @@ fn try_main() -> Result<(), ImportError> {
             let decoded = DecodeReaderBytesBuilder::new()
                 .encoding(Some(config_entry.encoding.as_encoding()))
                 .build(file);
-            let res = okane::import::iso_camt053::print_camt(std::io::BufReader::new(decoded))?;
+            let mut buf = std::io::BufReader::new(decoded);
+            let res = okane::import::iso_camt053::print_camt(&mut buf)?;
             println!("{}", res);
             Ok(())
         }

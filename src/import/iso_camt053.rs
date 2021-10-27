@@ -159,13 +159,13 @@ struct Date {
     date: chrono::NaiveDate,
 }
 
-fn parse_camt<R: std::io::BufRead>(reader: R) -> Result<Document, DeError> {
+fn parse_camt<R: std::io::BufRead>(reader: &mut R) -> Result<Document, DeError> {
     let document: Document = quick_xml::de::from_reader(reader)?;
     Ok(document)
 }
 
 // Debug only function.
-pub fn print_camt<R: std::io::BufRead>(reader: R) -> Result<String, DeError> {
+pub fn print_camt<R: std::io::BufRead>(reader: &mut R) -> Result<String, DeError> {
     let res = parse_camt(reader)?;
     return Ok(format!("{:#?}", res));
 }
