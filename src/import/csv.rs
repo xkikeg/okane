@@ -220,12 +220,16 @@ fn new_rewriter(config: &config::ConfigEntry) -> Result<Rewriter, ImportError> {
     for rw in &config.rewrite {
         match rw {
             config::RewriteRule::LegacyRule { payee, account } => {
-                let re = regex::Regex::new(payee.as_str())
-                    .or(Err(ImportError::InvalidConfig("cannot compile regex")))?;
+                let re = regex::Regex::new(payee.as_str())?;
                 elems.push(RewriteElement {
                     payee: re,
                     account: account.clone(),
                 });
+            }
+            config::RewriteRule::MatcherRule { .. } => {
+                return Err(ImportError::Unimplemented(
+                    "MatcherRule not supported for CSV yet.",
+                ));
             }
         }
     }
