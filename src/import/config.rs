@@ -43,6 +43,7 @@ pub struct ConfigEntry {
     pub account: String,
     pub account_type: AccountType,
     pub commodity: String,
+    #[serde(default)]
     pub format: FormatSpec,
     #[serde(default)]
     pub rewrite: Vec<RewriteRule>,
@@ -88,7 +89,7 @@ pub enum AccountType {
 }
 
 /// FormatSpec describes the several format used in import target.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FormatSpec {
     /// Specify the date format, in chrono::format::strftime compatible format.
     pub date: String,
@@ -144,6 +145,35 @@ pub enum RewriteRule {
         // Account of the transaction matching against the rule.
         account: Option<String>,
     },
+    MatcherRule {
+        /// matcher for the rewrite.
+        matcher: RewriteMatcher,
+
+        #[serde(default)]
+        account: Option<String>,
+    },
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum RewriteMatcher {
+    Field(FieldMatcher),
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct FieldMatcher {
+    pub fields: HashMap<RewriteField, String>,
+}
+
+#[derive(Debug, Eq, Hash, PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RewriteField {
+    DomainCode,
+    DomainFamily,
+    DomainSubFamily,
+    AdditionalTransactionInfo,
+    Payee,
 }
 
 use super::error::ImportError;
@@ -254,6 +284,17 @@ mod tests {
             .get(&FieldKey::Date)
             .unwrap();
         assert_eq!(*date, FieldPos::Label("お取り引き日".to_owned()));
+        let rewrite = vec![
+            RewriteRule::LegacyRule {
+                payee: r#"Visaデビット　(?P<code>\d+)　(?P<payee>.*)"#.to_string(),
+                account: None,
+            },
+            RewriteRule::LegacyRule {
+                payee: "外貨普通預金（.*）(?:へ|より)振替".to_string(),
+                account: Some("Assets:Wire:Okane".to_string()),
+            },
+        ];
+        assert_eq!(&rewrite, &config.entries[0].rewrite);
     }
 
     #[test]
@@ -281,5 +322,63 @@ mod tests {
             .get(&FieldKey::Amount)
             .unwrap();
         assert_eq!(*field_amount, FieldPos::Index(2));
+    }
+
+    #[test]
+    fn test_parse_matcher() {
+        let input = indoc! {r#"
+        matcher:
+          domain_code: PMNT
+        account: Income:Salary
+        "#};
+        let de = serde_yaml::Deserializer::from_str(input);
+        let matcher = RewriteRule::MatcherRule {
+            matcher: RewriteMatcher::Field(FieldMatcher {
+                fields: hashmap! {RewriteField::DomainCode => "PMNT".to_string()},
+            }),
+            account: Some("Income:Salary".to_string()),
+        };
+        assert_eq!(matcher, RewriteRule::deserialize(de).unwrap());
+    }
+
+    #[test]
+    fn test_parse_isocamt_config() {
+        let input = indoc! {r#"
+        path: bank/okanebank/
+        encoding: UTF-8
+        account: Banks:Okane
+        account_type: asset
+        commodity: USD
+        rewrite:
+          - matcher:
+              domain_code: PMNT
+              domain_family: RCDT
+              domain_sub_family: SALA
+            account: Income:Salary
+          - matcher:
+              additional_transaction_info: Maestro(?P<payee>.*)
+        "#};
+        let config = load_from_yaml(input.as_bytes()).unwrap();
+        let rewrite = vec![
+            RewriteRule::MatcherRule {
+                matcher: RewriteMatcher::Field(FieldMatcher {
+                    fields: hashmap! {
+                        RewriteField::DomainCode => "PMNT".to_string(),
+                        RewriteField::DomainFamily => "RCDT".to_string(),
+                        RewriteField::DomainSubFamily => "SALA".to_string(),
+                    },
+                }),
+                account: Some("Income:Salary".to_string()),
+            },
+            RewriteRule::MatcherRule {
+                matcher: RewriteMatcher::Field(FieldMatcher {
+                    fields: hashmap! {
+                        RewriteField::AdditionalTransactionInfo => "Maestro(?P<payee>.*)".to_string(),
+                    },
+                }),
+                account: None,
+            },
+        ];
+        assert_eq!(&rewrite, &config.entries[0].rewrite);
     }
 }
