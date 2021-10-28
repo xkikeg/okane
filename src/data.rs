@@ -126,8 +126,8 @@ impl fmt::Display for Transaction {
             if let Some(balance) = &post.balance {
                 write!(f, " = {} {}", balance.value, balance.commodity)?;
             }
-            writeln!(f, "")?;
+            writeln!(f)?;
         }
-        return Ok(());
+        Ok(())
     }
 }

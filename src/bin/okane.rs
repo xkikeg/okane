@@ -27,10 +27,9 @@ fn try_main() -> Result<(), ImportError> {
     let path = Path::new(&args[2]);
     let config_file = File::open(config_path)?;
     let config_set = okane::import::config::load_from_yaml(config_file)?;
-    let config_entry = config_set.select(path).ok_or(ImportError::Other(format!(
-        "config matching {} not found",
-        path.display()
-    )))?;
+    let config_entry = config_set.select(path).ok_or_else(|| {
+        ImportError::Other(format!("config matching {} not found", path.display()))
+    })?;
     let file = File::open(&path)?;
     // Use dedicated flags or config systems instead.
     let format = match path.extension().and_then(OsStr::to_str) {
@@ -41,8 +40,8 @@ fn try_main() -> Result<(), ImportError> {
     match format {
         Format::CSV => {
             return cmd::ImportCmd {
-                config_path: &config_path,
-                target_path: &path,
+                config_path,
+                target_path: path,
             }
             .run(&mut std::io::stdout().lock());
         }
@@ -52,7 +51,7 @@ fn try_main() -> Result<(), ImportError> {
                 .build(file);
             let res = okane::import::iso_camt053::print_camt(std::io::BufReader::new(decoded))?;
             println!("{}", res);
-            return Ok(());
+            Ok(())
         }
     }
 }

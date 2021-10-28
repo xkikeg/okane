@@ -34,7 +34,7 @@ pub fn import<R: std::io::Read>(
         let de = txn.to_double_entry(config.account.as_str())?;
         res.push(de);
     }
-    return Ok(res);
+    Ok(res)
 }
 
 /// Trait the each format should implement, to be used in import() internally.

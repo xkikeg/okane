@@ -161,7 +161,7 @@ struct Date {
 
 fn parse_camt<R: std::io::BufRead>(reader: R) -> Result<Document, DeError> {
     let document: Document = quick_xml::de::from_reader(reader)?;
-    return Ok(document);
+    Ok(document)
 }
 
 // Debug only function.

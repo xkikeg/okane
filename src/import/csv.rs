@@ -74,7 +74,7 @@ impl super::Importer for CSVImporter {
             }
             res.push(txn);
         }
-        return Ok(res);
+        Ok(res)
     }
 }
 
@@ -102,11 +102,11 @@ impl FieldMapValues {
                 let credit = r.get(*credit).unwrap();
                 let debit = r.get(*debit).unwrap();
                 if !credit.is_empty() {
-                    return Ok(parse_comma_decimal(credit)?);
+                    Ok(parse_comma_decimal(credit)?)
                 } else if !debit.is_empty() {
-                    return Ok(-parse_comma_decimal(debit)?);
+                    Ok(-parse_comma_decimal(debit)?)
                 } else {
-                    return Err(ImportError::Other("credit and debit both zero".to_string()));
+                    Err(ImportError::Other("credit and debit both zero".to_string()))
                 }
             }
             FieldMapValues::Amount(a) => {
@@ -148,7 +148,7 @@ fn resolve_fields(
 ) -> Result<FieldMap, ImportError> {
     let hm: HashMap<&str, usize> = header.iter().enumerate().map(|(k, v)| (v, k)).collect();
     let mut actual_labels: Vec<&str> = hm.keys().cloned().collect();
-    actual_labels.sort();
+    actual_labels.sort_unstable();
     let mut not_found_labels: Vec<&str> = config_mapping
         .iter()
         .filter_map(|kv| match &kv.1 {
@@ -158,7 +158,7 @@ fn resolve_fields(
             _ => None,
         })
         .collect();
-    not_found_labels.sort();
+    not_found_labels.sort_unstable();
     if !not_found_labels.is_empty() {
         return Err(ImportError::Other(format!(
             "specified labels not found: {} actual labels: {}",
@@ -198,12 +198,12 @@ fn resolve_fields(
             )),
     }?;
     let balance = ki.get(&config::FieldKey::Balance);
-    return Ok(FieldMap {
+    Ok(FieldMap {
         date: *date,
         payee: *payee,
-        value: value,
+        value,
         balance: balance.cloned(),
-    });
+    })
 }
 
 struct RewriteElement {
@@ -229,7 +229,7 @@ fn new_rewriter(config: &config::ConfigEntry) -> Result<Rewriter, ImportError> {
             }
         }
     }
-    return Ok(Rewriter { elems: elems });
+    Ok(Rewriter { elems })
 }
 
 #[derive(Debug)]
@@ -257,11 +257,11 @@ impl Rewriter {
                 }
             }
         }
-        return Fragment {
-            payee: payee,
-            code: code,
-            account: account,
-        };
+        Fragment {
+            payee,
+            code,
+            account,
+        }
     }
 }
 

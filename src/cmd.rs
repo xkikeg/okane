@@ -17,12 +17,12 @@ impl<'c> ImportCmd<'c> {
     {
         let config_file = File::open(self.config_path)?;
         let config_set = import::config::load_from_yaml(config_file)?;
-        let config_entry = config_set
-            .select(self.target_path)
-            .ok_or(ImportError::Other(format!(
+        let config_entry = config_set.select(self.target_path).ok_or_else(|| {
+            ImportError::Other(format!(
                 "config matching {} not found",
                 self.target_path.display()
-            )))?;
+            ))
+        })?;
         let file = File::open(&self.target_path)?;
         // Use dedicated flags or config systems instead.
         let format = match self.target_path.extension().and_then(OsStr::to_str) {
@@ -37,6 +37,6 @@ impl<'c> ImportCmd<'c> {
         for xact in &xacts {
             writeln!(w, "{}", xact)?;
         }
-        return Ok(());
+        Ok(())
     }
 }

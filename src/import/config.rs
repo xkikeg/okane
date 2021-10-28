@@ -73,7 +73,7 @@ impl<'de> Deserialize<'de> for Encoding {
     {
         let s: String = Deserialize::deserialize(deserializer)?;
         encoding_rs::Encoding::for_label(s.as_bytes())
-            .ok_or(D::Error::custom(format!("unknown encoding {}", s)))
+            .ok_or_else(|| D::Error::custom(format!("unknown encoding {}", s)))
             .map(Encoding)
     }
 }
@@ -156,7 +156,7 @@ pub fn load_from_yaml<R: std::io::Read>(r: R) -> Result<ConfigSet, ImportError> 
         let entry = ConfigEntry::deserialize(doc)?;
         entries.push(entry);
     }
-    return Ok(ConfigSet { entries: entries });
+    Ok(ConfigSet { entries })
 }
 
 #[cfg(test)]

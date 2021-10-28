@@ -26,13 +26,13 @@ pub struct Txn {
 }
 
 impl Txn {
-    pub fn new<'a>(date: NaiveDate, payee: &str, amount: data::Amount) -> Txn {
+    pub fn new(date: NaiveDate, payee: &str, amount: data::Amount) -> Txn {
         Txn {
-            date: date,
+            date,
             code: None,
             payee: payee.to_string(),
             dest_account: None,
-            amount: amount,
+            amount,
             balance: None,
         }
     }
@@ -57,7 +57,7 @@ impl Txn {
         self
     }
 
-    pub fn balance<'a>(&'a mut self, balance: data::Amount) -> &'a mut Txn {
+    pub fn balance(&mut self, balance: data::Amount) -> &mut Txn {
         self.balance = Some(balance);
         self
     }
@@ -73,7 +73,7 @@ impl Txn {
                 account: self
                     .dest_account
                     .clone()
-                    .unwrap_or("Incomes:Unknown".to_string()),
+                    .unwrap_or_else(|| "Incomes:Unknown".to_string()),
                 clear_state: post_clear,
                 amount: -self.amount.clone(),
                 balance: None,
@@ -95,7 +95,7 @@ impl Txn {
                 account: self
                     .dest_account
                     .clone()
-                    .unwrap_or("Expenses:Unknown".to_string()),
+                    .unwrap_or_else(|| "Expenses:Unknown".to_string()),
                 clear_state: post_clear,
                 amount: -self.amount.clone(),
                 balance: None,
@@ -104,12 +104,12 @@ impl Txn {
             // warning log or error?
             return Err(ImportError::Other("credit and debit both zero".to_string()));
         }
-        return Ok(data::Transaction {
+        Ok(data::Transaction {
             date: self.date,
             clear_state: data::ClearState::Cleared,
             code: self.code.clone(),
             payee: self.payee.clone(),
-            posts: posts,
-        });
+            posts,
+        })
     }
 }
