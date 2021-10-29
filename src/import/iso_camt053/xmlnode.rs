@@ -170,7 +170,7 @@ pub struct EntryDetails {
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct Batch {
     #[serde(rename = "NbOfTxs")]
-    pub number_of_transactions: i8,
+    pub number_of_transactions: usize,
     // Redundant fields.
     // #[serde(rename = "TtlAmt")]
     // pub total_amount: Amount,
@@ -182,6 +182,8 @@ pub struct Batch {
 pub struct TransactionDetails {
     #[serde(rename = "Refs")]
     pub refs: References,
+    #[serde(rename = "CdtDbtInd")]
+    pub credit_or_debit: CreditDebitIndicator,
     #[serde(rename = "AmtDtls")]
     pub amount_details: AmountDetails,
     #[serde(rename = "Chrgs")]
