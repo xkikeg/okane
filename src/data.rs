@@ -6,6 +6,7 @@ use rust_decimal::Decimal;
 #[derive(Debug, PartialEq)]
 pub struct Transaction {
     pub date: chrono::NaiveDate,
+    pub effective_date: Option<chrono::NaiveDate>,
     pub clear_state: ClearState,
     pub code: Option<String>,
     pub payee: String,
@@ -102,12 +103,11 @@ fn print_clear_state(v: ClearState) -> &'static str {
 
 impl fmt::Display for Transaction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{} {}",
-            self.date.format("%Y/%m/%d"),
-            print_clear_state(self.clear_state)
-        )?;
+        write!(f, "{}", self.date.format("%Y/%m/%d"))?;
+        if let Some(edate) = &self.effective_date {
+            write!(f, "={}", edate.format("%Y/%m/%d"))?;
+        }
+        write!(f, " {}", print_clear_state(self.clear_state))?;
         if let Some(code) = &self.code {
             write!(f, "({}) ", code)?;
         }
@@ -129,5 +129,29 @@ impl fmt::Display for Transaction {
             writeln!(f)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_display_effective_date() {
+        let txn = Transaction {
+            date: NaiveDate::from_ymd(2021, 4, 4),
+            effective_date: Some(NaiveDate::from_ymd(2021, 5, 10)),
+            clear_state: ClearState::Pending,
+            code: Some("#12345".to_string()),
+            payee: "Flower shop".to_string(),
+            posts: Vec::new(),
+        };
+
+        assert_eq!(
+            "2021/04/04=2021/05/10 ! (#12345) Flower shop\n",
+            format!("{}", txn)
+        );
     }
 }
