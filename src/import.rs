@@ -26,8 +26,7 @@ pub fn import<R: std::io::Read>(
 ) -> Result<Vec<Transaction>, ImportError> {
     let txns = match fmt {
         Format::CSV => csv::CSVImporter {}.import(r, config),
-        // TODO: implement this.
-        Format::IsoCamt053 => Err(ImportError::UnknownFormat),
+        Format::IsoCamt053 => iso_camt053::ISOCamt053Importer {}.import(r, config),
     }?;
     let mut res = Vec::new();
     for txn in txns {
