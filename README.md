@@ -1,5 +1,6 @@
 # okane
 
+[![CircleCI](https://circleci.com/gh/xkikeg/okane/tree/main.svg?style=svg)](https://circleci.com/gh/xkikeg/okane/tree/main)
 [![Build Status](https://app.travis-ci.com/xkikeg/okane.svg?branch=main)](https://app.travis-ci.com/xkikeg/okane)
 
 Rust based plain text accounting software, influenced by [ledger](https://github.com/ledger/ledger/).
