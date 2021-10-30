@@ -135,6 +135,18 @@ pub enum FieldPos {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum RewriteRule {
+    MatcherRule {
+        /// matcher for the rewrite.
+        matcher: RewriteMatcher,
+
+        /// Payee to be set for the matched transaction.
+        #[serde(default)]
+        payee: Option<String>,
+
+        /// Account to be set for the matched transaction.
+        #[serde(default)]
+        account: Option<String>,
+    },
     LegacyRule {
         // Regular expression that matches with payee. It must be the entire match.
         // It can have named pattern to replace these fields.
@@ -143,13 +155,6 @@ pub enum RewriteRule {
         payee: String,
 
         // Account of the transaction matching against the rule.
-        account: Option<String>,
-    },
-    MatcherRule {
-        /// matcher for the rewrite.
-        matcher: RewriteMatcher,
-
-        #[serde(default)]
         account: Option<String>,
     },
 }
@@ -336,6 +341,7 @@ mod tests {
             matcher: RewriteMatcher::Field(FieldMatcher {
                 fields: hashmap! {RewriteField::DomainCode => "PMNT".to_string()},
             }),
+            payee: None,
             account: Some("Income:Salary".to_string()),
         };
         assert_eq!(matcher, RewriteRule::deserialize(de).unwrap());
@@ -355,6 +361,7 @@ mod tests {
               domain_family: RCDT
               domain_sub_family: SALA
             account: Income:Salary
+            payee: Okane Co. Ltd.
           - matcher:
               additional_transaction_info: Maestro(?P<payee>.*)
         "#};
@@ -368,6 +375,7 @@ mod tests {
                         RewriteField::DomainSubFamily => "SALA".to_string(),
                     },
                 }),
+                payee: Some("Okane Co. Ltd.".to_string()),
                 account: Some("Income:Salary".to_string()),
             },
             RewriteRule::MatcherRule {
@@ -376,6 +384,7 @@ mod tests {
                         RewriteField::AdditionalTransactionInfo => "Maestro(?P<payee>.*)".to_string(),
                     },
                 }),
+                payee: None,
                 account: None,
             },
         ];
