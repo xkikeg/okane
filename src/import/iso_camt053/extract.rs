@@ -371,9 +371,6 @@ mod tests {
             xmlnode::TransactionDetails {
                 refs: xmlnode::References {
                     account_servicer_reference: "foobar".to_string(),
-                    end_to_end_id: "NOTPROVIDED".to_string(),
-                    instruction_id: None,
-                    transaction_id: None,
                 },
                 credit_or_debit: xmlnode::CreditDebitIndicator {
                     value: xmlnode::CreditOrDebit::Credit,

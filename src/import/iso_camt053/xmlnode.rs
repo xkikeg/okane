@@ -206,14 +206,14 @@ pub struct RemittanceInfo {
 pub struct References {
     #[serde(rename = "AcctSvcrRef")]
     pub account_servicer_reference: String,
-    // may be Some("NOTPROVIDED")
-    #[serde(rename = "EndToEndId")]
-    pub end_to_end_id: String,
-    // may be Some("NOTPROVIDED")
-    #[serde(rename = "InstrId")]
-    pub instruction_id: Option<String>,
-    #[serde(rename = "TxId")]
-    pub transaction_id: Option<String>,
+    // // may be Some("NOTPROVIDED")
+    // #[serde(rename = "EndToEndId")]
+    // pub end_to_end_id: String,
+    // // may be Some("NOTPROVIDED") or Some("000000000")
+    // #[serde(rename = "InstrId")]
+    // pub instruction_id: Option<String>,
+    // #[serde(rename = "TxId")]
+    // pub transaction_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
