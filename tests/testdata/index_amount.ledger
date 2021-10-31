@@ -1,0 +1,12 @@
+2021/09/01 * cashback
+    Incomes:Misc                              -50.00 USD
+    Liabilities:Okane Card                     50.00 USD
+
+2021/09/02 * (31415) Migros
+    Liabilities:Okane Card                    -28.00 USD
+    Expenses:Grocery                           28.00 USD
+
+2021/09/03 * (14142) FooBar
+    Liabilities:Okane Card                     -1.45 USD
+    ! Expenses:Unknown                          1.45 USD
+
