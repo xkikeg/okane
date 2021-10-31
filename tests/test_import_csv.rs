@@ -1,98 +1,38 @@
 mod testing;
 
-use std::io::{self, Write};
-
-use indoc::indoc;
 use pretty_assertions::assert_eq;
-
-static IMPORT_CSV_INDEX_WANT: &str = indoc! {r#"
-2021/09/01 * cashback
-    Incomes:Misc                              -50.00 USD
-    Liabilities:Okane Card                     50.00 USD
-
-2021/09/02 * (31415) Migros
-    Liabilities:Okane Card                    -28.00 USD
-    Expenses:Grocery                           28.00 USD
-
-2021/09/03 * (14142) FooBar
-    Liabilities:Okane Card                     -1.45 USD
-    ! Expenses:Unknown                          1.45 USD
-
-
-"#};
 
 #[test]
 fn test_import_csv_index() {
     let config = testing::TESTDATA_DIR.join("test_config.yml");
     let input = testing::TESTDATA_DIR.join("index_amount.csv");
+    let want = testing::read_as_utf8("index_amount.ledger").expect("cannot read want");
+    let mut result: Vec<u8> = Vec::new();
 
-    // Test with code invocation
-    {
-        let mut result: Vec<u8> = Vec::new();
-        okane::cmd::ImportCmd {
-            config_path: &config,
-            target_path: &input,
-        }
-        .run(&mut result)
-        .expect("execution failed");
-        let got = String::from_utf8(result).expect("invalid UTF-8");
-        assert_eq!(IMPORT_CSV_INDEX_WANT, got);
+    okane::cmd::ImportCmd {
+        config_path: &config,
+        target_path: &input,
     }
-    // Test with cmd execution
-    {
-        let result = assert_cmd::Command::new(&*testing::BIN_PATH)
-            .args(&[config, input])
-            .assert()
-            .success();
-        let output = result.get_output();
-        io::stderr().write_all(&output.stderr).unwrap();
-        let stdout = std::str::from_utf8(&output.stdout).unwrap();
-        assert_eq!(IMPORT_CSV_INDEX_WANT, stdout);
-    }
+    .run(&mut result)
+    .expect("execution failed");
+
+    let got = String::from_utf8(result).expect("invalid UTF-8");
+    assert_eq!(want, got);
 }
-
-static IMPORT_CSV_LABEL_WANT: &str = indoc! {r#"
-    2021/09/01 * 五反田ATM
-        Assets:Cash                                -5000 JPY
-        Assets:Okane Bank                           5000 JPY = 12345 JPY
-
-    2021/09/02 * (31415) Migros
-        Assets:Okane Bank                          -2800 JPY = 9545 JPY
-        Expenses:Grocery                            2800 JPY
-
-    2021/09/03 * (14142) FooBar
-        Assets:Okane Bank                           -145 JPY = 9400 JPY
-        ! Expenses:Unknown                           145 JPY
-
-
-"#};
 
 #[test]
 fn test_import_csv_label() {
     let config = testing::TESTDATA_DIR.join("test_config.yml");
     let input = testing::TESTDATA_DIR.join("label_credit_debit.csv");
+    let want = testing::read_as_utf8("label_credit_debit.ledger").expect("cannot read want");
 
-    // Test with code invocation
-    {
-        let mut result: Vec<u8> = Vec::new();
-        okane::cmd::ImportCmd {
-            config_path: &config,
-            target_path: &input,
-        }
-        .run(&mut result)
-        .expect("execution failed");
-        let got = String::from_utf8(result).expect("invalid UTF-8");
-        assert_eq!(IMPORT_CSV_LABEL_WANT, got);
+    let mut result: Vec<u8> = Vec::new();
+    okane::cmd::ImportCmd {
+        config_path: &config,
+        target_path: &input,
     }
-    // Test with command invocation
-    {
-        let result = assert_cmd::Command::new(&*testing::BIN_PATH)
-            .args(&[config, input])
-            .assert()
-            .success();
-        let output = result.get_output();
-        io::stderr().write_all(&output.stderr).unwrap();
-        let stdout = std::str::from_utf8(&output.stdout).unwrap();
-        assert_eq!(IMPORT_CSV_LABEL_WANT, stdout);
-    }
+    .run(&mut result)
+    .expect("execution failed");
+    let got = String::from_utf8(result).expect("invalid UTF-8");
+    assert_eq!(want, got);
 }
