@@ -1,0 +1,725 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>2021103100000000</MsgId>
+      <CreDtTm>2021-10-31T00:00:00</CreDtTm>
+      <MsgPgntn>
+        <PgNb>1</PgNb>
+        <LastPgInd>true</LastPgInd>
+      </MsgPgntn>
+    </GrpHdr>
+    <Stmt>
+      <Id>2021103100000000</Id>
+      <ElctrncSeqNb>2</ElctrncSeqNb>
+      <CreDtTm>2021-10-31T00:00:00</CreDtTm>
+      <FrToDt>
+        <FrDtTm>2021-10-01T00:00:00</FrDtTm>
+        <ToDtTm>2021-10-30T23:59:59</ToDtTm>
+      </FrToDt>
+      <CpyDplctInd>DUPL</CpyDplctInd>
+      <Acct>
+        <Id>
+          <IBAN>CH3689144511369184655</IBAN>
+        </Id>
+        <Ccy>CHF</Ccy>
+        <Ownr>
+          <Nm>Taro Yamada</Nm>
+          <PstlAdr>
+            <AdrLine>Switzerland strasse</AdrLine>
+            <AdrLine>3001 Bern</AdrLine>
+          </PstlAdr>
+        </Ownr>
+        <Svcr>
+          <FinInstnId>
+            <BICFI>OKANESWIFTXXX</BICFI>
+            <Nm>Okane Bank</Nm>
+          </FinInstnId>
+        </Svcr>
+      </Acct>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>OPBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="CHF">100</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <Dt>2021-10-01</Dt>
+        </Dt>
+      </Bal>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>CLBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="CHF">4561.4</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <Dt>2021-10-31</Dt>
+        </Dt>
+      </Bal>
+      <TxsSummry>
+        <TtlNtries>
+          <NbOfNtries>9</NbOfNtries>
+          <Sum>9538.6</Sum>
+          <TtlNetNtry>
+            <Amt>4461.4</Amt>
+            <CdtDbtInd>CRDT</CdtDbtInd>
+          </TtlNetNtry>
+        </TtlNtries>
+        <TtlCdtNtries>
+          <NbOfNtries>2</NbOfNtries>
+          <Sum>7000</Sum>
+        </TtlCdtNtries>
+        <TtlDbtNtries>
+          <NbOfNtries>7</NbOfNtries>
+          <Sum>2538.6</Sum>
+        </TtlDbtNtries>
+        <!--TtlNtriesPerBkTxCd-->
+      </TxsSummry>
+
+      <Ntry>
+        <Amt Ccy="CHF">1000</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <RvslInd>false</RvslInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2021-10-01</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2021-10-01</Dt>
+        </ValDt>
+        <BkTxCd>
+          <Domn>
+            <Cd>PMNT</Cd>
+            <Fmly>
+              <Cd>RCDT</Cd>
+              <SubFmlyCd>OTHR</SubFmlyCd>
+            </Fmly>
+          </Domn>
+        </BkTxCd>
+        <NtryDtls>
+          <Btch>
+            <NbOfTxs>1</NbOfTxs>
+            <TtlAmt Ccy="CHF">1000</TtlAmt>
+            <CdtDbtInd>CRDT</CdtDbtInd>
+          </Btch>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>20211031/1/1</AcctSvcrRef>
+              <EndToEndId>NOTPROVIDED</EndToEndId>
+              <TxId>00000000</TxId>
+            </Refs>
+            <Amt Ccy="CHF">1000</Amt>
+            <CdtDbtInd>CRDT</CdtDbtInd>
+            <AmtDtls>
+              <InstdAmt>
+                <Amt Ccy="CHF">1000</Amt>
+              </InstdAmt>
+              <TxAmt>
+                <Amt Ccy="CHF">1000</Amt>
+              </TxAmt>
+            </AmtDtls>
+            <RltdPties>
+              <Dbtr>
+                <Nm>Money Bank</Nm>
+                <PstlAdr>
+                  <AdrLine>Money street 10</AdrLine>
+                  <AdrLine>JP Tokyo 1080001</AdrLine>
+                </PstlAdr>
+              </Dbtr>
+              <DbtrAcct>
+                <Id>
+                  <IBAN>CH9189144748186665354</IBAN>
+                </Id>
+              </DbtrAcct>
+              <UltmtDbtr>
+                <Nm>Jiro Okane</Nm>
+                <PstlAdr>
+                  <BldgNb>1-1-2101</BldgNb>
+                  <PstCd>1080002</PstCd>
+                  <TwnNm>Minato, Tokyo</TwnNm>
+                  <Ctry>JP</Ctry>
+                </PstlAdr>
+              </UltmtDbtr>
+              <Cdtr>
+                <Nm>Taro Yamada</Nm>
+                <PstlAdr>
+                  <AdrLine>Switzerland strasse</AdrLine>
+                  <AdrLine>3000 Bern</AdrLine>
+                </PstlAdr>
+              </Cdtr>
+            </RltdPties>
+            <RltdAgts>
+              <DbtrAgt>
+                <FinInstnId>
+                  <ClrSysMmbId>
+                    <ClrSysId>
+                      <Cd>JPZGN</Cd>
+                    </ClrSysId>
+                    <MmbId>7777777</MmbId>
+                  </ClrSysMmbId>
+                </FinInstnId>
+              </DbtrAgt>
+            </RltdAgts>
+            <RmtInf>
+              <Ustrd>3283209:-TARO YAMADA</Ustrd>
+            </RmtInf>
+            <AddtlTxInf>Credit</AddtlTxInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Credit</AddtlNtryInf>
+      </Ntry>
+
+      <Ntry>
+        <Amt Ccy="CHF">6000</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <RvslInd>false</RvslInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2021-10-02</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2021-10-02</Dt>
+        </ValDt>
+        <BkTxCd>
+          <Domn>
+            <Cd>PMNT</Cd>
+            <Fmly>
+              <Cd>RCDT</Cd>
+              <SubFmlyCd>SALA</SubFmlyCd>
+            </Fmly>
+          </Domn>
+        </BkTxCd>
+        <NtryDtls>
+          <Btch>
+            <NbOfTxs>1</NbOfTxs>
+            <TtlAmt Ccy="CHF">6000</TtlAmt>
+            <CdtDbtInd>CRDT</CdtDbtInd>
+          </Btch>
+        </NtryDtls>
+        <AddtlNtryInf>Credit</AddtlNtryInf>
+      </Ntry>
+
+      <Ntry>
+        <Amt Ccy="CHF">2000</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <RvslInd>false</RvslInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2021-10-03</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2021-10-03</Dt>
+        </ValDt>
+        <BkTxCd>
+          <Domn>
+            <Cd>PMNT</Cd>
+            <Fmly>
+              <Cd>ICDT</Cd>
+              <SubFmlyCd>AUTT</SubFmlyCd>
+            </Fmly>
+          </Domn>
+        </BkTxCd>
+        <NtryDtls>
+          <Btch>
+            <NbOfTxs>2</NbOfTxs>
+            <TtlAmt Ccy="CHF">2000</TtlAmt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+          </Btch>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>20211031/3/1</AcctSvcrRef>
+              <InstrId>my house rent</InstrId>
+              <EndToEndId>NOTPROVIDED</EndToEndId>
+            </Refs>
+            <Amt Ccy="CHF">1880</Amt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+            <AmtDtls>
+              <InstdAmt>
+                <Amt Ccy="CHF">1880</Amt>
+              </InstdAmt>
+              <TxAmt>
+                <Amt Ccy="CHF">1880</Amt>
+              </TxAmt>
+            </AmtDtls>
+            <RltdPties>
+              <Dbtr>
+                <Nm>Taro Yamada</Nm>
+                <PstlAdr>
+                  <AdrLine>Switzerland strasse</AdrLine>
+                  <AdrLine>3001 Bern</AdrLine>
+                </PstlAdr>
+              </Dbtr>
+              <Cdtr>
+                <Nm>Herr Haus Okane und Frau Hause Okane</Nm>
+                <PstlAdr>
+                  <AdrLine>Okanemochi strasse</AdrLine>
+                  <AdrLine>3001 Bern</AdrLine>
+                </PstlAdr>
+              </Cdtr>
+              <CdtrAcct>
+                <Id>
+                  <IBAN>CH4389144154892413697</IBAN>
+                </Id>
+              </CdtrAcct>
+            </RltdPties>
+            <RltdAgts>
+              <CdtrAgt>
+                <FinInstnId>
+                  <Nm>Okane Bank</Nm>
+                  <PstlAdr>
+                    <AdrLine>Postfach</AdrLine>
+                    <AdrLine>9999 Okane city</AdrLine>
+                  </PstlAdr>
+                </FinInstnId>
+              </CdtrAgt>
+            </RltdAgts>
+            <RmtInf>
+              <Ustrd>Miete für Oktober (Hause, Garage)</Ustrd>
+            </RmtInf>
+            <AddtlTxInf>Payment order</AddtlTxInf>
+          </TxDtls>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>20211031/3/2</AcctSvcrRef>
+              <InstrId>house insurance</InstrId>
+              <EndToEndId>NOTPROVIDED</EndToEndId>
+            </Refs>
+            <Amt Ccy="CHF">120</Amt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+            <AmtDtls>
+              <InstdAmt>
+                <Amt Ccy="CHF">120</Amt>
+              </InstdAmt>
+              <TxAmt>
+                <Amt Ccy="CHF">120</Amt>
+              </TxAmt>
+            </AmtDtls>
+            <RltdPties>
+              <Dbtr>
+                <Nm>Taro Okane</Nm>
+                <PstlAdr>
+                  <AdrLine>Switzerland strasse</AdrLine>
+                  <AdrLine>3001 Bern</AdrLine>
+                </PstlAdr>
+              </Dbtr>
+              <Cdtr>
+                <Nm>OKANE VERSICHERUNGEN</Nm>
+                <PstlAdr>
+                  <AdrLine>0000 Okaneland</AdrLine>
+                </PstlAdr>
+              </Cdtr>
+              <CdtrAcct>
+                <Id>
+                  <Othr>
+                    <Id>01-99999-1</Id>
+                  </Othr>
+                </Id>
+              </CdtrAcct>
+            </RltdPties>
+            <RltdAgts>
+              <CdtrAgt>
+                <FinInstnId>
+                  <BICFI>SWIFTCODXXX</BICFI>
+                </FinInstnId>
+              </CdtrAgt>
+            </RltdAgts>
+            <RmtInf>
+              <Strd>
+                <CdtrRefInf>
+                  <Tp>
+                    <CdOrPrtry>
+                      <Prtry>ISR Reference</Prtry>
+                    </CdOrPrtry>
+                  </Tp>
+                  <Ref>349583490132958323452343498</Ref>
+                </CdtrRefInf>
+              </Strd>
+            </RmtInf>
+            <AddtlTxInf>Payment order 349583490132958323452343498</AddtlTxInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Payment order</AddtlNtryInf>
+      </Ntry>
+
+      <Ntry>
+        <Amt Ccy="CHF">10.1</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <RvslInd>false</RvslInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2021-10-05</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2021-10-04</Dt>
+        </ValDt>
+        <BkTxCd>
+          <Domn>
+            <Cd>PMNT</Cd>
+            <Fmly>
+              <Cd>ICDT</Cd>
+              <SubFmlyCd>OTHR</SubFmlyCd>
+            </Fmly>
+          </Domn>
+        </BkTxCd>
+        <NtryDtls>
+          <Btch>
+            <NbOfTxs>1</NbOfTxs>
+            <TtlAmt Ccy="CHF">10.1</TtlAmt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+          </Btch>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>20211031/4/1</AcctSvcrRef>
+              <InstrId>00000000</InstrId>
+              <EndToEndId>141421356</EndToEndId>
+            </Refs>
+            <Amt Ccy="CHF">10.1</Amt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+            <AmtDtls>
+              <InstdAmt>
+                <Amt Ccy="CHF">10.1</Amt>
+              </InstdAmt>
+              <TxAmt>
+                <Amt Ccy="CHF">10.1</Amt>
+              </TxAmt>
+            </AmtDtls>
+            <RltdPties>
+              <Dbtr>
+                <Nm>NOTPROVIDED</Nm>
+              </Dbtr>
+              <Cdtr>
+                <Nm>Taro Okane</Nm>
+                <PstlAdr>
+                  <AdrLine>Switzerland strasse</AdrLine>
+                  <AdrLine>3001 Bern</AdrLine>
+                </PstlAdr>
+              </Cdtr>
+            </RltdPties>
+            <RmtInf>
+              <Ustrd>04.10.2021 17:48 山田商店 Card number: 141421356</Ustrd>
+            </RmtInf>
+            <AddtlTxInf>Okanecard purchase 04.10.2021 17:48 山田商店 Card number: 141421356</AddtlTxInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Okanecard purchase 04.10.2021 17:48 山田商店 Card number: 141421356</AddtlNtryInf>
+      </Ntry>
+
+      <Ntry>
+        <Amt Ccy="CHF">14.15</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <RvslInd>false</RvslInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2021-10-05</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2021-10-05</Dt>
+        </ValDt>
+        <BkTxCd>
+          <Domn>
+            <Cd>PMNT</Cd>
+            <Fmly>
+              <Cd>ICDT</Cd>
+              <SubFmlyCd>OTHR</SubFmlyCd>
+            </Fmly>
+          </Domn>
+        </BkTxCd>
+        <Chrgs>
+          <TtlChrgsAndTaxAmt Ccy="CHF">1.5</TtlChrgsAndTaxAmt>
+          <Rcrd>
+            <Amt Ccy="CHF">1.5</Amt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+            <ChrgInclInd>true</ChrgInclInd>
+            <Tp>
+              <Prtry>
+                <Id>Fccy commission</Id>
+              </Prtry>
+            </Tp>
+            <Br>DEBT</Br>
+          </Rcrd>
+        </Chrgs>
+        <NtryDtls>
+          <Btch>
+            <NbOfTxs>1</NbOfTxs>
+            <TtlAmt Ccy="CHF">14.15</TtlAmt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+          </Btch>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>20211031/5/1</AcctSvcrRef>
+              <InstrId>00000000</InstrId>
+              <EndToEndId>141421356</EndToEndId>
+            </Refs>
+            <Amt Ccy="CHF">14.15</Amt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+            <AmtDtls>
+              <InstdAmt>
+                <Amt Ccy="EUR">11.6</Amt>
+              </InstdAmt>
+              <TxAmt>
+                <Amt Ccy="EUR">11.58</Amt>
+                <CcyXchg>
+                  <SrcCcy>CHF</SrcCcy>
+                  <TrgtCcy>EUR</TrgtCcy>
+                  <XchgRate>1.092059</XchgRate>
+                  <!-- TODO: hidden fee calcuration -->
+                  <!-- original rate: 1.0752, 1.55%? -->
+                </CcyXchg>
+              </TxAmt>
+            </AmtDtls>
+            <Chrgs>
+              <Rcrd>
+                <Amt Ccy="EUR">.02</Amt>
+                <CdtDbtInd>DBIT</CdtDbtInd>
+                <ChrgInclInd>true</ChrgInclInd>
+                <Tp>
+                  <Prtry>
+                    <Id>CR.over.com.POS</Id>
+                  </Prtry>
+                </Tp>
+                <Br>CRED</Br>
+              </Rcrd>
+            </Chrgs>
+            <RltdPties>
+              <Dbtr>
+                <Nm>NOTPROVIDED</Nm>
+              </Dbtr>
+              <Cdtr>
+                <Nm>Taro Okane</Nm>
+                <PstlAdr>
+                  <AdrLine>Switzerland strasse</AdrLine>
+                  <AdrLine>3001 Bern</AdrLine>
+                </PstlAdr>
+              </Cdtr>
+            </RltdPties>
+            <RmtInf>
+              <Ustrd>05.10.2021 12:19 EURO GROCERY Card number: 141421356</Ustrd>
+            </RmtInf>
+            <AddtlTxInf>Okanecard purchase 05.10.2021 12:19 EURO GROCERY Card number: 141421356</AddtlTxInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Okanecard purchase 05.10.2021 12:19 EURO GROCERY Card number: 141421356</AddtlNtryInf>
+      </Ntry>
+
+      <Ntry>
+        <Amt Ccy="CHF">24.75</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <RvslInd>false</RvslInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2021-10-06</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2021-10-06</Dt>
+        </ValDt>
+        <BkTxCd>
+          <Domn>
+            <Cd>PMNT</Cd>
+            <Fmly>
+              <Cd>ICDT</Cd>
+              <SubFmlyCd>AUTT</SubFmlyCd>
+            </Fmly>
+          </Domn>
+        </BkTxCd>
+        <NtryDtls>
+          <Btch>
+            <NbOfTxs>1</NbOfTxs>
+            <TtlAmt Ccy="CHF">24.75</TtlAmt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+          </Btch>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>20211031/6/1</AcctSvcrRef>
+              <InstrId>0400000201232434</InstrId>
+              <EndToEndId>NOTPROVIDED</EndToEndId>
+            </Refs>
+            <Amt Ccy="CHF">24.75</Amt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+            <AmtDtls>
+              <InstdAmt>
+                <Amt Ccy="CHF">24.75</Amt>
+              </InstdAmt>
+              <TxAmt>
+                <Amt Ccy="CHF">24.75</Amt>
+              </TxAmt>
+            </AmtDtls>
+            <RltdPties>
+              <Dbtr>
+                <Nm>Taro Yamada</Nm>
+                <PstlAdr>
+                  <AdrLine>Switzerland strasse</AdrLine>
+                  <AdrLine>3000 Bern</AdrLine>
+                </PstlAdr>
+              </Dbtr>
+              <Cdtr>
+                <Nm>NOTPROVIDED</Nm>
+              </Cdtr>
+            </RltdPties>
+            <RltdAgts>
+              <CdtrAgt>
+                <FinInstnId>
+                  <BICFI>OKANESWIFTXXX</BICFI>
+                </FinInstnId>
+              </CdtrAgt>
+            </RltdAgts>
+            <AddtlTxInf>Okane Pay Hanako Steinmann 0400000132142545</AddtlTxInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Okane Pay Hanako Steinmann 0400000132142545</AddtlNtryInf>
+      </Ntry>
+
+      <Ntry>
+        <Amt Ccy="CHF">52</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <RvslInd>false</RvslInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2021-10-08</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2021-10-07</Dt>
+        </ValDt>
+        <BkTxCd>
+          <Domn>
+            <Cd>PMNT</Cd>
+            <Fmly>
+              <Cd>ICDT</Cd>
+              <SubFmlyCd>OTHR</SubFmlyCd>
+            </Fmly>
+          </Domn>
+        </BkTxCd>
+        <Chrgs>
+          <TtlChrgsAndTaxAmt Ccy="CHF">2</TtlChrgsAndTaxAmt>
+          <Rcrd>
+            <Amt Ccy="CHF">2</Amt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+            <ChrgInclInd>true</ChrgInclInd>
+            <Tp>
+              <Prtry>
+                <Id>Withdr. charges</Id>
+              </Prtry>
+            </Tp>
+            <Br>DEBT</Br>
+          </Rcrd>
+        </Chrgs>
+        <NtryDtls>
+          <Btch>
+            <NbOfTxs>1</NbOfTxs>
+            <TtlAmt Ccy="CHF">52</TtlAmt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+          </Btch>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>20211031/7/1</AcctSvcrRef>
+              <InstrId>00056812</InstrId>
+              <EndToEndId>141421356</EndToEndId>
+            </Refs>
+            <Amt Ccy="CHF">52</Amt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+            <AmtDtls>
+              <InstdAmt>
+                <Amt Ccy="CHF">50</Amt>
+              </InstdAmt>
+              <TxAmt>
+                <Amt Ccy="CHF">50</Amt>
+              </TxAmt>
+            </AmtDtls>
+            <RltdPties>
+              <Dbtr>
+                <Nm>NOTPROVIDED</Nm>
+              </Dbtr>
+              <Cdtr>
+                <Nm>Taro Yamada</Nm>
+                <PstlAdr>
+                  <AdrLine>Switzerland strasse</AdrLine>
+                  <AdrLine>3000 Bern</AdrLine>
+                </PstlAdr>
+              </Cdtr>
+            </RltdPties>
+            <RmtInf>
+              <Ustrd>07.10.2021 19:33 OTHER BANK NAIROBI Card number: 141421356</Ustrd>
+            </RmtInf>
+            <AddtlTxInf>Cash Point 07.10.2021 19:33 OTHER BANK NAIROBI Card number: 141421356</AddtlTxInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Cash Point 07.10.2021 19:33 OTHER BANK NAIROBI Card number: 141421356</AddtlNtryInf>
+      </Ntry>
+
+      <Ntry>
+        <Amt Ccy="CHF">437.6</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <RvslInd>false</RvslInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2021-10-10</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2021-10-08</Dt>
+        </ValDt>
+        <BkTxCd>
+          <Domn>
+            <Cd>PMNT</Cd>
+            <Fmly>
+              <Cd>ICDT</Cd>
+              <SubFmlyCd>OTHR</SubFmlyCd>
+            </Fmly>
+          </Domn>
+        </BkTxCd>
+        <NtryDtls>
+          <Btch>
+            <NbOfTxs>1</NbOfTxs>
+            <TtlAmt Ccy="CHF">437.6</TtlAmt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+          </Btch>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>20211031/8/1</AcctSvcrRef>
+              <InstrId>00041350</InstrId>
+              <EndToEndId>141421356</EndToEndId>
+            </Refs>
+            <Amt Ccy="CHF">437.6</Amt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+            <AmtDtls>
+              <InstdAmt>
+                <Amt Ccy="EUR">400</Amt>
+              </InstdAmt>
+              <TxAmt>
+                <Amt Ccy="EUR">400</Amt>
+                <CcyXchg>
+                  <SrcCcy>CHF</SrcCcy>
+                  <TrgtCcy>EUR</TrgtCcy>
+                  <XchgRate>1.094</XchgRate>
+                  <!-- TODO: Support hidden cost for the FX conversion. -->
+                  <!-- Original rate: 1.0752, 1.75%?	-->
+                </CcyXchg>
+              </TxAmt>
+            </AmtDtls>
+            <RltdPties>
+              <Dbtr>
+                <Nm>NOTPROVIDED</Nm>
+              </Dbtr>
+              <Cdtr>
+                <Nm>Taro Yamada</Nm>
+                <PstlAdr>
+                  <AdrLine>Switzerland strasse</AdrLine>
+                  <AdrLine>3000 Bern</AdrLine>
+                </PstlAdr>
+              </Cdtr>
+            </RltdPties>
+            <RmtInf>
+              <Ustrd>08.10.2021 09:20 OKANE BANK ATM Card number: 141421356</Ustrd>
+            </RmtInf>
+            <AddtlTxInf>Cash Point 08.10.2021 09:20 OKANE BANK ATM Card number: 141421356</AddtlTxInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Cash Point 08.10.2021 09:20 OKANE BANK ATM Card number: 141421356</AddtlNtryInf>
+      </Ntry>
+
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>
