@@ -1,0 +1,9 @@
+use std::path::{Path, PathBuf};
+
+use lazy_static::lazy_static;
+
+lazy_static! {
+    pub static ref TESTDATA_DIR: PathBuf =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/testdata");
+    pub static ref BIN_PATH: PathBuf = assert_cmd::cargo::cargo_bin(assert_cmd::crate_name!());
+}

@@ -1,14 +1,9 @@
+mod testing;
+
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
 
 use indoc::indoc;
-use lazy_static::lazy_static;
 use pretty_assertions::assert_eq;
-
-lazy_static! {
-    static ref TESTDATA_DIR: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/testdata");
-    static ref BIN_PATH: PathBuf = assert_cmd::cargo::cargo_bin(assert_cmd::crate_name!());
-}
 
 static IMPORT_CSV_INDEX_WANT: &str = indoc! {r#"
 2021/09/01 * cashback
@@ -28,8 +23,8 @@ static IMPORT_CSV_INDEX_WANT: &str = indoc! {r#"
 
 #[test]
 fn test_import_csv_index() {
-    let config = TESTDATA_DIR.join("test_config.yml");
-    let input = TESTDATA_DIR.join("index_amount.csv");
+    let config = testing::TESTDATA_DIR.join("test_config.yml");
+    let input = testing::TESTDATA_DIR.join("index_amount.csv");
 
     // Test with code invocation
     {
@@ -45,7 +40,7 @@ fn test_import_csv_index() {
     }
     // Test with cmd execution
     {
-        let result = assert_cmd::Command::new(&*BIN_PATH)
+        let result = assert_cmd::Command::new(&*testing::BIN_PATH)
             .args(&[config, input])
             .assert()
             .success();
@@ -74,8 +69,8 @@ static IMPORT_CSV_LABEL_WANT: &str = indoc! {r#"
 
 #[test]
 fn test_import_csv_label() {
-    let config = TESTDATA_DIR.join("test_config.yml");
-    let input = TESTDATA_DIR.join("label_credit_debit.csv");
+    let config = testing::TESTDATA_DIR.join("test_config.yml");
+    let input = testing::TESTDATA_DIR.join("label_credit_debit.csv");
 
     // Test with code invocation
     {
@@ -91,7 +86,7 @@ fn test_import_csv_label() {
     }
     // Test with command invocation
     {
-        let result = assert_cmd::Command::new(&*BIN_PATH)
+        let result = assert_cmd::Command::new(&*testing::BIN_PATH)
             .args(&[config, input])
             .assert()
             .success();
