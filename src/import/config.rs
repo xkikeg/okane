@@ -162,6 +162,7 @@ pub enum RewriteRule {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum RewriteMatcher {
+    Or(Vec<FieldMatcher>),
     Field(FieldMatcher),
 }
 
@@ -363,6 +364,10 @@ mod tests {
             account: Income:Salary
             payee: Okane Co. Ltd.
           - matcher:
+            - payee: Migros
+            - payee: Coop
+            account: Expenses:Grocery
+          - matcher:
               additional_transaction_info: Maestro(?P<payee>.*)
         "#};
         let config = load_from_yaml(input.as_bytes()).unwrap();
@@ -377,6 +382,22 @@ mod tests {
                 }),
                 payee: Some("Okane Co. Ltd.".to_string()),
                 account: Some("Income:Salary".to_string()),
+            },
+            RewriteRule::MatcherRule {
+                matcher: RewriteMatcher::Or(vec![
+                    FieldMatcher {
+                        fields: hashmap! {
+                            RewriteField::Payee => "Migros".to_string(),
+                        },
+                    },
+                    FieldMatcher {
+                        fields: hashmap! {
+                            RewriteField::Payee => "Coop".to_string(),
+                        },
+                    },
+                ]),
+                account: Some("Expenses:Grocery".to_string()),
+                payee: None,
             },
             RewriteRule::MatcherRule {
                 matcher: RewriteMatcher::Field(FieldMatcher {
