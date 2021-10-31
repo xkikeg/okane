@@ -90,6 +90,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "colored-diff"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "410208eb08c3f3ad44b95b51c4fc0d5993cbcc9dd39cfadb4214b9115a97dcb5"
+dependencies = [
+ "ansi_term",
+ "dissimilar",
+ "itertools",
+]
+
+[[package]]
 name = "csv"
 version = "1.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -167,6 +178,12 @@ name = "difflib"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6184e33543162437515c2e2b48714794e37845ec9851711914eec9d308f6ebe8"
+
+[[package]]
+name = "dissimilar"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31ad93652f40969dead8d4bf897a41e9462095152eb21c56e5830537e41179dd"
 
 [[package]]
 name = "doc-comment"
@@ -348,6 +365,7 @@ version = "0.1.0"
 dependencies = [
  "assert_cmd",
  "chrono",
+ "colored-diff",
  "csv",
  "encoding_rs",
  "encoding_rs_io",

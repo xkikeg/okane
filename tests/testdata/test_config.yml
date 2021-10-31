@@ -41,3 +41,53 @@ rewrite:
   - matcher:
       payee: Migros
     account: Expenses:Grocery
+---
+path: testdata/iso_camt.xml
+encoding: UTF-8
+account: Assets:Okane Bank
+account_type: asset
+operator: Okane Bank (fee)
+commodity: CHF
+format:
+  commodity:
+    CHF:
+      precision: 2
+    EUR:
+      precision: 2
+rewrite:
+  - matcher:
+      additional_transaction_info: "Okanecard purchase [0-9.]+ [0-9:]+ (?P<payee>.*) Card number: \\d+"
+  - matcher:
+      additional_transaction_info: "Okane Pay (?P<payee>.*) 0400000\\d+"
+  - matcher:
+      additional_transaction_info: "Cash Point [0-9.]+ [0-9:]+ (?P<payee>.*) Card number: \\d+"
+    account: Expenses:Cash
+  - matcher:
+      domain_code: PMNT
+      domain_family: ICDT
+      domain_sub_family: AUTT
+      creditor_name: "(?P<payee>.*)"
+      additional_transaction_info: "Payment order.*"
+  - matcher:
+      domain_code: PMNT
+      domain_family: RCDT
+      domain_sub_family: OTHR
+      debtor_name: Money Bank
+      ultimate_debtor_name: (?P<payee>.*)
+    account: Assets:Wire:Money Bank
+  - matcher:
+      domain_code: PMNT
+      domain_family: RCDT
+      domain_sub_family: SALA
+    account: Income:Salary
+    payee: Taro and Jiro
+  - matcher:
+      payee: "Herr.*Frau.*"
+    account: Expenses:House
+  - matcher:
+      payee: OKANE VERSICHERUNGEN
+    account: Expenses:Insurance
+  - matcher:
+      - payee: EURO GROCERY
+      - payee: 山田商店
+    account: Expenses:Grocery
