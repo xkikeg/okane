@@ -178,6 +178,10 @@ pub enum RewriteField {
     DomainCode,
     DomainFamily,
     DomainSubFamily,
+    CreditorName,
+    UltimateCreditorName,
+    DebtorName,
+    UltimateDebtorName,
     AdditionalTransactionInfo,
     Payee,
 }

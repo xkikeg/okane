@@ -184,8 +184,27 @@ enum ExtractMatch {
 
 #[derive(Debug, PartialEq)]
 enum MatchField {
+    CreditorName,
+    UltimateCreditorName,
+    DebtorName,
+    UltimateDebtorName,
     AdditionalTransactionInfo,
     Payee,
+}
+
+fn to_field(f: config::RewriteField) -> Result<MatchField, ImportError> {
+    match f {
+        config::RewriteField::CreditorName => Some(MatchField::CreditorName),
+        config::RewriteField::UltimateCreditorName => Some(MatchField::UltimateCreditorName),
+        config::RewriteField::DebtorName => Some(MatchField::DebtorName),
+        config::RewriteField::UltimateDebtorName => Some(MatchField::UltimateDebtorName),
+        config::RewriteField::AdditionalTransactionInfo => {
+            Some(MatchField::AdditionalTransactionInfo)
+        }
+        config::RewriteField::Payee => Some(MatchField::Payee),
+        _ => None,
+    }
+    .ok_or_else(|| ImportError::Other(format!("unknown match field: {:?}", f)))
 }
 
 fn to_extract_match(f: config::RewriteField, v: &str) -> Result<ExtractMatch, ImportError> {
@@ -202,13 +221,10 @@ fn to_extract_match(f: config::RewriteField, v: &str) -> Result<ExtractMatch, Im
             let code = serde_yaml::from_str(v)?;
             ExtractMatch::DomainSubFamily(code)
         }
-        config::RewriteField::AdditionalTransactionInfo => {
+        _ => {
             let pattern = Regex::new(v)?;
-            ExtractMatch::FieldMatch(MatchField::AdditionalTransactionInfo, pattern)
-        }
-        config::RewriteField::Payee => {
-            let pattern = Regex::new(v)?;
-            ExtractMatch::FieldMatch(MatchField::Payee, pattern)
+            let field = to_field(f)?;
+            ExtractMatch::FieldMatch(field, pattern)
         }
     })
 }
@@ -239,6 +255,18 @@ impl ExtractMatch {
             }
             ExtractMatch::FieldMatch(fd, re) => {
                 let target: Option<&str> = match fd {
+                    MatchField::CreditorName => {
+                        transaction.map(|t| t.related_parties.creditor.name.as_str())
+                    }
+                    MatchField::UltimateCreditorName => transaction
+                        .and_then(|t| t.related_parties.ultimate_creditor.as_ref())
+                        .map(|ud| ud.name.as_str()),
+                    MatchField::DebtorName => {
+                        transaction.map(|t| t.related_parties.debtor.name.as_str())
+                    }
+                    MatchField::UltimateDebtorName => transaction
+                        .and_then(|t| t.related_parties.ultimate_debtor.as_ref())
+                        .map(|ud| ud.name.as_str()),
                     MatchField::AdditionalTransactionInfo => {
                         transaction.map(|t| t.additional_info.as_str())
                     }
