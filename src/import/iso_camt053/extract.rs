@@ -69,23 +69,12 @@ impl<'a> TryFrom<&'a config::RewriteRule> for ExtractRule<'a> {
     type Error = ImportError;
 
     fn try_from(config_rule: &'a config::RewriteRule) -> Result<Self, Self::Error> {
-        match config_rule {
-            config::RewriteRule::LegacyRule { .. } => Err(ImportError::Unimplemented(
-                "LegacyRule not supported for ISO Camt",
-            )),
-            config::RewriteRule::MatcherRule {
-                matcher,
-                payee,
-                account,
-            } => {
-                let match_expr = matcher.try_into()?;
-                Ok(ExtractRule {
-                    match_expr,
-                    payee: payee.as_ref().map(String::as_str),
-                    account: account.as_ref().map(String::as_str),
-                })
-            }
-        }
+        let match_expr = (&config_rule.matcher).try_into()?;
+        Ok(ExtractRule {
+            match_expr,
+            payee: config_rule.payee.as_deref(),
+            account: config_rule.account.as_deref(),
+        })
     }
 }
 
@@ -438,7 +427,7 @@ mod tests {
 
     #[test]
     fn test_from_config_single_match() {
-        let rw = vec![config::RewriteRule::MatcherRule {
+        let rw = vec![config::RewriteRule {
             matcher: config::RewriteMatcher::Field(config::FieldMatcher {
                 fields: hashmap! {
                     config::RewriteField::DomainCode => "PMNT".to_string(),
@@ -470,7 +459,7 @@ mod tests {
     #[test]
     fn test_from_config_multi_match() {
         let rw = vec![
-            config::RewriteRule::MatcherRule {
+            config::RewriteRule {
                 matcher: config::RewriteMatcher::Field(config::FieldMatcher {
                     fields: hashmap! {
                         config::RewriteField::AdditionalTransactionInfo => r#"Some card (?P<payee>.*)"#.to_string(),
@@ -479,7 +468,7 @@ mod tests {
                 payee: None,
                 account: None,
             },
-            config::RewriteRule::MatcherRule {
+            config::RewriteRule {
                 matcher: config::RewriteMatcher::Or(vec![
                     config::FieldMatcher {
                         fields: hashmap! {
@@ -495,7 +484,7 @@ mod tests {
                 payee: None,
                 account: Some("Expenses:Grocery".to_string()),
             },
-            config::RewriteRule::MatcherRule {
+            config::RewriteRule {
                 matcher: config::RewriteMatcher::Field(config::FieldMatcher {
                     fields: hashmap! {
                         config::RewriteField::Payee => "Certain Petrol".to_string(),
@@ -562,25 +551,8 @@ mod tests {
     }
 
     #[test]
-    fn test_from_config_legacy_unsupported() {
-        let rw = vec![config::RewriteRule::LegacyRule {
-            payee: "foo".to_string(),
-            account: None,
-        }];
-        let result = from_config_rewrite(&rw).unwrap_err();
-        match result {
-            ImportError::Unimplemented(x) => {
-                assert_eq!("LegacyRule not supported for ISO Camt", x);
-            }
-            _ => {
-                panic!("unexpected type of error: {:?}", result);
-            }
-        }
-    }
-
-    #[test]
     fn test_from_config_invalid_domain_code() {
-        let rw = vec![config::RewriteRule::MatcherRule {
+        let rw = vec![config::RewriteRule {
             matcher: config::RewriteMatcher::Field(config::FieldMatcher {
                 fields: hashmap! {
                     config::RewriteField::DomainCode => "foo".to_string(),
@@ -606,7 +578,7 @@ mod tests {
 
     #[test]
     fn test_from_config_invalid_regex() {
-        let rw = vec![config::RewriteRule::MatcherRule {
+        let rw = vec![config::RewriteRule {
             matcher: config::RewriteMatcher::Field(config::FieldMatcher {
                 fields: hashmap! {
                     config::RewriteField::AdditionalTransactionInfo => "*".to_string(),

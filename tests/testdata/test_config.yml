@@ -10,10 +10,13 @@ format:
     amount: 1
     payee: 2
 rewrite:
-  - payee: Debit Card (?P<code>\d+) (?P<payee>.*)
-  - payee: cashback
+  - matcher:
+      payee: Debit Card (?P<code>\d+) (?P<payee>.*)
+  - matcher:
+      payee: cashback
     account: Incomes:Misc
-  - payee: Migros
+  - matcher:
+      payee: Migros
     account: Expenses:Grocery
 ---
 path: testdata/label_credit_debit.csv
@@ -30,8 +33,11 @@ format:
     credit: 預け入れ額
     balance: 口座残高
 rewrite:
-  - payee: Debit Card (?P<code>\d+) (?P<payee>.*)
-  - payee: 五反田ATM
+  - matcher:
+      payee: Debit Card (?P<code>\d+) (?P<payee>.*)
+  - matcher:
+      payee: 五反田ATM
     account: Assets:Cash
-  - payee: Migros
+  - matcher:
+      payee: Migros
     account: Expenses:Grocery
