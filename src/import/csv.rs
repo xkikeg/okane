@@ -206,10 +206,39 @@ fn resolve_fields(
     })
 }
 
+struct OrPattern(Vec<regex::Regex>);
+
+impl OrPattern {
+    fn captures<'t>(&self, text: &'t str) -> Option<regex::Captures<'t>> {
+        self.0.iter().filter_map(|p| p.captures(text)).next()
+    }
+}
+
+impl config::RewriteMatcher {
+    fn to_pattern(&self) -> Result<OrPattern, ImportError> {
+        match self {
+            config::RewriteMatcher::Or(ms) => ms.iter().map(|x| x.to_payee_matcher()).collect(),
+            config::RewriteMatcher::Field(fm) => fm.to_payee_matcher().map(|x| vec![x]),
+        }
+        .map(OrPattern)
+    }
+}
+
+impl config::FieldMatcher {
+    fn to_payee_matcher(&self) -> Result<regex::Regex, ImportError> {
+        let payee = self.fields.get(&config::RewriteField::Payee).ok_or({
+            ImportError::Unimplemented("only payee field is supported")
+        })?;
+        regex::Regex::new(payee).map_err(ImportError::InvalidRegex)
+    }
+}
+
 struct RewriteElement {
-    payee: regex::Regex,
+    // matches any of the following pattern.
+    payee: OrPattern,
     account: Option<String>,
 }
+
 /// Holds rewrite config to provide rewrite method.
 struct Rewriter {
     elems: Vec<RewriteElement>,
@@ -218,20 +247,11 @@ struct Rewriter {
 fn new_rewriter(config: &config::ConfigEntry) -> Result<Rewriter, ImportError> {
     let mut elems = Vec::new();
     for rw in &config.rewrite {
-        match rw {
-            config::RewriteRule::LegacyRule { payee, account } => {
-                let re = regex::Regex::new(payee.as_str())?;
-                elems.push(RewriteElement {
-                    payee: re,
-                    account: account.clone(),
-                });
-            }
-            config::RewriteRule::MatcherRule { .. } => {
-                return Err(ImportError::Unimplemented(
-                    "MatcherRule not supported for CSV yet.",
-                ));
-            }
-        }
+        let m = rw.matcher.to_pattern()?;
+        elems.push(RewriteElement {
+            payee: m,
+            account: rw.account.clone(),
+        });
     }
     Ok(Rewriter { elems })
 }

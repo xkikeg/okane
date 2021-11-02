@@ -133,30 +133,17 @@ pub enum FieldPos {
 
 /// RewriteRule specifies the rewrite rule matched against transaction.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum RewriteRule {
-    MatcherRule {
-        /// matcher for the rewrite.
-        matcher: RewriteMatcher,
+pub struct RewriteRule {
+    /// matcher for the rewrite.
+    pub matcher: RewriteMatcher,
 
-        /// Payee to be set for the matched transaction.
-        #[serde(default)]
-        payee: Option<String>,
+    /// Payee to be set for the matched transaction.
+    #[serde(default)]
+    pub payee: Option<String>,
 
-        /// Account to be set for the matched transaction.
-        #[serde(default)]
-        account: Option<String>,
-    },
-    LegacyRule {
-        // Regular expression that matches with payee. It must be the entire match.
-        // It can have named pattern to replace these fields.
-        // - code
-        // - payee
-        payee: String,
-
-        // Account of the transaction matching against the rule.
-        account: Option<String>,
-    },
+    /// Account to be set for the matched transaction.
+    #[serde(default)]
+    pub account: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -282,8 +269,10 @@ mod tests {
                 debit: お引き出し額
                 balance: 差し引き残高
             rewrite:
-              - payee: Visaデビット　(?P<code>\d+)　(?P<payee>.*)
-              - payee: 外貨普通預金（.*）(?:へ|より)振替
+              - matcher:
+                  payee: Visaデビット　(?P<code>\d+)　(?P<payee>.*)
+              - matcher:
+                  payee: 外貨普通預金（.*）(?:へ|より)振替
                 account: Assets:Wire:Okane
         "#};
         let config = load_from_yaml(input.as_bytes()).unwrap();
@@ -295,12 +284,22 @@ mod tests {
             .unwrap();
         assert_eq!(*date, FieldPos::Label("お取り引き日".to_owned()));
         let rewrite = vec![
-            RewriteRule::LegacyRule {
-                payee: r#"Visaデビット　(?P<code>\d+)　(?P<payee>.*)"#.to_string(),
+            RewriteRule {
+                matcher: RewriteMatcher::Field(FieldMatcher {
+                    fields: hashmap! {
+                        RewriteField::Payee => r#"Visaデビット　(?P<code>\d+)　(?P<payee>.*)"#.to_string(),
+                    },
+                }),
+                payee: None,
                 account: None,
             },
-            RewriteRule::LegacyRule {
-                payee: "外貨普通預金（.*）(?:へ|より)振替".to_string(),
+            RewriteRule {
+                matcher: RewriteMatcher::Field(FieldMatcher {
+                    fields: hashmap! {
+                        RewriteField::Payee => "外貨普通預金（.*）(?:へ|より)振替".to_string(),
+                    },
+                }),
+                payee: None,
                 account: Some("Assets:Wire:Okane".to_string()),
             },
         ];
@@ -342,7 +341,7 @@ mod tests {
         account: Income:Salary
         "#};
         let de = serde_yaml::Deserializer::from_str(input);
-        let matcher = RewriteRule::MatcherRule {
+        let matcher = RewriteRule {
             matcher: RewriteMatcher::Field(FieldMatcher {
                 fields: hashmap! {RewriteField::DomainCode => "PMNT".to_string()},
             }),
@@ -376,7 +375,7 @@ mod tests {
         "#};
         let config = load_from_yaml(input.as_bytes()).unwrap();
         let rewrite = vec![
-            RewriteRule::MatcherRule {
+            RewriteRule {
                 matcher: RewriteMatcher::Field(FieldMatcher {
                     fields: hashmap! {
                         RewriteField::DomainCode => "PMNT".to_string(),
@@ -387,7 +386,7 @@ mod tests {
                 payee: Some("Okane Co. Ltd.".to_string()),
                 account: Some("Income:Salary".to_string()),
             },
-            RewriteRule::MatcherRule {
+            RewriteRule {
                 matcher: RewriteMatcher::Or(vec![
                     FieldMatcher {
                         fields: hashmap! {
@@ -403,7 +402,7 @@ mod tests {
                 account: Some("Expenses:Grocery".to_string()),
                 payee: None,
             },
-            RewriteRule::MatcherRule {
+            RewriteRule {
                 matcher: RewriteMatcher::Field(FieldMatcher {
                     fields: hashmap! {
                         RewriteField::AdditionalTransactionInfo => "Maestro(?P<payee>.*)".to_string(),
