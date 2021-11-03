@@ -1,3 +1,4 @@
+use crate::data;
 use crate::import::{self, Format, ImportError};
 
 use std::ffi::OsStr;
@@ -34,8 +35,16 @@ impl<'c> ImportCmd<'c> {
             .encoding(Some(config_entry.encoding.as_encoding()))
             .build(file);
         let xacts = import::import(&mut decoded, format, config_entry)?;
+        let ctx = data::DisplayContext {
+            precisions: config_entry
+                .format
+                .commodity
+                .iter()
+                .map(|(k, v)| (k.clone(), v.precision))
+                .collect(),
+        };
         for xact in &xacts {
-            writeln!(w, "{}", xact)?;
+            writeln!(w, "{}", xact.display(&ctx))?;
         }
         Ok(())
     }

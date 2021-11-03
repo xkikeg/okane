@@ -92,10 +92,19 @@ pub enum AccountType {
 #[derive(Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FormatSpec {
     /// Specify the date format, in chrono::format::strftime compatible format.
+    #[serde(default)]
     pub date: String,
+    /// Commodity (currency) styling
+    #[serde(default)]
+    pub commodity: HashMap<String, CommodityFormatSpec>,
     /// Mapping from abstracted field key to abstracted position.
     #[serde(default)]
     pub fields: HashMap<FieldKey, FieldPos>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct CommodityFormatSpec {
+    pub precision: u8,
 }
 
 /// Key represents the field abstracted way.
@@ -203,6 +212,7 @@ mod tests {
             commodity: "JPY".to_owned(),
             format: FormatSpec {
                 date: "%Y%m%d".to_owned(),
+                commodity: HashMap::new(),
                 fields: hashmap! {},
             },
             rewrite: vec![],

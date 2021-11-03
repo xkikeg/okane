@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fmt;
 
 use rust_decimal::Decimal;
@@ -101,25 +102,44 @@ fn print_clear_state(v: ClearState) -> &'static str {
     }
 }
 
-impl fmt::Display for Transaction {
+pub struct DisplayContext {
+    pub precisions: HashMap<String, u8>,
+}
+
+pub struct TransactionWithContext<'a> {
+    pub transaction: &'a Transaction,
+    pub context: &'a DisplayContext,
+}
+
+impl<'a> fmt::Display for TransactionWithContext<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.date.format("%Y/%m/%d"))?;
-        if let Some(edate) = &self.effective_date {
+        let xact = self.transaction;
+        write!(f, "{}", xact.date.format("%Y/%m/%d"))?;
+        if let Some(edate) = &xact.effective_date {
             write!(f, "={}", edate.format("%Y/%m/%d"))?;
         }
-        write!(f, " {}", print_clear_state(self.clear_state))?;
-        if let Some(code) = &self.code {
+        write!(f, " {}", print_clear_state(xact.clear_state))?;
+        if let Some(code) = &xact.code {
             write!(f, "({}) ", code)?;
         }
-        writeln!(f, "{}", self.payee)?;
-        for post in &self.posts {
+        writeln!(f, "{}", xact.payee)?;
+        for post in &xact.posts {
             let post_clear = print_clear_state(post.clear_state);
+            let mut v = post.amount.value;
+            v.rescale(std::cmp::max(
+                post.amount.value.scale(),
+                self.context
+                    .precisions
+                    .get(&post.amount.commodity)
+                    .cloned()
+                    .unwrap_or(0) as u32,
+            ));
             write!(
                 f,
                 "    {}{}{:>width$} {}",
                 post_clear,
                 post.account,
-                post.amount.value,
+                v,
                 post.amount.commodity,
                 width = 48 - post.account.len() - post_clear.len()
             )?;
@@ -132,11 +152,29 @@ impl fmt::Display for Transaction {
     }
 }
 
+impl Transaction {
+    pub fn display<'a>(&'a self, context: &'a DisplayContext) -> TransactionWithContext<'a> {
+        TransactionWithContext {
+            transaction: self,
+            context,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::NaiveDate;
+    use indoc::indoc;
+    use maplit::hashmap;
     use pretty_assertions::assert_eq;
+    use rust_decimal_macros::dec;
+
+    fn empty_context() -> DisplayContext {
+        DisplayContext {
+            precisions: hashmap! {},
+        }
+    }
 
     #[test]
     fn test_display_effective_date() {
@@ -151,7 +189,68 @@ mod tests {
 
         assert_eq!(
             "2021/04/04=2021/05/10 ! (#12345) Flower shop\n",
-            format!("{}", txn)
+            format!("{}", txn.display(&empty_context()))
         );
+    }
+
+    #[test]
+    fn test_display_with_precision() {
+        let txn = Transaction {
+            date: NaiveDate::from_ymd(2021, 4, 4),
+            effective_date: None,
+            clear_state: ClearState::Uncleared,
+            code: None,
+            payee: "FX conversion".to_string(),
+            posts: vec![
+                Post {
+                    account: "Income".to_string(),
+                    amount: Amount {
+                        commodity: "JPY".to_string(),
+                        value: -dec!(1000),
+                    },
+                    balance: None,
+                    clear_state: ClearState::Uncleared,
+                },
+                Post {
+                    account: "Asset".to_string(),
+                    amount: Amount {
+                        commodity: "USD".to_string(),
+                        value: dec!(10),
+                    },
+                    balance: None,
+                    clear_state: ClearState::Uncleared,
+                },
+                Post {
+                    account: "Commission".to_string(),
+                    amount: Amount {
+                        commodity: "EUR".to_string(),
+                        value: dec!(0.1),
+                    },
+                    balance: None,
+                    clear_state: ClearState::Uncleared,
+                },
+                Post {
+                    account: "Commission".to_string(),
+                    amount: Amount {
+                        commodity: "USD".to_string(),
+                        value: dec!(0.00123),
+                    },
+                    balance: None,
+                    clear_state: ClearState::Uncleared,
+                },
+            ],
+        };
+        let context = DisplayContext {
+            precisions: hashmap! {"USD".to_string() => 2},
+        };
+        let want = indoc! {"
+        2021/04/04 FX conversion
+            Income                                     -1000 JPY
+            Asset                                      10.00 USD
+            Commission                                   0.1 EUR
+            Commission                               0.00123 USD
+        "};
+
+        assert_eq!(want, format!("{}", txn.display(&context)));
     }
 }
