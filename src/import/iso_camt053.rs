@@ -52,10 +52,8 @@ impl super::Importer for ISOCamt053Importer {
                     res.push(txn);
                 }
                 for transaction in &entry.details.transactions {
-                    let amount = to_data_amount(
-                        transaction.credit_or_debit.value,
-                        &transaction.amount_details.instructed.amount,
-                    );
+                    let amount =
+                        to_data_amount(transaction.credit_or_debit.value, &transaction.amount);
                     let fragment = extractor.extract(&entry, Some(transaction));
                     let code = transaction.refs.account_servicer_reference.as_str();
                     if fragment.payee.is_none() {
@@ -71,6 +69,25 @@ impl super::Importer for ISOCamt053Importer {
                     txn.effective_date(entry.booking_date.date)
                         .code(code)
                         .dest_account_option(fragment.account);
+                    if transaction.amount != transaction.amount_details.transaction.amount {
+                        txn.exchanged_amount(data::ExchangedAmount {
+                            amount: to_data_amount(
+                                transaction.credit_or_debit.value,
+                                &transaction.amount_details.transaction.amount,
+                            ),
+                            exchange: transaction
+                                .amount_details
+                                .transaction
+                                .currency_exchange
+                                .as_ref()
+                                .map(|x| {
+                                    data::Exchange::Rate(data::Amount {
+                                        value: x.exchange_rate.value,
+                                        commodity: x.source_currency.clone(),
+                                    })
+                                }),
+                        });
+                    }
                     res.push(txn);
                 }
             }

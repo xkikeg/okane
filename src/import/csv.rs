@@ -226,9 +226,10 @@ impl config::RewriteMatcher {
 
 impl config::FieldMatcher {
     fn to_payee_matcher(&self) -> Result<regex::Regex, ImportError> {
-        let payee = self.fields.get(&config::RewriteField::Payee).ok_or({
-            ImportError::Unimplemented("only payee field is supported")
-        })?;
+        let payee = self
+            .fields
+            .get(&config::RewriteField::Payee)
+            .ok_or(ImportError::Unimplemented("only payee field is supported"))?;
         regex::Regex::new(payee).map_err(ImportError::InvalidRegex)
     }
 }
