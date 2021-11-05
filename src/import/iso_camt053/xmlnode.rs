@@ -182,6 +182,8 @@ pub struct Batch {
 pub struct TransactionDetails {
     #[serde(rename = "Refs")]
     pub refs: References,
+    #[serde(rename = "Amt")]
+    pub amount: Amount,
     #[serde(rename = "CdtDbtInd")]
     pub credit_or_debit: CreditDebitIndicator,
     #[serde(rename = "AmtDtls")]

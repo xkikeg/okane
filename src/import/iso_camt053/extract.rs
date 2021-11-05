@@ -392,6 +392,10 @@ mod tests {
                 credit_or_debit: xmlnode::CreditDebitIndicator {
                     value: xmlnode::CreditOrDebit::Credit,
                 },
+                amount: xmlnode::Amount {
+                    value: dec!(12.3),
+                    currency: "CHF".to_string(),
+                },
                 amount_details: xmlnode::AmountDetails {
                     instructed: xmlnode::AmountWithExchange {
                         amount: xmlnode::Amount {

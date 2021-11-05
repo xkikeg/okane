@@ -42,6 +42,9 @@ pub struct ConfigEntry {
     pub encoding: Encoding,
     pub account: String,
     pub account_type: AccountType,
+    /// Operator of the import target.
+    /// Required only when some charges happen.
+    pub operator: Option<String>,
     pub commodity: String,
     #[serde(default)]
     pub format: FormatSpec,
@@ -209,6 +212,7 @@ mod tests {
             encoding: Encoding(encoding_rs::UTF_8),
             path: path.to_owned(),
             account_type: AccountType::Asset,
+            operator: None,
             commodity: "JPY".to_owned(),
             format: FormatSpec {
                 date: "%Y%m%d".to_owned(),

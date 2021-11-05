@@ -20,6 +20,9 @@ pub struct Txn {
     /// Destination account.
     dest_account: Option<String>,
 
+    /// amount in exchanged rate.
+    transferred_amount: Option<data::ExchangedAmount>,
+
     /// Amount of the transaction, applied for the associated account.
     /// For bank account, positive means deposit, negative means withdraw.
     /// For credit card account, negative means expense, positive means payment to the card.
@@ -36,6 +39,7 @@ impl Txn {
             code: None,
             payee: payee.to_string(),
             dest_account: None,
+            transferred_amount: None,
             amount,
             balance: None,
         }
@@ -69,6 +73,24 @@ impl Txn {
         self
     }
 
+    pub fn transferred_amount(&mut self, amount: data::ExchangedAmount) -> &mut Txn {
+        self.transferred_amount = Some(amount);
+        self
+    }
+
+    fn dest_amount(&self) -> data::ExchangedAmount {
+        self.transferred_amount
+            .as_ref()
+            .map(|x| data::ExchangedAmount {
+                amount: -x.amount.clone(),
+                exchange: x.exchange.clone(),
+            })
+            .unwrap_or(data::ExchangedAmount {
+                amount: -self.amount.clone(),
+                exchange: None,
+            })
+    }
+
     pub fn balance(&mut self, balance: data::Amount) -> &mut Txn {
         self.balance = Some(balance);
         self
@@ -87,20 +109,26 @@ impl Txn {
                     .clone()
                     .unwrap_or_else(|| "Incomes:Unknown".to_string()),
                 clear_state: post_clear,
-                amount: -self.amount.clone(),
+                amount: self.dest_amount(),
                 balance: None,
             });
             posts.push(data::Post {
                 account: src_account.to_string(),
                 clear_state: data::ClearState::Uncleared,
-                amount: self.amount.clone(),
+                amount: data::ExchangedAmount {
+                    amount: self.amount.clone(),
+                    exchange: None,
+                },
                 balance: self.balance.clone(),
             });
         } else if self.amount.is_sign_negative() {
             posts.push(data::Post {
                 account: src_account.to_string(),
                 clear_state: data::ClearState::Uncleared,
-                amount: self.amount.clone(),
+                amount: data::ExchangedAmount {
+                    amount: self.amount.clone(),
+                    exchange: None,
+                },
                 balance: self.balance.clone(),
             });
             posts.push(data::Post {
@@ -109,7 +137,7 @@ impl Txn {
                     .clone()
                     .unwrap_or_else(|| "Expenses:Unknown".to_string()),
                 clear_state: post_clear,
-                amount: -self.amount.clone(),
+                amount: self.dest_amount(),
                 balance: None,
             });
         } else {
