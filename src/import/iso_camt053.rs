@@ -70,7 +70,7 @@ impl super::Importer for ISOCamt053Importer {
                         .code(code)
                         .dest_account_option(fragment.account);
                     if transaction.amount != transaction.amount_details.transaction.amount {
-                        txn.exchanged_amount(data::ExchangedAmount {
+                        txn.transferred_amount(data::ExchangedAmount {
                             amount: to_data_amount(
                                 transaction.credit_or_debit.value,
                                 &transaction.amount_details.transaction.amount,

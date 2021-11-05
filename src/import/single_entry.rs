@@ -21,7 +21,7 @@ pub struct Txn {
     dest_account: Option<String>,
 
     /// amount in exchanged rate.
-    exchanged_amount: Option<data::ExchangedAmount>,
+    transferred_amount: Option<data::ExchangedAmount>,
 
     /// Amount of the transaction, applied for the associated account.
     /// For bank account, positive means deposit, negative means withdraw.
@@ -39,7 +39,7 @@ impl Txn {
             code: None,
             payee: payee.to_string(),
             dest_account: None,
-            exchanged_amount: None,
+            transferred_amount: None,
             amount,
             balance: None,
         }
@@ -73,13 +73,13 @@ impl Txn {
         self
     }
 
-    pub fn exchanged_amount(&mut self, amount: data::ExchangedAmount) -> &mut Txn {
-        self.exchanged_amount = Some(amount);
+    pub fn transferred_amount(&mut self, amount: data::ExchangedAmount) -> &mut Txn {
+        self.transferred_amount = Some(amount);
         self
     }
 
     fn dest_amount(&self) -> data::ExchangedAmount {
-        self.exchanged_amount
+        self.transferred_amount
             .as_ref()
             .map(|x| data::ExchangedAmount {
                 amount: -x.amount.clone(),
