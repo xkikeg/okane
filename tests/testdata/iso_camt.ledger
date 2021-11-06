@@ -21,8 +21,8 @@
 2021/10/05 * (20211031/5/1) EURO GROCERY
     Assets:Okane Bank                         -14.15 CHF
     Expenses:Grocery                           11.58 EUR @ 1.092059 CHF
-    Expenses:Commissions                       -1.50 CHF  ; Payee: Okane Bank (fee)
-    Expenses:Commissions                       -0.02 EUR  ; Payee: Okane Bank (fee)
+    Expenses:Commissions                        1.50 CHF  ; Payee: Okane Bank (fee)
+    Expenses:Commissions                        0.02 EUR  ; Payee: Okane Bank (fee)
 
 2021/10/06 * (20211031/6/1) Hanako Steinmann
     Assets:Okane Bank                         -24.75 CHF
@@ -31,7 +31,7 @@
 2021/10/07=2021/10/08 * (20211031/7/1) OTHER BANK NAIROBI
     Assets:Okane Bank                         -52.00 CHF
     Expenses:Cash                              50.00 CHF
-    Expenses:Commissions                       -2.00 CHF  ; Payee: Okane Bank (fee)
+    Expenses:Commissions                        2.00 CHF  ; Payee: Okane Bank (fee)
 
 2021/10/08=2021/10/10 * (20211031/8/1) OKANE BANK ATM
     Assets:Okane Bank                        -437.60 CHF
