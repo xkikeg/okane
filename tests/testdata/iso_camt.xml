@@ -246,6 +246,17 @@
                 <Amt Ccy="CHF">1880</Amt>
               </TxAmt>
             </AmtDtls>
+            <Chrgs>
+              <Rcrd>
+                <Amt Ccy="CHF">0</Amt>
+                <CdtDbtInd>CRDT</CdtDbtInd>
+                <Tp>
+                  <Prtry>
+                    <Id>SHAR</Id>
+                  </Prtry>
+                </Tp>
+              </Rcrd>
+            </Chrgs>
             <RltdPties>
               <Dbtr>
                 <Nm>Taro Yamada</Nm>
