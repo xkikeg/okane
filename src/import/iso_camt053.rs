@@ -103,6 +103,9 @@ fn add_charges(
 ) -> Result<(), ImportError> {
     if let Some(charges) = &charges {
         for cr in &charges.records {
+            if cr.amount.value.is_zero() {
+                continue
+            }
             if !cr.is_charge_included {
                 return Err(ImportError::Unimplemented("ChrgInclInd=false unsupported"));
             }
