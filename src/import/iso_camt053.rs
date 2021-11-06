@@ -23,14 +23,9 @@ impl super::Importer for ISOCamt053Importer {
         let mut res = Vec::new();
         for stmt in doc.bank_to_customer.statements {
             for entry in stmt.entries {
-                if entry.charges.is_some() && entry.details.batch.number_of_transactions > 1 {
-                    return Err(ImportError::Unimplemented(
-                        "charge with multi batch transaction isn't supported",
-                    ));
-                }
                 if entry.details.transactions.is_empty() {
                     // TODO(kikeg): Fix this code repetition.
-                    let amount = to_data_amount(entry.credit_or_debit.value, &entry.amount);
+                    let amount = entry.amount.to_data(entry.credit_or_debit.value);
                     let fragment = extractor.extract(&entry, None);
                     if fragment.payee.is_none() {
                         log::warn!("payee not set @ {:?} {:?}", entry.booking_date, amount);
@@ -49,11 +44,13 @@ impl super::Importer for ISOCamt053Importer {
                     );
                     txn.effective_date(entry.booking_date.date)
                         .dest_account_option(fragment.account);
+                    add_charges(&mut txn, config, &entry.charges)?;
                     res.push(txn);
                 }
                 for transaction in &entry.details.transactions {
-                    let amount =
-                        to_data_amount(transaction.credit_or_debit.value, &transaction.amount);
+                    let amount = transaction
+                        .amount
+                        .to_data(transaction.credit_or_debit.value);
                     let fragment = extractor.extract(&entry, Some(transaction));
                     let code = transaction.refs.account_servicer_reference.as_str();
                     if fragment.payee.is_none() {
@@ -71,10 +68,11 @@ impl super::Importer for ISOCamt053Importer {
                         .dest_account_option(fragment.account);
                     if transaction.amount != transaction.amount_details.transaction.amount {
                         txn.transferred_amount(data::ExchangedAmount {
-                            amount: to_data_amount(
-                                transaction.credit_or_debit.value,
-                                &transaction.amount_details.transaction.amount,
-                            ),
+                            amount: transaction
+                                .amount_details
+                                .transaction
+                                .amount
+                                .to_data(transaction.credit_or_debit.value),
                             exchange: transaction
                                 .amount_details
                                 .transaction
@@ -88,6 +86,8 @@ impl super::Importer for ISOCamt053Importer {
                                 }),
                         });
                     }
+                    add_charges(&mut txn, config, &entry.charges)?;
+                    add_charges(&mut txn, config, &transaction.charges)?;
                     res.push(txn);
                 }
             }
@@ -96,15 +96,33 @@ impl super::Importer for ISOCamt053Importer {
     }
 }
 
-fn to_data_amount(
-    credit_or_debit: xmlnode::CreditOrDebit,
-    amount: &xmlnode::Amount,
-) -> data::Amount {
-    data::Amount {
-        value: match credit_or_debit {
-            xmlnode::CreditOrDebit::Credit => amount.value,
-            xmlnode::CreditOrDebit::Debit => -amount.value,
-        },
-        commodity: amount.currency.clone(),
+fn add_charges(
+    txn: &mut single_entry::Txn,
+    config: &config::ConfigEntry,
+    charges: &Option<xmlnode::Charges>,
+) -> Result<(), ImportError> {
+    if let Some(charges) = &charges {
+        for cr in &charges.records {
+            if !cr.is_charge_included {
+                return Err(ImportError::Unimplemented("ChrgInclInd=false unsupported"));
+            }
+            let payee = config.operator.as_ref().ok_or(ImportError::InvalidConfig(
+                "config should have operator to have charge",
+            ))?;
+            txn.add_charge(payee, cr.amount.to_data(cr.credit_or_debit.value));
+        }
+    }
+    Ok(())
+}
+
+impl xmlnode::Amount {
+    fn to_data(&self, credit_or_debit: xmlnode::CreditOrDebit) -> data::Amount {
+        data::Amount {
+            value: match credit_or_debit {
+                xmlnode::CreditOrDebit::Credit => self.value,
+                xmlnode::CreditOrDebit::Debit => -self.value,
+            },
+            commodity: self.currency.clone(),
+        }
     }
 }
