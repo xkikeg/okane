@@ -166,7 +166,7 @@ impl Txn {
                 account: "Expenses:Commissions".to_string(),
                 clear_state: data::ClearState::Uncleared,
                 amount: data::ExchangedAmount{
-                    amount: chrg.amount.clone(),
+                    amount: -chrg.amount.clone(),
                     exchange: None,
                 },
                 balance: None,
