@@ -29,6 +29,13 @@ pub struct Txn {
     amount: data::Amount,
 
     balance: Option<data::Amount>,
+
+    charges: Vec<Charge>,
+}
+
+struct Charge {
+    payee: String,
+    amount: data::Amount,
 }
 
 impl Txn {
@@ -42,6 +49,7 @@ impl Txn {
             transferred_amount: None,
             amount,
             balance: None,
+            charges: Vec::new(),
         }
     }
 
@@ -78,6 +86,11 @@ impl Txn {
         self
     }
 
+    pub fn add_charge<'a>(&'a mut self, payee: &str, amount: data::Amount) -> &'a mut Txn {
+        self.charges.push(Charge{payee: payee.to_string(), amount});
+        self
+    }
+
     fn dest_amount(&self) -> data::ExchangedAmount {
         self.transferred_amount
             .as_ref()
@@ -111,6 +124,7 @@ impl Txn {
                 clear_state: post_clear,
                 amount: self.dest_amount(),
                 balance: None,
+                payee: None,
             });
             posts.push(data::Post {
                 account: src_account.to_string(),
@@ -120,6 +134,7 @@ impl Txn {
                     exchange: None,
                 },
                 balance: self.balance.clone(),
+                payee: None,
             });
         } else if self.amount.is_sign_negative() {
             posts.push(data::Post {
@@ -130,6 +145,7 @@ impl Txn {
                     exchange: None,
                 },
                 balance: self.balance.clone(),
+                payee: None,
             });
             posts.push(data::Post {
                 account: self
@@ -139,10 +155,23 @@ impl Txn {
                 clear_state: post_clear,
                 amount: self.dest_amount(),
                 balance: None,
+                payee: None,
             });
         } else {
             // warning log or error?
             return Err(ImportError::Other("credit and debit both zero".to_string()));
+        }
+        for chrg in &self.charges {
+            posts.push(data::Post{
+                account: "Expenses:Commissions".to_string(),
+                clear_state: data::ClearState::Uncleared,
+                amount: data::ExchangedAmount{
+                    amount: chrg.amount.clone(),
+                    exchange: None,
+                },
+                balance: None,
+                payee: Some(chrg.payee.clone()),
+            });
         }
         Ok(data::Transaction {
             date: self.date,

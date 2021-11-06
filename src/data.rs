@@ -36,6 +36,7 @@ pub struct Post {
     pub clear_state: ClearState,
     pub amount: ExchangedAmount,
     pub balance: Option<Amount>,
+    pub payee: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -175,6 +176,9 @@ impl<'a> fmt::Display for TransactionWithContext<'a> {
                     balance.commodity
                 )?;
             }
+            if let Some(payee) = &post.payee {
+                write!(f, "  ; Payee: {}", payee)?;
+            }
             writeln!(f)?;
         }
         Ok(())
@@ -242,6 +246,7 @@ mod tests {
                     },
                     balance: None,
                     clear_state: ClearState::Uncleared,
+                    payee: None,
                 },
                 Post {
                     account: "Asset".to_string(),
@@ -260,6 +265,7 @@ mod tests {
                         value: dec!(10000),
                     }),
                     clear_state: ClearState::Uncleared,
+                    payee: None,
                 },
                 Post {
                     account: "Commission".to_string(),
@@ -275,6 +281,7 @@ mod tests {
                     },
                     balance: None,
                     clear_state: ClearState::Uncleared,
+                    payee: Some("bank x".to_string()),
                 },
                 Post {
                     account: "Commission".to_string(),
@@ -290,6 +297,7 @@ mod tests {
                     },
                     balance: None,
                     clear_state: ClearState::Uncleared,
+                    payee: None,
                 },
             ],
         };
@@ -300,7 +308,7 @@ mod tests {
         2021/04/04 FX conversion
             Income                                     -1000 JPY
             Asset                                      10.00 USD @@ 900 JPY = 10000.00 USD
-            Commission                                   0.1 EUR @@ 0.10 USD
+            Commission                                   0.1 EUR @@ 0.10 USD  ; Payee: bank x
             Commission                               0.00123 USD @ 1 EUR
         "};
 
