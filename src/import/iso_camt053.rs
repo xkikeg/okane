@@ -6,6 +6,8 @@ use super::single_entry;
 use super::ImportError;
 use crate::data;
 
+use rust_decimal::Decimal;
+
 pub struct ISOCamt053Importer {}
 
 impl super::Importer for ISOCamt053Importer {
@@ -22,6 +24,22 @@ impl super::Importer for ISOCamt053Importer {
         let doc: xmlnode::Document = quick_xml::de::from_reader(&mut buf)?;
         let mut res = Vec::new();
         for stmt in doc.bank_to_customer.statements {
+            if let Some(opening_balance) = find_balance(&stmt, xmlnode::BalanceCode::Opening) {
+                if let Some(first) = stmt.entries.first() {
+                    let mut txn = single_entry::Txn::new(
+                        first.value_date.date,
+                        "Initial Balance",
+                        data::Amount {
+                            commodity: opening_balance.commodity.clone(),
+                            value: Decimal::ZERO,
+                        },
+                    );
+                    txn.dest_account("Equity:Adjustments");
+                    txn.balance(opening_balance);
+                    res.push(txn);
+                }
+            }
+            let closing_balance = find_balance(&stmt, xmlnode::BalanceCode::Closing);
             for entry in stmt.entries {
                 if entry.details.transactions.is_empty() {
                     // TODO(kikeg): Fix this code repetition.
@@ -91,9 +109,22 @@ impl super::Importer for ISOCamt053Importer {
                     res.push(txn);
                 }
             }
+            if let Some(last_txn) = res.last_mut() {
+                if let Some(b) = closing_balance {
+                    last_txn.balance(b);
+                }
+            }
         }
         Ok(res)
     }
+}
+
+fn find_balance(stmt: &xmlnode::Statement, code: xmlnode::BalanceCode) -> Option<data::Amount> {
+    stmt.balance
+        .iter()
+        .filter(|x| x.balance_type.credit_or_property.code.value == code)
+        .map(|x| x.amount.to_data(x.credit_or_debit.value))
+        .next()
 }
 
 fn add_charges(
@@ -104,7 +135,7 @@ fn add_charges(
     if let Some(charges) = &charges {
         for cr in &charges.records {
             if cr.amount.value.is_zero() {
-                continue
+                continue;
             }
             if !cr.is_charge_included {
                 return Err(ImportError::Unimplemented("ChrgInclInd=false unsupported"));
