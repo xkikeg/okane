@@ -1,3 +1,7 @@
+2021/10/01 * Initial Balance
+    Equity:Adjustments                         -0.00 CHF
+    Assets:Okane Bank                           0.00 CHF = 100.00 CHF
+
 2021/10/01 * (20211031/1/1) Jiro Okane
     Assets:Wire:Money Bank                  -1000.00 CHF
     Assets:Okane Bank                        1000.00 CHF
@@ -34,6 +38,6 @@
     Expenses:Commissions                        2.00 CHF  ; Payee: Okane Bank (fee)
 
 2021/10/08=2021/10/10 * (20211031/8/1) OKANE BANK ATM
-    Assets:Okane Bank                        -437.60 CHF
+    Assets:Okane Bank                        -437.60 CHF = 4561.40 CHF
     Expenses:Cash                             400.00 EUR @ 1.094 CHF
 
