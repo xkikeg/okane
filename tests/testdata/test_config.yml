@@ -14,7 +14,7 @@ rewrite:
       payee: Debit Card (?P<code>\d+) (?P<payee>.*)
   - matcher:
       payee: cashback
-    account: Incomes:Misc
+    account: Income:Misc
   - matcher:
       payee: Migros
     account: Expenses:Grocery

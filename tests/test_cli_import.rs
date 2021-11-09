@@ -2,6 +2,8 @@ mod testing;
 
 use std::io::{self, Write};
 
+use pretty_assertions::assert_eq;
+
 #[test]
 fn test_import_success() {
     let config = testing::TESTDATA_DIR.join("test_config.yml");

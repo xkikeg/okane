@@ -120,7 +120,7 @@ impl Txn {
                 account: self
                     .dest_account
                     .clone()
-                    .unwrap_or_else(|| "Incomes:Unknown".to_string()),
+                    .unwrap_or_else(|| "Income:Unknown".to_string()),
                 clear_state: post_clear,
                 amount: self.dest_amount(),
                 balance: None,
