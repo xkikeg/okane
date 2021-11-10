@@ -66,6 +66,9 @@ impl super::Importer for CSVImporter {
             );
             txn.code_option(fragment.code)
                 .dest_account_option(fragment.account);
+            if !fragment.cleared {
+                txn.clear_state(data::ClearState::Pending);
+            }
             if let Some(b) = balance {
                 txn.balance(data::Amount {
                     value: b,
@@ -237,6 +240,7 @@ impl config::FieldMatcher {
 struct RewriteElement {
     // matches any of the following pattern.
     payee: OrPattern,
+    cleared: bool,
     account: Option<String>,
 }
 
@@ -251,6 +255,7 @@ fn new_rewriter(config: &config::ConfigEntry) -> Result<Rewriter, ImportError> {
         let m = rw.matcher.to_pattern()?;
         elems.push(RewriteElement {
             payee: m,
+            cleared: !rw.pending,
             account: rw.account.clone(),
         });
     }
@@ -261,6 +266,7 @@ fn new_rewriter(config: &config::ConfigEntry) -> Result<Rewriter, ImportError> {
 struct Fragment<'a> {
     payee: &'a str,
     code: Option<&'a str>,
+    cleared: bool,
     account: Option<&'a str>,
 }
 
@@ -268,6 +274,7 @@ impl Rewriter {
     fn rewrite<'a>(&'a self, payee: &'a str) -> Fragment<'a> {
         let mut payee = payee;
         let mut code = None;
+        let mut cleared = false;
         let mut account = None;
         for elem in &self.elems {
             if let Some(c) = elem.payee.captures(payee) {
@@ -280,11 +287,13 @@ impl Rewriter {
                 if let Some(a) = &elem.account {
                     account = Some(a.as_str());
                 }
+                cleared = cleared || elem.cleared;
             }
         }
         Fragment {
             payee,
             code,
+            cleared,
             account,
         }
     }

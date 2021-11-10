@@ -28,12 +28,15 @@ fn from_config_rewrite<'a>(
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Fragment<'a> {
+    pub cleared: bool,
     pub payee: Option<&'a str>,
     pub account: Option<&'a str>,
 }
 
 impl<'a> std::ops::AddAssign for Fragment<'a> {
+    #[allow(clippy::suspicious_op_assign_impl)]
     fn add_assign(&mut self, other: Self) {
+        self.cleared = other.cleared || self.cleared;
         self.payee = other.payee.or(self.payee);
         self.account = other.account.or(self.account);
     }
@@ -46,6 +49,7 @@ impl<'a> Extractor<'a> {
         transaction: Option<&'a xmlnode::TransactionDetails>,
     ) -> Fragment<'a> {
         let mut fragment = Fragment {
+            cleared: false,
             payee: None,
             account: None,
         };
@@ -61,6 +65,7 @@ impl<'a> Extractor<'a> {
 #[derive(Debug)]
 struct ExtractRule<'a> {
     match_expr: ExtractMatchOrExpr,
+    pending: bool,
     payee: Option<&'a str>,
     account: Option<&'a str>,
 }
@@ -72,6 +77,7 @@ impl<'a> TryFrom<&'a config::RewriteRule> for ExtractRule<'a> {
         let match_expr = (&config_rule.matcher).try_into()?;
         Ok(ExtractRule {
             match_expr,
+            pending: config_rule.pending,
             payee: config_rule.payee.as_deref(),
             account: config_rule.account.as_deref(),
         })
@@ -90,6 +96,9 @@ impl<'a> ExtractRule<'a> {
             .map(|mut current| {
                 current.payee = self.payee.or(current.payee);
                 current.account = self.account;
+                if current.payee.is_some() && current.account.is_some() {
+                    current.cleared = current.cleared || !self.pending;
+                }
                 current
             })
     }
@@ -292,10 +301,12 @@ mod tests {
     #[test]
     fn test_fragment_add_assign_filled() {
         let mut x = Fragment {
+            cleared: true,
             payee: Some("foo"),
             account: None,
         };
         let y = Fragment {
+            cleared: false,
             payee: Some("bar"),
             account: Some("baz"),
         };
@@ -303,6 +314,7 @@ mod tests {
         assert_eq!(
             x,
             Fragment {
+                cleared: true,
                 payee: Some("bar"),
                 account: Some("baz")
             }
@@ -312,10 +324,12 @@ mod tests {
     #[test]
     fn test_fragment_add_assign_empty() {
         let mut x = Fragment {
+            cleared: false,
             payee: Some("foo"),
             account: None,
         };
         let y = Fragment {
+            cleared: false,
             payee: None,
             account: None,
         };
@@ -323,6 +337,7 @@ mod tests {
         assert_eq!(
             x,
             Fragment {
+                cleared: false,
                 payee: Some("foo"),
                 account: None
             }
@@ -439,6 +454,7 @@ mod tests {
                     config::RewriteField::DomainSubFamily => "SALA".to_string(),
                 },
             }),
+            pending: false,
             payee: Some("Payee".to_string()),
             account: Some("Income".to_string()),
         }];
@@ -450,6 +466,7 @@ mod tests {
         }
         .into();
         let want = Fragment {
+            cleared: true,
             account: Some("Income"),
             payee: Some("Payee"),
         };
@@ -469,6 +486,7 @@ mod tests {
                         config::RewriteField::AdditionalTransactionInfo => r#"Some card (?P<payee>.*)"#.to_string(),
                     },
                 }),
+                pending: false, // pending: true implied
                 payee: None,
                 account: None,
             },
@@ -485,6 +503,7 @@ mod tests {
                         },
                     },
                 ]),
+                pending: false,
                 payee: None,
                 account: Some("Expenses:Grocery".to_string()),
             },
@@ -494,6 +513,7 @@ mod tests {
                         config::RewriteField::Payee => "Certain Petrol".to_string(),
                     },
                 }),
+                pending: true,
                 payee: None,
                 account: Some("Expenses:Petrol".to_string()),
             },
@@ -523,22 +543,27 @@ mod tests {
         .into();
         let want = vec![
             Fragment {
+                cleared: true,
                 account: Some("Expenses:Grocery"),
                 payee: Some("Grocery shop"),
             },
             Fragment {
+                cleared: true,
                 account: Some("Expenses:Grocery"),
                 payee: Some("Another shop"),
             },
             Fragment {
+                cleared: false,
                 account: Some("Expenses:Petrol"),
                 payee: Some("Certain Petrol"),
             },
             Fragment {
+                cleared: false,
                 account: None,
                 payee: Some("unknown payee"),
             },
             Fragment {
+                cleared: false,
                 account: None,
                 payee: None,
             },
@@ -562,6 +587,7 @@ mod tests {
                     config::RewriteField::DomainCode => "foo".to_string(),
                 },
             }),
+            pending: false,
             payee: None,
             account: None,
         }];
@@ -588,6 +614,7 @@ mod tests {
                     config::RewriteField::AdditionalTransactionInfo => "*".to_string(),
                 },
             }),
+            pending: false,
             payee: None,
             account: None,
         }];

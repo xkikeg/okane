@@ -20,6 +20,9 @@ pub struct Txn {
     /// Destination account.
     dest_account: Option<String>,
 
+    /// ClearState, useful to overwrite default convention (if dest_account is set).
+    clear_state: Option<data::ClearState>,
+
     /// amount in exchanged rate.
     transferred_amount: Option<data::ExchangedAmount>,
 
@@ -46,6 +49,7 @@ impl Txn {
             code: None,
             payee: payee.to_string(),
             dest_account: None,
+            clear_state: None,
             transferred_amount: None,
             amount,
             balance: None,
@@ -81,13 +85,21 @@ impl Txn {
         self
     }
 
+    pub fn clear_state(&mut self, clear_state: data::ClearState) -> &mut Txn {
+        self.clear_state = Some(clear_state);
+        self
+    }
+
     pub fn transferred_amount(&mut self, amount: data::ExchangedAmount) -> &mut Txn {
         self.transferred_amount = Some(amount);
         self
     }
 
     pub fn add_charge<'a>(&'a mut self, payee: &str, amount: data::Amount) -> &'a mut Txn {
-        self.charges.push(Charge{payee: payee.to_string(), amount});
+        self.charges.push(Charge {
+            payee: payee.to_string(),
+            amount,
+        });
         self
     }
 
@@ -111,10 +123,10 @@ impl Txn {
 
     pub fn to_double_entry(&self, src_account: &str) -> Result<data::Transaction, ImportError> {
         let mut posts = Vec::new();
-        let post_clear = match &self.dest_account {
+        let post_clear = self.clear_state.unwrap_or(match &self.dest_account {
             Some(_) => data::ClearState::Uncleared,
             None => data::ClearState::Pending,
-        };
+        });
         if self.amount.is_sign_positive() {
             posts.push(data::Post {
                 account: self
@@ -162,10 +174,10 @@ impl Txn {
             return Err(ImportError::Other("credit and debit both zero".to_string()));
         }
         for chrg in &self.charges {
-            posts.push(data::Post{
+            posts.push(data::Post {
                 account: "Expenses:Commissions".to_string(),
                 clear_state: data::ClearState::Uncleared,
-                amount: data::ExchangedAmount{
+                amount: data::ExchangedAmount {
                     amount: -chrg.amount.clone(),
                     exchange: None,
                 },
