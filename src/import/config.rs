@@ -149,6 +149,10 @@ pub struct RewriteRule {
     /// matcher for the rewrite.
     pub matcher: RewriteMatcher,
 
+    /// Set true to leave the match pending.
+    #[serde(default)]
+    pub pending: bool,
+
     /// Payee to be set for the matched transaction.
     #[serde(default)]
     pub payee: Option<String>,
@@ -304,6 +308,7 @@ mod tests {
                         RewriteField::Payee => r#"Visaデビット　(?P<code>\d+)　(?P<payee>.*)"#.to_string(),
                     },
                 }),
+                pending: false,
                 payee: None,
                 account: None,
             },
@@ -313,6 +318,7 @@ mod tests {
                         RewriteField::Payee => "外貨普通預金（.*）(?:へ|より)振替".to_string(),
                     },
                 }),
+                pending: false,
                 payee: None,
                 account: Some("Assets:Wire:Okane".to_string()),
             },
@@ -359,6 +365,7 @@ mod tests {
             matcher: RewriteMatcher::Field(FieldMatcher {
                 fields: hashmap! {RewriteField::DomainCode => "PMNT".to_string()},
             }),
+            pending: false,
             payee: None,
             account: Some("Income:Salary".to_string()),
         };
@@ -397,6 +404,7 @@ mod tests {
                         RewriteField::DomainSubFamily => "SALA".to_string(),
                     },
                 }),
+                pending: false,
                 payee: Some("Okane Co. Ltd.".to_string()),
                 account: Some("Income:Salary".to_string()),
             },
@@ -413,6 +421,7 @@ mod tests {
                         },
                     },
                 ]),
+                pending: false,
                 account: Some("Expenses:Grocery".to_string()),
                 payee: None,
             },
@@ -422,6 +431,7 @@ mod tests {
                         RewriteField::AdditionalTransactionInfo => "Maestro(?P<payee>.*)".to_string(),
                     },
                 }),
+                pending: false,
                 payee: None,
                 account: None,
             },

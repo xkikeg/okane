@@ -62,6 +62,9 @@ impl super::Importer for ISOCamt053Importer {
                     );
                     txn.effective_date(entry.booking_date.date)
                         .dest_account_option(fragment.account);
+                    if !fragment.cleared {
+                        txn.clear_state(data::ClearState::Pending);
+                    }
                     add_charges(&mut txn, config, &entry.charges)?;
                     res.push(txn);
                 }
@@ -84,6 +87,9 @@ impl super::Importer for ISOCamt053Importer {
                     txn.effective_date(entry.booking_date.date)
                         .code(code)
                         .dest_account_option(fragment.account);
+                    if !fragment.cleared {
+                        txn.clear_state(data::ClearState::Pending);
+                    }
                     if transaction.amount != transaction.amount_details.transaction.amount {
                         txn.transferred_amount(data::ExchangedAmount {
                             amount: transaction
