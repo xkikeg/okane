@@ -34,6 +34,7 @@ pub struct Fragment<'a> {
 }
 
 impl<'a> std::ops::AddAssign for Fragment<'a> {
+    #[allow(clippy::suspicious_op_assign_impl)]
     fn add_assign(&mut self, other: Self) {
         self.cleared = other.cleared || self.cleared;
         self.payee = other.payee.or(self.payee);
