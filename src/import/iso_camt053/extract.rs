@@ -186,6 +186,7 @@ enum MatchField {
     UltimateCreditorName,
     DebtorName,
     UltimateDebtorName,
+    RemittanceUnstructuredInfo,
     AdditionalTransactionInfo,
     Payee,
 }
@@ -196,6 +197,9 @@ fn to_field(f: config::RewriteField) -> Result<MatchField, ImportError> {
         config::RewriteField::UltimateCreditorName => Some(MatchField::UltimateCreditorName),
         config::RewriteField::DebtorName => Some(MatchField::DebtorName),
         config::RewriteField::UltimateDebtorName => Some(MatchField::UltimateDebtorName),
+        config::RewriteField::RemittanceUnstructuredInfo => {
+            Some(MatchField::RemittanceUnstructuredInfo)
+        }
         config::RewriteField::AdditionalTransactionInfo => {
             Some(MatchField::AdditionalTransactionInfo)
         }
@@ -265,6 +269,10 @@ impl ExtractMatch {
                     MatchField::UltimateDebtorName => transaction
                         .and_then(|t| t.related_parties.ultimate_debtor.as_ref())
                         .map(|ud| ud.name.as_str()),
+                    MatchField::RemittanceUnstructuredInfo => transaction
+                        .and_then(|t| t.remittance_info.as_ref())
+                        .and_then(|i| i.unstructured.as_ref())
+                        .map(|v| v.as_str()),
                     MatchField::AdditionalTransactionInfo => {
                         transaction.map(|t| t.additional_info.as_str())
                     }

@@ -185,6 +185,7 @@ pub enum RewriteField {
     UltimateCreditorName,
     DebtorName,
     UltimateDebtorName,
+    RemittanceUnstructuredInfo,
     AdditionalTransactionInfo,
     Payee,
 }
