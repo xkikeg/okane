@@ -75,9 +75,7 @@ impl super::Importer for ISOCamt053Importer {
                     let fragment = extractor.extract(&entry, Some(transaction));
                     let code = transaction
                         .refs
-                        .account_servicer_reference
-                        .as_ref()
-                        .map(String::as_str);
+                        .account_servicer_reference.as_deref();
                     if fragment.payee.is_none() {
                         log::warn!("payee not set @ {:?}", code);
                     } else if fragment.account.is_none() {
