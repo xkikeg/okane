@@ -22,7 +22,7 @@ impl ConfigSet {
         }?;
         fn has_matches<'a>(entry: &'a ConfigEntry, fp: &str) -> Option<(usize, &'a ConfigEntry)> {
             if fp.contains(&entry.path) {
-                Some((fp.len(), entry))
+                Some((entry.path.len(), entry))
             } else {
                 None
             }
@@ -245,12 +245,12 @@ mod tests {
     fn test_config_select_multi_match() {
         let config_set = &ConfigSet {
             entries: vec![
-                create_config_entry("/path/to"),
                 create_config_entry("/path/to/foo"),
+                create_config_entry("/path/to"),
             ],
         };
         assert_eq!(
-            Some(&config_set.entries[1]),
+            Some(&config_set.entries[0]),
             config_set.select(Path::new("/path/to/foo/202109.csv"))
         );
     }
