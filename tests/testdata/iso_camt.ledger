@@ -38,6 +38,10 @@
     Expenses:Commissions                        2.00 CHF  ; Payee: Okane Bank (fee)
 
 2021/10/08=2021/10/10 * (20211031/8/1) OKANE BANK ATM
-    Assets:Okane Bank                        -437.60 CHF = 4561.40 CHF
+    Assets:Okane Bank                        -437.60 CHF
     Expenses:Cash                             400.00 EUR @ 1.094 CHF
+
+2021/12/31 * unknown payee
+    ! Income:Unknown                           -0.05 CHF
+    Assets:Okane Bank                           0.05 CHF = 4561.90 CHF
 

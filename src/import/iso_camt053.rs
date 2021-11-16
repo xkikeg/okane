@@ -73,7 +73,11 @@ impl super::Importer for ISOCamt053Importer {
                         .amount
                         .to_data(transaction.credit_or_debit.value);
                     let fragment = extractor.extract(&entry, Some(transaction));
-                    let code = transaction.refs.account_servicer_reference.as_str();
+                    let code = transaction
+                        .refs
+                        .account_servicer_reference
+                        .as_ref()
+                        .map(String::as_str);
                     if fragment.payee.is_none() {
                         log::warn!("payee not set @ {:?}", code);
                     } else if fragment.account.is_none() {
@@ -85,30 +89,30 @@ impl super::Importer for ISOCamt053Importer {
                         amount,
                     );
                     txn.effective_date(entry.booking_date.date)
-                        .code(code)
+                        .code_option(code)
                         .dest_account_option(fragment.account);
                     if !fragment.cleared {
                         txn.clear_state(data::ClearState::Pending);
                     }
-                    if transaction.amount != transaction.amount_details.transaction.amount {
-                        txn.transferred_amount(data::ExchangedAmount {
-                            amount: transaction
-                                .amount_details
-                                .transaction
-                                .amount
-                                .to_data(transaction.credit_or_debit.value),
-                            exchange: transaction
-                                .amount_details
-                                .transaction
-                                .currency_exchange
-                                .as_ref()
-                                .map(|x| {
-                                    data::Exchange::Rate(data::Amount {
-                                        value: x.exchange_rate.value,
-                                        commodity: x.source_currency.clone(),
-                                    })
-                                }),
-                        });
+                    if let Some(amount_details) = transaction.amount_details.as_ref() {
+                        if transaction.amount != amount_details.transaction.amount {
+                            txn.transferred_amount(data::ExchangedAmount {
+                                amount: amount_details
+                                    .transaction
+                                    .amount
+                                    .to_data(transaction.credit_or_debit.value),
+                                exchange: amount_details
+                                    .transaction
+                                    .currency_exchange
+                                    .as_ref()
+                                    .map(|x| {
+                                        data::Exchange::Rate(data::Amount {
+                                            value: x.exchange_rate.value,
+                                            commodity: x.source_currency.clone(),
+                                        })
+                                    }),
+                            });
+                        }
                     }
                     add_charges(&mut txn, config, &entry.charges)?;
                     add_charges(&mut txn, config, &transaction.charges)?;

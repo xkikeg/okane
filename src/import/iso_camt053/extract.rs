@@ -257,25 +257,27 @@ impl ExtractMatch {
             }
             ExtractMatch::FieldMatch(fd, re) => {
                 let target: Option<&str> = match fd {
-                    MatchField::CreditorName => {
-                        transaction.map(|t| t.related_parties.creditor.name.as_str())
-                    }
+                    MatchField::CreditorName => transaction
+                        .and_then(|t| t.related_parties.as_ref())
+                        .map(|rp| rp.creditor.name.as_str()),
                     MatchField::UltimateCreditorName => transaction
-                        .and_then(|t| t.related_parties.ultimate_creditor.as_ref())
+                        .and_then(|t| t.related_parties.as_ref())
+                        .and_then(|rp| rp.ultimate_creditor.as_ref())
                         .map(|ud| ud.name.as_str()),
-                    MatchField::DebtorName => {
-                        transaction.map(|t| t.related_parties.debtor.name.as_str())
-                    }
+                    MatchField::DebtorName => transaction
+                        .and_then(|t| t.related_parties.as_ref())
+                        .map(|rp| rp.debtor.name.as_str()),
                     MatchField::UltimateDebtorName => transaction
-                        .and_then(|t| t.related_parties.ultimate_debtor.as_ref())
+                        .and_then(|t| t.related_parties.as_ref())
+                        .and_then(|rp| rp.ultimate_debtor.as_ref())
                         .map(|ud| ud.name.as_str()),
                     MatchField::RemittanceUnstructuredInfo => transaction
                         .and_then(|t| t.remittance_info.as_ref())
                         .and_then(|i| i.unstructured.as_ref())
                         .map(|v| v.as_str()),
-                    MatchField::AdditionalTransactionInfo => {
-                        transaction.map(|t| t.additional_info.as_str())
-                    }
+                    MatchField::AdditionalTransactionInfo => transaction
+                        .and_then(|t| t.additional_info.as_ref())
+                        .map(|ai| ai.as_str()),
                     MatchField::Payee => fragment.payee,
                 };
                 match target.and_then(|t| re.captures(t)) {
@@ -410,7 +412,7 @@ mod tests {
         fn from(v: Txn) -> xmlnode::TransactionDetails {
             xmlnode::TransactionDetails {
                 refs: xmlnode::References {
-                    account_servicer_reference: "foobar".to_string(),
+                    account_servicer_reference: Some("foobar".to_string()),
                 },
                 credit_or_debit: xmlnode::CreditDebitIndicator {
                     value: xmlnode::CreditOrDebit::Credit,
@@ -419,7 +421,7 @@ mod tests {
                     value: dec!(12.3),
                     currency: "CHF".to_string(),
                 },
-                amount_details: xmlnode::AmountDetails {
+                amount_details: Some(xmlnode::AmountDetails {
                     instructed: xmlnode::AmountWithExchange {
                         amount: xmlnode::Amount {
                             value: dec!(12.3),
@@ -434,9 +436,9 @@ mod tests {
                         },
                         currency_exchange: None,
                     },
-                },
+                }),
                 charges: None,
-                related_parties: xmlnode::RelatedParties {
+                related_parties: Some(xmlnode::RelatedParties {
                     debtor: xmlnode::Party {
                         name: "debtor".to_string(),
                     },
@@ -445,9 +447,9 @@ mod tests {
                     },
                     ultimate_debtor: None,
                     ultimate_creditor: None,
-                },
+                }),
                 remittance_info: None,
-                additional_info: v.additional_info.to_string(),
+                additional_info: Some(v.additional_info.to_string()),
             }
         }
     }

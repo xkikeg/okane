@@ -161,13 +161,13 @@ pub enum DomainSubFamilyCode {
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct EntryDetails {
-    #[serde(rename = "Btch")]
+    #[serde(rename = "Btch", default)]
     pub batch: Batch,
     #[serde(rename = "TxDtls", default)]
     pub transactions: Vec<TransactionDetails>,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Default)]
 pub struct Batch {
     #[serde(rename = "NbOfTxs")]
     pub number_of_transactions: usize,
@@ -187,15 +187,15 @@ pub struct TransactionDetails {
     #[serde(rename = "CdtDbtInd")]
     pub credit_or_debit: CreditDebitIndicator,
     #[serde(rename = "AmtDtls")]
-    pub amount_details: AmountDetails,
+    pub amount_details: Option<AmountDetails>,
     #[serde(rename = "Chrgs")]
     pub charges: Option<Charges>,
     #[serde(rename = "RltdPties")]
-    pub related_parties: RelatedParties,
+    pub related_parties: Option<RelatedParties>,
     #[serde(rename = "RmtInf")]
     pub remittance_info: Option<RemittanceInfo>,
     #[serde(rename = "AddtlTxInf")]
-    pub additional_info: String,
+    pub additional_info: Option<String>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -207,7 +207,7 @@ pub struct RemittanceInfo {
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct References {
     #[serde(rename = "AcctSvcrRef")]
-    pub account_servicer_reference: String,
+    pub account_servicer_reference: Option<String>,
     // // may be Some("NOTPROVIDED")
     // #[serde(rename = "EndToEndId")]
     // pub end_to_end_id: String,
