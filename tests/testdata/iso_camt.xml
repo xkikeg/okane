@@ -55,7 +55,7 @@
             <Cd>CLBD</Cd>
           </CdOrPrtry>
         </Tp>
-        <Amt Ccy="CHF">4561.4</Amt>
+        <Amt Ccy="CHF">4561.9</Amt>
         <CdtDbtInd>CRDT</CdtDbtInd>
         <Dt>
           <Dt>2021-10-31</Dt>
@@ -729,6 +729,39 @@
           </TxDtls>
         </NtryDtls>
         <AddtlNtryInf>Cash Point 08.10.2021 09:20 OKANE BANK ATM Card number: 141421356</AddtlNtryInf>
+      </Ntry>
+
+      <Ntry>
+        <Amt Ccy="CHF">.05</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <RvslInd>false</RvslInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2021-12-31</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2021-12-31</Dt>
+        </ValDt>
+        <BkTxCd>
+          <Domn>
+            <Cd>PMNT</Cd>
+            <Fmly>
+              <Cd>RCDT</Cd>
+              <SubFmlyCd>OTHR</SubFmlyCd>
+            </Fmly>
+          </Domn>
+        </BkTxCd>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <InstrId>NOTPROVIDED</InstrId>
+              <EndToEndId>NOTPROVIDED</EndToEndId>
+            </Refs>
+            <Amt Ccy="CHF">.05</Amt>
+            <CdtDbtInd>CRDT</CdtDbtInd>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Closing entry balance</AddtlNtryInf>
       </Ntry>
 
     </Stmt>
