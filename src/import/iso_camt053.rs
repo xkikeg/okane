@@ -73,9 +73,7 @@ impl super::Importer for ISOCamt053Importer {
                         .amount
                         .to_data(transaction.credit_or_debit.value);
                     let fragment = extractor.extract(&entry, Some(transaction));
-                    let code = transaction
-                        .refs
-                        .account_servicer_reference.as_deref();
+                    let code = transaction.refs.account_servicer_reference.as_deref();
                     if fragment.payee.is_none() {
                         log::warn!("payee not set @ {:?}", code);
                     } else if fragment.account.is_none() {
@@ -145,13 +143,17 @@ fn add_charges(
             if cr.amount.value.is_zero() {
                 continue;
             }
-            if !cr.is_charge_included {
-                return Err(ImportError::Unimplemented("ChrgInclInd=false unsupported"));
-            }
             let payee = config.operator.as_ref().ok_or(ImportError::InvalidConfig(
                 "config should have operator to have charge",
             ))?;
-            txn.add_charge(payee, cr.amount.to_data(cr.credit_or_debit.value));
+            if !cr.is_charge_included {
+                txn.try_add_charge_not_included(
+                    payee,
+                    cr.amount.to_data(cr.credit_or_debit.value),
+                )?;
+            } else {
+                txn.add_charge(payee, cr.amount.to_data(cr.credit_or_debit.value));
+            }
         }
     }
     Ok(())

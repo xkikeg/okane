@@ -63,7 +63,7 @@
       </Bal>
       <TxsSummry>
         <TtlNtries>
-          <NbOfNtries>9</NbOfNtries>
+          <NbOfNtries>12</NbOfNtries>
           <Sum>9538.6</Sum>
           <TtlNetNtry>
             <Amt>4461.4</Amt>
@@ -762,6 +762,106 @@
           </TxDtls>
         </NtryDtls>
         <AddtlNtryInf>Closing entry balance</AddtlNtryInf>
+      </Ntry>
+
+      <Ntry>
+        <Amt Ccy="CHF">9083</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <RvslInd>false</RvslInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2022-01-03</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2022-01-03</Dt>
+        </ValDt>
+        <BkTxCd>
+          <Domn>
+            <Cd>PMNT</Cd>
+            <Fmly>
+              <Cd>RCDT</Cd>
+              <SubFmlyCd>OTHR</SubFmlyCd>
+            </Fmly>
+          </Domn>
+        </BkTxCd>
+        <NtryDtls>
+          <Btch>
+            <NbOfTxs>1</NbOfTxs>
+            <TtlAmt Ccy="CHF">10000</TtlAmt>
+            <CdtDbtInd>CRDT</CdtDbtInd>
+          </Btch>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>20220103/9/1</AcctSvcrRef>
+              <EndToEndId>PET231111111</EndToEndId>
+              <TxId>K02102920941354</TxId>
+            </Refs>
+            <Amt Ccy="CHF">10000</Amt>
+            <CdtDbtInd>CRDT</CdtDbtInd>
+            <AmtDtls>
+              <InstdAmt>
+                <Amt Ccy="CHF">10014</Amt>
+              </InstdAmt>
+              <TxAmt>
+                <Amt Ccy="CHF">10000</Amt>
+              </TxAmt>
+            </AmtDtls>
+            <Chrgs>
+              <Rcrd>
+                <Amt Ccy="CHF">0</Amt>
+                <CdtDbtInd>CRDT</CdtDbtInd>
+                <Tp>
+                  <Prtry>
+                    <Id>SHAR</Id>
+                  </Prtry>
+                </Tp>
+              </Rcrd>
+              <Rcrd>
+                <Amt Ccy="CHF">14</Amt>
+                <CdtDbtInd>CRDT</CdtDbtInd>
+                <Tp>
+                  <Prtry>
+                    <Id>SHAR</Id>
+                  </Prtry>
+                </Tp>
+              </Rcrd>
+            </Chrgs>
+            <RltdPties>
+              <Dbtr>
+                <Nm>TARO YAMADA</Nm>
+                <PstlAdr>
+                  <AdrLine>MY ADDRESS</AdrLine>
+                </PstlAdr>
+              </Dbtr>
+              <DbtrAcct>
+                <Id>
+                  <Othr>
+                    <Id>141421356</Id>
+                  </Othr>
+                </Id>
+              </DbtrAcct>
+              <Cdtr>
+                <Nm>Taro Yamada</Nm>
+                <PstlAdr>
+                  <AdrLine>MY ADDRESS</AdrLine>
+                  <AdrLine>Switzerland</AdrLine>
+                </PstlAdr>
+              </Cdtr>
+            </RltdPties>
+            <RltdAgts>
+              <DbtrAgt>
+                <FinInstnId>
+                  <BICFI>BANKSWIFTCODE</BICFI>
+                </FinInstnId>
+              </DbtrAgt>
+            </RltdAgts>
+            <RmtInf>
+              <Ustrd>Fremdspesen: CHF  14.00</Ustrd>
+            </RmtInf>
+            <AddtlTxInf>Credit</AddtlTxInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>Credit</AddtlNtryInf>
       </Ntry>
 
     </Stmt>
