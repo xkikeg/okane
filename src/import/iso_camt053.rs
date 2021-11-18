@@ -146,6 +146,7 @@ fn add_charges(
             let payee = config.operator.as_ref().ok_or(ImportError::InvalidConfig(
                 "config should have operator to have charge",
             ))?;
+            log::info!("ADDED cr: {:?}", cr);
             if !cr.is_charge_included {
                 txn.try_add_charge_not_included(
                     payee,

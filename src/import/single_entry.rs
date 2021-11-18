@@ -104,7 +104,7 @@ impl Txn {
         }
         self.transferred_amount(data::ExchangedAmount{
             amount: data::Amount {
-                value: self.amount.value + amount.value,
+                value: self.amount.value - amount.value,
                 commodity: amount.commodity.clone(),
             },
             exchange: None,

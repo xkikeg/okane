@@ -2,6 +2,11 @@ mod testing;
 
 use pretty_assertions::assert_eq;
 
+#[ctor::ctor]
+fn init() {
+    env_logger::init();
+}
+
 #[test]
 fn test_import_csv_index() {
     let config = testing::TESTDATA_DIR.join("test_config.yml");
