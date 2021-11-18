@@ -818,7 +818,8 @@
               </Rcrd>
               <Rcrd>
                 <Amt Ccy="CHF">14</Amt>
-                <CdtDbtInd>CRDT</CdtDbtInd>
+                <!-- Originally it was CRDT, but it should be wrong. -->
+                <CdtDbtInd>DBIT</CdtDbtInd>
                 <Tp>
                   <Prtry>
                     <Id>SHAR</Id>

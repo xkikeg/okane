@@ -14,6 +14,11 @@ mod testing;
 // ----
 // 4899
 
+#[ctor::ctor]
+fn init() {
+    env_logger::init();
+}
+
 #[test]
 fn test_import() {
     let config = testing::TESTDATA_DIR.join("test_config.yml");
