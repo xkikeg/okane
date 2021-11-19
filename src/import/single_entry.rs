@@ -95,14 +95,22 @@ impl Txn {
         self
     }
 
-    pub fn try_add_charge_not_included<'a>(&'a mut self, payee: &str, amount: data::Amount) -> Result<&'a mut Txn, ImportError> {
+    pub fn try_add_charge_not_included<'a>(
+        &'a mut self,
+        payee: &str,
+        amount: data::Amount,
+    ) -> Result<&'a mut Txn, ImportError> {
         if amount.commodity != self.amount.commodity {
-            return Err(ImportError::Unimplemented("different commodity charge not supported"));
+            return Err(ImportError::Unimplemented(
+                "different commodity charge not supported",
+            ));
         }
         if self.transferred_amount.is_some() {
-            return Err(ImportError::Unimplemented("already set transferred_amount isn't supported"));
+            return Err(ImportError::Unimplemented(
+                "already set transferred_amount isn't supported",
+            ));
         }
-        self.transferred_amount(data::ExchangedAmount{
+        self.transferred_amount(data::ExchangedAmount {
             amount: data::Amount {
                 value: self.amount.value - amount.value,
                 commodity: amount.commodity.clone(),

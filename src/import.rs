@@ -2,6 +2,7 @@
 
 pub mod config;
 pub mod csv;
+pub mod extract;
 pub mod iso_camt053;
 pub mod single_entry;
 
