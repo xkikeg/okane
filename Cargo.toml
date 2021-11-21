@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 chrono = "0.4"
 csv = "1"
+either = "1"
 encoding_rs = "0.8"
 encoding_rs_io = "0.1"
 env_logger = "0.9"
@@ -19,6 +20,7 @@ rust_decimal = "1.15"
 serde = { version = "1.0", features = [ "derive" ] }
 serde_with = { version = "1.9", features = [ "chrono" ] }
 serde_yaml = "0.8"
+strum = { version = "0.23", features = ["derive"] }
 thiserror = "1.0"
 
 [dev-dependencies]

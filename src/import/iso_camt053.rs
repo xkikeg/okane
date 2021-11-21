@@ -6,7 +6,7 @@ use super::single_entry;
 use super::ImportError;
 use crate::data;
 
-use std::convert::{TryFrom,TryInto};
+use std::convert::{TryFrom, TryInto};
 
 use regex::Regex;
 use rust_decimal::Decimal;
@@ -251,23 +251,25 @@ impl extract::EntityMatcher for FieldMatch {
         fragment: &extract::Fragment<'a>,
         entity: (&'a xmlnode::Entry, Option<&'a xmlnode::TransactionDetails>),
     ) -> Option<extract::Matched<'a>> {
-        let mut matched = extract::Matched::default();
+        use either::Either;
         let entry = &entity.0;
         let transaction = &entity.1;
         let has_match = match self {
-            FieldMatch::DomainCode(code) => *code == entry.bank_transaction_code.domain.code.value,
-            FieldMatch::DomainFamily(code) => {
-                *code == entry.bank_transaction_code.domain.family.code.value
+            FieldMatch::DomainCode(code) => {
+                Either::Left(*code == entry.bank_transaction_code.domain.code.value)
             }
-            FieldMatch::DomainSubFamily(code) => {
+            FieldMatch::DomainFamily(code) => {
+                Either::Left(*code == entry.bank_transaction_code.domain.family.code.value)
+            }
+            FieldMatch::DomainSubFamily(code) => Either::Left(
                 *code
                     == entry
                         .bank_transaction_code
                         .domain
                         .family
                         .sub_family_code
-                        .value
-            }
+                        .value,
+            ),
             FieldMatch::RegexMatch(fd, re) => {
                 let target: Option<&str> = match fd {
                     MatchField::CreditorName => transaction
@@ -293,22 +295,16 @@ impl extract::EntityMatcher for FieldMatch {
                         .map(|ai| ai.as_str()),
                     MatchField::Payee => fragment.payee,
                 };
-                match target.and_then(|t| re.captures(t)) {
-                    None => false,
-                    Some(c) => {
-                        if let Some(v) = c.name("payee") {
-                            matched.payee = Some(v.as_str());
-                        }
-                        true
-                    }
-                }
+                Either::Right(target.and_then(|t| re.captures(t)).map(|c| c.into()))
             }
         };
-        if has_match {
-            Some(matched)
-        } else {
-            None
-        }
+        has_match.right_or_else(|matched| {
+            if matched {
+                Some(extract::Matched::default())
+            } else {
+                None
+            }
+        })
     }
 }
 #[cfg(test)]
@@ -316,307 +312,101 @@ mod tests {
     use super::*;
 
     use chrono::NaiveDate;
-    use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
-    #[test]
-    fn test_fragment_add_assign_filled() {
-        let mut x = Fragment {
-            cleared: true,
-            payee: Some("foo"),
-            account: None,
-        };
-        let y = Fragment {
-            cleared: false,
-            payee: Some("bar"),
-            account: Some("baz"),
-        };
-        x += y;
-        assert_eq!(
-            x,
-            Fragment {
-                cleared: true,
-                payee: Some("bar"),
-                account: Some("baz")
-            }
-        );
-    }
-
-    #[test]
-    fn test_fragment_add_assign_empty() {
-        let mut x = Fragment {
-            cleared: false,
-            payee: Some("foo"),
-            account: None,
-        };
-        let y = Fragment {
-            cleared: false,
-            payee: None,
-            account: None,
-        };
-        x += y;
-        assert_eq!(
-            x,
-            Fragment {
-                cleared: false,
-                payee: Some("foo"),
-                account: None
-            }
-        );
-    }
-
-    struct Ntry {
-        domain_code: xmlnode::DomainCode,
-        domain_family: xmlnode::DomainFamilyCode,
-        domain_sub_family: xmlnode::DomainSubFamilyCode,
-        txns: Vec<Txn>,
-    }
-
-    struct Txn {
-        additional_info: &'static str,
-    }
-
-    impl From<Ntry> for xmlnode::Entry {
-        fn from(v: Ntry) -> Self {
-            xmlnode::Entry {
-                amount: xmlnode::Amount {
-                    value: dec!(120),
-                    currency: "CHF".to_string(),
-                },
-                credit_or_debit: xmlnode::CreditDebitIndicator {
-                    value: xmlnode::CreditOrDebit::Credit,
-                },
-                booking_date: xmlnode::Date {
-                    date: NaiveDate::from_ymd(2021, 10, 1),
-                },
-                value_date: xmlnode::Date {
-                    date: NaiveDate::from_ymd(2021, 10, 1),
-                },
-                bank_transaction_code: xmlnode::BankTransactionCode {
-                    domain: xmlnode::Domain {
-                        code: xmlnode::DomainCodeValue {
-                            value: v.domain_code,
+    fn test_entry() -> xmlnode::Entry {
+        xmlnode::Entry {
+            amount: xmlnode::Amount {
+                value: dec!(120),
+                currency: "CHF".to_string(),
+            },
+            credit_or_debit: xmlnode::CreditDebitIndicator {
+                value: xmlnode::CreditOrDebit::Credit,
+            },
+            booking_date: xmlnode::Date {
+                date: NaiveDate::from_ymd(2021, 10, 1),
+            },
+            value_date: xmlnode::Date {
+                date: NaiveDate::from_ymd(2021, 10, 1),
+            },
+            bank_transaction_code: xmlnode::BankTransactionCode {
+                domain: xmlnode::Domain {
+                    code: xmlnode::DomainCodeValue {
+                        value: xmlnode::DomainCode::Payment,
+                    },
+                    family: xmlnode::DomainFamily {
+                        code: xmlnode::DomainFamilyCodeValue {
+                            value: xmlnode::DomainFamilyCode::IssuedCreditTransfers,
                         },
-                        family: xmlnode::DomainFamily {
-                            code: xmlnode::DomainFamilyCodeValue {
-                                value: v.domain_family,
-                            },
-                            sub_family_code: xmlnode::DomainSubFamilyCodeValue {
-                                value: v.domain_sub_family,
-                            },
+                        sub_family_code: xmlnode::DomainSubFamilyCodeValue {
+                            value: xmlnode::DomainSubFamilyCode::AutomaticTransfer,
                         },
                     },
                 },
-                charges: None,
-                additional_info: "entry additional info".to_string(),
-                details: xmlnode::EntryDetails {
-                    batch: xmlnode::Batch {
-                        number_of_transactions: v.txns.len(),
-                    },
-                    transactions: v.txns.into_iter().map(Into::into).collect(),
+            },
+            charges: None,
+            additional_info: "entry additional info".to_string(),
+            details: xmlnode::EntryDetails {
+                batch: xmlnode::Batch {
+                    number_of_transactions: 1,
                 },
-            }
+                transactions: vec![test_transaction()],
+            },
         }
     }
 
-    impl From<Txn> for xmlnode::TransactionDetails {
-        fn from(v: Txn) -> xmlnode::TransactionDetails {
-            xmlnode::TransactionDetails {
-                refs: xmlnode::References {
-                    account_servicer_reference: Some("foobar".to_string()),
+    fn test_transaction() -> xmlnode::TransactionDetails {
+        xmlnode::TransactionDetails {
+            refs: xmlnode::References {
+                account_servicer_reference: Some("foobar".to_string()),
+            },
+            credit_or_debit: xmlnode::CreditDebitIndicator {
+                value: xmlnode::CreditOrDebit::Credit,
+            },
+            amount: xmlnode::Amount {
+                value: dec!(12.3),
+                currency: "CHF".to_string(),
+            },
+            amount_details: Some(xmlnode::AmountDetails {
+                instructed: xmlnode::AmountWithExchange {
+                    amount: xmlnode::Amount {
+                        value: dec!(12.3),
+                        currency: "CHF".to_string(),
+                    },
+                    currency_exchange: None,
                 },
-                credit_or_debit: xmlnode::CreditDebitIndicator {
-                    value: xmlnode::CreditOrDebit::Credit,
-                },
-                amount: xmlnode::Amount {
-                    value: dec!(12.3),
-                    currency: "CHF".to_string(),
-                },
-                amount_details: Some(xmlnode::AmountDetails {
-                    instructed: xmlnode::AmountWithExchange {
-                        amount: xmlnode::Amount {
-                            value: dec!(12.3),
-                            currency: "CHF".to_string(),
-                        },
-                        currency_exchange: None,
+                transaction: xmlnode::AmountWithExchange {
+                    amount: xmlnode::Amount {
+                        value: dec!(12.3),
+                        currency: "CHF".to_string(),
                     },
-                    transaction: xmlnode::AmountWithExchange {
-                        amount: xmlnode::Amount {
-                            value: dec!(12.3),
-                            currency: "CHF".to_string(),
-                        },
-                        currency_exchange: None,
-                    },
-                }),
-                charges: None,
-                related_parties: Some(xmlnode::RelatedParties {
-                    debtor: xmlnode::Party {
-                        name: "debtor".to_string(),
-                    },
-                    creditor: xmlnode::Party {
-                        name: "creditor".to_string(),
-                    },
-                    ultimate_debtor: None,
-                    ultimate_creditor: None,
-                }),
-                remittance_info: None,
-                additional_info: Some(v.additional_info.to_string()),
-            }
-        }
-    }
-
-    use extract::Fragment;
-
-    #[test]
-    fn test_from_config_single_match() {
-        let rw = vec![config::RewriteRule {
-            matcher: config::RewriteMatcher::Field(config::FieldMatcher {
-                fields: hashmap! {
-                    config::RewriteField::DomainCode => "PMNT".to_string(),
-                    config::RewriteField::DomainFamily => "RCDT".to_string(),
-                    config::RewriteField::DomainSubFamily => "SALA".to_string(),
+                    currency_exchange: None,
                 },
             }),
-            pending: false,
-            payee: Some("Payee".to_string()),
-            account: Some("Income".to_string()),
-        }];
-        let input = Ntry {
-            domain_code: xmlnode::DomainCode::Payment,
-            domain_family: xmlnode::DomainFamilyCode::ReceivedCreditTransfers,
-            domain_sub_family: xmlnode::DomainSubFamilyCode::Salary,
-            txns: Vec::new(),
-        }
-        .into();
-        let want = Fragment {
-            cleared: true,
-            account: Some("Income"),
-            payee: Some("Payee"),
-        };
-
-        let extractor: extract::Extractor<FieldMatch> = (&rw).try_into().unwrap();
-        let fragment = extractor.extract((&input, None));
-
-        assert_eq!(want, fragment);
-    }
-
-    #[test]
-    fn test_from_config_multi_match() {
-        let rw = vec![
-            config::RewriteRule {
-                matcher: config::RewriteMatcher::Field(config::FieldMatcher {
-                    fields: hashmap! {
-                        config::RewriteField::AdditionalTransactionInfo => r#"Some card (?P<payee>.*)"#.to_string(),
-                    },
-                }),
-                pending: false, // pending: true implied
-                payee: None,
-                account: None,
-            },
-            config::RewriteRule {
-                matcher: config::RewriteMatcher::Or(vec![
-                    config::FieldMatcher {
-                        fields: hashmap! {
-                            config::RewriteField::Payee => "Grocery shop".to_string(),
-                        },
-                    },
-                    config::FieldMatcher {
-                        fields: hashmap! {
-                            config::RewriteField::Payee => "Another shop".to_string(),
-                        },
-                    },
-                ]),
-                pending: false,
-                payee: None,
-                account: Some("Expenses:Grocery".to_string()),
-            },
-            config::RewriteRule {
-                matcher: config::RewriteMatcher::Field(config::FieldMatcher {
-                    fields: hashmap! {
-                        config::RewriteField::Payee => "Certain Petrol".to_string(),
-                    },
-                }),
-                pending: true,
-                payee: None,
-                account: Some("Expenses:Petrol".to_string()),
-            },
-        ];
-        let input: xmlnode::Entry = Ntry {
-            domain_code: xmlnode::DomainCode::Payment,
-            domain_family: xmlnode::DomainFamilyCode::ReceivedDirectDebits,
-            domain_sub_family: xmlnode::DomainSubFamilyCode::Other,
-            txns: vec![
-                Txn {
-                    additional_info: "Some card Grocery shop",
+            charges: None,
+            related_parties: Some(xmlnode::RelatedParties {
+                debtor: xmlnode::Party {
+                    name: "debtor".to_string(),
                 },
-                Txn {
-                    additional_info: "Some card Another shop",
+                creditor: xmlnode::Party {
+                    name: "creditor".to_string(),
                 },
-                Txn {
-                    additional_info: "Some card Certain Petrol",
-                },
-                Txn {
-                    additional_info: "Some card unknown payee",
-                },
-                Txn {
-                    additional_info: "unrelated",
-                },
-            ],
-        }
-        .into();
-        let want = vec![
-            Fragment {
-                cleared: true,
-                account: Some("Expenses:Grocery"),
-                payee: Some("Grocery shop"),
-            },
-            Fragment {
-                cleared: true,
-                account: Some("Expenses:Grocery"),
-                payee: Some("Another shop"),
-            },
-            Fragment {
-                cleared: false,
-                account: Some("Expenses:Petrol"),
-                payee: Some("Certain Petrol"),
-            },
-            Fragment {
-                cleared: false,
-                account: None,
-                payee: Some("unknown payee"),
-            },
-            Fragment {
-                cleared: false,
-                account: None,
-                payee: None,
-            },
-        ];
-
-        let extractor: extract::Extractor<FieldMatch> = (&rw).try_into().unwrap();
-        let got: Vec<Fragment> = input
-            .details
-            .transactions
-            .iter()
-            .map(|t| extractor.extract((&input, Some(t))))
-            .collect();
-        assert_eq!(want, got);
-    }
-
-    #[test]
-    fn test_from_config_invalid_domain_code() {
-        let rw = vec![config::RewriteRule {
-            matcher: config::RewriteMatcher::Field(config::FieldMatcher {
-                fields: hashmap! {
-                    config::RewriteField::DomainCode => "foo".to_string(),
-                },
+                ultimate_debtor: None,
+                ultimate_creditor: None,
             }),
-            pending: false,
-            payee: None,
-            account: None,
-        }];
-        let result: Result<extract::Extractor<FieldMatch>, ImportError> = (&rw).try_into();
-        let err = result.unwrap_err();
+            remittance_info: Some(xmlnode::RemittanceInfo {
+                unstructured: Some("the remittance info".to_string()),
+            }),
+            additional_info: Some("This is additional Info".to_string()),
+        }
+    }
+
+    use extract::{EntityMatcher, Fragment, Matched};
+
+    #[test]
+    fn field_match_from_invalid_domain_family() {
+        let err = FieldMatch::try_from((config::RewriteField::DomainCode, "foo")).unwrap_err();
         match err {
             ImportError::YAML(cause) => {
                 assert!(
@@ -632,24 +422,233 @@ mod tests {
     }
 
     #[test]
-    fn test_from_config_invalid_regex() {
-        let rw = vec![config::RewriteRule {
-            matcher: config::RewriteMatcher::Field(config::FieldMatcher {
-                fields: hashmap! {
-                    config::RewriteField::AdditionalTransactionInfo => "*".to_string(),
-                },
-            }),
-            pending: false,
-            payee: None,
-            account: None,
-        }];
-        let result: Result<extract::Extractor<FieldMatch>, ImportError> = (&rw).try_into();
-        let err = result.unwrap_err();
+    fn field_match_captures_domain_family_match() {
+        let m = FieldMatch::try_from((config::RewriteField::DomainFamily, "ICDT")).unwrap();
+        let entry = test_entry();
+
+        let got = m.captures(&Fragment::default(), (&entry, None));
+
+        assert_eq!(Some(Matched::default()), got);
+    }
+
+    #[test]
+    fn field_match_captures_domain_family_unmatch() {
+        let m = FieldMatch::try_from((config::RewriteField::DomainFamily, "RCDT")).unwrap();
+        let entry = test_entry();
+
+        let got = m.captures(&Fragment::default(), (&entry, None));
+
+        assert_eq!(None, got);
+    }
+    #[test]
+    fn field_match_captures_domain_sub_family_match() {
+        let m = FieldMatch::try_from((config::RewriteField::DomainSubFamily, "AUTT")).unwrap();
+        let entry = test_entry();
+
+        let got = m.captures(&Fragment::default(), (&entry, None));
+
+        assert_eq!(Some(Matched::default()), got);
+    }
+
+    #[test]
+    fn field_match_captures_domain_sub_family_unmatch() {
+        let m = FieldMatch::try_from((config::RewriteField::DomainSubFamily, "SALA")).unwrap();
+        let entry = test_entry();
+
+        let got = m.captures(&Fragment::default(), (&entry, None));
+
+        assert_eq!(None, got);
+    }
+
+    #[test]
+    fn field_match_from_invalid_regex() {
+        let err = FieldMatch::try_from((config::RewriteField::Payee, "*")).unwrap_err();
         match err {
             ImportError::InvalidRegex(_) => {}
             _ => {
                 panic!("unexpected type of error: {:?}", err);
             }
         }
+    }
+
+    #[test]
+    fn field_match_captures_creditor_debtor() {
+        let entry = test_entry();
+        let without_ultimate = xmlnode::TransactionDetails {
+            related_parties: Some(xmlnode::RelatedParties {
+                debtor: xmlnode::Party {
+                    name: "expected debtor".to_string(),
+                },
+                creditor: xmlnode::Party {
+                    name: "expected creditor".to_string(),
+                },
+                ultimate_debtor: None,
+                ultimate_creditor: None,
+            }),
+            ..test_transaction()
+        };
+        let with_ultimate = xmlnode::TransactionDetails {
+            related_parties: Some(xmlnode::RelatedParties {
+                debtor: xmlnode::Party {
+                    name: "expected debtor".to_string(),
+                },
+                creditor: xmlnode::Party {
+                    name: "expected creditor".to_string(),
+                },
+                ultimate_debtor: Some(xmlnode::Party {
+                    name: "expected ultimate debtor".to_string(),
+                }),
+                ultimate_creditor: Some(xmlnode::Party {
+                    name: "expected ultimate creditor".to_string(),
+                }),
+            }),
+            ..test_transaction()
+        };
+        assert_eq!(
+            None,
+            FieldMatch::try_from((config::RewriteField::CreditorName, "no match"))
+                .unwrap()
+                .captures(&Fragment::default(), (&entry, Some(&with_ultimate)))
+        );
+        assert_eq!(
+            Some(Matched::default()),
+            FieldMatch::try_from((config::RewriteField::CreditorName, "expected creditor"))
+                .unwrap()
+                .captures(&Fragment::default(), (&entry, Some(&with_ultimate)))
+        );
+        assert_eq!(
+            Some(Matched {
+                payee: Some("expected"),
+                code: Some("creditor")
+            }),
+            FieldMatch::try_from((
+                config::RewriteField::CreditorName,
+                "(?P<payee>expected) (?P<code>creditor)"
+            ))
+            .unwrap()
+            .captures(&Fragment::default(), (&entry, Some(&with_ultimate)))
+        );
+        assert_eq!(
+            None,
+            FieldMatch::try_from((config::RewriteField::DebtorName, "no match"))
+                .unwrap()
+                .captures(&Fragment::default(), (&entry, Some(&with_ultimate)))
+        );
+        assert_eq!(
+            Some(Matched::default()),
+            FieldMatch::try_from((config::RewriteField::DebtorName, "expected debtor"))
+                .unwrap()
+                .captures(&Fragment::default(), (&entry, Some(&with_ultimate)))
+        );
+        assert_eq!(
+            None,
+            FieldMatch::try_from((config::RewriteField::UltimateDebtorName, "something"))
+                .unwrap()
+                .captures(&Fragment::default(), (&entry, Some(&without_ultimate)))
+        );
+        assert_eq!(
+            None,
+            FieldMatch::try_from((config::RewriteField::UltimateDebtorName, "something"))
+                .unwrap()
+                .captures(&Fragment::default(), (&entry, Some(&with_ultimate)))
+        );
+        assert_eq!(
+            Some(Matched::default()),
+            FieldMatch::try_from((
+                config::RewriteField::UltimateDebtorName,
+                "expected ultimate debtor"
+            ))
+            .unwrap()
+            .captures(&Fragment::default(), (&entry, Some(&with_ultimate)))
+        );
+    }
+
+    #[test]
+    fn field_match_remittance_info_no_txn() {
+        let entry = test_entry();
+        let txn = xmlnode::TransactionDetails {
+            remittance_info: Some(xmlnode::RemittanceInfo { unstructured: None }),
+            ..test_transaction()
+        };
+        let m = FieldMatch::try_from((
+            config::RewriteField::RemittanceUnstructuredInfo,
+            "remittance info",
+        ))
+        .unwrap();
+
+        assert_eq!(None, m.captures(&Fragment::default(), (&entry, None)));
+        assert_eq!(None, m.captures(&Fragment::default(), (&entry, Some(&txn))));
+    }
+
+    #[test]
+    fn field_match_remittance_info_no_match() {
+        let entry = test_entry();
+        let txn = xmlnode::TransactionDetails {
+            remittance_info: Some(xmlnode::RemittanceInfo {
+                unstructured: Some("expected remittance info".to_owned()),
+            }),
+            ..test_transaction()
+        };
+        let m =
+            FieldMatch::try_from((config::RewriteField::RemittanceUnstructuredInfo, "no match"))
+                .unwrap();
+
+        assert_eq!(None, m.captures(&Fragment::default(), (&entry, Some(&txn))));
+    }
+
+    #[test]
+    fn field_match_remittance_info_match() {
+        let entry = test_entry();
+        let txn = xmlnode::TransactionDetails {
+            remittance_info: Some(xmlnode::RemittanceInfo {
+                unstructured: Some("expected remittance info".to_owned()),
+            }),
+            ..test_transaction()
+        };
+        let m = FieldMatch::try_from((
+            config::RewriteField::RemittanceUnstructuredInfo,
+            "expected remittance info",
+        ))
+        .unwrap();
+
+        assert_eq!(
+            Some(Matched::default()),
+            m.captures(&Fragment::default(), (&entry, Some(&txn)))
+        );
+    }
+
+    #[test]
+    fn field_match_additional_transaction_info_match() {
+        let entry = test_entry();
+        let txn = xmlnode::TransactionDetails {
+            additional_info: Some("expected additional transaction info".to_owned()),
+            ..test_transaction()
+        };
+        let m = FieldMatch::try_from((
+            config::RewriteField::AdditionalTransactionInfo,
+            "expected additional transaction info",
+        ))
+        .unwrap();
+
+        assert_eq!(
+            Some(Matched::default()),
+            m.captures(&Fragment::default(), (&entry, Some(&txn)))
+        );
+    }
+
+    #[test]
+    fn field_match_payee_match() {
+        let fragment = Fragment {
+            payee: Some("expected payee"),
+            ..Fragment::default()
+        };
+        let m: FieldMatch = (config::RewriteField::Payee, "expected payee")
+            .try_into()
+            .unwrap();
+
+        assert_eq!(
+            Some(Matched::default()),
+            m.captures(&fragment, (&test_entry(), None))
+        );
     }
 }
