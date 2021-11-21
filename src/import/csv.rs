@@ -13,9 +13,9 @@ use log::{info, warn};
 use regex::Regex;
 use rust_decimal::Decimal;
 
-pub struct CSVImporter {}
+pub struct CsvImporter {}
 
-impl super::Importer for CSVImporter {
+impl super::Importer for CsvImporter {
     fn import<R: std::io::Read>(
         &self,
         r: &mut R,
