@@ -175,8 +175,9 @@ pub struct FieldMatcher {
     pub fields: HashMap<RewriteField, String>,
 }
 
-#[derive(Debug, Eq, Hash, PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Eq, Hash, PartialEq, Clone, Copy, Serialize, Deserialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum RewriteField {
     DomainCode,
     DomainFamily,

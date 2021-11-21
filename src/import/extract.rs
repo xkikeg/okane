@@ -10,11 +10,7 @@ pub struct Extractor<'a, M: EntityMatcher> {
 
 impl<'a, M: EntityMatcher> Extractor<'a, M> {
     pub fn extract(&'a self, entity: <M as Entity<'a>>::T) -> Fragment<'a> {
-        let mut fragment = Fragment {
-            cleared: false,
-            payee: None,
-            account: None,
-        };
+        let mut fragment = Fragment::default();
         for rule in &self.rules {
             if let Some(updated) = rule.extract(fragment.clone(), entity) {
                 fragment += updated;
@@ -39,11 +35,12 @@ where
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub struct Fragment<'a> {
     pub cleared: bool,
     pub payee: Option<&'a str>,
     pub account: Option<&'a str>,
+    pub code: Option<&'a str>,
 }
 
 impl<'a> std::ops::AddAssign for Fragment<'a> {
@@ -52,6 +49,18 @@ impl<'a> std::ops::AddAssign for Fragment<'a> {
         self.cleared = other.cleared || self.cleared;
         self.payee = other.payee.or(self.payee);
         self.account = other.account.or(self.account);
+        self.code = other.code.or(self.code);
+    }
+}
+
+impl<'a> std::ops::Add<Matched<'a>> for Fragment<'a> {
+    type Output = Self;
+    fn add(self, rhs: Matched<'a>) -> Self::Output {
+        Fragment {
+            payee: rhs.payee.or(self.payee),
+            code: rhs.code.or(self.code),
+            ..self
+        }
     }
 }
 
@@ -73,8 +82,8 @@ pub trait EntityGat: for<'a> Entity<'a> {}
 impl<T: ?Sized> EntityGat for T where Self: for<'a> Entity<'a> {}
 
 /// EntityMatcher defines how to match a given Entity against the config.
-pub trait EntityMatcher: EntityGat +
-    for<'a> TryFrom<(config::RewriteField, &'a str), Error = ImportError>
+pub trait EntityMatcher:
+    EntityGat + for<'a> TryFrom<(config::RewriteField, &'a str), Error = ImportError>
 {
     fn captures<'a>(
         &self,
@@ -85,9 +94,10 @@ pub trait EntityMatcher: EntityGat +
 
 /// Matched is a result of EntityMatcher::captures method,
 /// Most likely it can be regex::Capture or Matched::empty().
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct Matched<'a> {
     pub payee: Option<&'a str>,
+    pub code: Option<&'a str>,
 }
 
 #[derive(Debug)]
@@ -147,7 +157,11 @@ impl<M: EntityMatcher> TryFrom<&config::RewriteMatcher> for MatchOrExpr<M> {
 }
 
 impl<M: EntityMatcher> MatchOrExpr<M> {
-    fn extract<'a>(&self, current: Fragment<'a>, entity: <M as Entity<'a>>::T) -> Option<Fragment<'a>> {
+    fn extract<'a>(
+        &self,
+        current: Fragment<'a>,
+        entity: <M as Entity<'a>>::T,
+    ) -> Option<Fragment<'a>> {
         self.0
             .iter()
             .find_map(|m| m.extract(current.clone(), entity))
@@ -178,29 +192,16 @@ impl<M: EntityMatcher> TryFrom<&config::FieldMatcher> for MatchAndExpr<M> {
 }
 
 impl<M: EntityMatcher> MatchAndExpr<M> {
-    fn extract<'a>(&self, current: Fragment<'a>, entity: <M as Entity<'a>>::T) -> Option<Fragment<'a>> {
-        fn extract_impl<'a, M>(
-            m: &M,
-            fragment: Fragment<'a>,
-            entity: <M as Entity<'a>>::T,
-        ) -> Option<Fragment<'a>>
-        where
-            M: EntityMatcher,
-        {
-            match m.captures(&fragment, entity) {
-                None => None,
-                Some(m) => {
-                    let mut fragment = fragment.clone();
-                    if let Some(p) = m.payee {
-                        fragment.payee = Some(p);
-                    }
-                    Some(fragment)
-                }
-            }
-        }
-        self.0
-            .iter()
-            .try_fold(current.clone(), |prev, m| extract_impl(m, prev, entity))
+    fn extract<'a>(
+        &self,
+        current: Fragment<'a>,
+        entity: <M as Entity<'a>>::T,
+    ) -> Option<Fragment<'a>> {
+        self.0.iter().try_fold(current.clone(), |prev, matcher| {
+            matcher
+                .captures(&prev, entity)
+                .map(|matched| prev.clone() + matched)
+        })
     }
 }
 
@@ -208,6 +209,7 @@ impl<'a> From<regex::Captures<'a>> for Matched<'a> {
     fn from(from: regex::Captures<'a>) -> Self {
         return Matched {
             payee: from.name("payee").map(|x| x.as_str()),
+            code: from.name("code").map(|x| x.as_str()),
         };
     }
 }
@@ -220,16 +222,18 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn test_fragment_add_assign_filled() {
+    fn fragment_add_assign_filled() {
         let mut x = Fragment {
             cleared: true,
             payee: Some("foo"),
             account: None,
+            code: None,
         };
         let y = Fragment {
             cleared: false,
             payee: Some("bar"),
             account: Some("baz"),
+            code: Some("txn-id"),
         };
         x += y;
         assert_eq!(
@@ -237,32 +241,23 @@ mod tests {
             Fragment {
                 cleared: true,
                 payee: Some("bar"),
-                account: Some("baz")
+                account: Some("baz"),
+                code: Some("txn-id"),
             }
         );
     }
 
     #[test]
-    fn test_fragment_add_assign_empty() {
-        let mut x = Fragment {
+    fn fragment_add_assign_empty() {
+        let orig = Fragment {
             cleared: false,
             payee: Some("foo"),
             account: None,
+            code: Some("txn-id"),
         };
-        let y = Fragment {
-            cleared: false,
-            payee: None,
-            account: None,
-        };
-        x += y;
-        assert_eq!(
-            x,
-            Fragment {
-                cleared: false,
-                payee: Some("foo"),
-                account: None
-            }
-        );
+        let mut x = orig.clone();
+        x += Fragment::default();
+        assert_eq!(x, orig);
     }
 
     #[derive(Clone, Copy)]
@@ -292,12 +287,14 @@ mod tests {
             let field = match from.0 {
                 config::RewriteField::CreditorName => Ok(TestMatcherField::Creditor),
                 config::RewriteField::DebtorName => Ok(TestMatcherField::Debtor),
-                config::RewriteField::AdditionalTransactionInfo => Ok(TestMatcherField::AdditionalInfo),
+                config::RewriteField::AdditionalTransactionInfo => {
+                    Ok(TestMatcherField::AdditionalInfo)
+                }
                 config::RewriteField::Payee => Ok(TestMatcherField::Payee),
                 _ => Err(ImportError::Unimplemented("no support")),
             }?;
             let pattern = Regex::new(from.1)?;
-            Ok(TestMatcher{field, pattern})
+            Ok(TestMatcher { field, pattern })
         }
     }
 
@@ -306,7 +303,7 @@ mod tests {
     }
 
     impl EntityMatcher for TestMatcher {
-        fn captures<'a>( 
+        fn captures<'a>(
             &self,
             fragment: &Fragment<'a>,
             entity: <Self as Entity<'a>>::T,
@@ -317,14 +314,12 @@ mod tests {
                 TestMatcherField::AdditionalInfo => Some(entity.additional_info),
                 TestMatcherField::Payee => fragment.payee,
             }?;
-            self.pattern.captures(target).map(|c| Matched {
-                payee: c.name("payee").map(|x| x.as_str()),
-            })
+            self.pattern.captures(target).map(|x| x.into())
         }
     }
 
     #[test]
-    fn test_extract_single_match() {
+    fn extract_single_match() {
         let rw = vec![config::RewriteRule {
             matcher: config::RewriteMatcher::Field(config::FieldMatcher {
                 fields: hashmap! {
@@ -345,6 +340,7 @@ mod tests {
             cleared: true,
             account: Some("Income"),
             payee: Some("Payee"),
+            code: None,
         };
 
         let extractor: Extractor<TestMatcher> = (&rw).try_into().unwrap();
@@ -354,12 +350,12 @@ mod tests {
     }
 
     #[test]
-    fn test_from_config_multi_match() {
+    fn extract_multi_match() {
         let rw = vec![
             config::RewriteRule {
                 matcher: config::RewriteMatcher::Field(config::FieldMatcher {
                     fields: hashmap! {
-                        config::RewriteField::AdditionalTransactionInfo => r#"Some card (?P<payee>.*)"#.to_string(),
+                        config::RewriteField::AdditionalTransactionInfo => r#"Some card(?: \[(?P<code>\d+)\])? (?P<payee>.*)"#.to_string(),
                     },
                 }),
                 pending: false, // pending: true implied
@@ -408,12 +404,12 @@ mod tests {
             TestEntity {
                 creditor: "",
                 debtor: "",
-                additional_info: "Some card Certain Petrol",
+                additional_info: "Some card [123] Certain Petrol",
             },
             TestEntity {
                 creditor: "",
                 debtor: "",
-                additional_info: "Some card unknown payee",
+                additional_info: "Some card [456] unknown payee",
             },
             TestEntity {
                 creditor: "",
@@ -426,27 +422,27 @@ mod tests {
                 cleared: true,
                 account: Some("Expenses:Grocery"),
                 payee: Some("Grocery shop"),
+                code: None,
             },
             Fragment {
                 cleared: true,
                 account: Some("Expenses:Grocery"),
                 payee: Some("Another shop"),
+                code: None,
             },
             Fragment {
                 cleared: false,
                 account: Some("Expenses:Petrol"),
                 payee: Some("Certain Petrol"),
+                code: Some("123"),
             },
             Fragment {
                 cleared: false,
                 account: None,
                 payee: Some("unknown payee"),
+                code: Some("456"),
             },
-            Fragment {
-                cleared: false,
-                account: None,
-                payee: None,
-            },
+            Fragment::default(),
         ];
 
         let extractor: Extractor<TestMatcher> = (&rw).try_into().unwrap();
