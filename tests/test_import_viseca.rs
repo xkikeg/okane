@@ -8,8 +8,8 @@ fn init() {
 #[test]
 fn test_import() {
     let config = testing::TESTDATA_DIR.join("test_config.yml");
-    let input = testing::TESTDATA_DIR.join("iso_camt.xml");
-    let want = testing::read_as_utf8("iso_camt.ledger").expect("cannot read want");
+    let input = testing::TESTDATA_DIR.join("viseca.txt");
+    let want = testing::read_as_utf8("viseca.ledger").expect("cannot read want");
     let mut result: Vec<u8> = Vec::new();
 
     okane::cmd::ImportCmd {

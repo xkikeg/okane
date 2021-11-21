@@ -11,6 +11,8 @@ pub enum ImportError {
     XML(#[from] quick_xml::DeError),
     #[error("failed to parse YAML")]
     YAML(#[from] serde_yaml::Error),
+    #[error("failed to parse VISECA file: {0}")]
+    Viseca(String),
     #[error("invalid flag {0}")]
     InvalidFlag(&'static str),
     #[error("invalid config {0}")]

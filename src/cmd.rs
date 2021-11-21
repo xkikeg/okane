@@ -27,8 +27,9 @@ impl<'c> ImportCmd<'c> {
         let file = File::open(&self.target_path)?;
         // Use dedicated flags or config systems instead.
         let format = match self.target_path.extension().and_then(OsStr::to_str) {
-            Some("csv") => Ok(Format::CSV),
+            Some("csv") => Ok(Format::Csv),
             Some("xml") => Ok(Format::IsoCamt053),
+            Some("txt") => Ok(Format::Viseca),
             _ => Err(ImportError::UnknownFormat),
         }?;
         let mut decoded = DecodeReaderBytesBuilder::new()

@@ -93,3 +93,11 @@ rewrite:
       - payee: EURO GROCERY
       - payee: 山田商店
     account: Expenses:Grocery
+---
+path: testdata/viseca.txt
+encoding: UTF-8
+account: Liabilities:Okane Card
+account_type: liability
+operator: Okane Card (fee)
+commodity: CHF
+rewrite: []

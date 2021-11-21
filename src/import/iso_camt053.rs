@@ -11,9 +11,9 @@ use std::convert::{TryFrom, TryInto};
 use regex::Regex;
 use rust_decimal::Decimal;
 
-pub struct ISOCamt053Importer {}
+pub struct IsoCamt053Importer {}
 
-impl super::Importer for ISOCamt053Importer {
+impl super::Importer for IsoCamt053Importer {
     fn import<R>(
         &self,
         r: &mut R,
@@ -216,9 +216,7 @@ fn to_field(f: config::RewriteField) -> Result<MatchField, ImportError> {
 
 impl TryFrom<(config::RewriteField, &str)> for FieldMatch {
     type Error = ImportError;
-    fn try_from(from: (config::RewriteField, &str)) -> Result<FieldMatch, ImportError> {
-        let f = from.0;
-        let v = from.1;
+    fn try_from((f, v): (config::RewriteField, &str)) -> Result<FieldMatch, ImportError> {
         Ok(match f {
             config::RewriteField::DomainCode => {
                 let code = serde_yaml::from_str(v)?;
@@ -249,11 +247,9 @@ impl extract::EntityMatcher for FieldMatch {
     fn captures<'a>(
         &self,
         fragment: &extract::Fragment<'a>,
-        entity: (&'a xmlnode::Entry, Option<&'a xmlnode::TransactionDetails>),
+        (entry, transaction): (&'a xmlnode::Entry, Option<&'a xmlnode::TransactionDetails>),
     ) -> Option<extract::Matched<'a>> {
         use either::Either;
-        let entry = &entity.0;
-        let transaction = &entity.1;
         let has_match = match self {
             FieldMatch::DomainCode(code) => {
                 Either::Left(*code == entry.bank_transaction_code.domain.code.value)
