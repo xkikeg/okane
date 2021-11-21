@@ -1,13 +1,16 @@
 use super::config;
+use super::extract;
 use super::single_entry;
 use super::ImportError;
 use crate::data;
 use data::parse_comma_decimal;
 
 use std::collections::HashMap;
+use std::convert::{TryFrom, TryInto};
 
 use chrono::NaiveDate;
 use log::{info, warn};
+use regex::Regex;
 use rust_decimal::Decimal;
 
 pub struct CSVImporter {}
@@ -26,7 +29,7 @@ impl super::Importer for CSVImporter {
         let header = rdr.headers()?;
         let fm = resolve_fields(&config.format.fields, header)?;
         let size = fm.max();
-        let rewriter = new_rewriter(config)?;
+        let extractor: extract::Extractor<CsvMatcher> = (&config.rewrite).try_into()?;
         for may_record in rdr.records() {
             let r = may_record?;
             let pos = r.position().expect("csv record position");
@@ -48,7 +51,7 @@ impl super::Importer for CSVImporter {
                 .balance
                 .map(|b| parse_comma_decimal(r.get(b).unwrap()))
                 .transpose()?;
-            let fragment = rewriter.rewrite(original_payee);
+            let fragment = extractor.extract(Payee(original_payee));
             if fragment.account.is_none() {
                 warn!(
                     "account unmatched at line {}, payee={}",
@@ -58,7 +61,7 @@ impl super::Importer for CSVImporter {
             }
             let mut txn = single_entry::Txn::new(
                 date,
-                fragment.payee,
+                fragment.payee.expect("Fragment.payee must be set"),
                 data::Amount {
                     value: amount,
                     commodity: config.commodity.clone(),
@@ -209,93 +212,47 @@ fn resolve_fields(
     })
 }
 
-struct OrPattern(Vec<regex::Regex>);
+/// Payee is a wrapper to represent payee.
+/// In future we'll use CSV-row instead of just a payee.
+#[derive(Debug, Copy, Clone)]
+struct Payee<'a>(&'a str);
 
-impl OrPattern {
-    fn captures<'t>(&self, text: &'t str) -> Option<regex::Captures<'t>> {
-        self.0.iter().filter_map(|p| p.captures(text)).next()
-    }
-}
-
-impl config::RewriteMatcher {
-    fn to_pattern(&self) -> Result<OrPattern, ImportError> {
-        match self {
-            config::RewriteMatcher::Or(ms) => ms.iter().map(|x| x.to_payee_matcher()).collect(),
-            config::RewriteMatcher::Field(fm) => fm.to_payee_matcher().map(|x| vec![x]),
-        }
-        .map(OrPattern)
-    }
-}
-
-impl config::FieldMatcher {
-    fn to_payee_matcher(&self) -> Result<regex::Regex, ImportError> {
-        let payee = self
-            .fields
-            .get(&config::RewriteField::Payee)
-            .ok_or(ImportError::Unimplemented("only payee field is supported"))?;
-        regex::Regex::new(payee).map_err(ImportError::InvalidRegex)
-    }
-}
-
-struct RewriteElement {
-    // matches any of the following pattern.
-    payee: OrPattern,
-    cleared: bool,
-    account: Option<String>,
-}
-
-/// Holds rewrite config to provide rewrite method.
-struct Rewriter {
-    elems: Vec<RewriteElement>,
-}
-
-fn new_rewriter(config: &config::ConfigEntry) -> Result<Rewriter, ImportError> {
-    let mut elems = Vec::new();
-    for rw in &config.rewrite {
-        let m = rw.matcher.to_pattern()?;
-        elems.push(RewriteElement {
-            payee: m,
-            cleared: !rw.pending,
-            account: rw.account.clone(),
-        });
-    }
-    Ok(Rewriter { elems })
-}
-
+/// Matcher for CSV, currently it only checks payee.
 #[derive(Debug)]
-struct Fragment<'a> {
-    payee: &'a str,
-    code: Option<&'a str>,
-    cleared: bool,
-    account: Option<&'a str>,
+struct CsvMatcher(regex::Regex);
+
+impl<'a> extract::Entity<'a> for CsvMatcher {
+    type T = Payee<'a>;
 }
 
-impl Rewriter {
-    fn rewrite<'a>(&'a self, payee: &'a str) -> Fragment<'a> {
-        let mut payee = payee;
-        let mut code = None;
-        let mut cleared = false;
-        let mut account = None;
-        for elem in &self.elems {
-            if let Some(c) = elem.payee.captures(payee) {
-                if let Some(p) = c.name("payee") {
-                    payee = p.as_str();
-                }
-                if let Some(p) = c.name("code") {
-                    code = Some(p.as_str());
-                }
-                if let Some(a) = &elem.account {
-                    account = Some(a.as_str());
-                }
-                cleared = cleared || elem.cleared;
-            }
+impl TryFrom<(config::RewriteField, &str)> for CsvMatcher {
+    type Error = ImportError;
+
+    fn try_from(from: (config::RewriteField, &str)) -> Result<CsvMatcher, ImportError> {
+        if from.0 == config::RewriteField::Payee {
+            let re = Regex::new(from.1)?;
+            Ok(CsvMatcher(re))
+        } else {
+            Err(ImportError::Other(format!(
+                "unsupported matcher field: {}",
+                from.0
+            )))
         }
-        Fragment {
-            payee,
-            code,
-            cleared,
-            account,
-        }
+    }
+}
+
+impl extract::EntityMatcher for CsvMatcher {
+    fn captures<'a>(
+        &self,
+        fragment: &extract::Fragment<'a>,
+        entity: Payee<'a>,
+    ) -> Option<extract::Matched<'a>> {
+        let payee = fragment.payee.unwrap_or(entity.0);
+        let matched: Option<extract::Matched<'_>> = self.0.captures(payee).map(|c| c.into());
+        matched.map(|m| extract::Matched {
+            payee: m.payee.or(fragment.payee).or(Some(entity.0)),
+            ..m
+        })
     }
 }
 
