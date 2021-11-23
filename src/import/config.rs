@@ -188,6 +188,7 @@ pub enum RewriteField {
     UltimateDebtorName,
     RemittanceUnstructuredInfo,
     AdditionalTransactionInfo,
+    Category,
     Payee,
 }
 

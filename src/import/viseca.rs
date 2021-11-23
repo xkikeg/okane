@@ -72,6 +72,7 @@ impl super::Importer for VisecaImporter {
 #[derive(Debug, Clone, Copy)]
 enum Field {
     Payee,
+    Category,
 }
 
 #[derive(Debug)]
@@ -85,6 +86,7 @@ impl TryFrom<(config::RewriteField, &str)> for VisecaMatcher {
     fn try_from((f, v): (config::RewriteField, &str)) -> Result<VisecaMatcher, ImportError> {
         let field = match f {
             config::RewriteField::Payee => Field::Payee,
+            config::RewriteField::Category => Field::Category,
             _ => {
                 return Err(ImportError::InvalidConfig("unsupported rewrite field"));
             }
@@ -106,6 +108,7 @@ impl extract::EntityMatcher for VisecaMatcher {
     ) -> Option<extract::Matched<'a>> {
         let target = match self.field {
             Field::Payee => fragment.payee.unwrap_or_else(|| entity.payee.as_str()),
+            Field::Category => entity.category.as_str(),
         };
         self.pattern.captures(target).map(Into::into)
     }

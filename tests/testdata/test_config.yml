@@ -100,4 +100,14 @@ account: Liabilities:Okane Card
 account_type: liability
 operator: Okane Card (fee)
 commodity: CHF
-rewrite: []
+rewrite:
+  - account: Expenses:Telecom
+    matcher:
+    - category: Telecommunication services
+  - account: Expenses:Car:Gas
+    pending: true
+    matcher:
+    - category: Service stations
+  - account: Expenses:Amusement
+    matcher:
+      payee: YouTubePremium
