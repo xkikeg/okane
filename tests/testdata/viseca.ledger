@@ -1,13 +1,13 @@
 2020/08/04=2020/08/05 * certain, phone company CH
     Liabilities:Okane Card                     -5.00 CHF
-    ! Expenses:Unknown                          5.00 CHF
+    Expenses:Telecom                            5.00 CHF
 
 2020/08/10=2020/08/11 * Europe Gas AT
     Liabilities:Okane Card                    -52.10 CHF
-    ! Expenses:Unknown                         46.88 EUR @ 1.092432 CHF
+    ! Expenses:Car:Gas                         46.88 EUR @ 1.092432 CHF
     Expenses:Commissions                        0.90 CHF  ; Payee: Okane Card (fee)
 
 2020/08/11=2020/08/12 * GOOGLE *YouTubePremium, g.co/helppay# GB
     Liabilities:Okane Card                    -23.90 CHF
-    ! Expenses:Unknown                         23.90 CHF
+    Expenses:Amusement                         23.90 CHF
 
