@@ -127,7 +127,7 @@ impl<'a, M: EntityMatcher> ExtractRule<'a, M> {
         self.match_expr.extract(current, entity).map(|mut current| {
             current.payee = self.payee.or(current.payee);
             current.account = self.account;
-            if current.payee.is_some() && current.account.is_some() {
+            if current.account.is_some() {
                 current.cleared = current.cleared || !self.pending;
             }
             current

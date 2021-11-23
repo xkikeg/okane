@@ -61,7 +61,7 @@ impl super::Importer for CsvImporter {
             }
             let mut txn = single_entry::Txn::new(
                 date,
-                fragment.payee.expect("Fragment.payee must be set"),
+                fragment.payee.unwrap_or(original_payee),
                 data::Amount {
                     value: amount,
                     commodity: config.commodity.clone(),
@@ -248,11 +248,7 @@ impl extract::EntityMatcher for CsvMatcher {
         entity: Payee<'a>,
     ) -> Option<extract::Matched<'a>> {
         let payee = fragment.payee.unwrap_or(entity.0);
-        let matched: Option<extract::Matched<'_>> = self.0.captures(payee).map(|c| c.into());
-        matched.map(|m| extract::Matched {
-            payee: m.payee.or(fragment.payee).or(Some(entity.0)),
-            ..m
-        })
+        self.0.captures(payee).map(|c| c.into())
     }
 }
 
