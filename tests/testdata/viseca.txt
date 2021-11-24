@@ -6,3 +6,6 @@ Exchange rate 1.092432 of 11.08.20 CHF 51.20
 Processing fee 1.75% CHF 0.90
 11.08.20 12.08.20 GOOGLE *YouTubePremium, g.co/helppay# GB 23.90
 Digital goods, movies, music
+13.12.20 15.12.20 PAYPAL *STEAM GAMES, 35314369001 GB CHF 19.00 19.35
+Game, toy, and hobby shops
+Processing fee 1.75% CHF 0.35

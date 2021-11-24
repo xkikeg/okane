@@ -1,4 +1,4 @@
-use super::format::{Entry, Exchange};
+use super::format::{Amount, Entry, Exchange, Fee};
 use crate::import::ImportError;
 
 use std::io::BufRead;
@@ -19,14 +19,16 @@ pub struct Parser<T: BufRead> {
     reader: T,
     buf: String,
     line_count: usize,
+    currency: String,
 }
 
 impl<T: BufRead> Parser<T> {
-    pub fn new(reader: T) -> Parser<T> {
+    pub fn new(reader: T, currency: String) -> Parser<T> {
         Parser {
             reader,
             buf: String::new(),
             line_count: 0,
+            currency,
         }
     }
 
@@ -48,7 +50,7 @@ impl<T: BufRead> Parser<T> {
         let payee = self
             .expect_name(&c, "payee", "payee should exist")
             .map(ToOwned::to_owned)?;
-        let exchange = match c.name("currency") {
+        let spent = match c.name("currency") {
             None => None,
             Some(currency) => {
                 let examount_str = self.expect_name(
@@ -57,7 +59,10 @@ impl<T: BufRead> Parser<T> {
                     "currency and examount should exist together",
                 )?;
                 let examount = parse_decimal(examount_str)?;
-                Some((currency.as_str().to_string(), examount))
+                Some(Amount {
+                    currency: currency.as_str().to_string(),
+                    value: examount,
+                })
             }
         };
         let amount_str = self.expect_name(&c, "amount", "amount should exist")?;
@@ -67,9 +72,12 @@ impl<T: BufRead> Parser<T> {
             return Err(self.err("category line not found"));
         }
         let category = self.buf.trim().to_string();
-        let exchange = exchange
-            .map(|(excurrency, examount)| self.parse_exchange(excurrency, examount))
+        let exchange = spent
+            .as_ref()
+            .filter(|spent| *spent.currency != self.currency)
+            .map(|_| self.parse_exchange())
             .transpose()?;
+        let fee = spent.as_ref().map(|_| self.parse_fee()).transpose()?;
         Ok(Some(Entry {
             line_count,
             date,
@@ -77,15 +85,13 @@ impl<T: BufRead> Parser<T> {
             payee,
             amount,
             category,
+            spent,
             exchange,
+            fee,
         }))
     }
 
-    fn parse_exchange(
-        &mut self,
-        exchanged_currency: String,
-        exchanged_amount: Decimal,
-    ) -> Result<Exchange, ImportError> {
+    fn parse_exchange(&mut self) -> Result<Exchange, ImportError> {
         let read_bytes = self.read_line()?;
         if read_bytes == 0 {
             return Err(self.err("exchange rate line not found"));
@@ -97,11 +103,22 @@ impl<T: BufRead> Parser<T> {
         let rate = parse_decimal(rate)?;
         let date = self.expect_name(&c, "date", "date must appear")?;
         let date = parse_euro_date(date)?;
-        let spent_currency = self
-            .expect_name(&c, "scurrency", "spent currency must appear")
+        let equiv_currency = self
+            .expect_name(&c, "scurrency", "equivalent currency must appear")
             .map(ToOwned::to_owned)?;
-        let spent_amount = self.expect_name(&c, "samount", "spent amount must appear")?;
-        let spent_amount = parse_decimal(spent_amount)?;
+        let equiv_amount = self.expect_name(&c, "samount", "equivalent amount must appear")?;
+        let equiv_amount = parse_decimal(equiv_amount)?;
+        Ok(Exchange {
+            rate,
+            rate_date: date,
+            equivalent: Amount {
+                currency: equiv_currency,
+                value: equiv_amount,
+            },
+        })
+    }
+
+    fn parse_fee(&mut self) -> Result<Fee, ImportError> {
         let read_bytes = self.read_line()?;
         if read_bytes == 0 {
             return Err(self.err("fee line not found"));
@@ -109,23 +126,19 @@ impl<T: BufRead> Parser<T> {
         let c = FEE_LINE
             .captures(self.buf.trim_end())
             .ok_or_else(|| self.err("Processing fee ... line expected"))?;
-        let fee_percent = self.expect_name(&c, "percent", "fee percent must appear")?;
-        let fee_percent = parse_decimal(fee_percent)?;
+        let percent = self.expect_name(&c, "percent", "fee percent must appear")?;
+        let percent = parse_decimal(percent)?;
         let fee_currency = self
             .expect_name(&c, "fcurrency", "fee currency must appear")
             .map(ToOwned::to_owned)?;
         let fee_amount = self.expect_name(&c, "famount", "fee amount must appear")?;
         let fee_amount = parse_decimal(fee_amount)?;
-        Ok(Exchange {
-            rate,
-            rate_date: date,
-            exchanged_currency,
-            exchanged_amount,
-            spent_currency,
-            spent_amount,
-            fee_percent,
-            fee_currency,
-            fee_amount,
+        Ok(Fee {
+            percent,
+            amount: Amount {
+                currency: fee_currency,
+                value: fee_amount,
+            },
         })
     }
 
@@ -196,8 +209,11 @@ mod tests {
             Service stations
             Exchange rate 1.092432 of 09.08.20 CHF 51.20
             Processing fee 1.75% CHF 0.90
+            13.12.20 15.12.20 PAYPAL *STEAM GAMES, 35314369001 GB CHF 19.00 19.35
+            Game, toy, and hobby shops
+            Processing fee 1.75% CHF 0.35
         "};
-        let mut p = Parser::new(input.as_bytes());
+        let mut p = Parser::new(input.as_bytes(), "CHF".to_string());
         assert_eq!(
             Some(Entry {
                 line_count: 1,
@@ -206,7 +222,9 @@ mod tests {
                 payee: "foo shop 100".to_owned(),
                 amount: dec!(1234.56),
                 category: "Catering Service".to_owned(),
+                spent: None,
                 exchange: None,
+                fee: None,
             }),
             p.parse_entry().unwrap()
         );
@@ -218,18 +236,49 @@ mod tests {
                 payee: "Super gas".to_string(),
                 amount: dec!(52.10),
                 category: "Service stations".to_string(),
+                spent: Some(Amount {
+                    value: dec!(46.88),
+                    currency: "EUR".to_string(),
+                }),
                 exchange: Some(Exchange {
-                    exchanged_amount: dec!(46.88),
-                    exchanged_currency: "EUR".to_string(),
                     rate: dec!(1.092432),
                     rate_date: NaiveDate::from_ymd_opt(2020, 8, 9).unwrap(),
-                    spent_amount: dec!(51.20),
-                    spent_currency: "CHF".to_string(),
-                    fee_percent: dec!(1.75),
-                    fee_amount: dec!(0.90),
-                    fee_currency: "CHF".to_string(),
+                    equivalent: Amount {
+                        value: dec!(51.20),
+                        currency: "CHF".to_string(),
+                    },
+                }),
+                fee: Some(Fee {
+                    percent: dec!(1.75),
+                    amount: Amount {
+                        value: dec!(0.90),
+                        currency: "CHF".to_string(),
+                    },
                 }),
             }),
+            p.parse_entry().unwrap()
+        );
+        assert_eq!(
+            Some(Entry {
+                line_count: 7,
+                date: NaiveDate::from_ymd(2020, 12, 13),
+                effective_date: NaiveDate::from_ymd(2020, 12, 15),
+                payee: "PAYPAL *STEAM GAMES, 35314369001 GB".to_string(),
+                amount: dec!(19.35),
+                category: "Game, toy, and hobby shops".to_string(),
+                spent: Some(Amount {
+                    value: dec!(19.00),
+                    currency: "CHF".to_string(),
+                }),
+                exchange: None,
+                fee: Some(Fee {
+                    percent: dec!(1.75),
+                    amount: Amount {
+                        currency: "CHF".to_string(),
+                        value: dec!(0.35),
+                    },
+                },),
+            },),
             p.parse_entry().unwrap()
         );
         assert_eq!(None, p.parse_entry().unwrap());
