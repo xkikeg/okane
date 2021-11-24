@@ -101,6 +101,9 @@ account_type: liability
 operator: Okane Card (fee)
 commodity: CHF
 rewrite:
+  - account: Assets:Wire
+    matcher:
+    - payee: Your payment - Thank you
   - account: Expenses:Telecom
     matcher:
     - category: Telecommunication services
