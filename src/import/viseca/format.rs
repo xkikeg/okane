@@ -10,7 +10,15 @@ pub struct Entry {
     pub payee: String,
     pub amount: Decimal,
     pub category: String,
+    pub spent: Option<Amount>,
     pub exchange: Option<Exchange>,
+    pub fee: Option<Fee>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Amount {
+    pub value: Decimal,
+    pub currency: String,
 }
 
 /// Exchange is a FX info.
@@ -18,15 +26,13 @@ pub struct Entry {
 pub struct Exchange {
     pub rate: Decimal,
     pub rate_date: NaiveDate,
-    /// exchanged currency
-    pub exchanged_currency: String,
-    pub exchanged_amount: Decimal,
-    /// spent value in transformed currency.
-    /// The Entry.amount is deducted value.
-    pub spent_currency: String,
-    pub spent_amount: Decimal,
+    /// original currency representation of spent.
+    pub equivalent: Amount,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Fee {
     /// fee amount and currency.
-    pub fee_percent: Decimal,
-    pub fee_currency: String,
-    pub fee_amount: Decimal,
+    pub percent: Decimal,
+    pub amount: Amount,
 }
