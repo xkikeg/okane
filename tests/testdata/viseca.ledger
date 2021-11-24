@@ -20,3 +20,7 @@
     ! Expenses:Unknown                         19.00 CHF
     Expenses:Commissions                        0.35 CHF  ; Payee: Okane Card (fee)
 
+2021/03/05=2021/02/24 * HM.COM, NEUENDORF CH
+    ! Income:Unknown                          -92.90 CHF
+    Liabilities:Okane Card                     92.90 CHF
+

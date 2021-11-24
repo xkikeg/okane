@@ -9,62 +9,59 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use rust_decimal::Decimal;
 
-static FIRST_LINE_PATTERN: &str = r"(?P<date>\d{2}.\d{2}.\d{2}) (?P<edate>\d{2}.\d{2}.\d{2}) (?P<payee>.*?)(?: (?P<currency>[A-Z]{3}) (?P<examount>[0-9.']+))? (?P<amount>[0-9.']+)";
-
 lazy_static! {
-    static ref PAYMENT_LINE: Regex = Regex::new(format!("^{} -$", FIRST_LINE_PATTERN).as_str()).unwrap();
-    static ref FIRST_LINE: Regex = Regex::new(format!("^{}$", FIRST_LINE_PATTERN).as_str()).unwrap();
+    static ref FIRST_LINE: Regex = Regex::new(r"^(?P<date>\d{2}.\d{2}.\d{2}) (?P<edate>\d{2}.\d{2}.\d{2}) (?P<payee>.*?)(?: (?P<currency>[A-Z]{3}) (?P<examount>[0-9.']+))? (?P<amount>[0-9.']+)(?P<neg> -)?$").unwrap();
     static ref EXCHANGE_RATE_LINE: Regex = Regex::new(r"^Exchange rate (?P<rate>[0-9.]+) of (?P<date>\d{2}.\d{2}.\d{2}) (?P<scurrency>[A-Z]{3}) (?P<samount>[0-9.']+)$").unwrap();
     static ref FEE_LINE: Regex = Regex::new(r"^Processing fee (?P<percent>[0-9.]+)% (?P<fcurrency>[A-Z]{3}) (?P<famount>[0-9.']+)$").unwrap();
 }
 
 pub struct Parser<T: BufRead> {
-    reader: T,
-    buf: String,
-    line_count: usize,
+    reader: LineReader<T>,
     currency: String,
 }
 
 impl<T: BufRead> Parser<T> {
     pub fn new(reader: T, currency: String) -> Parser<T> {
         Parser {
-            reader,
-            buf: String::new(),
-            line_count: 0,
+            reader: LineReader::new(reader),
             currency,
         }
     }
 
     pub fn parse_entry(&mut self) -> Result<Option<Entry>, ImportError> {
-        let read_bytes = self.read_line()?;
+        let read_bytes = self.reader.read_line()?;
         if read_bytes == 0 {
             return Ok(None);
-        }
-        let line_count = self.line_count;
-        let l = self.buf.trim_end();
-        if let Some(c) = PAYMENT_LINE.captures(l) {
-            let entry = self.parse_first_line(c)?;
-            return Ok(Some(Entry{
-                line_count,
-                amount: -entry.amount,
-                ..entry
-            }));
-        }
+        };
+        let l = self.reader.buf.as_str().trim_end();
+        let line_count = self.reader.line_count;
         let c = FIRST_LINE
             .captures(l)
-            .ok_or_else(|| self.err(format!("unsupported entry line: {}", l)))?;
+            .ok_or_else(|| self.err(format!("unsupported entry line: {:?}", l)))?;
         let entry_base = self.parse_first_line(c)?;
-        let read_bytes = self.read_line()?;
+        let next_line_size = self.reader.peek()?;
+        if next_line_size == 0 || self.reader.buf.chars().next().unwrap().is_digit(10) {
+            return Ok(Some(Entry {
+                line_count,
+                ..entry_base
+            }));
+        }
+        let read_bytes = self.reader.read_line()?;
         if read_bytes == 0 {
             return Err(self.err("category line not found"));
         }
-        let category = self.buf.trim().to_string();
-        let exchange = entry_base.spent
+        let category = self.reader.buf.trim().to_string();
+        let exchange = entry_base
+            .spent
             .as_ref()
             .filter(|spent| *spent.currency != self.currency)
             .map(|_| self.parse_exchange())
             .transpose()?;
-        let fee = entry_base.spent.as_ref().map(|_| self.parse_fee()).transpose()?;
+        let fee = entry_base
+            .spent
+            .as_ref()
+            .map(|_| self.parse_fee())
+            .transpose()?;
         Ok(Some(Entry {
             line_count,
             category,
@@ -100,12 +97,16 @@ impl<T: BufRead> Parser<T> {
         };
         let amount_str = self.expect_name(&c, "amount", "amount should exist")?;
         let amount = parse_decimal(amount_str)?;
+        let sign = c
+            .name("neg")
+            .map(|_| Decimal::NEGATIVE_ONE)
+            .unwrap_or(Decimal::ONE);
         Ok(Entry {
             line_count: 0,
             date,
             effective_date: edate,
             payee,
-            amount,
+            amount: amount * sign,
             category: String::new(),
             spent,
             exchange: None,
@@ -114,12 +115,12 @@ impl<T: BufRead> Parser<T> {
     }
 
     fn parse_exchange(&mut self) -> Result<Exchange, ImportError> {
-        let read_bytes = self.read_line()?;
+        let read_bytes = self.reader.read_line()?;
         if read_bytes == 0 {
             return Err(self.err("exchange rate line not found"));
         }
         let c = EXCHANGE_RATE_LINE
-            .captures(self.buf.trim_end())
+            .captures(self.reader.buf.trim_end())
             .ok_or_else(|| self.err("Exchange rate ... line expected"))?;
         let rate = self.expect_name(&c, "rate", "rate must appear")?;
         let rate = parse_decimal(rate)?;
@@ -141,12 +142,12 @@ impl<T: BufRead> Parser<T> {
     }
 
     fn parse_fee(&mut self) -> Result<Fee, ImportError> {
-        let read_bytes = self.read_line()?;
+        let read_bytes = self.reader.read_line()?;
         if read_bytes == 0 {
             return Err(self.err("fee line not found"));
         }
         let c = FEE_LINE
-            .captures(self.buf.trim_end())
+            .captures(self.reader.buf.trim_end())
             .ok_or_else(|| self.err("Processing fee ... line expected"))?;
         let percent = self.expect_name(&c, "percent", "fee percent must appear")?;
         let percent = parse_decimal(percent)?;
@@ -164,13 +165,6 @@ impl<T: BufRead> Parser<T> {
         })
     }
 
-    fn read_line(&mut self) -> Result<usize, ImportError> {
-        self.buf.clear();
-        let read_bytes = self.reader.read_line(&mut self.buf)?;
-        self.line_count += 1;
-        Ok(read_bytes)
-    }
-
     fn expect_name<'a>(
         &self,
         c: &'a regex::Captures,
@@ -183,7 +177,54 @@ impl<T: BufRead> Parser<T> {
     }
 
     fn err<U: AsRef<str>>(&self, msg: U) -> ImportError {
-        ImportError::Viseca(format!("{} @ line {}", msg.as_ref(), self.line_count))
+        ImportError::Viseca(format!(
+            "{} @ line {}",
+            msg.as_ref(),
+            self.reader.line_count
+        ))
+    }
+}
+
+struct LineReader<T: BufRead> {
+    reader: T,
+    buf: String,
+    // read byte
+    is_peek: Option<usize>,
+    line_count: usize,
+}
+
+impl<T: BufRead> LineReader<T> {
+    fn new(r: T) -> LineReader<T> {
+        LineReader {
+            reader: r,
+            buf: String::new(),
+            is_peek: None,
+            line_count: 0,
+        }
+    }
+
+    /// Peek the next line, and returns the ref if available, None in EOF.
+    /// It'll invalidate the previous buf.
+    fn peek(&mut self) -> Result<usize, std::io::Error> {
+        if let Some(read_bytes) = self.is_peek {
+            return Ok(read_bytes);
+        }
+        self.buf.clear();
+        let read_bytes = self.reader.read_line(&mut self.buf)?;
+        self.is_peek = Some(read_bytes);
+        Ok(read_bytes)
+    }
+
+    fn read_line(&mut self) -> Result<usize, ImportError> {
+        if let Some(read_bytes) = self.is_peek {
+            self.line_count += 1;
+            self.is_peek = None;
+            return Ok(read_bytes);
+        }
+        self.buf.clear();
+        let read_bytes = self.reader.read_line(&mut self.buf)?;
+        self.line_count += 1;
+        Ok(read_bytes)
     }
 }
 
@@ -202,6 +243,37 @@ mod tests {
     use indoc::indoc;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
+
+    #[test]
+    fn line_reader_peek_and_read_line() {
+        let input = indoc! {"
+            First line
+            Second line
+            Third line
+        "};
+        let mut r = LineReader::new(input.as_bytes());
+
+        assert_eq!(11, r.peek().unwrap());
+        assert_eq!("First line\n", &r.buf);
+        assert_eq!(0, r.line_count);
+        assert_eq!(11, r.peek().unwrap());
+        assert_eq!("First line\n", &r.buf);
+        assert_eq!(0, r.line_count);
+        assert_eq!(11, r.read_line().unwrap());
+        assert_eq!("First line\n", &r.buf);
+        assert_eq!(1, r.line_count);
+        assert_eq!(12, r.read_line().unwrap());
+        assert_eq!("Second line\n", &r.buf);
+        assert_eq!(2, r.line_count);
+        assert_eq!(11, r.peek().unwrap());
+        assert_eq!("Third line\n", &r.buf);
+        assert_eq!(2, r.line_count);
+        assert_eq!(11, r.read_line().unwrap());
+        assert_eq!("Third line\n", &r.buf);
+        assert_eq!(3, r.line_count);
+        assert_eq!(0, r.peek().unwrap());
+        assert_eq!(0, r.read_line().unwrap());
+    }
 
     #[test]
     fn parse_euro_date_valid() {
@@ -226,7 +298,9 @@ mod tests {
     fn test_parse_entry() {
         let input = indoc! {"
             21.06.20 22.06.20 Your payment - Thank you 4'204.75 -
-            22.06.20 13.09.21 foo shop 100 1'234.56
+            22.06.20 24.06.20 foo shop 100 1'234.56
+            Catering Service
+            29.06.20 01.07.20 foo shop 100 56.23 -
             Catering Service
             10.08.20 11.08.20 Super gas EUR 46.88 52.10
             Service stations
@@ -255,7 +329,7 @@ mod tests {
             Some(Entry {
                 line_count: 2,
                 date: NaiveDate::from_ymd(2020, 6, 22),
-                effective_date: NaiveDate::from_ymd(2021, 9, 13),
+                effective_date: NaiveDate::from_ymd(2020, 6, 24),
                 payee: "foo shop 100".to_owned(),
                 amount: dec!(1234.56),
                 category: "Catering Service".to_owned(),
@@ -268,6 +342,20 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 4,
+                date: NaiveDate::from_ymd(2020, 6, 29),
+                effective_date: NaiveDate::from_ymd(2020, 7, 1),
+                payee: "foo shop 100".to_string(),
+                amount: dec!(-56.23),
+                category: "Catering Service".to_string(),
+                spent: None,
+                exchange: None,
+                fee: None,
+            }),
+            p.parse_entry().unwrap()
+        );
+        assert_eq!(
+            Some(Entry {
+                line_count: 6,
                 date: NaiveDate::from_ymd_opt(2020, 8, 10).unwrap(),
                 effective_date: NaiveDate::from_ymd_opt(2020, 8, 11).unwrap(),
                 payee: "Super gas".to_string(),
@@ -297,7 +385,7 @@ mod tests {
         );
         assert_eq!(
             Some(Entry {
-                line_count: 8,
+                line_count: 10,
                 date: NaiveDate::from_ymd(2020, 12, 13),
                 effective_date: NaiveDate::from_ymd(2020, 12, 15),
                 payee: "PAYPAL *STEAM GAMES, 35314369001 GB".to_string(),
