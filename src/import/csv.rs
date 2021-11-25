@@ -18,7 +18,7 @@ pub struct CsvImporter {}
 impl super::Importer for CsvImporter {
     fn import<R: std::io::Read>(
         &self,
-        r: &mut R,
+        r: R,
         config: &config::ConfigEntry,
     ) -> Result<Vec<single_entry::Txn>, ImportError> {
         let mut res: Vec<single_entry::Txn> = Vec::new();

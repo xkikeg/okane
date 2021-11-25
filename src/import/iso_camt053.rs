@@ -16,7 +16,7 @@ pub struct IsoCamt053Importer {}
 impl super::Importer for IsoCamt053Importer {
     fn import<R>(
         &self,
-        r: &mut R,
+        r: R,
         config: &config::ConfigEntry,
     ) -> Result<Vec<single_entry::Txn>, ImportError>
     where

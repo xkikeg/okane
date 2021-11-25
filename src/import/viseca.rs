@@ -16,7 +16,7 @@ pub struct VisecaImporter {}
 impl super::Importer for VisecaImporter {
     fn import<R: std::io::Read>(
         &self,
-        r: &mut R,
+        r: R,
         config: &config::ConfigEntry,
     ) -> Result<Vec<single_entry::Txn>, ImportError> {
         let extractor: extract::Extractor<VisecaMatcher> = (&config.rewrite).try_into()?;

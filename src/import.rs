@@ -22,7 +22,7 @@ pub enum Format {
 }
 
 pub fn import<R: std::io::Read>(
-    r: &mut R,
+    r: R,
     fmt: Format,
     config: &config::ConfigEntry,
 ) -> Result<Vec<Transaction>, ImportError> {
@@ -43,7 +43,7 @@ pub fn import<R: std::io::Read>(
 pub trait Importer {
     fn import<R: std::io::Read>(
         &self,
-        r: &mut R,
+        r: R,
         config: &config::ConfigEntry,
     ) -> Result<Vec<single_entry::Txn>, ImportError>;
 }

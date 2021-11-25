@@ -32,10 +32,10 @@ impl<'c> ImportCmd<'c> {
             Some("txt") => Ok(Format::Viseca),
             _ => Err(ImportError::UnknownFormat),
         }?;
-        let mut decoded = DecodeReaderBytesBuilder::new()
+        let decoded = DecodeReaderBytesBuilder::new()
             .encoding(Some(config_entry.encoding.as_encoding()))
             .build(file);
-        let xacts = import::import(&mut decoded, format, config_entry)?;
+        let xacts = import::import(decoded, format, config_entry)?;
         let ctx = data::DisplayContext {
             precisions: config_entry
                 .format
