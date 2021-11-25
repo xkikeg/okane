@@ -46,7 +46,7 @@ impl super::Importer for CsvImporter {
             }
             let date = NaiveDate::parse_from_str(datestr, config.format.date.as_str())?;
             let original_payee = r.get(fm.payee).unwrap();
-            let amount = fm.value.get_amount(config.account_type, &r)?;
+            let amount = fm.value.amount(config.account_type, &r)?;
             let balance = fm
                 .balance
                 .map(|b| parse_comma_decimal(r.get(b).unwrap()))
@@ -98,7 +98,7 @@ impl FieldMapValues {
         }
     }
 
-    fn get_amount(
+    fn amount(
         &self,
         at: config::AccountType,
         r: &csv::StringRecord,
