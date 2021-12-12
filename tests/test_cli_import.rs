@@ -11,7 +11,12 @@ fn test_import_success() {
     let want = testing::read_as_utf8("index_amount.ledger").unwrap();
 
     let result = assert_cmd::Command::new(&*testing::BIN_PATH)
-        .args(&[config, input])
+        .args(&[
+            "import".as_ref(),
+            "--config".as_ref(),
+            config.as_os_str(),
+            input.as_os_str(),
+        ])
         .assert()
         .success();
 

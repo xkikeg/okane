@@ -12,6 +12,7 @@ repository = "https://github.com/xkikeg/okane"
 
 [dependencies]
 chrono = "0.4"
+clap = { version = "3.0.0-rc.0", features = ["derive", "unicode"] }
 csv = "1"
 either = "1"
 encoding_rs = "0.8"
