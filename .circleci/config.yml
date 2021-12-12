@@ -4,4 +4,5 @@ orbs:
 workflows:
   production:
     jobs:
-      - rust/lint-test-build
+      - rust/lint-test-build:
+          version: "1.57"
