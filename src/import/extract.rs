@@ -41,6 +41,7 @@ pub struct Fragment<'a> {
     pub payee: Option<&'a str>,
     pub account: Option<&'a str>,
     pub code: Option<&'a str>,
+    pub conversion: Option<Conversion>,
 }
 
 impl<'a> std::ops::AddAssign for Fragment<'a> {
@@ -50,6 +51,9 @@ impl<'a> std::ops::AddAssign for Fragment<'a> {
         self.payee = other.payee.or(self.payee);
         self.account = other.account.or(self.account);
         self.code = other.code.or(self.code);
+        if let Some(c) = other.conversion {
+            let _ = self.conversion.insert(c);
+        }
     }
 }
 
@@ -100,12 +104,32 @@ pub struct Matched<'a> {
     pub code: Option<&'a str>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum Conversion {
+    Primary,
+    Specified { commodity: String },
+}
+
+impl From<config::CommodityConversion> for Conversion {
+    fn from(config: config::CommodityConversion) -> Conversion {
+        match config {
+            config::CommodityConversion::Unspecified(
+                config::UnspecifiedCommodityConversion::Primary,
+            ) => Conversion::Primary,
+            config::CommodityConversion::Specified { commodity } => {
+                Conversion::Specified { commodity }
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 struct ExtractRule<'a, M: EntityMatcher> {
     match_expr: MatchOrExpr<M>,
     pending: bool,
     payee: Option<&'a str>,
     account: Option<&'a str>,
+    conversion: Option<Conversion>,
 }
 
 impl<'a, M: EntityMatcher> TryFrom<&'a config::RewriteRule> for ExtractRule<'a, M> {
@@ -118,6 +142,7 @@ impl<'a, M: EntityMatcher> TryFrom<&'a config::RewriteRule> for ExtractRule<'a, 
             pending: from.pending,
             payee: from.payee.as_deref(),
             account: from.account.as_deref(),
+            conversion: from.conversion.clone().map(|x| x.into()),
         })
     }
 }
@@ -127,6 +152,7 @@ impl<'a, M: EntityMatcher> ExtractRule<'a, M> {
         self.match_expr.extract(current, entity).map(|mut current| {
             current.payee = self.payee.or(current.payee);
             current.account = self.account;
+            current.conversion = self.conversion.clone().or(current.conversion);
             if current.account.is_some() {
                 current.cleared = current.cleared || !self.pending;
             }
@@ -228,12 +254,14 @@ mod tests {
             payee: Some("foo"),
             account: None,
             code: None,
+            conversion: None,
         };
         let y = Fragment {
             cleared: false,
             payee: Some("bar"),
             account: Some("baz"),
             code: Some("txn-id"),
+            conversion: Some(Conversion::Primary),
         };
         x += y;
         assert_eq!(
@@ -243,6 +271,7 @@ mod tests {
                 payee: Some("bar"),
                 account: Some("baz"),
                 code: Some("txn-id"),
+                conversion: Some(Conversion::Primary),
             }
         );
     }
@@ -254,6 +283,9 @@ mod tests {
             payee: Some("foo"),
             account: None,
             code: Some("txn-id"),
+            conversion: Some(Conversion::Specified {
+                commodity: "JPY".to_string(),
+            }),
         };
         let mut x = orig.clone();
         x += Fragment::default();
@@ -318,18 +350,28 @@ mod tests {
         }
     }
 
+    fn into_rule(m: config::RewriteMatcher) -> config::RewriteRule {
+        config::RewriteRule {
+            matcher: m,
+            pending: false,
+            payee: None,
+            account: None,
+            conversion: None,
+        }
+    }
+
     #[test]
     fn extract_single_match() {
         let rw = vec![config::RewriteRule {
-            matcher: config::RewriteMatcher::Field(config::FieldMatcher {
+            pending: false,
+            payee: Some("Payee".to_string()),
+            account: Some("Income".to_string()),
+            ..into_rule(config::RewriteMatcher::Field(config::FieldMatcher {
                 fields: hashmap! {
                     config::RewriteField::CreditorName => "Foo grocery".to_string(),
                     config::RewriteField::DebtorName => "Bar company".to_string(),
                 },
-            }),
-            pending: false,
-            payee: Some("Payee".to_string()),
-            account: Some("Income".to_string()),
+            }))
         }];
         let input = TestEntity {
             creditor: "Foo grocery",
@@ -340,7 +382,7 @@ mod tests {
             cleared: true,
             account: Some("Income"),
             payee: Some("Payee"),
-            code: None,
+            ..Fragment::default()
         };
 
         let extractor: Extractor<TestMatcher> = (&rw).try_into().unwrap();
@@ -353,17 +395,20 @@ mod tests {
     fn extract_multi_match() {
         let rw = vec![
             config::RewriteRule {
-                matcher: config::RewriteMatcher::Field(config::FieldMatcher {
-                    fields: hashmap! {
-                        config::RewriteField::AdditionalTransactionInfo => r#"Some card(?: \[(?P<code>\d+)\])? (?P<payee>.*)"#.to_string(),
-                    },
-                }),
                 pending: false, // pending: true implied
                 payee: None,
                 account: None,
+                ..into_rule(config::RewriteMatcher::Field(config::FieldMatcher {
+                    fields: hashmap! {
+                        config::RewriteField::AdditionalTransactionInfo => r#"Some card(?: \[(?P<code>\d+)\])? (?P<payee>.*)"#.to_string(),
+                    },
+                }))
             },
             config::RewriteRule {
-                matcher: config::RewriteMatcher::Or(vec![
+                pending: false,
+                payee: None,
+                account: Some("Expenses:Grocery".to_string()),
+                ..into_rule(config::RewriteMatcher::Or(vec![
                     config::FieldMatcher {
                         fields: hashmap! {
                             config::RewriteField::Payee => "Grocery shop".to_string(),
@@ -374,20 +419,20 @@ mod tests {
                             config::RewriteField::Payee => "Another shop".to_string(),
                         },
                     },
-                ]),
-                pending: false,
-                payee: None,
-                account: Some("Expenses:Grocery".to_string()),
+                ]))
             },
             config::RewriteRule {
-                matcher: config::RewriteMatcher::Field(config::FieldMatcher {
-                    fields: hashmap! {
-                        config::RewriteField::Payee => "Certain Petrol".to_string(),
-                    },
-                }),
                 pending: true,
                 payee: None,
                 account: Some("Expenses:Petrol".to_string()),
+                conversion: Some(config::CommodityConversion::Specified {
+                    commodity: "JPY".to_string(),
+                }),
+                ..into_rule(config::RewriteMatcher::Field(config::FieldMatcher {
+                    fields: hashmap! {
+                        config::RewriteField::Payee => "Certain Petrol".to_string(),
+                    },
+                }))
             },
         ];
         let input = vec![
@@ -422,25 +467,29 @@ mod tests {
                 cleared: true,
                 account: Some("Expenses:Grocery"),
                 payee: Some("Grocery shop"),
-                code: None,
+                ..Fragment::default()
             },
             Fragment {
                 cleared: true,
                 account: Some("Expenses:Grocery"),
                 payee: Some("Another shop"),
-                code: None,
+                ..Fragment::default()
             },
             Fragment {
                 cleared: false,
                 account: Some("Expenses:Petrol"),
                 payee: Some("Certain Petrol"),
                 code: Some("123"),
+                conversion: Some(Conversion::Specified {
+                    commodity: "JPY".to_string(),
+                }),
             },
             Fragment {
                 cleared: false,
                 account: None,
                 payee: Some("unknown payee"),
                 code: Some("456"),
+                ..Fragment::default()
             },
             Fragment::default(),
         ];

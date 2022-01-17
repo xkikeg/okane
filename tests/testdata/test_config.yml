@@ -1,3 +1,39 @@
+path: testdata/csv_multi_currency.csv
+encoding: UTF-8
+account: Assets:Okane Bank
+account_type: asset
+commodity: JPY
+operator: Okane Bank (commission)
+format:
+  date: "%Y/%m/%d"
+  fields:
+    date: お取り引き日
+    payee: 摘要
+    debit: 出金額
+    credit: 入金額
+    balance: 残高
+    commodity: 通貨
+    rate: 適用レート
+    equivalent_absolute: 取引円換算額
+rewrite:
+  - account: Assets:Wire
+    matcher:
+      payee: 円普通預金(へ|より)振替
+    conversion:
+      type: primary
+  - account: Assets:Wire
+    matcher:
+      payee: 外貨普通預金（ユーロ）へ振替
+    conversion:
+      commodity: EUR
+  - account: Assets:Wire
+    matcher:
+      payee: 外貨普通預金（米ドル）より振替
+    # No need to do conversion, given conversion is happening just once
+  - matcher:
+      payee: Hamachi Super
+    account: Expenses:Grocery
+---
 path: testdata/index_amount.csv
 encoding: UTF-8
 account: "Liabilities:Okane Card"
