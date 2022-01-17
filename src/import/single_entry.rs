@@ -31,6 +31,9 @@ pub struct Txn {
     /// For credit card account, negative means expense, positive means payment to the card.
     amount: data::Amount,
 
+    /// Rate of the amount, useful if the statement amount is in foreign currency.
+    rate: Option<data::Exchange>,
+
     balance: Option<data::Amount>,
 
     charges: Vec<Charge>,
@@ -52,6 +55,7 @@ impl Txn {
             clear_state: None,
             transferred_amount: None,
             amount,
+            rate: None,
             balance: None,
             charges: Vec::new(),
         }
@@ -95,6 +99,11 @@ impl Txn {
         self
     }
 
+    pub fn rate(&mut self, rate: data::Exchange) -> &mut Txn {
+        self.rate = Some(rate);
+        self
+    }
+
     pub fn try_add_charge_not_included<'a>(
         &'a mut self,
         payee: &str,
@@ -130,6 +139,13 @@ impl Txn {
             amount,
         });
         self
+    }
+
+    fn amount(&self) -> data::ExchangedAmount {
+        data::ExchangedAmount {
+            amount: self.amount.clone(),
+            exchange: self.rate.clone(),
+        }
     }
 
     fn dest_amount(&self) -> data::ExchangedAmount {
@@ -170,10 +186,7 @@ impl Txn {
             posts.push(data::Post {
                 account: src_account.to_string(),
                 clear_state: data::ClearState::Uncleared,
-                amount: data::ExchangedAmount {
-                    amount: self.amount.clone(),
-                    exchange: None,
-                },
+                amount: self.amount(),
                 balance: self.balance.clone(),
                 payee: None,
             });
@@ -181,10 +194,7 @@ impl Txn {
             posts.push(data::Post {
                 account: src_account.to_string(),
                 clear_state: data::ClearState::Uncleared,
-                amount: data::ExchangedAmount {
-                    amount: self.amount.clone(),
-                    exchange: None,
-                },
+                amount: self.amount(),
                 balance: self.balance.clone(),
                 payee: None,
             });

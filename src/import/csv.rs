@@ -49,8 +49,14 @@ impl super::Importer for CsvImporter {
             let amount = fm.value.amount(config.account_type, &r)?;
             let balance = fm
                 .balance
-                .map(|b| parse_comma_decimal(r.get(b).unwrap()))
+                .map(|i| parse_comma_decimal(r.get(i).unwrap()))
                 .transpose()?;
+            let equivalent_amount = fm
+                .equivalent_absolute
+                .map(|i| parse_comma_decimal(r.get(i).unwrap()))
+                .transpose()?;
+            let commodity = fm.commodity.and_then(|i| r.get(i)).map(|x| x.to_string()).unwrap_or_else(|| config.commodity.clone());
+            let rate = fm.rate.map(|i| parse_comma_decimal(r.get(i).unwrap())).transpose()?;
             let fragment = extractor.extract(Payee(original_payee));
             if fragment.account.is_none() {
                 warn!(
@@ -64,7 +70,7 @@ impl super::Importer for CsvImporter {
                 fragment.payee.unwrap_or(original_payee),
                 data::Amount {
                     value: amount,
-                    commodity: config.commodity.clone(),
+                    commodity: commodity.clone(),
                 },
             );
             txn.code_option(fragment.code)
@@ -75,8 +81,44 @@ impl super::Importer for CsvImporter {
             if let Some(b) = balance {
                 txn.balance(data::Amount {
                     value: b,
-                    commodity: config.commodity.clone(),
+                    commodity: commodity.clone(),
                 });
+            }
+            if let Some(conv) = fragment.conversion {
+                let rate = rate.ok_or_else(|| ImportError::Other(format!("no rate specified: line {}", pos.line())))?;
+                let tra = match conv {
+                    extract::Conversion::Primary => {
+                        txn.rate(data::Exchange::Rate(data::Amount{
+                            value: rate,
+                            commodity: config.commodity.clone(),
+                        }));
+                        let eqa = equivalent_amount.ok_or_else(|| ImportError::Other(format!(
+                            "equivalent_amount should be specified when primary conversion is used @ line {}", pos.line()
+                        )))?;
+                        data::ExchangedAmount {
+                            amount: data::Amount {
+                                value: eqa,
+                                commodity: config.commodity.clone(),
+                            },
+                            exchange: None,
+                        }
+                    }
+                    extract::Conversion::Specified { commodity: rate_commodity } => {
+                        warn!("Can't infer converted amount specified @ line {}", pos.line());
+
+                        data::ExchangedAmount {
+                            amount: data::Amount {
+                                value: amount,
+                                commodity: rate_commodity,
+                            },
+                            exchange: Some(data::Exchange::Rate(data::Amount{
+                                value: rate,
+                                commodity,
+                            }))
+                        }
+                    }
+                };
+                txn.transferred_amount(tra);
             }
             res.push(txn);
         }
@@ -132,6 +174,9 @@ struct FieldMap {
     payee: usize,
     value: FieldMapValues,
     balance: Option<usize>,
+    commodity: Option<usize>,
+    rate: Option<usize>,
+    equivalent_absolute: Option<usize>,
 }
 
 impl FieldMap {
@@ -141,6 +186,9 @@ impl FieldMap {
             self.payee,
             self.value.max(),
             self.balance.unwrap_or(0),
+            self.commodity.unwrap_or(0),
+            self.rate.unwrap_or(0),
+            self.equivalent_absolute.unwrap_or(0),
         ]
         .iter()
         .max()
@@ -203,12 +251,18 @@ fn resolve_fields(
                 "either amount or credit/debit pair should be set",
             )),
     }?;
-    let balance = ki.get(&config::FieldKey::Balance);
+    let balance = ki.get(&config::FieldKey::Balance).cloned();
+    let commodity = ki.get(&config::FieldKey::Commodity).cloned();
+    let rate = ki.get(&config::FieldKey::Rate).cloned();
+    let equivalent_absolute = ki.get(&config::FieldKey::EquivalentAbsolute).cloned();
     Ok(FieldMap {
         date: *date,
         payee: *payee,
         value,
-        balance: balance.cloned(),
+        balance,
+        commodity,
+        rate,
+        equivalent_absolute,
     })
 }
 
@@ -260,7 +314,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn test_resolve_fields_label_credit_debit() {
+    fn resolve_fields_label_credit_debit() {
         let config: HashMap<FieldKey, FieldPos> = hashmap! {
             FieldKey::Date => FieldPos::Label("日付".to_owned()),
             FieldKey::Payee => FieldPos::Label("摘要".to_owned()),
@@ -283,12 +337,15 @@ mod tests {
                     debit: 3
                 },
                 balance: Some(4),
+                commodity: None,
+                rate: None,
+                equivalent_absolute: None,
             }
         );
     }
 
     #[test]
-    fn test_resolve_fields_index_amount() {
+    fn resolve_fields_index_amount() {
         let config: HashMap<FieldKey, FieldPos> = hashmap! {
             FieldKey::Date => FieldPos::Index(0),
             FieldKey::Payee => FieldPos::Index(1),
@@ -302,6 +359,35 @@ mod tests {
                 payee: 1,
                 value: FieldMapValues::Amount(2),
                 balance: None,
+                commodity: None,
+                rate: None,
+                equivalent_absolute: None,
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_fields_optionals() {
+        let config: HashMap<FieldKey, FieldPos> = hashmap! {
+            FieldKey::Date => FieldPos::Index(0),
+            FieldKey::Payee => FieldPos::Index(1),
+            FieldKey::Amount => FieldPos::Index(2),
+            FieldKey::Balance => FieldPos::Index(3),
+            FieldKey::Commodity => FieldPos::Index(4),
+            FieldKey::Rate => FieldPos::Index(5),
+            FieldKey::EquivalentAbsolute => FieldPos::Index(6),
+        };
+        let got = resolve_fields(&config, &csv::StringRecord::from(vec!["unrelated"])).unwrap();
+        assert_eq!(
+            got,
+            FieldMap {
+                date: 0,
+                payee: 1,
+                value: FieldMapValues::Amount(2),
+                balance: Some(3),
+                commodity: Some(4),
+                rate: Some(5),
+                equivalent_absolute: Some(6),
             }
         );
     }

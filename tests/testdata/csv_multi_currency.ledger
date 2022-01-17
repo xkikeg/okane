@@ -1,0 +1,20 @@
+2020/07/08 * 被仕向外貨送金  OKANE. INC.
+    ! Income:Unknown                       -24000.11 USD
+    Assets:Okane Bank                       24000.11 USD = 31691.78 USD
+
+2020/07/11 * 円普通預金より振替（デビット）
+    Assets:Wire                                -2675 JPY
+    Assets:Okane Bank                          23.45 CHF @ 114.0500 JPY = 23.45 CHF
+
+2020/07/11 * Visaデビット　785403　Hamachi Super
+    Assets:Okane Bank                         -23.45 CHF = 0.00 CHF
+    Expenses:Grocery                           23.45 CHF
+
+2020/07/29 * 外貨普通預金（ユーロ）へ振替
+    Assets:Okane Bank                       -2353.40 USD = 29338.38 USD
+    Assets:Wire                              2353.40 EUR @ 1.1767 USD
+
+2020/07/29 * 外貨普通預金（米ドル）より振替
+    Assets:Wire                             -2000.00 EUR
+    Assets:Okane Bank                        2000.00 EUR = 2000.00 EUR
+

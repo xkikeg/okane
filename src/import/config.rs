@@ -130,10 +130,12 @@ pub enum FieldKey {
     Balance,
     /// Currency (commodity) of the transaction.
     Commodity,
-    /// Currency rate.
+    /// Currency rate used in the statement.
     Rate,
-    /// Value exchanged into the main commodity (currency).
-    Exchanged,
+    /// Equivalent absolute amount exchanged into the account currency.
+    /// This is the case when your account statement always shows the converted amount
+    /// in the primary currency.
+    EquivalentAbsolute,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -160,6 +162,27 @@ pub struct RewriteRule {
     /// Account to be set for the matched transaction.
     #[serde(default)]
     pub account: Option<String>,
+
+    /// Commodity (currency) conversion specification.
+    #[serde(default)]
+    pub conversion: Option<CommodityConversion>,
+}
+
+/// Specify what kind of the conversion is done in the transaction.
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CommodityConversion {
+    Unspecified(UnspecifiedCommodityConversion),
+    /// Specified in the rewrite rule.
+    Specified {
+        commodity: String,
+    },
+}
+
+#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case",tag = "type")]
+pub enum UnspecifiedCommodityConversion {
+    Primary,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -294,6 +317,8 @@ mod tests {
                   payee: Visaデビット　(?P<code>\d+)　(?P<payee>.*)
               - matcher:
                   payee: 外貨普通預金（.*）(?:へ|より)振替
+                conversion:
+                  commodity: EUR
                 account: Assets:Wire:Okane
         "#};
         let config = load_from_yaml(input.as_bytes()).unwrap();
@@ -314,6 +339,7 @@ mod tests {
                 pending: false,
                 payee: None,
                 account: None,
+                conversion: None,
             },
             RewriteRule {
                 matcher: RewriteMatcher::Field(FieldMatcher {
@@ -324,6 +350,9 @@ mod tests {
                 pending: false,
                 payee: None,
                 account: Some("Assets:Wire:Okane".to_string()),
+                conversion: Some(CommodityConversion::Specified {
+                    commodity: "EUR".to_string(),
+                }),
             },
         ];
         assert_eq!(&rewrite, &config.entries[0].rewrite);
@@ -362,6 +391,8 @@ mod tests {
         matcher:
           domain_code: PMNT
         account: Income:Salary
+        conversion:
+          type: primary
         "#};
         let de = serde_yaml::Deserializer::from_str(input);
         let matcher = RewriteRule {
@@ -371,6 +402,7 @@ mod tests {
             pending: false,
             payee: None,
             account: Some("Income:Salary".to_string()),
+            conversion: Some(CommodityConversion::Unspecified(UnspecifiedCommodityConversion::Primary)),
         };
         assert_eq!(matcher, RewriteRule::deserialize(de).unwrap());
     }
@@ -410,6 +442,7 @@ mod tests {
                 pending: false,
                 payee: Some("Okane Co. Ltd.".to_string()),
                 account: Some("Income:Salary".to_string()),
+                conversion: None,
             },
             RewriteRule {
                 matcher: RewriteMatcher::Or(vec![
@@ -427,6 +460,7 @@ mod tests {
                 pending: false,
                 account: Some("Expenses:Grocery".to_string()),
                 payee: None,
+                conversion: None,
             },
             RewriteRule {
                 matcher: RewriteMatcher::Field(FieldMatcher {
@@ -437,6 +471,7 @@ mod tests {
                 pending: false,
                 payee: None,
                 account: None,
+                conversion: None,
             },
         ];
         assert_eq!(&rewrite, &config.entries[0].rewrite);
