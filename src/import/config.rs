@@ -180,7 +180,7 @@ pub enum CommodityConversion {
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case",tag = "type")]
+#[serde(rename_all = "snake_case", tag = "type")]
 pub enum UnspecifiedCommodityConversion {
     Primary,
 }
@@ -402,7 +402,9 @@ mod tests {
             pending: false,
             payee: None,
             account: Some("Income:Salary".to_string()),
-            conversion: Some(CommodityConversion::Unspecified(UnspecifiedCommodityConversion::Primary)),
+            conversion: Some(CommodityConversion::Unspecified(
+                UnspecifiedCommodityConversion::Primary,
+            )),
         };
         assert_eq!(matcher, RewriteRule::deserialize(de).unwrap());
     }

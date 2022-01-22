@@ -5,22 +5,30 @@ use std::fmt;
 use rust_decimal::Decimal;
 
 #[derive(Debug, PartialEq)]
+/// Represents a transaction where the money transfered across the accounts.
 pub struct Transaction {
+    /// Date when the transaction issued.
     pub date: chrono::NaiveDate,
+    /// Date when the transaction got effective, optional.
     pub effective_date: Option<chrono::NaiveDate>,
+    /// Indiacates clearing state of the entire transaction.
     pub clear_state: ClearState,
+    /// Transaction code (not necessarily unique).
     pub code: Option<String>,
+    /// Label of the transaction, often the opposite party of the transaction.
     pub payee: String,
+    /// Postings of the transaction, could be empty.
     pub posts: Vec<Post>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+/// Represents a clearing state, often combined with the ambiguity.
 pub enum ClearState {
     /// No specific meaning.
     Uncleared,
-    /// Useful to show the transaction / post is confirmed.
+    /// Useful to declare that the transaction / post is confirmed.
     Cleared,
-    /// Useful to show the transaction / post is still pending.
+    /// Useful to declare that the transaction / post is still pending.
     Pending,
 }
 
@@ -31,43 +39,60 @@ impl Default for ClearState {
 }
 
 #[derive(Debug, PartialEq)]
+/// Post is a posting in a transaction, and
+/// it represents a particular account increase / decrease.
 pub struct Post {
+    /// Account of the post target.
     pub account: String,
+    /// Posting specific ClearState.
     pub clear_state: ClearState,
+    /// Amount of the posting.
     pub amount: ExchangedAmount,
+    /// Balance after the transaction of the specified account.
     pub balance: Option<Amount>,
+    /// Overwrites the payee.
     pub payee: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+/// Amount with the currency exchange information.
 pub struct ExchangedAmount {
     /// Amount of the original value.
     pub amount: Amount,
-    /// exchange rate information.
+    /// Exchange rate information.
     pub exchange: Option<Exchange>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+/// Commodity exchange information.
 pub enum Exchange {
-    /// Total(x) == ExchangedAmount.amount.
+    /// Represents the amount equals to the `ExchangedAmount.amount`.
     Total(Amount),
-    /// Rate(x) == 1 ExchangedAmount.amount.commodity.
+    /// Represents te amount equals to 1 `ExchangedAmount.amount.commodity`.
     Rate(Amount),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+/// Amount of posting, balance, ...
 pub struct Amount {
+    /// Numerical value.
     pub value: Decimal,
+    /// Commodity aka currency.
     pub commodity: String,
 }
 
 impl Amount {
+    /// Returns `true` if the amount is zero.
     pub fn is_zero(&self) -> bool {
         self.value.is_zero()
     }
+
+    /// Returns `true` if the amount is positive.
     pub fn is_sign_positive(&self) -> bool {
         self.value.is_sign_positive()
     }
+
+    /// Returns `true` if the amount is negative.
     pub fn is_sign_negative(&self) -> bool {
         self.value.is_sign_negative()
     }
@@ -76,7 +101,7 @@ impl Amount {
 /// # Examples
 ///
 /// ```
-/// use rust_decimal_macros::dec;
+/// # use rust_decimal_macros::dec;
 /// let x = okane::data::Amount{
 ///     value: dec!(-5),
 ///     commodity: "JPY".to_string(),
@@ -107,6 +132,7 @@ impl PartialOrd for Amount {
     }
 }
 
+/// Parses number including comma, returns the decimal.
 pub fn parse_comma_decimal(x: &str) -> Result<Decimal, rust_decimal::Error> {
     x.replace(',', "").parse()
 }
@@ -119,10 +145,12 @@ fn print_clear_state(v: ClearState) -> &'static str {
     }
 }
 
+/// Context information to control the formatting of the transaction.
 pub struct DisplayContext {
     pub precisions: HashMap<String, u8>,
 }
 
+/// Transaction combined with the transaction.
 pub struct TransactionWithContext<'a> {
     pub transaction: &'a Transaction,
     pub context: &'a DisplayContext,
