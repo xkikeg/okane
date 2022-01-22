@@ -55,8 +55,15 @@ impl super::Importer for CsvImporter {
                 .equivalent_absolute
                 .map(|i| parse_comma_decimal(r.get(i).unwrap()))
                 .transpose()?;
-            let commodity = fm.commodity.and_then(|i| r.get(i)).map(|x| x.to_string()).unwrap_or_else(|| config.commodity.clone());
-            let rate = fm.rate.map(|i| parse_comma_decimal(r.get(i).unwrap())).transpose()?;
+            let commodity = fm
+                .commodity
+                .and_then(|i| r.get(i))
+                .map(|x| x.to_string())
+                .unwrap_or_else(|| config.commodity.clone());
+            let rate = fm
+                .rate
+                .map(|i| parse_comma_decimal(r.get(i).unwrap()))
+                .transpose()?;
             let fragment = extractor.extract(Payee(original_payee));
             if fragment.account.is_none() {
                 warn!(
@@ -85,10 +92,12 @@ impl super::Importer for CsvImporter {
                 });
             }
             if let Some(conv) = fragment.conversion {
-                let rate = rate.ok_or_else(|| ImportError::Other(format!("no rate specified: line {}", pos.line())))?;
+                let rate = rate.ok_or_else(|| {
+                    ImportError::Other(format!("no rate specified: line {}", pos.line()))
+                })?;
                 let tra = match conv {
                     extract::Conversion::Primary => {
-                        txn.rate(data::Exchange::Rate(data::Amount{
+                        txn.rate(data::Exchange::Rate(data::Amount {
                             value: rate,
                             commodity: config.commodity.clone(),
                         }));
@@ -103,18 +112,23 @@ impl super::Importer for CsvImporter {
                             exchange: None,
                         }
                     }
-                    extract::Conversion::Specified { commodity: rate_commodity } => {
-                        warn!("Can't infer converted amount specified @ line {}", pos.line());
+                    extract::Conversion::Specified {
+                        commodity: rate_commodity,
+                    } => {
+                        warn!(
+                            "Can't infer converted amount specified @ line {}",
+                            pos.line()
+                        );
 
                         data::ExchangedAmount {
                             amount: data::Amount {
                                 value: amount,
                                 commodity: rate_commodity,
                             },
-                            exchange: Some(data::Exchange::Rate(data::Amount{
+                            exchange: Some(data::Exchange::Rate(data::Amount {
                                 value: rate,
                                 commodity,
-                            }))
+                            })),
                         }
                     }
                 };
