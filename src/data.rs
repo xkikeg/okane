@@ -21,6 +21,20 @@ pub struct Transaction {
     pub posts: Vec<Post>,
 }
 
+impl Transaction {
+    /// Constructs minimal transaction.
+    pub fn new(date: chrono::NaiveDate, payee: String) -> Transaction {
+        Transaction {
+            date,
+            effective_date: None,
+            clear_state: ClearState::Uncleared,
+            code: None,
+            payee,
+            posts: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 /// Represents a clearing state, often combined with the ambiguity.
 pub enum ClearState {
@@ -47,11 +61,23 @@ pub struct Post {
     /// Posting specific ClearState.
     pub clear_state: ClearState,
     /// Amount of the posting.
-    pub amount: ExchangedAmount,
+    pub amount: Option<ExchangedAmount>,
     /// Balance after the transaction of the specified account.
     pub balance: Option<Amount>,
     /// Overwrites the payee.
     pub payee: Option<String>,
+}
+
+impl Post {
+    pub fn new(account: String) -> Post {
+        Post {
+            account,
+            clear_state: ClearState::default(),
+            amount: None,
+            balance: None,
+            payee: None,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -179,29 +205,37 @@ impl<'a> fmt::Display for TransactionWithContext<'a> {
         writeln!(f, "{}", xact.payee)?;
         for post in &xact.posts {
             let post_clear = print_clear_state(post.clear_state);
-            write!(
-                f,
-                "    {}{}{:>width$} {}",
-                post_clear,
-                post.account,
-                rescale(&post.amount.amount, self.context),
-                post.amount.amount.commodity,
-                width = 48 - post.account.len() - post_clear.len()
-            )?;
-            if let Some(exchange) = &post.amount.exchange {
-                match exchange {
-                    Exchange::Rate(v) => write!(f, " @ {} {}", v.value, v.commodity),
-                    Exchange::Total(v) => {
-                        write!(f, " @@ {} {}", rescale(v, self.context), v.commodity)
-                    }
-                }?
-            }
-            if let Some(balance) = &post.balance {
+            write!(f, "    {}{}", post_clear, post.account)?;
+            if let Some(amount) = &post.amount {
                 write!(
                     f,
-                    " = {} {}",
+                    "{:>width$} {}",
+                    rescale(&amount.amount, self.context),
+                    amount.amount.commodity,
+                    width = 48 - post.account.len() - post_clear.len()
+                )?;
+                if let Some(exchange) = &amount.exchange {
+                    match exchange {
+                        Exchange::Rate(v) => write!(f, " @ {} {}", v.value, v.commodity),
+                        Exchange::Total(v) => {
+                            write!(f, " @@ {} {}", rescale(v, self.context), v.commodity)
+                        }
+                    }?
+                }
+            }
+            if let Some(balance) = &post.balance {
+                let balance_padding = if post.amount.is_some() {
+                    0
+                } else {
+                    48 + 3 + balance.commodity.len() - post.account.len() - post_clear.len()
+                };
+                write!(
+                    f,
+                    "{:>width$} {} {}",
+                    " =",
                     rescale(balance, self.context),
-                    balance.commodity
+                    balance.commodity,
+                    width = balance_padding
                 )?;
             }
             if let Some(payee) = &post.payee {
@@ -265,20 +299,20 @@ mod tests {
             posts: vec![
                 Post {
                     account: "Income".to_string(),
-                    amount: ExchangedAmount {
+                    amount: Some(ExchangedAmount {
                         amount: Amount {
                             commodity: "JPY".to_string(),
                             value: -dec!(1000),
                         },
                         exchange: None,
-                    },
+                    }),
                     balance: None,
                     clear_state: ClearState::Uncleared,
                     payee: None,
                 },
                 Post {
                     account: "Asset".to_string(),
-                    amount: ExchangedAmount {
+                    amount: Some(ExchangedAmount {
                         amount: Amount {
                             commodity: "USD".to_string(),
                             value: dec!(10),
@@ -287,7 +321,7 @@ mod tests {
                             commodity: "JPY".to_string(),
                             value: dec!(900),
                         })),
-                    },
+                    }),
                     balance: Some(Amount {
                         commodity: "USD".to_string(),
                         value: dec!(10000),
@@ -297,7 +331,7 @@ mod tests {
                 },
                 Post {
                     account: "Commission".to_string(),
-                    amount: ExchangedAmount {
+                    amount: Some(ExchangedAmount {
                         amount: Amount {
                             commodity: "EUR".to_string(),
                             value: dec!(0.1),
@@ -306,14 +340,14 @@ mod tests {
                             commodity: "USD".to_string(),
                             value: dec!(0.1),
                         })),
-                    },
+                    }),
                     balance: None,
                     clear_state: ClearState::Uncleared,
                     payee: Some("bank x".to_string()),
                 },
                 Post {
                     account: "Commission".to_string(),
-                    amount: ExchangedAmount {
+                    amount: Some(ExchangedAmount {
                         amount: Amount {
                             commodity: "USD".to_string(),
                             value: dec!(0.00123),
@@ -322,8 +356,25 @@ mod tests {
                             commodity: "EUR".to_string(),
                             value: dec!(1),
                         })),
-                    },
+                    }),
                     balance: None,
+                    clear_state: ClearState::Uncleared,
+                    payee: None,
+                },
+                Post {
+                    account: "Liability".to_string(),
+                    amount: None,
+                    balance: None,
+                    clear_state: ClearState::Uncleared,
+                    payee: None,
+                },
+                Post {
+                    account: "Liability 2".to_string(),
+                    amount: None,
+                    balance: Some(Amount {
+                        commodity: "USD".to_string(),
+                        value: dec!(-52.34),
+                    }),
                     clear_state: ClearState::Uncleared,
                     payee: None,
                 },
@@ -338,6 +389,8 @@ mod tests {
             Asset                                      10.00 USD @@ 900 JPY = 10000.00 USD
             Commission                                   0.1 EUR @@ 0.10 USD  ; Payee: bank x
             Commission                               0.00123 USD @ 1 EUR
+            Liability
+            Liability 2                                          = -52.34 USD
         "};
 
         assert_eq!(want, format!("{}", txn.display(&context)));
