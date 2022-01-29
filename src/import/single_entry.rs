@@ -179,14 +179,14 @@ impl Txn {
                     .clone()
                     .unwrap_or_else(|| "Income:Unknown".to_string()),
                 clear_state: post_clear,
-                amount: self.dest_amount(),
+                amount: Some(self.dest_amount()),
                 balance: None,
                 payee: None,
             });
             posts.push(data::Post {
                 account: src_account.to_string(),
                 clear_state: data::ClearState::Uncleared,
-                amount: self.amount(),
+                amount: Some(self.amount()),
                 balance: self.balance.clone(),
                 payee: None,
             });
@@ -194,7 +194,7 @@ impl Txn {
             posts.push(data::Post {
                 account: src_account.to_string(),
                 clear_state: data::ClearState::Uncleared,
-                amount: self.amount(),
+                amount: Some(self.amount()),
                 balance: self.balance.clone(),
                 payee: None,
             });
@@ -204,7 +204,7 @@ impl Txn {
                     .clone()
                     .unwrap_or_else(|| "Expenses:Unknown".to_string()),
                 clear_state: post_clear,
-                amount: self.dest_amount(),
+                amount: Some(self.dest_amount()),
                 balance: None,
                 payee: None,
             });
@@ -216,21 +216,20 @@ impl Txn {
             posts.push(data::Post {
                 account: "Expenses:Commissions".to_string(),
                 clear_state: data::ClearState::Uncleared,
-                amount: data::ExchangedAmount {
+                amount: Some(data::ExchangedAmount {
                     amount: -chrg.amount.clone(),
                     exchange: None,
-                },
+                }),
                 balance: None,
                 payee: Some(chrg.payee.clone()),
             });
         }
         Ok(data::Transaction {
-            date: self.date,
             effective_date: self.effective_date,
             clear_state: data::ClearState::Cleared,
             code: self.code.clone(),
-            payee: self.payee.clone(),
             posts,
+            ..data::Transaction::new(self.date, self.payee.clone())
         })
     }
 }
