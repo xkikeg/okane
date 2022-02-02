@@ -15,8 +15,8 @@ fn test_import_csv_index() {
     let mut result: Vec<u8> = Vec::new();
 
     okane::cmd::ImportCmd {
-        config_path: &config,
-        target_path: &input,
+        config,
+        source: input,
     }
     .run(&mut result)
     .expect("execution failed");
@@ -33,8 +33,8 @@ fn test_import_csv_label() {
 
     let mut result: Vec<u8> = Vec::new();
     okane::cmd::ImportCmd {
-        config_path: &config,
-        target_path: &input,
+        config,
+        source: input,
     }
     .run(&mut result)
     .expect("execution failed");
@@ -50,8 +50,8 @@ fn test_import_csv_multi_currency() {
 
     let mut result: Vec<u8> = Vec::new();
     okane::cmd::ImportCmd {
-        config_path: &config,
-        target_path: &input,
+        config,
+        source: input,
     }
     .run(&mut result)
     .expect("execution failed");
