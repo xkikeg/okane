@@ -1,0 +1,73 @@
+use crate::data::{
+    parser::{parse_ledger, ParseLedgerError},
+    DisplayContext, LedgerEntry, TransactionWithContext,
+};
+
+use std::io::{Read, Write};
+
+#[derive(thiserror::Error, Debug)]
+pub enum FormatError {
+    #[error("failed to perform IO")]
+    IO(#[from] std::io::Error),
+    #[error("nom failed to parse the file")]
+    Parse(#[from] ParseLedgerError),
+}
+
+/// Converts given string into formatted string.
+pub fn format<R, W>(r: &mut R, w: &mut W) -> Result<(), FormatError>
+where
+    R: Read,
+    W: Write,
+{
+    let mut buf = String::new();
+    r.read_to_string(&mut buf)?;
+    let txns = parse_ledger(&buf)?;
+    let ctx = DisplayContext::empty();
+    for txn in txns {
+        match txn {
+            LedgerEntry::Txn(txn) => writeln!(
+                w,
+                "{}",
+                TransactionWithContext {
+                    transaction: &txn,
+                    context: &ctx
+                }
+            )?,
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use indoc::indoc;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn format_succeeds_transaction_without_lot_price() {
+        // 2021/03/12 Opening Balance
+        //     Assets:Bank     = 1000 CHF
+        //     Equity
+        let input = indoc! {b"
+        2021/05/14 !(#txn-1) My Grocery
+            Expenses:Grocery\t10 CHF
+            Assets:Bank  -20 CHF
+            Expenses:Household
+        "};
+        let want = indoc! {"
+        2021/05/14 ! (#txn-1) My Grocery
+            Expenses:Grocery                              10 CHF
+            Assets:Bank                                  -20 CHF
+            Expenses:Household
+
+        "};
+        let mut output = Vec::new();
+        let mut r = &input[..];
+
+        format(&mut r, &mut output).unwrap();
+        let got = std::str::from_utf8(&output).unwrap();
+        assert_eq!(want, got);
+    }
+}

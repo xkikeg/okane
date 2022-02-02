@@ -1,7 +1,4 @@
 use okane::cmd;
-use okane::import::ImportError;
-
-use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
@@ -15,22 +12,16 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Command {
     /// Import other format into ledger.
-    Import {
-        #[clap(short, long, parse(from_os_str), value_name = "FILE")]
-        config: PathBuf,
-
-        source: PathBuf,
-    },
+    Import(cmd::ImportCmd),
+    /// Format the given file (in future it'll work without file arg)
+    Format(cmd::FormatCmd),
 }
 
 impl Cli {
-    fn run(self) -> Result<(), ImportError> {
+    fn run(self) -> Result<(), cmd::Error> {
         match self.command {
-            Command::Import { config, source } => cmd::ImportCmd {
-                config_path: config.as_ref(),
-                target_path: source.as_ref(),
-            }
-            .run(&mut std::io::stdout().lock()),
+            Command::Import(cmd) => cmd.run(&mut std::io::stdout().lock()),
+            Command::Format(cmd) => cmd.run(&mut std::io::stdout().lock()),
         }
     }
 }

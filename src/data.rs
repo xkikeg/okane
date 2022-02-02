@@ -5,8 +5,16 @@ use std::fmt;
 use rust_decimal::Decimal;
 use unicode_width::UnicodeWidthStr;
 
+pub mod parser;
+
+/// Top-level entry of the LedgerFile.
 #[derive(Debug, PartialEq)]
+pub enum LedgerEntry {
+    Txn(Transaction),
+}
+
 /// Represents a transaction where the money transfered across the accounts.
+#[derive(Debug, PartialEq)]
 pub struct Transaction {
     /// Date when the transaction issued.
     pub date: chrono::NaiveDate,
@@ -36,8 +44,8 @@ impl Transaction {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 /// Represents a clearing state, often combined with the ambiguity.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ClearState {
     /// No specific meaning.
     Uncleared,
@@ -175,6 +183,14 @@ fn print_clear_state(v: ClearState) -> &'static str {
 /// Context information to control the formatting of the transaction.
 pub struct DisplayContext {
     pub precisions: HashMap<String, u8>,
+}
+
+impl DisplayContext {
+    pub fn empty() -> DisplayContext {
+        DisplayContext {
+            precisions: HashMap::new(),
+        }
+    }
 }
 
 /// Transaction combined with the transaction.
