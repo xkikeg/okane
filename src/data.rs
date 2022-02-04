@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 use rust_decimal::Decimal;
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, PartialEq)]
 /// Represents a transaction where the money transfered across the accounts.
@@ -191,6 +192,14 @@ fn rescale(x: &Amount, context: &DisplayContext) -> Decimal {
     v
 }
 
+fn get_column(colsize: usize, left: usize, padding: usize) -> usize {
+    if left + padding < colsize {
+        colsize - left
+    } else {
+        padding
+    }
+}
+
 impl<'a> fmt::Display for TransactionWithContext<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let xact = self.transaction;
@@ -206,13 +215,17 @@ impl<'a> fmt::Display for TransactionWithContext<'a> {
         for post in &xact.posts {
             let post_clear = print_clear_state(post.clear_state);
             write!(f, "    {}{}", post_clear, post.account)?;
+            let account_width = UnicodeWidthStr::width_cjk(post.account.as_str())
+                + UnicodeWidthStr::width(post_clear);
             if let Some(amount) = &post.amount {
+                let amount_str = rescale(&amount.amount, self.context).to_string();
                 write!(
                     f,
-                    "{:>width$} {}",
+                    "{:>width$}{} {}",
+                    "",
                     rescale(&amount.amount, self.context),
                     amount.amount.commodity,
-                    width = 48 - post.account.len() - post_clear.len()
+                    width = get_column(48, account_width + UnicodeWidthStr::width(amount_str.as_str()), 2)
                 )?;
                 if let Some(exchange) = &amount.exchange {
                     match exchange {
@@ -227,7 +240,11 @@ impl<'a> fmt::Display for TransactionWithContext<'a> {
                 let balance_padding = if post.amount.is_some() {
                     0
                 } else {
-                    48 + 3 + balance.commodity.len() - post.account.len() - post_clear.len()
+                    get_column(
+                        51 + UnicodeWidthStr::width_cjk(balance.commodity.as_str()),
+                        account_width,
+                        3,
+                    )
                 };
                 write!(
                     f,
@@ -330,7 +347,7 @@ mod tests {
                     payee: None,
                 },
                 Post {
-                    account: "Commission".to_string(),
+                    account: "ﾃｽｳﾘｮｳ".to_string(),
                     amount: Some(ExchangedAmount {
                         amount: Amount {
                             commodity: "EUR".to_string(),
@@ -346,7 +363,7 @@ mod tests {
                     payee: Some("bank x".to_string()),
                 },
                 Post {
-                    account: "Commission".to_string(),
+                    account: "手数料など".to_string(),
                     amount: Some(ExchangedAmount {
                         amount: Amount {
                             commodity: "USD".to_string(),
@@ -378,6 +395,25 @@ mod tests {
                     clear_state: ClearState::Uncleared,
                     payee: None,
                 },
+                Post {
+                    amount: Some(ExchangedAmount {
+                        amount: Amount {
+                            commodity: "USD".to_string(),
+                            value: dec!(1),
+                        },
+                        exchange: None,
+                    }),
+                    ..Post::new("Super long long long long long long long long".to_string())
+                },
+                Post {
+                    balance: Some(Amount {
+                        commodity: "USD".to_string(),
+                        value: dec!(1),
+                    }),
+                    ..Post::new(
+                        "Super long long long long long long long long long long".to_string(),
+                    )
+                },
             ],
         };
         let context = DisplayContext {
@@ -387,10 +423,12 @@ mod tests {
         2021/04/04 FX conversion
             Income                                     -1000 JPY
             Asset                                      10.00 USD @@ 900 JPY = 10000.00 USD
-            Commission                                   0.1 EUR @@ 0.10 USD  ; Payee: bank x
-            Commission                               0.00123 USD @ 1 EUR
+            ﾃｽｳﾘｮｳ                                       0.1 EUR @@ 0.10 USD  ; Payee: bank x
+            手数料など                               0.00123 USD @ 1 EUR
             Liability
             Liability 2                                          = -52.34 USD
+            Super long long long long long long long long  1.00 USD
+            Super long long long long long long long long long long  = 1.00 USD
         "};
 
         assert_eq!(want, format!("{}", txn.display(&context)));

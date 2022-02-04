@@ -433,6 +433,7 @@ dependencies = [
  "serde_yaml",
  "strum",
  "thiserror",
+ "unicode-width",
 ]
 
 [[package]]
