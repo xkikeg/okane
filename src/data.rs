@@ -225,7 +225,11 @@ impl<'a> fmt::Display for TransactionWithContext<'a> {
                     "",
                     rescale(&amount.amount, self.context),
                     amount.amount.commodity,
-                    width = get_column(48, account_width + UnicodeWidthStr::width(amount_str.as_str()), 2)
+                    width = get_column(
+                        48,
+                        account_width + UnicodeWidthStr::width(amount_str.as_str()),
+                        2
+                    )
                 )?;
                 if let Some(exchange) = &amount.exchange {
                     match exchange {

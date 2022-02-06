@@ -73,8 +73,8 @@ impl<T: BufRead> Parser<T> {
 
     fn parse_first_line(&self, c: regex::Captures) -> Result<Entry, ImportError> {
         let date_str = self.expect_name(&c, "date", "date should exist")?;
-        let date = parse_euro_date(date_str)
-            .map_err(|x| self.err(format!("invalid date: {}", x)))?;
+        let date =
+            parse_euro_date(date_str).map_err(|x| self.err(format!("invalid date: {}", x)))?;
         let edate_str = self.expect_name(&c, "edate", "effective date should exist")?;
         let edate = parse_euro_date(edate_str)?;
         let payee = self
