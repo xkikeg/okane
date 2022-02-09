@@ -1,7 +1,8 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use log::warn;
+use path_slash::PathBufExt;
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
 
@@ -21,10 +22,11 @@ impl ConfigSet {
             Some(x) => Some(x),
         }?;
         fn has_matches<'a>(entry: &'a ConfigEntry, fp: &str) -> Option<(usize, &'a ConfigEntry)> {
-            if fp.contains(&entry.path) {
-                Some((entry.path.len(), entry))
-            } else {
-                None
+            let epb: PathBuf = PathBufExt::from_slash(&entry.path);
+            log::trace!("epb={} fp={}", epb.display(), fp);
+            match epb.to_str() {
+                Some(ep) if fp.contains(ep) => Some((entry.path.len(), entry)),
+                _ => None,
             }
         }
         self.entries
@@ -235,6 +237,11 @@ mod tests {
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
 
+    #[ctor::ctor]
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
     /// Create minimal ConfigEntry for testing ConfigSet::select.
     fn create_config_entry(path: &str) -> ConfigEntry {
         ConfigEntry {
@@ -257,13 +264,13 @@ mod tests {
     fn test_config_select_single_match() {
         let config_set = ConfigSet {
             entries: vec![
-                create_config_entry("/path/to/foo"),
-                create_config_entry("/path/to/bar"),
+                create_config_entry("path/to/foo"),
+                create_config_entry("path/to/bar"),
             ],
         };
         assert_eq!(
             Some(&config_set.entries[0]),
-            config_set.select(Path::new("/path/to/foo/202109.csv")),
+            config_set.select(&Path::new("path").join("to").join("foo").join("202109.csv"))
         );
     }
 
@@ -271,13 +278,13 @@ mod tests {
     fn test_config_select_multi_match() {
         let config_set = &ConfigSet {
             entries: vec![
-                create_config_entry("/path/to/foo"),
-                create_config_entry("/path/to"),
+                create_config_entry("path/to/foo"),
+                create_config_entry("path/to"),
             ],
         };
         assert_eq!(
             Some(&config_set.entries[0]),
-            config_set.select(Path::new("/path/to/foo/202109.csv"))
+            config_set.select(&Path::new("path").join("to").join("foo").join("202109.csv"))
         );
     }
 
@@ -285,13 +292,13 @@ mod tests {
     fn test_config_select_no_match() {
         let config_set = ConfigSet {
             entries: vec![
-                create_config_entry("/path/to/foo"),
-                create_config_entry("/path/to/bar"),
+                create_config_entry("path/to/foo"),
+                create_config_entry("path/to/bar"),
             ],
         };
         assert_eq!(
             None,
-            config_set.select(Path::new("/path/to/baz/202109.csv"))
+            config_set.select(&Path::new("path").join("to").join("baz").join("202109.csv"))
         );
     }
 

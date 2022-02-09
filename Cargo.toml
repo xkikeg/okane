@@ -20,6 +20,7 @@ encoding_rs_io = "0.1"
 env_logger = "0.9"
 lazy_static = "1.4"
 log = "0.4"
+path-slash = "0.1"
 quick-xml = { version = "0.22", features = [ "serialize" ] }
 regex = "1"
 rust_decimal = "1.15"
