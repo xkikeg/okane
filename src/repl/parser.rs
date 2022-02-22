@@ -1,6 +1,6 @@
 // Defines parser for the Ledger format.
 
-use crate::data;
+use crate::repl;
 
 use std::cmp::min;
 
@@ -21,19 +21,19 @@ use nom::{
 pub struct ParseLedgerError(String);
 
 /// Parses the whole ledger file.
-pub fn parse_ledger(input: &str) -> Result<Vec<data::LedgerEntry>, ParseLedgerError> {
+pub fn parse_ledger(input: &str) -> Result<Vec<repl::LedgerEntry>, ParseLedgerError> {
     match many_till(parse_ledger_entry, eof)(input).finish() {
         Ok((_, (ret, _))) => Ok(ret),
         Err(e) => Err(ParseLedgerError(convert_error(input, e))),
     }
 }
 
-fn parse_ledger_entry(input: &str) -> IResult<&str, data::LedgerEntry, VerboseError<&str>> {
-    map(parse_transaction, data::LedgerEntry::Txn)(input)
+fn parse_ledger_entry(input: &str) -> IResult<&str, repl::LedgerEntry, VerboseError<&str>> {
+    map(parse_transaction, repl::LedgerEntry::Txn)(input)
 }
 
 /// Parses a transaction from given string.
-fn parse_transaction(input: &str) -> IResult<&str, data::Transaction, VerboseError<&str>> {
+fn parse_transaction(input: &str) -> IResult<&str, repl::Transaction, VerboseError<&str>> {
     let (input, date) = parse_date(input)?;
     let (input, effective_date) = opt(preceded(char('='), parse_date))(input)?;
     let (input, is_shortest) = peek(opt(line_ending_or_eof))(input)?;
@@ -41,49 +41,49 @@ fn parse_transaction(input: &str) -> IResult<&str, data::Transaction, VerboseErr
     let (input, _) = cond(is_shortest.is_none(), space1)(input)?;
     let (input, cs) = opt(terminated(one_of("*!"), space0))(input)?;
     let clear_state = match cs {
-        None => data::ClearState::Uncleared,
-        Some('*') => data::ClearState::Cleared,
-        Some('!') => data::ClearState::Pending,
-        _ => unreachable!("unaceptable ClearState {}", cs.unwrap()),
+        None => repl::ClearState::Uncleared,
+        Some('*') => repl::ClearState::Cleared,
+        Some('!') => repl::ClearState::Pending,
+        Some(unknown) => unreachable!("unaceptable ClearState {}", unknown),
     };
     let (input, code) = opt(terminated(parse_paren_str, space0))(input)?;
     let (input, payee) = terminated(take_till(is_line_ending), line_ending)(input)?;
     let (input, (posts, _)) = many_till(parse_posting, line_ending_or_eof)(input)?;
     Ok((
         input,
-        data::Transaction {
+        repl::Transaction {
             effective_date,
             clear_state,
             code: code.map(str::to_string),
             posts,
-            ..data::Transaction::new(date, payee.to_string())
+            ..repl::Transaction::new(date, payee.to_string())
         },
     ))
 }
 
-fn parse_posting(input: &str) -> IResult<&str, data::Post, VerboseError<&str>> {
+fn parse_posting(input: &str) -> IResult<&str, repl::Post, VerboseError<&str>> {
     let (input, account) = preceded(space1, parse_posting_account)(input)?;
     let (input, no_amount) = peek(map(opt(line_ending), |c| c.is_some()))(input)?;
     if no_amount {
         let (input, _) = line_ending(input)?;
         return Ok((
             input,
-            data::Post {
-                ..data::Post::new(account.to_string())
+            repl::Post {
+                ..repl::Post::new(account.to_string())
             },
         ));
     }
     let (input, _) = space1(input)?;
-    let (input, amount) = opt(map(parse_amount, |amount| data::ExchangedAmount {
+    let (input, amount) = opt(map(parse_amount, |amount| repl::ExchangedAmount {
         amount,
         exchange: None,
     }))(input)?;
     let (input, _) = line_ending(input)?;
     Ok((
         input,
-        data::Post {
+        repl::Post {
             amount,
-            ..data::Post::new(account.to_string())
+            ..repl::Post::new(account.to_string())
         },
     ))
 }
@@ -101,17 +101,17 @@ fn parse_posting_account<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<
     take(length)(input)
 }
 
-fn parse_amount<'a>(input: &'a str) -> IResult<&str, data::Amount, VerboseError<&'a str>> {
+fn parse_amount<'a>(input: &'a str) -> IResult<&str, repl::Amount, VerboseError<&'a str>> {
     // Currently it only supports suffix commodity.
     // It should support prefix like $, € or ¥ prefix.
     let (input, value) = terminated(
-        map_res(is_a("-0123456789,."), data::parse_comma_decimal),
+        map_res(is_a("-0123456789,."), repl::parse_comma_decimal),
         space0,
     )(input)?;
     let (input, c) = terminated(parse_commodity, space0)(input)?;
     Ok((
         input,
-        data::Amount {
+        repl::Amount {
             value,
             commodity: c.to_string(),
         },
@@ -183,7 +183,7 @@ mod tests {
             run_parse(parse_transaction, input),
             (
                 "",
-                data::Transaction::new(NaiveDate::from_ymd(2022, 1, 23), "".to_string())
+                repl::Transaction::new(NaiveDate::from_ymd(2022, 1, 23), "".to_string())
             )
         );
     }
@@ -199,25 +199,25 @@ mod tests {
             run_parse(parse_transaction, input),
             (
                 "",
-                data::Transaction {
+                repl::Transaction {
                     effective_date: Some(NaiveDate::from_ymd(2022, 1, 28)),
-                    clear_state: data::ClearState::Cleared,
+                    clear_state: repl::ClearState::Cleared,
                     code: Some("code".to_string()),
                     payee: "Foo".to_string(),
                     posts: vec![
-                        data::Post {
-                            amount: Some(data::ExchangedAmount {
-                                amount: data::Amount {
+                        repl::Post {
+                            amount: Some(repl::ExchangedAmount {
+                                amount: repl::Amount {
                                     value: dec!(123456.78),
                                     commodity: "USD".to_string(),
                                 },
                                 exchange: None,
                             }),
-                            ..data::Post::new("Expense A".to_string())
+                            ..repl::Post::new("Expense A".to_string())
                         },
-                        data::Post::new("Liabilities B".to_string())
+                        repl::Post::new("Liabilities B".to_string())
                     ],
-                    ..data::Transaction::new(NaiveDate::from_ymd(2022, 1, 23), "".to_string())
+                    ..repl::Transaction::new(NaiveDate::from_ymd(2022, 1, 23), "".to_string())
                 }
             )
         );
@@ -234,34 +234,34 @@ mod tests {
             run_parse(parse_transaction, input),
             (
                 "",
-                data::Transaction {
+                repl::Transaction {
                     effective_date: Some(NaiveDate::from_ymd(2022, 1, 28)),
-                    clear_state: data::ClearState::Pending,
+                    clear_state: repl::ClearState::Pending,
                     code: Some("code".to_string()),
                     payee: "Foo".to_string(),
                     posts: vec![
-                        data::Post {
-                            amount: Some(data::ExchangedAmount {
-                                amount: data::Amount {
+                        repl::Post {
+                            amount: Some(repl::ExchangedAmount {
+                                amount: repl::Amount {
                                     value: dec!(-123456.78),
                                     commodity: "USD".to_string(),
                                 },
                                 exchange: None,
                             }),
-                            ..data::Post::new("Expense A".to_string())
+                            ..repl::Post::new("Expense A".to_string())
                         },
-                        data::Post {
-                            amount: Some(data::ExchangedAmount {
-                                amount: data::Amount {
+                        repl::Post {
+                            amount: Some(repl::ExchangedAmount {
+                                amount: repl::Amount {
                                     value: dec!(12),
                                     commodity: "JPY".to_string(),
                                 },
                                 exchange: None,
                             }),
-                            ..data::Post::new("Liabilities B".to_string())
+                            ..repl::Post::new("Liabilities B".to_string())
                         },
                     ],
-                    ..data::Transaction::new(NaiveDate::from_ymd(2022, 1, 23), "".to_string())
+                    ..repl::Transaction::new(NaiveDate::from_ymd(2022, 1, 23), "".to_string())
                 }
             )
         );

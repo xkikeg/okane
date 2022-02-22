@@ -3,7 +3,8 @@ use super::extract;
 use super::single_entry;
 use super::ImportError;
 use crate::data;
-use data::parse_comma_decimal;
+use crate::repl;
+use repl::parse_comma_decimal;
 
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};

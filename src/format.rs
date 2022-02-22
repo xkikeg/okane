@@ -1,4 +1,4 @@
-use crate::data::{
+use crate::repl::{
     parser::{parse_ledger, ParseLedgerError},
     DisplayContext, LedgerEntry, TransactionWithContext,
 };

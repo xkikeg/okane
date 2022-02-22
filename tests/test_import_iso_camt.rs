@@ -22,7 +22,7 @@ fn test_import() {
     let got = String::from_utf8(result).expect("invalid UTF-8");
     if want != got {
         panic!(
-            "unexpected output: diff\n{}",
+            "unexpected output: diff (-want +got)\n{}",
             colored_diff::PrettyDifference {
                 expected: want.as_str(),
                 actual: got.as_str()

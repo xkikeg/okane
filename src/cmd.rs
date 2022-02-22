@@ -1,6 +1,6 @@
-use crate::data;
 use crate::format;
 use crate::import::{self, Format, ImportError};
+use crate::repl;
 
 use std::ffi::OsStr;
 use std::fs::File;
@@ -51,7 +51,7 @@ impl ImportCmd {
             .encoding(Some(config_entry.encoding.as_encoding()))
             .build(file);
         let xacts = import::import(decoded, format, config_entry)?;
-        let ctx = data::DisplayContext {
+        let ctx = repl::DisplayContext {
             precisions: config_entry
                 .format
                 .commodity
@@ -60,6 +60,7 @@ impl ImportCmd {
                 .collect(),
         };
         for xact in &xacts {
+            let xact: repl::Transaction = xact.into();
             writeln!(w, "{}", xact.display(&ctx))?;
         }
         Ok(())
