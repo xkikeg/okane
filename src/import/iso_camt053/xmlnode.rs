@@ -223,7 +223,9 @@ pub struct RelatedParties {
     #[serde(rename = "Dbtr")]
     pub debtor: Party,
     #[serde(rename = "Cdtr")]
-    pub creditor: Party,
+    pub creditor: Option<Party>,
+    #[serde(rename = "CdtrAcct")]
+    pub creditor_account: Option<Account>,
     #[serde(rename = "UltmtDbtr")]
     pub ultimate_debtor: Option<Party>,
     #[serde(rename = "UltmtCdtr")]
@@ -234,6 +236,41 @@ pub struct RelatedParties {
 pub struct Party {
     #[serde(rename = "Nm")]
     pub name: String,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct Account {
+    #[serde(rename = "Id")]
+    pub id: AccountIdWrapper,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct AccountIdWrapper {
+    #[serde(rename = "$value")]
+    pub value: AccountId,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+pub enum AccountId {
+    #[serde(rename = "IBAN")]
+    Iban(String),
+    #[serde(rename = "Othr")]
+    Other(OtherAccountId),
+}
+
+impl AccountId {
+    pub fn as_str_id(&self) -> &str {
+        match self {
+            AccountId::Iban(value) => value.as_str(),
+            AccountId::Other(OtherAccountId { id }) => id.as_str(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct OtherAccountId {
+    #[serde(rename = "Id")]
+    pub id: String,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -300,4 +337,40 @@ pub struct ChargeRecord {
 pub struct Date {
     #[serde(rename = "Dt")]
     pub date: chrono::NaiveDate,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use indoc::indoc;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn parse_account_iban() {
+        let input = indoc! {"
+            <Account>
+                <Id>
+                    <IBAN>ABCD-12345-EFGHI</IBAN>
+                </Id>
+            </Account>
+        "};
+        let account: Account = quick_xml::de::from_str(input).unwrap();
+        assert_eq!("ABCD-12345-EFGHI", account.id.value.as_str_id());
+    }
+
+    #[test]
+    fn parse_account_other() {
+        let input = indoc! {"
+            <Account>
+                <Id>
+                    <Othr>
+                        <Id>0123456789</Id>
+                    </Othr>
+                </Id>
+            </Account>
+        "};
+        let account: Account = quick_xml::de::from_str(input).unwrap();
+        assert_eq!("0123456789", account.id.value.as_str_id());
+    }
 }
