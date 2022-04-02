@@ -247,7 +247,7 @@ impl<'a> fmt::Display for TransactionWithContext<'a> {
                     }
                     Metadata::KeyValueTag { key, value } => write!(f, "{}: {}", key, value)?,
                 }
-                writeln!(f, "")?;
+                writeln!(f)?;
             }
         }
         Ok(())
