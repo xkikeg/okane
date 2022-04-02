@@ -11,13 +11,13 @@ use nom::{
     character::complete::{char, digit1, line_ending, one_of, space0, space1},
     combinator::{cond, eof, map, map_res, opt, peek, recognize},
     error::{convert_error, FromExternalError, ParseError, VerboseError},
-    multi::many_till,
+    multi::{many0, many_till},
     sequence::{delimited, preceded, terminated, tuple},
     Finish, IResult, Parser,
 };
 
 #[derive(thiserror::Error, Debug)]
-#[error("failed to parse the string: \n{0}")]
+#[error("failed to parse the input: \n{0}")]
 pub struct ParseLedgerError(String);
 
 /// Parses the whole ledger file.
@@ -29,7 +29,10 @@ pub fn parse_ledger(input: &str) -> Result<Vec<repl::LedgerEntry>, ParseLedgerEr
 }
 
 fn parse_ledger_entry(input: &str) -> IResult<&str, repl::LedgerEntry, VerboseError<&str>> {
-    map(parse_transaction, repl::LedgerEntry::Txn)(input)
+    map(
+        preceded(many0(line_ending), parse_transaction),
+        repl::LedgerEntry::Txn,
+    )(input)
 }
 
 /// Parses a transaction from given string.
@@ -174,6 +177,22 @@ mod tests {
                 nom::Err::Failure(e) => panic!("error: {}", convert_error(input, e)),
             },
         }
+    }
+
+    #[test]
+    fn parse_ledger_skips_empty_lines() {
+        let input = indoc! {"
+
+            2022/01/23
+        "};
+        assert_eq!(input.chars().next(), Some('\n'));
+        assert_eq!(
+            parse_ledger(input).unwrap(),
+            vec![repl::LedgerEntry::Txn(repl::Transaction::new(
+                NaiveDate::from_ymd(2022, 1, 23),
+                "".to_string()
+            ))]
+        );
     }
 
     #[test]
