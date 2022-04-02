@@ -24,7 +24,7 @@ impl super::Importer for VisecaImporter {
         let mut result = Vec::new();
         while let Some(entry) = parser.parse_entry()? {
             let fragment = extractor.extract(&entry);
-            let payee = fragment.payee.unwrap_or_else(|| entry.payee.as_str());
+            let payee = fragment.payee.unwrap_or(entry.payee.as_str());
             if fragment.account.is_none() {
                 log::warn!(
                     "account unmatched at line {}, payee={}",
@@ -125,7 +125,7 @@ impl extract::EntityMatcher for VisecaMatcher {
         entity: &'a format::Entry,
     ) -> Option<extract::Matched<'a>> {
         let target = match self.field {
-            Field::Payee => fragment.payee.unwrap_or_else(|| entity.payee.as_str()),
+            Field::Payee => fragment.payee.unwrap_or(entity.payee.as_str()),
             Field::Category => entity.category.as_str(),
         };
         self.pattern.captures(target).map(Into::into)
