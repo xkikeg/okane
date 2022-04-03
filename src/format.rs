@@ -53,14 +53,16 @@ mod tests {
         let input = indoc! {b"
         2021/05/14 !(#txn-1) My Grocery
             Expenses:Grocery\t10 CHF
-            Assets:Bank  -20 CHF
-            Expenses:Household
+            Assets:Bank  -20 CHF=1CHF
+            Expenses:Household  = 0
         "};
+        // TODO: 1. guess commodity width if not available.
+        // TOOD: 2. remove trailing space on non-commodity value.
         let want = indoc! {"
         2021/05/14 ! (#txn-1) My Grocery
             Expenses:Grocery                              10 CHF
-            Assets:Bank                                  -20 CHF
-            Expenses:Household
+            Assets:Bank                                  -20 CHF = 1 CHF
+            Expenses:Household                                = 0
 
         "};
         let mut output = Vec::new();
