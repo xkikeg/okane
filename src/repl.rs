@@ -225,12 +225,14 @@ impl<'a> fmt::Display for TransactionWithContext<'a> {
                 };
                 write!(
                     f,
-                    "{:>width$} {} {}",
+                    "{:>width$} {}",
                     " =",
                     rescale(balance, self.context),
-                    balance.commodity,
                     width = balance_padding
                 )?;
+                if !balance.commodity.is_empty() {
+                    write!(f, " {}", balance.commodity)?;
+                }
             }
             writeln!(f)?;
             for m in &post.metadata {

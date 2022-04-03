@@ -66,8 +66,8 @@ fn parse_transaction(input: &str) -> IResult<&str, repl::Transaction, VerboseErr
 
 fn parse_posting(input: &str) -> IResult<&str, repl::Post, VerboseError<&str>> {
     let (input, account) = preceded(space1, parse_posting_account)(input)?;
-    let (input, no_amount) = peek(map(opt(line_ending), |c| c.is_some()))(input)?;
-    if no_amount {
+    let (input, has_amount) = peek(map(opt(line_ending), |c| c.is_none()))(input)?;
+    if !has_amount {
         let (input, _) = line_ending(input)?;
         return Ok((
             input,
@@ -81,11 +81,13 @@ fn parse_posting(input: &str) -> IResult<&str, repl::Post, VerboseError<&str>> {
         amount,
         exchange: None,
     }))(input)?;
-    let (input, _) = line_ending(input)?;
+    let (input, balance) = opt(preceded(tuple((space0, char('='), space0)), parse_amount))(input)?;
+    let (input, _) = tuple((space0, line_ending))(input)?;
     Ok((
         input,
         repl::Post {
             amount,
+            balance,
             ..repl::Post::new(account.to_string())
         },
     ))
@@ -111,7 +113,7 @@ fn parse_amount<'a>(input: &'a str) -> IResult<&str, repl::Amount, VerboseError<
         map_res(is_a("-0123456789,."), repl::parse_comma_decimal),
         space0,
     )(input)?;
-    let (input, c) = terminated(parse_commodity, space0)(input)?;
+    let (input, c) = parse_commodity(input)?;
     Ok((
         input,
         repl::Amount {
@@ -123,7 +125,10 @@ fn parse_amount<'a>(input: &'a str) -> IResult<&str, repl::Amount, VerboseError<
 
 fn parse_commodity<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
     // Quoted commodity not supported.
-    is_not(" \t\r\n0123456789.,;:?!-+*/^&|=<>[](){}@")(input)
+    map(
+        opt(is_not(" \t\r\n0123456789.,;:?!-+*/^&|=<>[](){}@")),
+        |x| x.unwrap_or_default(),
+    )(input)
 }
 
 fn parse_paren_str<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
@@ -247,7 +252,8 @@ mod tests {
         let input = indoc! {"
             2022/01/23=2022/01/28 ! (code) Foo
              Expense A\t\t-123,456.78 USD
-             Liabilities B  12 JPY
+             Liabilities B  12 JPY  =  -1,000 CHF
+             Assets C    =0
         "};
         assert_eq!(
             run_parse(parse_transaction, input),
@@ -277,8 +283,19 @@ mod tests {
                                 },
                                 exchange: None,
                             }),
+                            balance: Some(repl::Amount {
+                                value: dec!(-1000),
+                                commodity: "CHF".to_string(),
+                            }),
                             ..repl::Post::new("Liabilities B".to_string())
                         },
+                        repl::Post {
+                            balance: Some(repl::Amount {
+                                value: dec!(0),
+                                commodity: "".to_string(),
+                            }),
+                            ..repl::Post::new("Assets C".to_string())
+                        }
                     ],
                     ..repl::Transaction::new(NaiveDate::from_ymd(2022, 1, 23), "".to_string())
                 }
