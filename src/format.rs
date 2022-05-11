@@ -47,29 +47,42 @@ mod tests {
 
     #[test]
     fn format_succeeds_transaction_without_lot_price() {
-        // 2021/03/12 Opening Balance
-        //     Assets:Bank     = 1000 CHF
-        //     Equity
-        let input = indoc! {b"
-        2021/05/14 !(#txn-1) My Grocery
-            Expenses:Grocery\t10 CHF
-            Assets:Bank  -20 CHF=1CHF
-            Expenses:Household  = 0
+        let input = indoc! {"
+            2021/03/12 Opening Balance  ; initial balance
+                Assets:Bank     = 1000 CHF
+                Equity
+
+            2021/05/14 !(#txn-1) My Grocery
+                Expenses:Grocery\t10 CHF
+                Expenses:Commissions    1 USD ; Payee: My Card
+                ; My card took commission
+                ; :financial:経済:
+                Assets:Bank  -20 CHF=1CHF
+                Expenses:Household  = 0
         "};
         // TODO: 1. guess commodity width if not available.
         // TOOD: 2. remove trailing space on non-commodity value.
         let want = indoc! {"
-        2021/05/14 ! (#txn-1) My Grocery
-            Expenses:Grocery                              10 CHF
-            Assets:Bank                                  -20 CHF = 1 CHF
-            Expenses:Household                                = 0
+            2021/03/12 Opening Balance
+                ; initial balance
+                Assets:Bank                                          = 1000 CHF
+                Equity
+
+            2021/05/14 ! (#txn-1) My Grocery
+                Expenses:Grocery                              10 CHF
+                Expenses:Commissions                           1 USD
+                ; Payee: My Card
+                ; My card took commission
+                ; :financial:経済:
+                Assets:Bank                                  -20 CHF = 1 CHF
+                Expenses:Household                                = 0
 
         "};
         let mut output = Vec::new();
-        let mut r = &input[..];
+        let mut r = input.as_bytes();
 
-        format(&mut r, &mut output).unwrap();
-        let got = std::str::from_utf8(&output).unwrap();
+        format(&mut r, &mut output).expect("format() should succeeds");
+        let got = std::str::from_utf8(&output).expect("output should be valid UTF-8");
         assert_eq!(want, got);
     }
 }

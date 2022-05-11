@@ -36,6 +36,8 @@ pub struct Transaction {
     pub payee: String,
     /// Postings of the transaction, could be empty.
     pub posts: Vec<Post>,
+    /// Transaction level metadata.
+    metadata: Vec<Metadata>,
 }
 
 impl Transaction {
@@ -47,6 +49,7 @@ impl Transaction {
             clear_state: ClearState::Uncleared,
             code: None,
             payee,
+            metadata: Vec::new(),
             posts: Vec::new(),
         }
     }
@@ -60,6 +63,7 @@ impl From<&data::Transaction> for Transaction {
             clear_state: orig.clear_state,
             code: orig.code.clone(),
             payee: orig.payee.clone(),
+            metadata: Vec::new(),
             posts: orig.posts.iter().map(|x| x.into()).collect(),
         }
     }
@@ -116,12 +120,28 @@ impl From<&data::Post> for Post {
 /// Metadata represents meta information associated with transactions / posts.
 #[derive(Debug, PartialEq)]
 pub enum Metadata {
-    /// Comment, which covers just one line.
+    /// Comment, which covers just one line (without the suceeding new line).
     Comment(String),
-    /// Tags of word, in a format :tag1:tag2:tag3:
+    /// Tags of word, in a format :tag1:tag2:tag3:, each tag can't contain white spaces.
     WordTags(Vec<String>),
-    /// Key-value paired tag.
+    /// Key-value paired tag. Key can't contain white spaces.
     KeyValueTag { key: String, value: String },
+}
+
+impl fmt::Display for Metadata {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Metadata::WordTags(tags) => {
+                write!(f, ":")?;
+                for tag in tags {
+                    write!(f, "{}:", tag)?;
+                }
+            }
+            Metadata::KeyValueTag { key, value } => write!(f, "{}: {}", key, value)?,
+            Metadata::Comment(s) => write!(f, "{}", s)?,
+        };
+        Ok(())
+    }
 }
 
 /// Parses number including comma, returns the decimal.
@@ -185,6 +205,9 @@ impl<'a> fmt::Display for TransactionWithContext<'a> {
             write!(f, "({}) ", code)?;
         }
         writeln!(f, "{}", xact.payee)?;
+        for m in &xact.metadata {
+            writeln!(f, "    ; {}", m)?;
+        }
         for post in &xact.posts {
             let post_clear = print_clear_state(post.clear_state);
             write!(f, "    {}{}", post_clear, post.account)?;
@@ -236,20 +259,7 @@ impl<'a> fmt::Display for TransactionWithContext<'a> {
             }
             writeln!(f)?;
             for m in &post.metadata {
-                write!(f, "    ; ")?;
-                match m {
-                    Metadata::Comment(c) => write!(f, "{}", c)?,
-                    Metadata::WordTags(tags) => {
-                        for (i, tag) in tags.iter().enumerate() {
-                            if i == 0 {
-                                write!(f, ":")?;
-                            }
-                            write!(f, "{}:", tag)?;
-                        }
-                    }
-                    Metadata::KeyValueTag { key, value } => write!(f, "{}: {}", key, value)?,
-                }
-                writeln!(f)?;
+                writeln!(f, "    ; {}", m)?;
             }
         }
         Ok(())
