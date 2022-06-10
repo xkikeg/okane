@@ -61,7 +61,8 @@ impl<T: BufRead> Parser<T> {
             .spent
             .as_ref()
             .map(|_| self.parse_fee())
-            .transpose()?;
+            .transpose()?
+            .flatten();
         Ok(Some(Entry {
             line_count,
             category,
@@ -141,10 +142,14 @@ impl<T: BufRead> Parser<T> {
         })
     }
 
-    fn parse_fee(&mut self) -> Result<Fee, ImportError> {
+    fn parse_fee(&mut self) -> Result<Option<Fee>, ImportError> {
+        let next_line_size = self.reader.peek()?;
+        if next_line_size == 0 || !self.reader.buf.starts_with("Processing fee") {
+            return Ok(None);
+        }
         let read_bytes = self.reader.read_line()?;
         if read_bytes == 0 {
-            return Err(self.err("fee line not found"));
+            return Err(self.err("Processing fee line not found"));
         }
         let c = FEE_LINE
             .captures(self.reader.buf.trim_end())
@@ -156,13 +161,13 @@ impl<T: BufRead> Parser<T> {
             .map(ToOwned::to_owned)?;
         let fee_amount = self.expect_name(&c, "famount", "fee amount must appear")?;
         let fee_amount = parse_decimal(fee_amount)?;
-        Ok(Fee {
+        Ok(Some(Fee {
             percent,
             amount: Amount {
                 currency: fee_currency,
                 value: fee_amount,
             },
-        })
+        }))
     }
 
     fn expect_name<'a>(
@@ -403,6 +408,83 @@ mod tests {
                         value: dec!(0.35),
                     },
                 },),
+            },),
+            p.parse_entry().unwrap()
+        );
+        assert_eq!(None, p.parse_entry().unwrap());
+    }
+
+    #[test]
+    fn test_parse_entry_no_processing_fee() {
+        let input = indoc! {"
+            21.06.20 22.06.20 Your payment - Thank you 4'204.75 -
+            10.08.20 11.08.20 Super gas EUR 46.88 52.10
+            Service stations
+            Exchange rate 1.092432 of 09.08.20 CHF 51.20
+            20.08.20 23.08.20 MY TAXI, Amsterdam NL EUR 1.00 1.05
+            Taxicabs and limousines
+            Exchange rate 1.045704 of 23.08.20 CHF 1.05
+        "};
+        let mut p = Parser::new(input.as_bytes(), "CHF".to_string());
+        assert_eq!(
+            Some(Entry {
+                line_count: 1,
+                date: NaiveDate::from_ymd(2020, 6, 21),
+                effective_date: NaiveDate::from_ymd(2020, 6, 22),
+                payee: "Your payment - Thank you".to_string(),
+                amount: dec!(-4204.75),
+                category: String::new(),
+                spent: None,
+                exchange: None,
+                fee: None,
+            }),
+            p.parse_entry().unwrap()
+        );
+        assert_eq!(
+            Some(Entry {
+                line_count: 2,
+                date: NaiveDate::from_ymd_opt(2020, 8, 10).unwrap(),
+                effective_date: NaiveDate::from_ymd_opt(2020, 8, 11).unwrap(),
+                payee: "Super gas".to_string(),
+                amount: dec!(52.10),
+                category: "Service stations".to_string(),
+                spent: Some(Amount {
+                    value: dec!(46.88),
+                    currency: "EUR".to_string(),
+                }),
+                exchange: Some(Exchange {
+                    rate: dec!(1.092432),
+                    rate_date: NaiveDate::from_ymd_opt(2020, 8, 9).unwrap(),
+                    equivalent: Amount {
+                        value: dec!(51.20),
+                        currency: "CHF".to_string(),
+                    },
+                }),
+                fee: None,
+            }),
+            p.parse_entry().unwrap()
+        );
+        assert_eq!(
+            Some(Entry {
+                line_count: 5,
+                date: NaiveDate::from_ymd(2020, 8, 20),
+                effective_date: NaiveDate::from_ymd(2020, 8, 23),
+                payee: "MY TAXI, Amsterdam NL".to_string(),
+                amount: dec!(1.05),
+                category: "Taxicabs and limousines".to_string(),
+                spent: Some(Amount {
+                    value: dec!(1.00),
+                    currency: "EUR".to_string(),
+                }),
+                exchange: Some(Exchange {
+                    rate: dec!(1.045704),
+                    rate_date: NaiveDate::from_ymd_opt(2020, 8, 23).unwrap(),
+                    equivalent: Amount {
+                        value: dec!(1.05),
+                        currency: "CHF".to_string(),
+                    }
+                }),
+                fee: None,
             },),
             p.parse_entry().unwrap()
         );
