@@ -284,7 +284,8 @@ impl extract::EntityMatcher for FieldMatch {
                         .map(|ud| ud.name.as_str()),
                     MatchField::DebtorName => transaction
                         .and_then(|t| t.related_parties.as_ref())
-                        .map(|rp| rp.debtor.name.as_str()),
+                        .and_then(|rp| rp.debtor.as_ref())
+                        .map(|dt| dt.name.as_str()),
                     MatchField::UltimateDebtorName => transaction
                         .and_then(|t| t.related_parties.as_ref())
                         .and_then(|rp| rp.ultimate_debtor.as_ref())
@@ -389,9 +390,9 @@ mod tests {
             }),
             charges: None,
             related_parties: Some(xmlnode::RelatedParties {
-                debtor: xmlnode::Party {
+                debtor: Some(xmlnode::Party {
                     name: "debtor".to_string(),
-                },
+                }),
                 creditor: Some(xmlnode::Party {
                     name: "creditor".to_string(),
                 }),
@@ -480,9 +481,9 @@ mod tests {
         let entry = test_entry();
         let without_ultimate = xmlnode::TransactionDetails {
             related_parties: Some(xmlnode::RelatedParties {
-                debtor: xmlnode::Party {
+                debtor: Some(xmlnode::Party {
                     name: "expected debtor".to_string(),
-                },
+                }),
                 creditor: Some(xmlnode::Party {
                     name: "expected creditor".to_string(),
                 }),
@@ -494,9 +495,9 @@ mod tests {
         };
         let with_ultimate = xmlnode::TransactionDetails {
             related_parties: Some(xmlnode::RelatedParties {
-                debtor: xmlnode::Party {
+                debtor: Some(xmlnode::Party {
                     name: "expected debtor".to_string(),
-                },
+                }),
                 creditor: Some(xmlnode::Party {
                     name: "expected creditor".to_string(),
                 }),

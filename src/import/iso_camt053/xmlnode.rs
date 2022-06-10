@@ -221,7 +221,7 @@ pub struct References {
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct RelatedParties {
     #[serde(rename = "Dbtr")]
-    pub debtor: Party,
+    pub debtor: Option<Party>,
     #[serde(rename = "Cdtr")]
     pub creditor: Option<Party>,
     #[serde(rename = "CdtrAcct")]
