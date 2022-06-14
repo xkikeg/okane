@@ -1,6 +1,6 @@
 [package]
 name = "okane"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["xkikeg"]
 edition = "2018"
 license = "MIT"
@@ -12,7 +12,7 @@ repository = "https://github.com/xkikeg/okane"
 
 [dependencies]
 chrono = "0.4"
-clap = { version = "3.0", features = ["derive", "unicode"] }
+clap = { version = "3.2", features = ["derive", "unicode"] }
 csv = "1"
 either = "1"
 encoding_rs = "0.8"
@@ -22,13 +22,13 @@ lazy_static = "1.4"
 log = "0.4"
 nom = "7.1"
 path-slash = "0.1"
-quick-xml = { version = "0.22", features = [ "serialize" ] }
+quick-xml = { version = "0.23", features = [ "serialize" ] }
 regex = "1"
-rust_decimal = "1.15"
+rust_decimal = "1.25"
 serde = { version = "1.0", features = [ "derive" ] }
-serde_with = { version = "1.9", features = [ "chrono" ] }
+serde_with = { version = "1.14", features = [ "chrono" ] }
 serde_yaml = "0.8"
-strum = { version = "0.23", features = ["derive"] }
+strum = { version = "0.24", features = ["derive"] }
 thiserror = "1.0"
 unicode-width = "0.1.9"
 
@@ -39,5 +39,5 @@ colored-diff = "0.2"
 ctor = "0.1"
 indoc = "1.0"
 maplit = "1.0"
-pretty_assertions = "1.0"
-rust_decimal_macros = "1.15"
+pretty_assertions = "1.2"
+rust_decimal_macros = "1.25"
