@@ -191,6 +191,7 @@ enum MatchField {
     CreditorAccountId,
     UltimateCreditorName,
     DebtorName,
+    DebtorAccountId,
     UltimateDebtorName,
     RemittanceUnstructuredInfo,
     AdditionalTransactionInfo,
@@ -203,6 +204,7 @@ fn to_field(f: config::RewriteField) -> Result<MatchField, ImportError> {
         config::RewriteField::CreditorAccountId => Some(MatchField::CreditorAccountId),
         config::RewriteField::UltimateCreditorName => Some(MatchField::UltimateCreditorName),
         config::RewriteField::DebtorName => Some(MatchField::DebtorName),
+        config::RewriteField::DebtorAccountId => Some(MatchField::DebtorAccountId),
         config::RewriteField::UltimateDebtorName => Some(MatchField::UltimateDebtorName),
         config::RewriteField::RemittanceUnstructuredInfo => {
             Some(MatchField::RemittanceUnstructuredInfo)
@@ -286,6 +288,10 @@ impl extract::EntityMatcher for FieldMatch {
                         .and_then(|t| t.related_parties.as_ref())
                         .and_then(|rp| rp.debtor.as_ref())
                         .map(|dt| dt.name.as_str()),
+                    MatchField::DebtorAccountId => transaction
+                        .and_then(|t| t.related_parties.as_ref())
+                        .and_then(|rp| rp.debtor_account.as_ref())
+                        .map(|a| a.id.value.as_str_id()),
                     MatchField::UltimateDebtorName => transaction
                         .and_then(|t| t.related_parties.as_ref())
                         .and_then(|rp| rp.ultimate_debtor.as_ref())
@@ -397,6 +403,7 @@ mod tests {
                     name: "creditor".to_string(),
                 }),
                 creditor_account: None,
+                debtor_account: None,
                 ultimate_debtor: None,
                 ultimate_creditor: None,
             }),
@@ -488,6 +495,7 @@ mod tests {
                     name: "expected creditor".to_string(),
                 }),
                 creditor_account: None,
+                debtor_account: None,
                 ultimate_debtor: None,
                 ultimate_creditor: None,
             }),
@@ -502,6 +510,7 @@ mod tests {
                     name: "expected creditor".to_string(),
                 }),
                 creditor_account: None,
+                debtor_account: None,
                 ultimate_debtor: Some(xmlnode::Party {
                     name: "expected ultimate debtor".to_string(),
                 }),

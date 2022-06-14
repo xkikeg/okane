@@ -226,6 +226,8 @@ pub struct RelatedParties {
     pub creditor: Option<Party>,
     #[serde(rename = "CdtrAcct")]
     pub creditor_account: Option<Account>,
+    #[serde(rename = "DbtrAcct")]
+    pub debtor_account: Option<Account>,
     #[serde(rename = "UltmtDbtr")]
     pub ultimate_debtor: Option<Party>,
     #[serde(rename = "UltmtCdtr")]
