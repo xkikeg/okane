@@ -173,7 +173,7 @@ impl Txn {
             None => data::ClearState::Pending,
         });
         if self.amount.is_sign_positive() {
-            posts.push(data::Post {
+            posts.push(data::Posting {
                 account: self
                     .dest_account
                     .clone()
@@ -183,7 +183,7 @@ impl Txn {
                 balance: None,
                 payee: None,
             });
-            posts.push(data::Post {
+            posts.push(data::Posting {
                 account: src_account.to_string(),
                 clear_state: data::ClearState::Uncleared,
                 amount: Some(self.amount()),
@@ -191,14 +191,14 @@ impl Txn {
                 payee: None,
             });
         } else if self.amount.is_sign_negative() {
-            posts.push(data::Post {
+            posts.push(data::Posting {
                 account: src_account.to_string(),
                 clear_state: data::ClearState::Uncleared,
                 amount: Some(self.amount()),
                 balance: self.balance.clone(),
                 payee: None,
             });
-            posts.push(data::Post {
+            posts.push(data::Posting {
                 account: self
                     .dest_account
                     .clone()
@@ -213,7 +213,7 @@ impl Txn {
             return Err(ImportError::Other("credit and debit both zero".to_string()));
         }
         for chrg in &self.charges {
-            posts.push(data::Post {
+            posts.push(data::Posting {
                 account: "Expenses:Commissions".to_string(),
                 clear_state: data::ClearState::Uncleared,
                 amount: Some(data::ExchangedAmount {

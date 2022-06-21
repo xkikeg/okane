@@ -1,3 +1,5 @@
+//! Contains YAML serde representation for the config.
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -9,6 +11,7 @@ use serde::{Deserialize, Serialize};
 /// Set of config covering several paths.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConfigSet {
+    /// Sequence of config entry.
     pub entries: Vec<ConfigEntry>,
 }
 
@@ -40,12 +43,16 @@ impl ConfigSet {
 /// One entry corresponding to particular file.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConfigEntry {
+    /// Path pattern which file the entry will match against.
     pub path: String,
+    /// File encoding of the input.
     pub encoding: Encoding,
+    /// Account name used in the ledger.
     pub account: String,
+    /// Type of account input.
     pub account_type: AccountType,
     /// Operator of the import target.
-    /// Required only when some charges happen.
+    /// Required only when some charges applied.
     pub operator: Option<String>,
     pub commodity: String,
     #[serde(default)]

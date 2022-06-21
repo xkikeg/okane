@@ -1,3 +1,8 @@
+//! data contains fundamental types used in Ledger data.
+//! Note the structure is quite similar to repl module,
+//! however, repl is for textual representation while
+//! data is more for understanding.
+
 use std::cmp::Ordering;
 
 use rust_decimal::Decimal;
@@ -16,7 +21,7 @@ pub struct Transaction {
     /// Label of the transaction, often the opposite party of the transaction.
     pub payee: String,
     /// Postings of the transaction, could be empty.
-    pub posts: Vec<Post>,
+    pub posts: Vec<Posting>,
 }
 
 impl Transaction {
@@ -50,10 +55,9 @@ impl Default for ClearState {
     }
 }
 
-/// Post is a posting in a transaction, and
-/// it represents a particular account increase / decrease.
+/// Posting in a transaction to represent a particular account amount increase / decrease.
 #[derive(Debug, PartialEq)]
-pub struct Post {
+pub struct Posting {
     /// Account of the post target.
     pub account: String,
     /// Posting specific ClearState.
@@ -66,12 +70,12 @@ pub struct Post {
     pub payee: Option<String>,
 }
 
-/// Amount with the currency exchange information.
+/// Cost of the posting.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ExchangedAmount {
-    /// Amount of the original value.
+    /// Amount that posting account was increased by.
     pub amount: Amount,
-    /// Exchange rate information.
+    /// Exchange rate information to balance with other postings.
     pub exchange: Option<Exchange>,
 }
 
