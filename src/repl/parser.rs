@@ -1,4 +1,4 @@
-// Defines parser for the Ledger format.
+//! Defines parser for the Ledger format.
 
 use crate::repl;
 
@@ -66,7 +66,7 @@ fn parse_transaction(input: &str) -> IResult<&str, repl::Transaction, VerboseErr
     ))
 }
 
-fn parse_posting(input: &str) -> IResult<&str, repl::Post, VerboseError<&str>> {
+fn parse_posting(input: &str) -> IResult<&str, repl::Posting, VerboseError<&str>> {
     context("posting of the transaction", |input| {
         let (input, account) = preceded(space1, parse_posting_account)(input)?;
         let (input, has_amount) = peek(map(opt(line_ending_or_comma), |c| c.is_none()))(input)?;
@@ -74,9 +74,9 @@ fn parse_posting(input: &str) -> IResult<&str, repl::Post, VerboseError<&str>> {
             let (input, metadata) = parse_block_metadata(input)?;
             return Ok((
                 input,
-                repl::Post {
+                repl::Posting {
                     metadata,
-                    ..repl::Post::new(account.to_string())
+                    ..repl::Posting::new(account.to_string())
                 },
             ));
         }
@@ -96,11 +96,11 @@ fn parse_posting(input: &str) -> IResult<&str, repl::Post, VerboseError<&str>> {
         let (input, metadata) = parse_block_metadata(input)?;
         Ok((
             input,
-            repl::Post {
+            repl::Posting {
                 amount,
                 balance,
                 metadata,
-                ..repl::Post::new(account.to_string())
+                ..repl::Posting::new(account.to_string())
             },
         ))
     })(input)
@@ -315,7 +315,7 @@ mod tests {
                     code: Some("code".to_string()),
                     payee: "Foo".to_string(),
                     posts: vec![
-                        repl::Post {
+                        repl::Posting {
                             amount: Some(repl::ExchangedAmount {
                                 amount: repl::Amount {
                                     value: dec!(123456.78),
@@ -323,9 +323,9 @@ mod tests {
                                 },
                                 exchange: None,
                             }),
-                            ..repl::Post::new("Expense A".to_string())
+                            ..repl::Posting::new("Expense A".to_string())
                         },
-                        repl::Post::new("Liabilities B".to_string())
+                        repl::Posting::new("Liabilities B".to_string())
                     ],
                     ..repl::Transaction::new(NaiveDate::from_ymd(2022, 1, 23), "".to_string())
                 }
@@ -359,7 +359,7 @@ mod tests {
                         repl::Metadata::WordTags(vec!["取引".to_string()]),
                     ],
                     posts: vec![
-                        repl::Post {
+                        repl::Posting {
                             amount: Some(repl::ExchangedAmount {
                                 amount: repl::Amount {
                                     value: dec!(-123456.78),
@@ -374,9 +374,9 @@ mod tests {
                                     value: "Bar".to_string()
                                 },
                             ],
-                            ..repl::Post::new("Expense A".to_string())
+                            ..repl::Posting::new("Expense A".to_string())
                         },
-                        repl::Post {
+                        repl::Posting {
                             amount: Some(repl::ExchangedAmount {
                                 amount: repl::Amount {
                                     value: dec!(12),
@@ -392,9 +392,9 @@ mod tests {
                                 "tag1".to_string(),
                                 "他のタグ".to_string()
                             ]),],
-                            ..repl::Post::new("Liabilities B".to_string())
+                            ..repl::Posting::new("Liabilities B".to_string())
                         },
-                        repl::Post {
+                        repl::Posting {
                             balance: Some(repl::Amount {
                                 value: dec!(0),
                                 commodity: "".to_string(),
@@ -404,7 +404,7 @@ mod tests {
                                 repl::Metadata::Comment("これなんだっけ".to_string()),
                             ],
 
-                            ..repl::Post::new("Assets C".to_string())
+                            ..repl::Posting::new("Assets C".to_string())
                         }
                     ],
                     ..repl::Transaction::new(NaiveDate::from_ymd(2022, 1, 23), "".to_string())
@@ -420,7 +420,7 @@ mod tests {
             run_parse(parse_posting, input),
             (
                 "",
-                repl::Post {
+                repl::Posting {
                     amount: Some(repl::ExchangedAmount {
                         amount: repl::Amount {
                             value: dec!(1),
@@ -438,7 +438,7 @@ mod tests {
                             vec!["financial".to_string(), "経済".to_string(),],
                         ),
                     ],
-                    ..repl::Post::new("Expenses:Commissions".to_string())
+                    ..repl::Posting::new("Expenses:Commissions".to_string())
                 }
             )
         )

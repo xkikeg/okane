@@ -35,7 +35,7 @@ pub struct Transaction {
     /// Label of the transaction, often the opposite party of the transaction.
     pub payee: String,
     /// Postings of the transaction, could be empty.
-    pub posts: Vec<Post>,
+    pub posts: Vec<Posting>,
     /// Transaction level metadata.
     metadata: Vec<Metadata>,
 }
@@ -70,9 +70,8 @@ impl From<&data::Transaction> for Transaction {
 }
 
 #[derive(Debug, PartialEq)]
-/// Post is a posting in a transaction, and
-/// it represents a particular account increase / decrease.
-pub struct Post {
+/// Posting in a transaction to represent a particular account amount increase / decrease.
+pub struct Posting {
     /// Account of the post target.
     pub account: String,
     /// Posting specific ClearState.
@@ -85,9 +84,9 @@ pub struct Post {
     pub metadata: Vec<Metadata>,
 }
 
-impl Post {
-    pub fn new(account: String) -> Post {
-        Post {
+impl Posting {
+    pub fn new(account: String) -> Posting {
+        Posting {
             account,
             clear_state: ClearState::default(),
             amount: None,
@@ -97,8 +96,8 @@ impl Post {
     }
 }
 
-impl From<&data::Post> for Post {
-    fn from(orig: &data::Post) -> Post {
+impl From<&data::Posting> for Posting {
+    fn from(orig: &data::Posting) -> Posting {
         let metadata = orig
             .payee
             .iter()
@@ -107,7 +106,7 @@ impl From<&data::Post> for Post {
                 value: v.clone(),
             })
             .collect();
-        Post {
+        Posting {
             account: orig.account.clone(),
             clear_state: orig.clear_state,
             amount: orig.amount.clone(),
