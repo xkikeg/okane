@@ -54,7 +54,7 @@ mod tests {
 
             2021/05/14 !(#txn-1) My Grocery
                 Expenses:Grocery\t10 CHF
-                Expenses:Commissions    1 USD ; Payee: My Card
+                Expenses:Commissions    1 USD   @ 0.98 CHF ; Payee: My Card
                 ; My card took commission
                 ; :financial:経済:
                 Assets:Bank  -20 CHF=1CHF
@@ -70,7 +70,7 @@ mod tests {
 
             2021/05/14 ! (#txn-1) My Grocery
                 Expenses:Grocery                              10 CHF
-                Expenses:Commissions                           1 USD
+                Expenses:Commissions                           1 USD @ 0.98 CHF
                 ; Payee: My Card
                 ; My card took commission
                 ; :financial:経済:

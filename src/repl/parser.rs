@@ -7,7 +7,7 @@ use std::cmp::min;
 use chrono::NaiveDate;
 use nom::{
     branch::alt,
-    bytes::complete::{is_a, is_not, take, take_till1, take_while},
+    bytes::complete::{is_a, is_not, tag, take, take_till1, take_while},
     character::complete::{char, digit1, line_ending, not_line_ending, one_of, space0, space1},
     combinator::{cond, eof, map, map_res, opt, peek, recognize},
     error::{context, convert_error, ContextError, FromExternalError, ParseError, VerboseError},
@@ -39,9 +39,9 @@ fn parse_ledger_entry(input: &str) -> IResult<&str, repl::LedgerEntry, VerboseEr
 fn parse_transaction(input: &str) -> IResult<&str, repl::Transaction, VerboseError<&str>> {
     let (input, date) = parse_date(input)?;
     let (input, effective_date) = opt(preceded(char('='), parse_date))(input)?;
-    let (input, is_shortest) = peek(opt(line_ending_or_eof))(input)?;
+    let (input, is_shortest) = has_peek(line_ending_or_eof)(input)?;
     // Date (and effective date) should be followed by space, unless followed by line_ending.
-    let (input, _) = cond(is_shortest.is_none(), space1)(input)?;
+    let (input, _) = cond(!is_shortest, space1)(input)?;
     let (input, cs) = opt(terminated(one_of("*!"), space0))(input)?;
     let clear_state = match cs {
         None => repl::ClearState::Uncleared,
@@ -50,7 +50,7 @@ fn parse_transaction(input: &str) -> IResult<&str, repl::Transaction, VerboseErr
         Some(unknown) => unreachable!("unaceptable ClearState {}", unknown),
     };
     let (input, code) = opt(terminated(parse_paren_str, space0))(input)?;
-    let (input, payee) = opt(map(not_line_ending_or_comma, str::trim_end))(input)?;
+    let (input, payee) = opt(map(not_line_ending_or_semi, str::trim_end))(input)?;
     let (input, metadata) = parse_block_metadata(input)?;
     let (input, (posts, _)) = many_till(parse_posting, line_ending_or_eof)(input)?;
     Ok((
@@ -68,9 +68,12 @@ fn parse_transaction(input: &str) -> IResult<&str, repl::Transaction, VerboseErr
 
 fn parse_posting(input: &str) -> IResult<&str, repl::Posting, VerboseError<&str>> {
     context("posting of the transaction", |input| {
-        let (input, account) = preceded(space1, parse_posting_account)(input)?;
-        let (input, has_amount) = peek(map(opt(line_ending_or_comma), |c| c.is_none()))(input)?;
-        if !has_amount {
+        let (input, account) = context(
+            "account of the posting",
+            preceded(space1, parse_posting_account),
+        )(input)?;
+        let (input, shortcut_amount) = has_peek(line_ending_or_semi)(input)?;
+        if shortcut_amount {
             let (input, metadata) = parse_block_metadata(input)?;
             return Ok((
                 input,
@@ -82,12 +85,7 @@ fn parse_posting(input: &str) -> IResult<&str, repl::Posting, VerboseError<&str>
         }
         let (input, amount) = context(
             "amount of the posting",
-            opt(map(terminated(parse_amount, space0), |amount| {
-                repl::ExchangedAmount {
-                    amount,
-                    exchange: None,
-                }
-            })),
+            opt(terminated(parse_posting_cost, space0)),
         )(input)?;
         let (input, balance) = context(
             "balance of the posting",
@@ -108,7 +106,7 @@ fn parse_posting(input: &str) -> IResult<&str, repl::Posting, VerboseError<&str>
 
 /// Parses the posting account name, and consumes the trailing spaces and tabs.
 fn parse_posting_account<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
-    let (input, line) = peek(not_line_ending_or_comma)(input)?;
+    let (input, line) = peek(not_line_ending_or_semi)(input)?;
     let space = line.find("  ");
     let tab = line.find('\t');
     let length = match (space, tab) {
@@ -119,6 +117,33 @@ fn parse_posting_account<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<
     };
     // Note space may be zero for the case amount / balance is omitted.
     terminated(take(length), space0)(input)
+}
+
+fn parse_posting_cost<'a>(
+    input: &'a str,
+) -> IResult<&str, repl::ExchangedAmount, VerboseError<&'a str>> {
+    let (input, amount) = terminated(parse_amount, space0)(input)?;
+    let (input, is_at) = has_peek(char('@'))(input)?;
+    let (input, exchange) = cond(
+        is_at,
+        context(
+            "posting cost exchange",
+            alt((parse_total_exchange, parse_rate_exchange)),
+        ),
+    )(input)?;
+    Ok((input, repl::ExchangedAmount { amount, exchange }))
+}
+
+fn parse_total_exchange<'a>(
+    input: &'a str,
+) -> IResult<&str, repl::Exchange, VerboseError<&'a str>> {
+    let (input, v) = preceded(pair(tag("@@"), space0), parse_amount)(input)?;
+    Ok((input, repl::Exchange::Total(v)))
+}
+
+fn parse_rate_exchange<'a>(input: &'a str) -> IResult<&str, repl::Exchange, VerboseError<&'a str>> {
+    let (input, v) = preceded(pair(tag("@"), space0), parse_amount)(input)?;
+    Ok((input, repl::Exchange::Rate(v)))
 }
 
 fn parse_amount<'a>(input: &'a str) -> IResult<&str, repl::Amount, VerboseError<&'a str>> {
@@ -143,9 +168,8 @@ fn parse_amount<'a>(input: &'a str) -> IResult<&str, repl::Amount, VerboseError<
 fn parse_block_metadata<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     input: &'a str,
 ) -> IResult<&str, Vec<repl::Metadata>, E> {
-    let (input, next) = peek(opt(char(';')))(input)?;
-    let (input, _) = cond(next.is_none(), line_ending)(input)?;
-    // Eats the first space in case next is None (no inline comment).
+    let (input, is_metadata) = has_peek(char(';'))(input)?;
+    let (input, _) = cond(!is_metadata, line_ending)(input)?;
     separated_list0(space1, preceded(space0, parse_line_metadata))(input)
 }
 
@@ -219,12 +243,12 @@ fn parse_paren_str<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, 
     paren(take_while(|c| c != ')'))(input)
 }
 
-fn line_ending_or_comma<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
+fn line_ending_or_semi<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
     alt((line_ending, recognize(char(';'))))(input)
 }
 
 /// Parses non-zero string until line_ending or comma appears.
-fn not_line_ending_or_comma<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
+fn not_line_ending_or_semi<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
     is_not(";\r\n")(input)
 }
 
@@ -239,6 +263,14 @@ where
     <I as nom::InputIter>::Item: nom::AsChar,
 {
     delimited(char('('), inner, char(')'))
+}
+
+fn has_peek<I, O, E: ParseError<I>, F>(f: F) -> impl FnMut(I) -> IResult<I, bool, E>
+where
+    F: Parser<I, O, E>,
+    I: Clone,
+{
+    map(peek(opt(f)), |x| x.is_some())
 }
 
 fn parse_date<'a, E: ParseError<&'a str> + FromExternalError<&'a str, chrono::ParseError>>(
@@ -408,6 +440,68 @@ mod tests {
                         }
                     ],
                     ..repl::Transaction::new(NaiveDate::from_ymd(2022, 1, 23), "".to_string())
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn posting_cost_parses_valid_input() {
+        assert_eq!(
+            run_parse(parse_posting_cost, "1000 JPY"),
+            (
+                "",
+                repl::ExchangedAmount {
+                    amount: repl::Amount {
+                        value: dec!(1000),
+                        commodity: "JPY".to_string()
+                    },
+                    exchange: None
+                }
+            )
+        );
+        assert_eq!(
+            run_parse(parse_posting_cost, "1,234,567.89 USD"),
+            (
+                "",
+                repl::ExchangedAmount {
+                    amount: repl::Amount {
+                        value: dec!(1234567.89),
+                        commodity: "USD".to_string()
+                    },
+                    exchange: None
+                }
+            )
+        );
+        assert_eq!(
+            run_parse(parse_posting_cost, "100 EUR @ 1.2 CHF"),
+            (
+                "",
+                repl::ExchangedAmount {
+                    amount: repl::Amount {
+                        value: dec!(100),
+                        commodity: "EUR".to_string()
+                    },
+                    exchange: Some(repl::Exchange::Rate(repl::Amount {
+                        value: dec!(1.2),
+                        commodity: "CHF".to_string(),
+                    }))
+                }
+            )
+        );
+        assert_eq!(
+            run_parse(parse_posting_cost, "100 EUR @@ 120 CHF"),
+            (
+                "",
+                repl::ExchangedAmount {
+                    amount: repl::Amount {
+                        value: dec!(100),
+                        commodity: "EUR".to_string()
+                    },
+                    exchange: Some(repl::Exchange::Total(repl::Amount {
+                        value: dec!(120),
+                        commodity: "CHF".to_string(),
+                    }))
                 }
             )
         );
