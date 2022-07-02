@@ -1,19 +1,26 @@
 //! Defines parser for the Ledger format.
 
+pub mod character;
+pub mod combinator;
+pub mod primitive;
+
+#[cfg(test)]
+pub mod testing;
+
 use crate::repl;
+use combinator::{cond_else, has_peek};
 
 use std::cmp::min;
 
-use chrono::NaiveDate;
 use nom::{
     branch::alt,
-    bytes::complete::{is_a, is_not, tag, take, take_till1, take_while},
-    character::complete::{char, digit1, line_ending, not_line_ending, one_of, space0, space1},
-    combinator::{cond, eof, map, map_res, opt, peek, recognize},
-    error::{context, convert_error, ContextError, FromExternalError, ParseError, VerboseError},
+    bytes::complete::{tag, take, take_till1},
+    character::complete::{char, line_ending, not_line_ending, one_of, space0, space1},
+    combinator::{cond, eof, map, opt, peek},
+    error::{context, convert_error, ContextError, ParseError, VerboseError},
     multi::{many0, many1, many_till, separated_list0},
-    sequence::{delimited, pair, preceded, terminated, tuple},
-    Finish, IResult, Parser,
+    sequence::{delimited, pair, preceded, terminated},
+    Finish, IResult,
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -37,9 +44,9 @@ fn parse_ledger_entry(input: &str) -> IResult<&str, repl::LedgerEntry, VerboseEr
 
 /// Parses a transaction from given string.
 fn parse_transaction(input: &str) -> IResult<&str, repl::Transaction, VerboseError<&str>> {
-    let (input, date) = parse_date(input)?;
-    let (input, effective_date) = opt(preceded(char('='), parse_date))(input)?;
-    let (input, is_shortest) = has_peek(line_ending_or_eof)(input)?;
+    let (input, date) = primitive::date(input)?;
+    let (input, effective_date) = opt(preceded(char('='), primitive::date))(input)?;
+    let (input, is_shortest) = has_peek(character::line_ending_or_eof)(input)?;
     // Date (and effective date) should be followed by space, unless followed by line_ending.
     let (input, _) = cond(!is_shortest, space1)(input)?;
     let (input, cs) = opt(terminated(one_of("*!"), space0))(input)?;
@@ -49,10 +56,10 @@ fn parse_transaction(input: &str) -> IResult<&str, repl::Transaction, VerboseErr
         Some('!') => repl::ClearState::Pending,
         Some(unknown) => unreachable!("unaceptable ClearState {}", unknown),
     };
-    let (input, code) = opt(terminated(parse_paren_str, space0))(input)?;
-    let (input, payee) = opt(map(not_line_ending_or_semi, str::trim_end))(input)?;
+    let (input, code) = opt(terminated(character::paren_str, space0))(input)?;
+    let (input, payee) = opt(map(character::not_line_ending_or_semi, str::trim_end))(input)?;
     let (input, metadata) = parse_block_metadata(input)?;
-    let (input, (posts, _)) = many_till(parse_posting, line_ending_or_eof)(input)?;
+    let (input, (posts, _)) = many_till(parse_posting, character::line_ending_or_eof)(input)?;
     Ok((
         input,
         repl::Transaction {
@@ -72,7 +79,7 @@ fn parse_posting(input: &str) -> IResult<&str, repl::Posting, VerboseError<&str>
             "account of the posting",
             preceded(space1, parse_posting_account),
         )(input)?;
-        let (input, shortcut_amount) = has_peek(line_ending_or_semi)(input)?;
+        let (input, shortcut_amount) = has_peek(character::line_ending_or_semi)(input)?;
         if shortcut_amount {
             let (input, metadata) = parse_block_metadata(input)?;
             return Ok((
@@ -106,7 +113,7 @@ fn parse_posting(input: &str) -> IResult<&str, repl::Posting, VerboseError<&str>
 
 /// Parses the posting account name, and consumes the trailing spaces and tabs.
 fn parse_posting_account<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
-    let (input, line) = peek(not_line_ending_or_semi)(input)?;
+    let (input, line) = peek(character::not_line_ending_or_semi)(input)?;
     let space = line.find("  ");
     let tab = line.find('\t');
     let length = match (space, tab) {
@@ -124,11 +131,12 @@ fn parse_posting_cost<'a>(
 ) -> IResult<&str, repl::ExchangedAmount, VerboseError<&'a str>> {
     let (input, amount) = terminated(parse_amount, space0)(input)?;
     let (input, is_at) = has_peek(char('@'))(input)?;
+    let (input, is_double_at) = has_peek(tag("@@"))(input)?;
     let (input, exchange) = cond(
         is_at,
         context(
             "posting cost exchange",
-            alt((parse_total_exchange, parse_rate_exchange)),
+            cond_else(is_double_at, parse_total_exchange, parse_rate_exchange),
         ),
     )(input)?;
     Ok((input, repl::ExchangedAmount { amount, exchange }))
@@ -149,11 +157,8 @@ fn parse_rate_exchange<'a>(input: &'a str) -> IResult<&str, repl::Exchange, Verb
 fn parse_amount<'a>(input: &'a str) -> IResult<&str, repl::Amount, VerboseError<&'a str>> {
     // Currently it only supports suffix commodity.
     // It should support prefix like $, € or ¥ prefix.
-    let (input, value) = terminated(
-        map_res(is_a("-0123456789,."), repl::parse_comma_decimal),
-        space0,
-    )(input)?;
-    let (input, c) = parse_commodity(input)?;
+    let (input, value) = terminated(primitive::comma_decimal, space0)(input)?;
+    let (input, c) = primitive::commodity(input)?;
     Ok((
         input,
         repl::Amount {
@@ -190,7 +195,7 @@ fn parse_line_metadata<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
                     repl::Metadata::Comment(s.trim_end().to_string())
                 }),
             )),
-            line_ending_or_eof,
+            character::line_ending_or_eof,
         ),
     )(input)
 }
@@ -231,79 +236,15 @@ fn parse_metadata_kv<'a, E: ParseError<&'a str>>(
     ))
 }
 
-fn parse_commodity<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
-    // Quoted commodity not supported.
-    map(
-        opt(is_not(" \t\r\n0123456789.,;:?!-+*/^&|=<>[](){}@")),
-        |x| x.unwrap_or_default(),
-    )(input)
-}
-
-fn parse_paren_str<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
-    paren(take_while(|c| c != ')'))(input)
-}
-
-fn line_ending_or_semi<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
-    alt((line_ending, recognize(char(';'))))(input)
-}
-
-/// Parses non-zero string until line_ending or comma appears.
-fn not_line_ending_or_semi<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
-    is_not(";\r\n")(input)
-}
-
-fn line_ending_or_eof<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
-    alt((eof, line_ending))(input)
-}
-
-fn paren<I, O, E: ParseError<I>, F>(inner: F) -> impl FnMut(I) -> IResult<I, O, E>
-where
-    F: Parser<I, O, E>,
-    I: nom::Slice<core::ops::RangeFrom<usize>> + nom::InputIter,
-    <I as nom::InputIter>::Item: nom::AsChar,
-{
-    delimited(char('('), inner, char(')'))
-}
-
-fn has_peek<I, O, E: ParseError<I>, F>(f: F) -> impl FnMut(I) -> IResult<I, bool, E>
-where
-    F: Parser<I, O, E>,
-    I: Clone,
-{
-    map(peek(opt(f)), |x| x.is_some())
-}
-
-fn parse_date<'a, E: ParseError<&'a str> + FromExternalError<&'a str, chrono::ParseError>>(
-    input: &'a str,
-) -> IResult<&str, NaiveDate, E> {
-    map_res(
-        recognize(tuple((digit1, char('/'), digit1, char('/'), digit1))),
-        |s| NaiveDate::parse_from_str(s, "%Y/%m/%d"),
-    )(input)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repl::parser::testing::expect_parse_ok;
 
+    use chrono::NaiveDate;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
-
-    fn run_parse<I, O, F>(mut parser: F, input: I) -> (I, O)
-    where
-        I: std::ops::Deref<Target = str> + std::fmt::Display + Copy,
-        F: Parser<I, O, VerboseError<I>>,
-    {
-        match parser.parse(input) {
-            Ok(res) => res,
-            Err(e) => match e {
-                nom::Err::Incomplete(_) => panic!("failed with incomplete: input: {}", input),
-                nom::Err::Error(e) => panic!("error: {}", convert_error(input, e)),
-                nom::Err::Failure(e) => panic!("error: {}", convert_error(input, e)),
-            },
-        }
-    }
 
     #[test]
     fn parse_ledger_skips_empty_lines() {
@@ -322,7 +263,7 @@ mod tests {
     fn parse_transaction_valid_minimal() {
         let input = "2022/01/23\n";
         assert_eq!(
-            run_parse(parse_transaction, input),
+            expect_parse_ok(parse_transaction, input),
             (
                 "",
                 repl::Transaction::new(NaiveDate::from_ymd(2022, 1, 23), "".to_string())
@@ -338,7 +279,7 @@ mod tests {
              Liabilities B
         "};
         assert_eq!(
-            run_parse(parse_transaction, input),
+            expect_parse_ok(parse_transaction, input),
             (
                 "",
                 repl::Transaction {
@@ -378,7 +319,7 @@ mod tests {
              ; これなんだっけ
         "};
         assert_eq!(
-            run_parse(parse_transaction, input),
+            expect_parse_ok(parse_transaction, input),
             (
                 "",
                 repl::Transaction {
@@ -448,7 +389,7 @@ mod tests {
     #[test]
     fn posting_cost_parses_valid_input() {
         assert_eq!(
-            run_parse(parse_posting_cost, "1000 JPY"),
+            expect_parse_ok(parse_posting_cost, "1000 JPY"),
             (
                 "",
                 repl::ExchangedAmount {
@@ -461,7 +402,7 @@ mod tests {
             )
         );
         assert_eq!(
-            run_parse(parse_posting_cost, "1,234,567.89 USD"),
+            expect_parse_ok(parse_posting_cost, "1,234,567.89 USD"),
             (
                 "",
                 repl::ExchangedAmount {
@@ -474,7 +415,7 @@ mod tests {
             )
         );
         assert_eq!(
-            run_parse(parse_posting_cost, "100 EUR @ 1.2 CHF"),
+            expect_parse_ok(parse_posting_cost, "100 EUR @ 1.2 CHF"),
             (
                 "",
                 repl::ExchangedAmount {
@@ -490,7 +431,7 @@ mod tests {
             )
         );
         assert_eq!(
-            run_parse(parse_posting_cost, "100 EUR @@ 120 CHF"),
+            expect_parse_ok(parse_posting_cost, "100 EUR @@ 120 CHF"),
             (
                 "",
                 repl::ExchangedAmount {
@@ -511,7 +452,7 @@ mod tests {
     fn parse_posting_many_comments() {
         let input: &str = " Expenses:Commissions    1 USD ; Payee: My Card\n ; My card took commission\n ; :financial:経済:\n";
         assert_eq!(
-            run_parse(parse_posting, input),
+            expect_parse_ok(parse_posting, input),
             (
                 "",
                 repl::Posting {
@@ -545,7 +486,7 @@ mod tests {
             Next Account Value
         "};
         assert_eq!(
-            run_parse(parse_posting_account, input),
+            expect_parse_ok(parse_posting_account, input),
             (";\nNext Account Value\n", "Account Value")
         );
         let input = indoc! {"
@@ -553,7 +494,7 @@ mod tests {
             Next Account Value
         "};
         assert_eq!(
-            run_parse(parse_posting_account, input),
+            expect_parse_ok(parse_posting_account, input),
             ("\nNext Account Value\n", "Account Value")
         );
         let input = indoc! {"
@@ -561,7 +502,7 @@ mod tests {
             Next Account Value
         "};
         assert_eq!(
-            run_parse(parse_posting_account, input),
+            expect_parse_ok(parse_posting_account, input),
             ("\nNext Account Value\n", "Account Value")
         );
     }
@@ -570,7 +511,7 @@ mod tests {
     fn parse_line_metadata_valid_tags() {
         let input: &str = ";   :tag1:tag2:tag3:\n";
         assert_eq!(
-            run_parse(parse_line_metadata, input),
+            expect_parse_ok(parse_line_metadata, input),
             (
                 "",
                 repl::Metadata::WordTags(vec![
@@ -586,7 +527,7 @@ mod tests {
     fn parse_line_metadata_valid_kv() {
         let input: &str = ";   場所: ドラッグストア\n";
         assert_eq!(
-            run_parse(parse_line_metadata, input),
+            expect_parse_ok(parse_line_metadata, input),
             (
                 "",
                 repl::Metadata::KeyValueTag {
@@ -601,25 +542,11 @@ mod tests {
     fn parse_line_metadata_valid_comment() {
         let input: &str = ";A fox jumps over: この例文見飽きた    \n";
         assert_eq!(
-            run_parse(parse_line_metadata, input),
+            expect_parse_ok(parse_line_metadata, input),
             (
                 "",
                 repl::Metadata::Comment("A fox jumps over: この例文見飽きた".to_string())
             )
         )
-    }
-
-    #[test]
-    fn parse_date_valid() {
-        let res = run_parse(parse_date, "2022/01/15");
-        assert_eq!(res, ("", NaiveDate::from_ymd(2022, 1, 15)));
-    }
-
-    #[test]
-    fn parse_date_invalid() {
-        let pd = parse_date::<nom::error::Error<&'static str>>;
-        pd("not a date").unwrap_err();
-        pd("2022/01").unwrap_err();
-        pd("2022/13/21").unwrap_err();
     }
 }
