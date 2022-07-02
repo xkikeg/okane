@@ -143,11 +143,6 @@ impl fmt::Display for Metadata {
     }
 }
 
-/// Parses number including comma, returns the decimal.
-pub fn parse_comma_decimal(x: &str) -> Result<Decimal, rust_decimal::Error> {
-    x.replace(',', "").parse()
-}
-
 fn print_clear_state(v: ClearState) -> &'static str {
     match v {
         ClearState::Uncleared => "",

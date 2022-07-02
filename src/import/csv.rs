@@ -4,7 +4,7 @@ use super::single_entry;
 use super::ImportError;
 use crate::data;
 use crate::repl;
-use repl::parse_comma_decimal;
+use repl::parser::primitive::str_to_comma_decimal;
 
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
@@ -55,11 +55,11 @@ impl super::Importer for CsvImporter {
             let amount = fm.value.amount(config.account_type, &r)?;
             let balance = fm
                 .balance
-                .map(|i| parse_comma_decimal(r.get(i).unwrap()))
+                .map(|i| str_to_comma_decimal(r.get(i).unwrap()))
                 .transpose()?;
             let equivalent_amount = fm
                 .equivalent_absolute
-                .map(|i| parse_comma_decimal(r.get(i).unwrap()))
+                .map(|i| str_to_comma_decimal(r.get(i).unwrap()))
                 .transpose()?;
             let category = fm.category.and_then(|i| r.get(i));
             let commodity = fm
@@ -69,7 +69,7 @@ impl super::Importer for CsvImporter {
                 .unwrap_or_else(|| config.commodity.clone());
             let rate = fm
                 .rate
-                .map(|i| parse_comma_decimal(r.get(i).unwrap()))
+                .map(|i| str_to_comma_decimal(r.get(i).unwrap()))
                 .transpose()?;
             let fragment = extractor.extract(Record {
                 payee: original_payee,
@@ -180,15 +180,15 @@ impl FieldMapValues {
                 let credit = r.get(*credit).unwrap();
                 let debit = r.get(*debit).unwrap();
                 if !credit.is_empty() {
-                    Ok(parse_comma_decimal(credit)?)
+                    Ok(str_to_comma_decimal(credit)?)
                 } else if !debit.is_empty() {
-                    Ok(-parse_comma_decimal(debit)?)
+                    Ok(-str_to_comma_decimal(debit)?)
                 } else {
                     Err(ImportError::Other("credit and debit both zero".to_string()))
                 }
             }
             FieldMapValues::Amount(a) => {
-                let amount = parse_comma_decimal(r.get(*a).unwrap())?;
+                let amount = str_to_comma_decimal(r.get(*a).unwrap())?;
                 Ok(match at {
                     config::AccountType::Asset => amount,
                     config::AccountType::Liability => -amount,
