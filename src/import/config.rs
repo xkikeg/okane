@@ -16,7 +16,7 @@ pub struct ConfigSet {
 }
 
 impl ConfigSet {
-    pub fn select(&self, p: &Path) -> Option<&ConfigEntry> {
+    pub fn select(&self, p: &Path) -> Option<ConfigEntry> {
         let fp: &str = match p.to_str() {
             None => {
                 warn!("invalid Unicode path: {}", p.display());
@@ -32,16 +32,21 @@ impl ConfigSet {
                 _ => None,
             }
         }
-        self.entries
+        let mut matched: Vec<(usize, &ConfigEntry)> = self
+            .entries
             .iter()
             .filter_map(|x| has_matches(x, fp))
-            .max_by_key(|x| x.0)
-            .map(|x| x.1)
+            .collect();
+        matched.sort_by_key(|x| x.0);
+        matched.into_iter().fold(None, |res, item| match res {
+            None => Some(item.1.clone()),
+            Some(_) => Some(item.1.clone()),
+        })
     }
 }
 
 /// One entry corresponding to particular file.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct ConfigEntry {
     /// Path pattern which file the entry will match against.
     pub path: String,
@@ -61,7 +66,7 @@ pub struct ConfigEntry {
     pub rewrite: Vec<RewriteRule>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Encoding(pub &'static encoding_rs::Encoding);
 
 impl Encoding {
@@ -101,7 +106,7 @@ pub enum AccountType {
 }
 
 /// FormatSpec describes the several format used in import target.
-#[derive(Default, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct FormatSpec {
     /// Specify the date format, in chrono::format::strftime compatible format.
     #[serde(default)]
@@ -114,7 +119,7 @@ pub struct FormatSpec {
     pub fields: HashMap<FieldKey, FieldPos>,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct CommodityFormatSpec {
     pub precision: u8,
 }
@@ -147,7 +152,7 @@ pub enum FieldKey {
     EquivalentAbsolute,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum FieldPos {
     Index(usize),
@@ -155,7 +160,7 @@ pub enum FieldPos {
 }
 
 /// RewriteRule specifies the rewrite rule matched against transaction.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct RewriteRule {
     /// matcher for the rewrite.
     pub matcher: RewriteMatcher,
@@ -178,7 +183,7 @@ pub struct RewriteRule {
 }
 
 /// Specify what kind of the conversion is done in the transaction.
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum CommodityConversion {
     Unspecified(UnspecifiedCommodityConversion),
@@ -188,20 +193,20 @@ pub enum CommodityConversion {
     },
 }
 
-#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum UnspecifiedCommodityConversion {
     Primary,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum RewriteMatcher {
     Or(Vec<FieldMatcher>),
     Field(FieldMatcher),
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 #[serde(transparent)]
 pub struct FieldMatcher {
     pub fields: HashMap<RewriteField, String>,
@@ -279,7 +284,9 @@ mod tests {
         };
         assert_eq!(
             Some(&config_set.entries[0]),
-            config_set.select(&Path::new("path").join("to").join("foo").join("202109.csv"))
+            config_set
+                .select(&Path::new("path").join("to").join("foo").join("202109.csv"))
+                .as_ref()
         );
     }
 
@@ -293,7 +300,9 @@ mod tests {
         };
         assert_eq!(
             Some(&config_set.entries[0]),
-            config_set.select(&Path::new("path").join("to").join("foo").join("202109.csv"))
+            config_set
+                .select(&Path::new("path").join("to").join("foo").join("202109.csv"))
+                .as_ref()
         );
     }
 
