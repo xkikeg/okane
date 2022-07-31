@@ -1,6 +1,9 @@
 //! Contains YAML serde representation for the config.
 
+use super::error::ImportError;
+
 use std::collections::HashMap;
+use std::convert::{TryFrom, TryInto};
 use std::path::{Path, PathBuf};
 
 use log::warn;
@@ -12,11 +15,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConfigSet {
     /// Sequence of config entry.
-    pub entries: Vec<ConfigEntry>,
+    entries: Vec<ConfigFragment>,
 }
 
 impl ConfigSet {
-    pub fn select(&self, p: &Path) -> Option<ConfigEntry> {
+    pub fn select(&self, p: &Path) -> Result<Option<ConfigEntry>, ImportError> {
+        self.select_impl(p).transpose()
+    }
+
+    fn select_impl(&self, p: &Path) -> Option<Result<ConfigEntry, ImportError>> {
         let fp: &str = match p.to_str() {
             None => {
                 warn!("invalid Unicode path: {}", p.display());
@@ -24,7 +31,10 @@ impl ConfigSet {
             }
             Some(x) => Some(x),
         }?;
-        fn has_matches<'a>(entry: &'a ConfigEntry, fp: &str) -> Option<(usize, &'a ConfigEntry)> {
+        fn has_matches<'a>(
+            entry: &'a ConfigFragment,
+            fp: &str,
+        ) -> Option<(usize, &'a ConfigFragment)> {
             let epb: PathBuf = PathBufExt::from_slash(&entry.path);
             log::trace!("epb={} fp={}", epb.display(), fp);
             match epb.to_str() {
@@ -32,21 +42,24 @@ impl ConfigSet {
                 _ => None,
             }
         }
-        let mut matched: Vec<(usize, &ConfigEntry)> = self
+        let mut matched: Vec<(usize, &ConfigFragment)> = self
             .entries
             .iter()
             .filter_map(|x| has_matches(x, fp))
             .collect();
         matched.sort_by_key(|x| x.0);
-        matched.into_iter().fold(None, |res, item| match res {
-            None => Some(item.1.clone()),
-            Some(_) => Some(item.1.clone()),
-        })
+        matched
+            .into_iter()
+            .fold(None, |res, item| match res {
+                None => Some(item.1.clone()),
+                Some(_) => Some(item.1.clone()),
+            })
+            .map(|x| x.try_into())
     }
 }
 
 /// One entry corresponding to particular file.
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ConfigEntry {
     /// Path pattern which file the entry will match against.
     pub path: String,
@@ -60,8 +73,56 @@ pub struct ConfigEntry {
     /// Required only when some charges applied.
     pub operator: Option<String>,
     pub commodity: String,
-    #[serde(default)]
     pub format: FormatSpec,
+    pub rewrite: Vec<RewriteRule>,
+}
+
+impl TryFrom<ConfigFragment> for ConfigEntry {
+    type Error = ImportError;
+    fn try_from(value: ConfigFragment) -> Result<Self, Self::Error> {
+        let encoding = value
+            .encoding
+            .ok_or(ImportError::InvalidConfig("no encoding specified"))?;
+        let account = value
+            .account
+            .ok_or(ImportError::InvalidConfig("no account specified"))?;
+        let account_type = value
+            .account_type
+            .ok_or(ImportError::InvalidConfig("no account_type specified"))?;
+        let commodity = value
+            .commodity
+            .ok_or(ImportError::InvalidConfig("no commodity specified"))?;
+        let format = value.format.unwrap_or_default();
+        Ok(ConfigEntry {
+            path: value.path,
+            encoding,
+            account,
+            account_type,
+            operator: value.operator,
+            commodity,
+            format,
+            rewrite: value.rewrite,
+        })
+    }
+}
+
+/// One flagment of config corresponding to particular path prefix.
+/// It'll be merged into `ConfigEntry`.
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+struct ConfigFragment {
+    /// Path pattern which file the entry will match against.
+    pub path: String,
+    /// File encoding of the input.
+    pub encoding: Option<Encoding>,
+    /// Account name used in the ledger.
+    pub account: Option<String>,
+    /// Type of account input.
+    pub account_type: Option<AccountType>,
+    /// Operator of the import target.
+    /// Required only when some charges applied.
+    pub operator: Option<String>,
+    pub commodity: Option<String>,
+    pub format: Option<FormatSpec>,
     #[serde(default)]
     pub rewrite: Vec<RewriteRule>,
 }
@@ -231,14 +292,12 @@ pub enum RewriteField {
     Payee,
 }
 
-use super::error::ImportError;
-
 /// Loads Config object from given path as YAML encoded file.
 pub fn load_from_yaml<R: std::io::Read>(r: R) -> Result<ConfigSet, ImportError> {
     let mut entries = Vec::new();
     let docs = serde_yaml::Deserializer::from_reader(r);
     for doc in docs {
-        let entry = ConfigEntry::deserialize(doc)?;
+        let entry = ConfigFragment::deserialize(doc)?;
         entries.push(entry);
     }
     Ok(ConfigSet { entries })
@@ -257,19 +316,19 @@ mod tests {
     }
 
     /// Create minimal ConfigEntry for testing ConfigSet::select.
-    fn create_config_entry(path: &str) -> ConfigEntry {
-        ConfigEntry {
-            account: "Account".to_owned(),
-            encoding: Encoding(encoding_rs::UTF_8),
+    fn create_config_fragment(path: &str) -> ConfigFragment {
+        ConfigFragment {
+            account: Some("Account".to_owned()),
+            encoding: Some(Encoding(encoding_rs::UTF_8)),
             path: path.to_owned(),
-            account_type: AccountType::Asset,
+            account_type: Some(AccountType::Asset),
             operator: None,
-            commodity: "JPY".to_owned(),
-            format: FormatSpec {
+            commodity: Some("JPY".to_owned()),
+            format: Some(FormatSpec {
                 date: "%Y%m%d".to_owned(),
                 commodity: HashMap::new(),
                 fields: hashmap! {},
-            },
+            }),
             rewrite: vec![],
         }
     }
@@ -278,15 +337,20 @@ mod tests {
     fn test_config_select_single_match() {
         let config_set = ConfigSet {
             entries: vec![
-                create_config_entry("path/to/foo"),
-                create_config_entry("path/to/bar"),
+                create_config_fragment("path/to/foo"),
+                create_config_fragment("path/to/bar"),
             ],
         };
+        let cfg0: ConfigEntry = config_set.entries[0]
+            .clone()
+            .try_into()
+            .expect("config[0] must be valid ConfigEntry");
         assert_eq!(
-            Some(&config_set.entries[0]),
+            cfg0,
             config_set
                 .select(&Path::new("path").join("to").join("foo").join("202109.csv"))
-                .as_ref()
+                .expect("select must not fail")
+                .expect("select must have result")
         );
     }
 
@@ -294,29 +358,64 @@ mod tests {
     fn test_config_select_multi_match() {
         let config_set = &ConfigSet {
             entries: vec![
-                create_config_entry("path/to/foo"),
-                create_config_entry("path/to"),
+                create_config_fragment("path/to/foo"),
+                create_config_fragment("path/to"),
             ],
         };
+        let cfg0: ConfigEntry = config_set.entries[0]
+            .clone()
+            .try_into()
+            .expect("config[0] must be valid ConfigEntry");
         assert_eq!(
-            Some(&config_set.entries[0]),
+            cfg0,
             config_set
                 .select(&Path::new("path").join("to").join("foo").join("202109.csv"))
-                .as_ref()
+                .expect("select must not fail")
+                .expect("select must have result")
         );
+    }
+
+    #[test]
+    fn test_config_entry_try_from() {
+        let f = create_config_fragment("tmp/foo");
+        let tryinto = |x| TryInto::<ConfigEntry>::try_into(x);
+        tryinto(f.clone()).expect("create_config_fragment() should return solo valid fragment");
+        let err = |x| tryinto(x).unwrap_err().to_string();
+        assert!(err(ConfigFragment {
+            account: None,
+            ..f.clone()
+        })
+        .contains("account"));
+        assert!(err(ConfigFragment {
+            encoding: None,
+            ..f.clone()
+        })
+        .contains("encoding"));
+        assert!(err(ConfigFragment {
+            account_type: None,
+            ..f.clone()
+        })
+        .contains("account_type"));
+        assert!(err(ConfigFragment {
+            commodity: None,
+            ..f.clone()
+        })
+        .contains("commodity"));
     }
 
     #[test]
     fn test_config_select_no_match() {
         let config_set = ConfigSet {
             entries: vec![
-                create_config_entry("path/to/foo"),
-                create_config_entry("path/to/bar"),
+                create_config_fragment("path/to/foo"),
+                create_config_fragment("path/to/bar"),
             ],
         };
         assert_eq!(
             None,
-            config_set.select(&Path::new("path").join("to").join("baz").join("202109.csv"))
+            config_set
+                .select(&Path::new("path").join("to").join("baz").join("202109.csv"))
+                .expect("select must not fail")
         );
     }
 
@@ -347,12 +446,17 @@ mod tests {
                 account: Assets:Wire:Okane
         "#};
         let config = load_from_yaml(input.as_bytes()).unwrap();
-        assert_eq!(config.entries[0].account, "Assets:Banks:Okane");
+        assert_eq!(
+            config.entries[0].account.as_deref(),
+            Some("Assets:Banks:Okane")
+        );
         let date = config.entries[0]
             .format
+            .as_ref()
+            .expect("format should exist")
             .fields
             .get(&FieldKey::Date)
-            .unwrap();
+            .expect("format.fields.date should exist");
         assert_eq!(*date, FieldPos::Label("お取り引き日".to_owned()));
         let rewrite = vec![
             RewriteRule {
@@ -401,9 +505,14 @@ mod tests {
         rewrite: []
         "#};
         let config = load_from_yaml(input.as_bytes()).unwrap();
-        assert_eq!(config.entries[0].account, "Liabilities:OkaneCard");
+        assert_eq!(
+            config.entries[0].account.as_deref(),
+            Some("Liabilities:OkaneCard")
+        );
         let field_amount = config.entries[0]
             .format
+            .as_ref()
+            .expect("FormatSpec should exist")
             .fields
             .get(&FieldKey::Amount)
             .unwrap();
