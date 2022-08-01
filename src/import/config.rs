@@ -52,7 +52,7 @@ impl ConfigSet {
             .into_iter()
             .fold(None, |res, item| match res {
                 None => Some(item.1.clone()),
-                Some(_) => Some(item.1.clone()),
+                Some(prev) => Some(prev.merge(item.1.clone())),
             })
             .map(|x| x.try_into())
     }
@@ -125,6 +125,26 @@ struct ConfigFragment {
     pub format: Option<FormatSpec>,
     #[serde(default)]
     pub rewrite: Vec<RewriteRule>,
+}
+
+impl ConfigFragment {
+    /// Merges `other` into `self`, with overwriting as much as possible.
+    /// Note `rewrite` rules will be appended.
+    /// For now, `format` is also overwritten, not merged.
+    fn merge(self, mut other: ConfigFragment) -> ConfigFragment {
+        let mut rewrite = self.rewrite;
+        rewrite.append(&mut other.rewrite);
+        ConfigFragment {
+            path: other.path,
+            encoding: other.encoding.or(self.encoding),
+            account: other.account.or(self.account),
+            account_type: other.account_type.or(self.account_type),
+            operator: other.operator.or(self.operator),
+            commodity: other.commodity.or(self.commodity),
+            format: other.format.or(self.format),
+            rewrite: rewrite,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -315,7 +335,21 @@ mod tests {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
-    /// Create minimal ConfigEntry for testing ConfigSet::select.
+    /// Create an empty ConfigFragment.
+    fn create_empty_config_fragment() -> ConfigFragment {
+        ConfigFragment {
+            path: "empty/".to_string(),
+            account: None,
+            account_type: None,
+            commodity: None,
+            encoding: None,
+            format: None,
+            operator: None,
+            rewrite: Vec::new(),
+        }
+    }
+
+    /// Create a minimal ConfigFragment to generate valid ConfigEntry.
     fn create_config_fragment(path: &str) -> ConfigFragment {
         ConfigFragment {
             account: Some("Account".to_owned()),
@@ -326,8 +360,7 @@ mod tests {
             commodity: Some("JPY".to_owned()),
             format: Some(FormatSpec {
                 date: "%Y%m%d".to_owned(),
-                commodity: HashMap::new(),
-                fields: hashmap! {},
+                ..FormatSpec::default()
             }),
             rewrite: vec![],
         }
@@ -355,6 +388,22 @@ mod tests {
     }
 
     #[test]
+    fn test_config_select_no_match() {
+        let config_set = ConfigSet {
+            entries: vec![
+                create_config_fragment("path/to/foo"),
+                create_config_fragment("path/to/bar"),
+            ],
+        };
+        assert_eq!(
+            None,
+            config_set
+                .select(&Path::new("path").join("to").join("baz").join("202109.csv"))
+                .expect("select must not fail")
+        );
+    }
+
+    #[test]
     fn test_config_select_multi_match() {
         let config_set = &ConfigSet {
             entries: vec![
@@ -373,6 +422,27 @@ mod tests {
                 .expect("select must not fail")
                 .expect("select must have result")
         );
+    }
+
+    #[test]
+    fn test_config_select_merge_match() {
+        // TODO: write test to cover this case.
+        // let config_set = ConfigSet {
+        //     entries: vec![
+        //         ConfigFragment {
+        //             // root
+        //             path: "".to_string(),
+        //             encoding: Some(Encoding(encoding_rs::UTF_8)),
+        //             account_type: Some(AccountType::Asset),
+        //             commodity: Some("JPY".to_string()),
+        //             format: Some(FormatSpec {
+        //                 date: "%Y/%m/%d".to_string(),
+        //                 ..Default::default()
+        //             }),
+        //             ..create_empty_config_fragment()
+        //         },
+        //     ],
+        // };
     }
 
     #[test]
@@ -404,19 +474,44 @@ mod tests {
     }
 
     #[test]
-    fn test_config_select_no_match() {
-        let config_set = ConfigSet {
-            entries: vec![
-                create_config_fragment("path/to/foo"),
-                create_config_fragment("path/to/bar"),
-            ],
+    fn test_config_fragment_merge() {
+        let empty = create_empty_config_fragment;
+        let account = || ConfigFragment {
+            path: "account/".to_string(),
+            account: Some("foo".to_string()),
+            ..empty()
         };
-        assert_eq!(
-            None,
-            config_set
-                .select(&Path::new("path").join("to").join("baz").join("202109.csv"))
-                .expect("select must not fail")
-        );
+        let account_type = || ConfigFragment {
+            path: "account_type/".to_string(),
+            account_type: Some(AccountType::Liability),
+            ..empty()
+        };
+        let commodity = || ConfigFragment {
+            path: "commodity/".to_string(),
+            commodity: Some("FOO COMMODITY".to_string()),
+            ..empty()
+        };
+        let operator = || ConfigFragment {
+            path: "fragment/".to_string(),
+            operator: Some("foo operator".to_string()),
+            ..empty()
+        };
+        let cases: Vec<Box<dyn Fn() -> ConfigFragment>> = vec![
+            Box::new(account),
+            Box::new(account_type),
+            Box::new(commodity),
+            Box::new(operator),
+        ];
+        for case in cases {
+            assert_eq!(empty().merge(case()), case());
+            assert_eq!(
+                case().merge(empty()),
+                ConfigFragment {
+                    path: "empty/".to_string(),
+                    ..case()
+                }
+            );
+        }
     }
 
     #[test]
