@@ -79,9 +79,8 @@ rewrite:
       payee: Migros
     account: Expenses:Grocery
 ---
-path: testdata/iso_camt.xml
+path: testdata/iso_camt
 encoding: UTF-8
-account: Assets:Okane Bank
 account_type: asset
 operator: Okane Bank (fee)
 commodity: CHF
@@ -118,6 +117,10 @@ rewrite:
       domain_sub_family: SALA
     account: Income:Salary
     payee: Taro and Jiro
+---
+path: testdata/iso_camt.xml
+account: Assets:Okane Bank
+rewrite:
   - matcher:
       payee: "Herr.*Frau.*"
     account: Expenses:House

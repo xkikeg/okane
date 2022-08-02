@@ -33,7 +33,7 @@ impl ImportCmd {
     {
         let config_file = File::open(&self.config)?;
         let config_set = import::config::load_from_yaml(config_file)?;
-        let config_entry = config_set.select(&self.source).ok_or_else(|| {
+        let config_entry = config_set.select(&self.source)?.ok_or_else(|| {
             ImportError::Other(format!(
                 "config matching {} not found",
                 self.source.display()
@@ -50,7 +50,7 @@ impl ImportCmd {
         let decoded = DecodeReaderBytesBuilder::new()
             .encoding(Some(config_entry.encoding.as_encoding()))
             .build(file);
-        let xacts = import::import(decoded, format, config_entry)?;
+        let xacts = import::import(decoded, format, &config_entry)?;
         let ctx = repl::DisplayContext {
             precisions: config_entry
                 .format
