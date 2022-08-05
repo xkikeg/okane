@@ -97,7 +97,7 @@ pub trait EntityMatcher:
 }
 
 /// Matched is a result of EntityMatcher::captures method,
-/// Most likely it can be regex::Capture or Matched::empty().
+/// Most likely it can be regex::Capture or Matched::default().
 #[derive(Debug, Default, PartialEq)]
 pub struct Matched<'a> {
     pub payee: Option<&'a str>,
