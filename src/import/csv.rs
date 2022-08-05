@@ -61,6 +61,7 @@ impl super::Importer for CsvImporter {
                 .equivalent_absolute
                 .map(|i| parse_comma_decimal(r.get(i).unwrap()))
                 .transpose()?;
+            let category = fm.category.and_then(|i| r.get(i));
             let commodity = fm
                 .commodity
                 .and_then(|i| r.get(i))
@@ -70,7 +71,10 @@ impl super::Importer for CsvImporter {
                 .rate
                 .map(|i| parse_comma_decimal(r.get(i).unwrap()))
                 .transpose()?;
-            let fragment = extractor.extract(Payee(original_payee));
+            let fragment = extractor.extract(Record {
+                payee: original_payee,
+                category,
+            });
             if fragment.account.is_none() {
                 warn!(
                     "account unmatched at line {}, payee={}",
@@ -194,6 +198,7 @@ struct FieldMap {
     payee: usize,
     value: FieldMapValues,
     balance: Option<usize>,
+    category: Option<usize>,
     commodity: Option<usize>,
     rate: Option<usize>,
     equivalent_absolute: Option<usize>,
@@ -207,6 +212,7 @@ impl FieldMap {
             self.value.max(),
             self.balance.unwrap_or(0),
             self.commodity.unwrap_or(0),
+            self.category.unwrap_or(0),
             self.rate.unwrap_or(0),
             self.equivalent_absolute.unwrap_or(0),
         ]
@@ -271,6 +277,7 @@ fn resolve_fields(
                 "either amount or credit/debit pair should be set",
             )),
     }?;
+    let category = ki.get(&config::FieldKey::Category).cloned();
     let balance = ki.get(&config::FieldKey::Balance).cloned();
     let commodity = ki.get(&config::FieldKey::Commodity).cloned();
     let rate = ki.get(&config::FieldKey::Rate).cloned();
@@ -280,38 +287,50 @@ fn resolve_fields(
         payee: *payee,
         value,
         balance,
+        category,
         commodity,
         rate,
         equivalent_absolute,
     })
 }
 
-/// Payee is a wrapper to represent payee.
-/// In future we'll use CSV-row instead of just a payee.
+/// Record is a wrapper to represent a CSV line.
 #[derive(Debug, Copy, Clone)]
-struct Payee<'a>(&'a str);
+struct Record<'a> {
+    payee: &'a str,
+    category: Option<&'a str>,
+}
 
-/// Matcher for CSV, currently it only checks payee.
 #[derive(Debug)]
-struct CsvMatcher(regex::Regex);
+enum Field {
+    Payee,
+    Category,
+}
+
+/// Matcher for CSV.
+#[derive(Debug)]
+struct CsvMatcher {
+    field: Field,
+    pattern: regex::Regex,
+}
 
 impl<'a> extract::Entity<'a> for CsvMatcher {
-    type T = Payee<'a>;
+    type T = Record<'a>;
 }
 
 impl TryFrom<(config::RewriteField, &str)> for CsvMatcher {
     type Error = ImportError;
 
-    fn try_from(from: (config::RewriteField, &str)) -> Result<CsvMatcher, ImportError> {
-        if from.0 == config::RewriteField::Payee {
-            let re = Regex::new(from.1)?;
-            Ok(CsvMatcher(re))
-        } else {
-            Err(ImportError::Other(format!(
-                "unsupported matcher field: {}",
-                from.0
-            )))
-        }
+    fn try_from((field, pattern): (config::RewriteField, &str)) -> Result<CsvMatcher, Self::Error> {
+        let field = match field {
+            config::RewriteField::Payee => Ok(Field::Payee),
+            config::RewriteField::Category => Ok(Field::Category),
+            _ => Err(ImportError::InvalidConfig(
+                "CSV only supports payee or category matcher.",
+            )),
+        }?;
+        let pattern = Regex::new(pattern)?;
+        Ok(CsvMatcher { field, pattern })
     }
 }
 
@@ -319,10 +338,18 @@ impl extract::EntityMatcher for CsvMatcher {
     fn captures<'a>(
         &self,
         fragment: &extract::Fragment<'a>,
-        entity: Payee<'a>,
+        entity: Record<'a>,
     ) -> Option<extract::Matched<'a>> {
-        let payee = fragment.payee.unwrap_or(entity.0);
-        self.0.captures(payee).map(|c| c.into())
+        match self.field {
+            Field::Payee => {
+                let payee = fragment.payee.unwrap_or(entity.payee);
+                self.pattern.captures(payee).map(|c| c.into())
+            }
+            Field::Category => entity
+                .category
+                .and_then(|c| self.pattern.captures(c))
+                .and(Some(extract::Matched::default())),
+        }
     }
 }
 
@@ -357,6 +384,7 @@ mod tests {
                     debit: 3
                 },
                 balance: Some(4),
+                category: None,
                 commodity: None,
                 rate: None,
                 equivalent_absolute: None,
@@ -379,6 +407,7 @@ mod tests {
                 payee: 1,
                 value: FieldMapValues::Amount(2),
                 balance: None,
+                category: None,
                 commodity: None,
                 rate: None,
                 equivalent_absolute: None,
@@ -393,9 +422,10 @@ mod tests {
             FieldKey::Payee => FieldPos::Index(1),
             FieldKey::Amount => FieldPos::Index(2),
             FieldKey::Balance => FieldPos::Index(3),
-            FieldKey::Commodity => FieldPos::Index(4),
-            FieldKey::Rate => FieldPos::Index(5),
-            FieldKey::EquivalentAbsolute => FieldPos::Index(6),
+            FieldKey::Category => FieldPos::Index(4),
+            FieldKey::Commodity => FieldPos::Index(5),
+            FieldKey::Rate => FieldPos::Index(6),
+            FieldKey::EquivalentAbsolute => FieldPos::Index(7),
         };
         let got = resolve_fields(&config, &csv::StringRecord::from(vec!["unrelated"])).unwrap();
         assert_eq!(
@@ -405,9 +435,10 @@ mod tests {
                 payee: 1,
                 value: FieldMapValues::Amount(2),
                 balance: Some(3),
-                commodity: Some(4),
-                rate: Some(5),
-                equivalent_absolute: Some(6),
+                category: Some(4),
+                commodity: Some(5),
+                rate: Some(6),
+                equivalent_absolute: Some(7),
             }
         );
     }

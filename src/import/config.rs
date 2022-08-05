@@ -215,6 +215,8 @@ pub enum FieldKey {
     Date,
     /// Payee, opposite side of the transaction.
     Payee,
+    /// Category of the transaction.
+    Category,
     /// Side note.
     Note,
     /// Amount of the transcation, which can be positive or negative.
