@@ -23,7 +23,12 @@ impl super::Importer for CsvImporter {
         config: &config::ConfigEntry,
     ) -> Result<Vec<single_entry::Txn>, ImportError> {
         let mut res: Vec<single_entry::Txn> = Vec::new();
-        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(r);
+        let mut rb = csv::ReaderBuilder::new();
+        rb.flexible(true);
+        if !config.format.delimiter.is_empty() {
+            rb.delimiter(config.format.delimiter.as_bytes()[0]);
+        }
+        let mut rdr = rb.from_reader(r);
         if !rdr.has_headers() {
             return Err(ImportError::Other("no header of CSV".to_string()));
         }

@@ -198,6 +198,8 @@ pub struct FormatSpec {
     /// Mapping from abstracted field key to abstracted position.
     #[serde(default)]
     pub fields: HashMap<FieldKey, FieldPos>,
+    #[serde(default)]
+    pub delimiter: String,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
