@@ -146,6 +146,12 @@ impl super::Importer for CsvImporter {
             }
             res.push(txn);
         }
+        match config.format.row_order {
+            config::RowOrder::OldToNew => (),
+            config::RowOrder::NewToOld => {
+                res.reverse();
+            }
+        }
         Ok(res)
     }
 }

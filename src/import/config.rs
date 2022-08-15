@@ -198,8 +198,25 @@ pub struct FormatSpec {
     /// Mapping from abstracted field key to abstracted position.
     #[serde(default)]
     pub fields: HashMap<FieldKey, FieldPos>,
+    /// Delimiter for the CSV. Leave it empty to use default ",".
     #[serde(default)]
     pub delimiter: String,
+    /// Order of the row.
+    #[serde(default)]
+    pub row_order: RowOrder,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum RowOrder {
+    OldToNew,
+    NewToOld,
+}
+
+impl Default for RowOrder {
+    fn default() -> Self {
+        RowOrder::OldToNew
+    }
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
