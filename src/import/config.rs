@@ -142,7 +142,7 @@ impl ConfigFragment {
             operator: other.operator.or(self.operator),
             commodity: other.commodity.or(self.commodity),
             format: other.format.or(self.format),
-            rewrite: rewrite,
+            rewrite,
         }
     }
 }
