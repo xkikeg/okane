@@ -1,7 +1,7 @@
 //! Defines parser functions related to character input.
 
 use crate::repl::parser;
-use parser::combinator::{cond_else, has_peek};
+use parser::combinator::{branch, has_peek};
 
 use nom::{
     branch::alt,
@@ -16,7 +16,7 @@ use nom::{
 /// Semicolon or line ending.
 pub fn line_ending_or_semi<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
     let (input, is_semi) = has_peek(char(';'))(input)?;
-    cond_else(is_semi, recognize(char(';')), line_ending)(input)
+    branch(is_semi, recognize(char(';')), line_ending)(input)
 }
 
 /// Parses non-zero string until line_ending or comma appears.

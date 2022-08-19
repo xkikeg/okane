@@ -8,7 +8,7 @@ pub mod primitive;
 pub mod testing;
 
 use crate::repl;
-use combinator::{cond_else, has_peek};
+use combinator::{branch, has_peek};
 
 use std::cmp::min;
 
@@ -136,7 +136,7 @@ fn parse_posting_cost<'a>(
         is_at,
         context(
             "posting cost exchange",
-            cond_else(is_double_at, parse_total_exchange, parse_rate_exchange),
+            branch(is_double_at, parse_total_exchange, parse_rate_exchange),
         ),
     )(input)?;
     Ok((input, repl::ExchangedAmount { amount, exchange }))
