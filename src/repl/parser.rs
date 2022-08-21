@@ -92,7 +92,7 @@ fn parse_posting(input: &str) -> IResult<&str, repl::Posting, VerboseError<&str>
         }
         let (input, amount) = context(
             "amount of the posting",
-            opt(terminated(parse_posting_cost, space0)),
+            opt(terminated(parse_posting_amount, space0)),
         )(input)?;
         let (input, balance) = context(
             "balance of the posting",
@@ -126,45 +126,43 @@ fn parse_posting_account<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<
     terminated(take(length), space0)(input)
 }
 
-fn parse_posting_cost<'a>(
+fn parse_posting_amount<'a>(
     input: &'a str,
-) -> IResult<&str, repl::ExchangedAmount, VerboseError<&'a str>> {
+) -> IResult<&str, repl::PostingAmount, VerboseError<&'a str>> {
     let (input, amount) = terminated(parse_amount, space0)(input)?;
     let (input, is_at) = has_peek(char('@'))(input)?;
     let (input, is_double_at) = has_peek(tag("@@"))(input)?;
-    let (input, exchange) = cond(
+    let (input, cost) = cond(
         is_at,
         context(
             "posting cost exchange",
-            branch(is_double_at, parse_total_exchange, parse_rate_exchange),
+            branch(is_double_at, parse_total_cost, parse_rate_cost),
         ),
     )(input)?;
-    Ok((input, repl::ExchangedAmount { amount, exchange }))
+    Ok((input, repl::PostingAmount { amount, cost }))
 }
 
-fn parse_total_exchange<'a>(
-    input: &'a str,
-) -> IResult<&str, repl::Exchange, VerboseError<&'a str>> {
+fn parse_total_cost<'a>(input: &'a str) -> IResult<&str, repl::Exchange, VerboseError<&'a str>> {
     let (input, v) = preceded(pair(tag("@@"), space0), parse_amount)(input)?;
     Ok((input, repl::Exchange::Total(v)))
 }
 
-fn parse_rate_exchange<'a>(input: &'a str) -> IResult<&str, repl::Exchange, VerboseError<&'a str>> {
+fn parse_rate_cost<'a>(input: &'a str) -> IResult<&str, repl::Exchange, VerboseError<&'a str>> {
     let (input, v) = preceded(pair(tag("@"), space0), parse_amount)(input)?;
     Ok((input, repl::Exchange::Rate(v)))
 }
 
-fn parse_amount<'a>(input: &'a str) -> IResult<&str, repl::Amount, VerboseError<&'a str>> {
+fn parse_amount<'a>(input: &'a str) -> IResult<&str, repl::expr::ValueExpr, VerboseError<&'a str>> {
     // Currently it only supports suffix commodity.
     // It should support prefix like $, € or ¥ prefix.
     let (input, value) = terminated(primitive::comma_decimal, space0)(input)?;
     let (input, c) = primitive::commodity(input)?;
     Ok((
         input,
-        repl::Amount {
+        repl::expr::ValueExpr::Amount(repl::Amount {
             value,
             commodity: c.to_string(),
-        },
+        }),
     ))
 }
 
@@ -289,12 +287,12 @@ mod tests {
                     payee: "Foo".to_string(),
                     posts: vec![
                         repl::Posting {
-                            amount: Some(repl::ExchangedAmount {
-                                amount: repl::Amount {
+                            amount: Some(repl::PostingAmount {
+                                amount: repl::expr::ValueExpr::Amount(repl::Amount {
                                     value: dec!(123456.78),
                                     commodity: "USD".to_string(),
-                                },
-                                exchange: None,
+                                }),
+                                cost: None,
                             }),
                             ..repl::Posting::new("Expense A".to_string())
                         },
@@ -333,12 +331,12 @@ mod tests {
                     ],
                     posts: vec![
                         repl::Posting {
-                            amount: Some(repl::ExchangedAmount {
-                                amount: repl::Amount {
+                            amount: Some(repl::PostingAmount {
+                                amount: repl::expr::ValueExpr::Amount(repl::Amount {
                                     value: dec!(-123456.78),
                                     commodity: "USD".to_string(),
-                                },
-                                exchange: None,
+                                }),
+                                cost: None,
                             }),
                             metadata: vec![
                                 repl::Metadata::Comment("Note expense A".to_string()),
@@ -350,17 +348,17 @@ mod tests {
                             ..repl::Posting::new("Expense A".to_string())
                         },
                         repl::Posting {
-                            amount: Some(repl::ExchangedAmount {
-                                amount: repl::Amount {
+                            amount: Some(repl::PostingAmount {
+                                amount: repl::expr::ValueExpr::Amount(repl::Amount {
                                     value: dec!(12),
                                     commodity: "JPY".to_string(),
-                                },
-                                exchange: None,
+                                }),
+                                cost: None,
                             }),
-                            balance: Some(repl::Amount {
+                            balance: Some(repl::expr::ValueExpr::Amount(repl::Amount {
                                 value: dec!(-1000),
                                 commodity: "CHF".to_string(),
-                            }),
+                            })),
                             metadata: vec![repl::Metadata::WordTags(vec![
                                 "tag1".to_string(),
                                 "他のタグ".to_string()
@@ -368,10 +366,10 @@ mod tests {
                             ..repl::Posting::new("Liabilities B".to_string())
                         },
                         repl::Posting {
-                            balance: Some(repl::Amount {
+                            balance: Some(repl::expr::ValueExpr::Amount(repl::Amount {
                                 value: dec!(0),
                                 commodity: "".to_string(),
-                            }),
+                            })),
                             metadata: vec![
                                 repl::Metadata::Comment("Cのノート".to_string()),
                                 repl::Metadata::Comment("これなんだっけ".to_string()),
@@ -389,60 +387,64 @@ mod tests {
     #[test]
     fn posting_cost_parses_valid_input() {
         assert_eq!(
-            expect_parse_ok(parse_posting_cost, "1000 JPY"),
+            expect_parse_ok(parse_posting_amount, "1000 JPY"),
             (
                 "",
-                repl::ExchangedAmount {
-                    amount: repl::Amount {
+                repl::PostingAmount {
+                    amount: repl::expr::ValueExpr::Amount(repl::Amount {
                         value: dec!(1000),
                         commodity: "JPY".to_string()
-                    },
-                    exchange: None
+                    }),
+                    cost: None
                 }
             )
         );
         assert_eq!(
-            expect_parse_ok(parse_posting_cost, "1,234,567.89 USD"),
+            expect_parse_ok(parse_posting_amount, "1,234,567.89 USD"),
             (
                 "",
-                repl::ExchangedAmount {
-                    amount: repl::Amount {
+                repl::PostingAmount {
+                    amount: repl::expr::ValueExpr::Amount(repl::Amount {
                         value: dec!(1234567.89),
                         commodity: "USD".to_string()
-                    },
-                    exchange: None
+                    }),
+                    cost: None
                 }
             )
         );
         assert_eq!(
-            expect_parse_ok(parse_posting_cost, "100 EUR @ 1.2 CHF"),
+            expect_parse_ok(parse_posting_amount, "100 EUR @ 1.2 CHF"),
             (
                 "",
-                repl::ExchangedAmount {
-                    amount: repl::Amount {
+                repl::PostingAmount {
+                    amount: repl::expr::ValueExpr::Amount(repl::Amount {
                         value: dec!(100),
                         commodity: "EUR".to_string()
-                    },
-                    exchange: Some(repl::Exchange::Rate(repl::Amount {
-                        value: dec!(1.2),
-                        commodity: "CHF".to_string(),
-                    }))
+                    }),
+                    cost: Some(repl::Exchange::Rate(repl::expr::ValueExpr::Amount(
+                        repl::Amount {
+                            value: dec!(1.2),
+                            commodity: "CHF".to_string(),
+                        }
+                    )))
                 }
             )
         );
         assert_eq!(
-            expect_parse_ok(parse_posting_cost, "100 EUR @@ 120 CHF"),
+            expect_parse_ok(parse_posting_amount, "100 EUR @@ 120 CHF"),
             (
                 "",
-                repl::ExchangedAmount {
-                    amount: repl::Amount {
+                repl::PostingAmount {
+                    amount: repl::expr::ValueExpr::Amount(repl::Amount {
                         value: dec!(100),
                         commodity: "EUR".to_string()
-                    },
-                    exchange: Some(repl::Exchange::Total(repl::Amount {
-                        value: dec!(120),
-                        commodity: "CHF".to_string(),
-                    }))
+                    }),
+                    cost: Some(repl::Exchange::Total(repl::expr::ValueExpr::Amount(
+                        repl::Amount {
+                            value: dec!(120),
+                            commodity: "CHF".to_string(),
+                        }
+                    )))
                 }
             )
         );
@@ -456,12 +458,12 @@ mod tests {
             (
                 "",
                 repl::Posting {
-                    amount: Some(repl::ExchangedAmount {
-                        amount: repl::Amount {
+                    amount: Some(repl::PostingAmount {
+                        amount: repl::expr::ValueExpr::Amount(repl::Amount {
                             value: dec!(1),
                             commodity: "USD".to_string(),
-                        },
-                        exchange: None,
+                        }),
+                        cost: None,
                     },),
                     metadata: vec![
                         repl::Metadata::KeyValueTag {

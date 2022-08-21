@@ -51,7 +51,7 @@ impl ImportCmd {
             .encoding(Some(config_entry.encoding.as_encoding()))
             .build(file);
         let xacts = import::import(decoded, format, &config_entry)?;
-        let ctx = repl::DisplayContext {
+        let ctx = repl::display::DisplayContext {
             precisions: config_entry
                 .format
                 .commodity
@@ -59,7 +59,7 @@ impl ImportCmd {
                 .map(|(k, v)| (k.clone(), v.precision))
                 .collect(),
         };
-        for xact in &xacts {
+        for xact in xacts {
             let xact: repl::Transaction = xact.into();
             writeln!(w, "{}", xact.display(&ctx))?;
         }

@@ -3,17 +3,16 @@
 //! however, repl is for textual representation while
 //! data is more for understanding.
 
+pub mod display;
+pub mod expr;
 pub mod parser;
 
 use crate::data;
-pub use crate::data::{Amount, ClearState, Exchange, ExchangedAmount};
+pub use crate::data::{Amount, ClearState};
 
-use std::collections::HashMap;
 use std::fmt;
 
 use chrono::NaiveDate;
-use rust_decimal::Decimal;
-use unicode_width::UnicodeWidthStr;
 
 /// Top-level entry of the LedgerFile.
 #[derive(Debug, PartialEq, Eq)]
@@ -55,16 +54,16 @@ impl Transaction {
     }
 }
 
-impl From<&data::Transaction> for Transaction {
-    fn from(orig: &data::Transaction) -> Transaction {
+impl From<data::Transaction> for Transaction {
+    fn from(orig: data::Transaction) -> Transaction {
         Transaction {
             date: orig.date,
             effective_date: orig.effective_date,
             clear_state: orig.clear_state,
-            code: orig.code.clone(),
-            payee: orig.payee.clone(),
+            code: orig.code,
+            payee: orig.payee,
             metadata: Vec::new(),
-            posts: orig.posts.iter().map(|x| x.into()).collect(),
+            posts: orig.posts.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -77,9 +76,9 @@ pub struct Posting {
     /// Posting specific ClearState.
     pub clear_state: ClearState,
     /// Amount of the posting.
-    pub amount: Option<ExchangedAmount>,
+    pub amount: Option<PostingAmount>,
     /// Balance after the transaction of the specified account.
-    pub balance: Option<Amount>,
+    pub balance: Option<expr::ValueExpr>,
     /// Metadata information such as comment or tag.
     pub metadata: Vec<Metadata>,
 }
@@ -96,21 +95,21 @@ impl Posting {
     }
 }
 
-impl From<&data::Posting> for Posting {
-    fn from(orig: &data::Posting) -> Posting {
+impl From<data::Posting> for Posting {
+    fn from(orig: data::Posting) -> Posting {
         let metadata = orig
             .payee
-            .iter()
+            .into_iter()
             .map(|v| Metadata::KeyValueTag {
                 key: "Payee".to_string(),
-                value: v.clone(),
+                value: v,
             })
             .collect();
         Posting {
-            account: orig.account.clone(),
+            account: orig.account,
             clear_state: orig.clear_state,
-            amount: orig.amount.clone(),
-            balance: orig.balance.clone(),
+            amount: orig.amount.map(Into::into),
+            balance: orig.balance.map(Into::into),
             metadata,
         }
     }
@@ -143,128 +142,46 @@ impl fmt::Display for Metadata {
     }
 }
 
-fn print_clear_state(v: ClearState) -> &'static str {
-    match v {
-        ClearState::Uncleared => "",
-        ClearState::Cleared => "* ",
-        ClearState::Pending => "! ",
-    }
+/// This is an amout for each posting.
+/// Which contains
+/// - how much the asset is increased.
+/// - what was the cost in the other commodity.
+/// - lot information.
+#[derive(Debug, PartialEq, Eq)]
+pub struct PostingAmount {
+    pub amount: expr::ValueExpr,
+    pub cost: Option<Exchange>,
 }
 
-/// Context information to control the formatting of the transaction.
-pub struct DisplayContext {
-    pub precisions: HashMap<String, u8>,
-}
-
-impl DisplayContext {
-    pub fn empty() -> DisplayContext {
-        DisplayContext {
-            precisions: HashMap::new(),
+impl From<data::ExchangedAmount> for PostingAmount {
+    fn from(v: data::ExchangedAmount) -> Self {
+        PostingAmount {
+            amount: v.amount.into(),
+            cost: v.exchange.map(Into::into),
         }
     }
 }
 
-/// Transaction combined with the transaction.
-pub struct TransactionWithContext<'a> {
-    pub transaction: &'a Transaction,
-    pub context: &'a DisplayContext,
+/// Exchange represents the amount expressed in the different commodity.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Exchange {
+    /// Specified value equals to the total amount.
+    /// For example,
+    /// `200 JPY @@ 2 USD`
+    /// means the amount was 200 JPY, which is equal to 2 USD.
+    Total(expr::ValueExpr),
+    /// Specified value equals to the amount of one original commodity.
+    /// For example,
+    /// `200 JPY @ (1 / 100 USD)`
+    /// means the amount was 200 JPY, where 1 JPY is equal to 1/100 USD.
+    Rate(expr::ValueExpr),
 }
 
-fn rescale(x: &Amount, context: &DisplayContext) -> Decimal {
-    let mut v = x.value;
-    v.rescale(std::cmp::max(
-        x.value.scale(),
-        context.precisions.get(&x.commodity).cloned().unwrap_or(0) as u32,
-    ));
-    v
-}
-
-fn get_column(colsize: usize, left: usize, padding: usize) -> usize {
-    if left + padding < colsize {
-        colsize - left
-    } else {
-        padding
-    }
-}
-
-impl<'a> fmt::Display for TransactionWithContext<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let xact = self.transaction;
-        write!(f, "{}", xact.date.format("%Y/%m/%d"))?;
-        if let Some(edate) = &xact.effective_date {
-            write!(f, "={}", edate.format("%Y/%m/%d"))?;
-        }
-        write!(f, " {}", print_clear_state(xact.clear_state))?;
-        if let Some(code) = &xact.code {
-            write!(f, "({}) ", code)?;
-        }
-        writeln!(f, "{}", xact.payee)?;
-        for m in &xact.metadata {
-            writeln!(f, "    ; {}", m)?;
-        }
-        for post in &xact.posts {
-            let post_clear = print_clear_state(post.clear_state);
-            write!(f, "    {}{}", post_clear, post.account)?;
-            let account_width = UnicodeWidthStr::width_cjk(post.account.as_str())
-                + UnicodeWidthStr::width(post_clear);
-            if let Some(amount) = &post.amount {
-                let amount_str = rescale(&amount.amount, self.context).to_string();
-                write!(
-                    f,
-                    "{:>width$}{} {}",
-                    "",
-                    rescale(&amount.amount, self.context),
-                    amount.amount.commodity,
-                    width = get_column(
-                        48,
-                        account_width + UnicodeWidthStr::width(amount_str.as_str()),
-                        2
-                    )
-                )?;
-                if let Some(exchange) = &amount.exchange {
-                    match exchange {
-                        Exchange::Rate(v) => write!(f, " @ {} {}", v.value, v.commodity),
-                        Exchange::Total(v) => {
-                            write!(f, " @@ {} {}", rescale(v, self.context), v.commodity)
-                        }
-                    }?
-                }
-            }
-            if let Some(balance) = &post.balance {
-                let balance_padding = if post.amount.is_some() {
-                    0
-                } else {
-                    get_column(
-                        51 + UnicodeWidthStr::width_cjk(balance.commodity.as_str()),
-                        account_width,
-                        3,
-                    )
-                };
-                write!(
-                    f,
-                    "{:>width$} {}",
-                    " =",
-                    rescale(balance, self.context),
-                    width = balance_padding
-                )?;
-                if !balance.commodity.is_empty() {
-                    write!(f, " {}", balance.commodity)?;
-                }
-            }
-            writeln!(f)?;
-            for m in &post.metadata {
-                writeln!(f, "    ; {}", m)?;
-            }
-        }
-        Ok(())
-    }
-}
-
-impl Transaction {
-    pub fn display<'a>(&'a self, context: &'a DisplayContext) -> TransactionWithContext<'a> {
-        TransactionWithContext {
-            transaction: self,
-            context,
+impl From<data::Exchange> for Exchange {
+    fn from(v: data::Exchange) -> Self {
+        match v {
+            data::Exchange::Total(total) => Exchange::Total(total.into()),
+            data::Exchange::Rate(rate) => Exchange::Rate(rate.into()),
         }
     }
 }
