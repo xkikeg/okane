@@ -1,6 +1,7 @@
 use crate::repl::{
+    display::DisplayContext,
     parser::{parse_ledger, ParseLedgerError},
-    DisplayContext, LedgerEntry, TransactionWithContext,
+    LedgerEntry,
 };
 
 use std::io::{Read, Write};
@@ -22,17 +23,10 @@ where
     let mut buf = String::new();
     r.read_to_string(&mut buf)?;
     let txns = parse_ledger(&buf)?;
-    let ctx = DisplayContext::empty();
+    let ctx = DisplayContext::default();
     for txn in txns {
         match txn {
-            LedgerEntry::Txn(txn) => writeln!(
-                w,
-                "{}",
-                TransactionWithContext {
-                    transaction: &txn,
-                    context: &ctx
-                }
-            )?,
+            LedgerEntry::Txn(txn) => writeln!(w, "{}", txn.display(&ctx))?,
         }
     }
     Ok(())
