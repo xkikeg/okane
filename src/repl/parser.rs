@@ -2,6 +2,7 @@
 
 pub mod character;
 pub mod combinator;
+pub mod expr;
 pub mod primitive;
 
 #[cfg(test)]
@@ -96,7 +97,7 @@ fn parse_posting(input: &str) -> IResult<&str, repl::Posting, VerboseError<&str>
         )(input)?;
         let (input, balance) = context(
             "balance of the posting",
-            opt(delimited(pair(char('='), space0), parse_amount, space0)),
+            opt(delimited(pair(char('='), space0), expr::value_expr, space0)),
         )(input)?;
         let (input, metadata) = parse_block_metadata(input)?;
         Ok((
@@ -129,7 +130,7 @@ fn parse_posting_account<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<
 fn parse_posting_amount<'a>(
     input: &'a str,
 ) -> IResult<&str, repl::PostingAmount, VerboseError<&'a str>> {
-    let (input, amount) = terminated(parse_amount, space0)(input)?;
+    let (input, amount) = terminated(expr::value_expr, space0)(input)?;
     let (input, is_at) = has_peek(char('@'))(input)?;
     let (input, is_double_at) = has_peek(tag("@@"))(input)?;
     let (input, cost) = cond(
@@ -143,27 +144,13 @@ fn parse_posting_amount<'a>(
 }
 
 fn parse_total_cost<'a>(input: &'a str) -> IResult<&str, repl::Exchange, VerboseError<&'a str>> {
-    let (input, v) = preceded(pair(tag("@@"), space0), parse_amount)(input)?;
+    let (input, v) = preceded(pair(tag("@@"), space0), expr::value_expr)(input)?;
     Ok((input, repl::Exchange::Total(v)))
 }
 
 fn parse_rate_cost<'a>(input: &'a str) -> IResult<&str, repl::Exchange, VerboseError<&'a str>> {
-    let (input, v) = preceded(pair(tag("@"), space0), parse_amount)(input)?;
+    let (input, v) = preceded(pair(tag("@"), space0), expr::value_expr)(input)?;
     Ok((input, repl::Exchange::Rate(v)))
-}
-
-fn parse_amount<'a>(input: &'a str) -> IResult<&str, repl::expr::ValueExpr, VerboseError<&'a str>> {
-    // Currently it only supports suffix commodity.
-    // It should support prefix like $, € or ¥ prefix.
-    let (input, value) = terminated(primitive::comma_decimal, space0)(input)?;
-    let (input, c) = primitive::commodity(input)?;
-    Ok((
-        input,
-        repl::expr::ValueExpr::Amount(repl::Amount {
-            value,
-            commodity: c.to_string(),
-        }),
-    ))
 }
 
 /// Parses block of metadata including the last line_end.

@@ -5,17 +5,20 @@ use crate::data;
 
 use core::fmt;
 
+/// Re-export data Amount as-is.
+pub use data::Amount;
+
 /// Defines value expression.
 /// Value expression is a valid expression when used in amount.
 /// It can be either amount literal or expression wrapped in `()`.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ValueExpr {
     Paren(Expr),
-    Amount(data::Amount),
+    Amount(Amount),
 }
 
-impl From<data::Amount> for ValueExpr {
-    fn from(v: data::Amount) -> Self {
+impl From<Amount> for ValueExpr {
+    fn from(v: Amount) -> Self {
         ValueExpr::Amount(v)
     }
 }
