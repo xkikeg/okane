@@ -26,3 +26,9 @@
     ! Income:Unknown                          -92.90 CHF
     Liabilities:Okane Card                     92.90 CHF
 
+2022/08/11=2022/07/23 * AMZNPRIME DE AMZN.DE/I, Luxembourg LU
+    ! Income:Unknown                           -7.99 EUR @ 0.988364 CHF
+    Liabilities:Okane Card                      8.05 CHF
+    Expenses:Commissions                       -0.15 CHF
+    ; Payee: Okane Card (fee)
+

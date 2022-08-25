@@ -12,7 +12,7 @@ use rust_decimal::Decimal;
 lazy_static! {
     static ref FIRST_LINE: Regex = Regex::new(r"^(?P<date>\d{2}.\d{2}.\d{2}) (?P<edate>\d{2}.\d{2}.\d{2}) (?P<payee>.*?)(?: (?P<currency>[A-Z]{3}) (?P<examount>[0-9.']+))? (?P<amount>[0-9.']+)(?P<neg> -)?$").unwrap();
     static ref EXCHANGE_RATE_LINE: Regex = Regex::new(r"^Exchange rate (?P<rate>[0-9.]+) of (?P<date>\d{2}.\d{2}.\d{2}) (?P<scurrency>[A-Z]{3}) (?P<samount>[0-9.']+)$").unwrap();
-    static ref FEE_LINE: Regex = Regex::new(r"^Processing fee (?P<percent>[0-9.]+)% (?P<fcurrency>[A-Z]{3}) (?P<famount>[0-9.']+)$").unwrap();
+    static ref FEE_LINE: Regex = Regex::new(r"^(?P<credit>Credit of )?[Pp]rocessing fee (?P<percent>[0-9.]+)% (?P<fcurrency>[A-Z]{3}) (?P<famount>[0-9.']+)$").unwrap();
 }
 
 pub struct Parser<T: BufRead> {
@@ -81,6 +81,10 @@ impl<T: BufRead> Parser<T> {
         let payee = self
             .expect_name(&c, "payee", "payee should exist")
             .map(ToOwned::to_owned)?;
+        let sign = c
+            .name("neg")
+            .map(|_| Decimal::NEGATIVE_ONE)
+            .unwrap_or(Decimal::ONE);
         let spent = match c.name("currency") {
             None => None,
             Some(currency) => {
@@ -92,16 +96,12 @@ impl<T: BufRead> Parser<T> {
                 let examount = parse_decimal(examount_str)?;
                 Some(Amount {
                     currency: currency.as_str().to_string(),
-                    value: examount,
+                    value: sign * examount,
                 })
             }
         };
         let amount_str = self.expect_name(&c, "amount", "amount should exist")?;
         let amount = parse_decimal(amount_str)?;
-        let sign = c
-            .name("neg")
-            .map(|_| Decimal::NEGATIVE_ONE)
-            .unwrap_or(Decimal::ONE);
         Ok(Entry {
             line_count: 0,
             date,
@@ -143,8 +143,12 @@ impl<T: BufRead> Parser<T> {
     }
 
     fn parse_fee(&mut self) -> Result<Option<Fee>, ImportError> {
+        fn is_fee_prefix(val: &str) -> bool {
+            val.starts_with("Processing fee") || val.starts_with("Credit of processing fee")
+        }
+
         let next_line_size = self.reader.peek()?;
-        if next_line_size == 0 || !self.reader.buf.starts_with("Processing fee") {
+        if next_line_size == 0 || !is_fee_prefix(&self.reader.buf) {
             return Ok(None);
         }
         let read_bytes = self.reader.read_line()?;
@@ -154,6 +158,10 @@ impl<T: BufRead> Parser<T> {
         let c = FEE_LINE
             .captures(self.reader.buf.trim_end())
             .ok_or_else(|| self.err("Processing fee ... line expected"))?;
+        let credit_applier = c
+            .name("credit")
+            .map(|_| Decimal::NEGATIVE_ONE)
+            .unwrap_or(Decimal::ONE);
         let percent = self.expect_name(&c, "percent", "fee percent must appear")?;
         let percent = parse_decimal(percent)?;
         let fee_currency = self
@@ -165,7 +173,7 @@ impl<T: BufRead> Parser<T> {
             percent,
             amount: Amount {
                 currency: fee_currency,
-                value: fee_amount,
+                value: fee_amount * credit_applier,
             },
         }))
     }
