@@ -6,7 +6,7 @@ use crate::data;
 /// Defines value expression.
 /// Value expression is a valid expression when used in amount.
 /// It can be either amount literal or expression wrapped in `()`.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ValueExpr {
     Paren(Expr),
     Amount(data::Amount),
@@ -19,7 +19,7 @@ impl From<data::Amount> for ValueExpr {
 }
 
 /// Generic expression.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Expr {
     Unary(UnaryOpExpr),
     Binary(BinaryOpExpr),
@@ -28,21 +28,21 @@ pub enum Expr {
 }
 
 /// Represents unary operator.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum UnaryOp {
     /// `-x`
     Negate,
 }
 
 /// Unary operator expression.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct UnaryOpExpr {
     pub op: UnaryOp,
     pub expr: Box<Expr>,
 }
 
 /// Binary operator.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum BinaryOp {
     /// `+`
     Add,
@@ -55,7 +55,7 @@ pub enum BinaryOp {
 }
 
 /// Represents binary operator expression.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BinaryOpExpr {
     pub op: BinaryOp,
     pub lhs: Box<Expr>,
