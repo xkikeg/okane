@@ -151,3 +151,109 @@ fn print_clear_state(v: ClearState) -> &'static str {
         ClearState::Pending => "! ",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use maplit::hashmap;
+    use pretty_assertions::assert_eq;
+    use rust_decimal_macros::dec;
+
+    fn with_ctx<'a>(context: &'a DisplayContext, value: &'a Posting) -> WithContext<'a, Posting> {
+        WithContext { context, value }
+    }
+
+    #[test]
+    fn posting_non_expr() {
+        let zero = expr::ValueExpr::Amount(Amount {
+            commodity: "".to_string(),
+            value: dec!(0),
+        });
+        let usd1 = expr::ValueExpr::Amount(Amount {
+            commodity: "USD".to_string(),
+            value: dec!(1),
+        });
+        let jpy100 = expr::ValueExpr::Amount(Amount {
+            commodity: "JPY".to_string(),
+            value: dec!(100),
+        });
+        let all = Posting {
+            amount: Some(PostingAmount {
+                amount: usd1.clone(),
+                cost: Some(Exchange::Rate(jpy100.clone())),
+            }),
+            balance: Some(usd1.clone()),
+            ..Posting::new("Account".to_string())
+        };
+        let total = Posting {
+            amount: Some(PostingAmount {
+                amount: usd1.clone(),
+                cost: Some(Exchange::Total(jpy100.clone())),
+            }),
+            ..Posting::new("Account".to_string())
+        };
+        let nocost = Posting {
+            amount: Some(PostingAmount {
+                amount: usd1.clone(),
+                cost: None,
+            }),
+            balance: Some(usd1.clone()),
+            ..Posting::new("Account".to_string())
+        };
+        let noamount = Posting {
+            amount: None,
+            balance: Some(usd1.clone()),
+            ..Posting::new("Account".to_string())
+        };
+        let zerobalance = Posting {
+            amount: None,
+            balance: Some(zero.clone()),
+            ..Posting::new("Account".to_string())
+        };
+
+        assert_eq!(
+            format!(
+                "{}{}{}{}{}",
+                with_ctx(&DisplayContext::default(), &all),
+                with_ctx(&DisplayContext::default(), &total),
+                with_ctx(&DisplayContext::default(), &nocost),
+                with_ctx(&DisplayContext::default(), &noamount),
+                with_ctx(&DisplayContext::default(), &zerobalance),
+            ),
+            concat!(
+                //       10        20        30        40        50        60        70
+                // 34567890123456789012345678901234567890123456789012345678901234567890
+                "    Account                                        1 USD @ 100 JPY = 1 USD\n",
+                "    Account                                        1 USD @@ 100 JPY\n",
+                "    Account                                        1 USD = 1 USD\n",
+                "    Account                                              = 1 USD\n",
+                // we don't have shared state to determine where = should be aligned
+                "    Account                                           = 0\n"
+            )
+        );
+
+        let ctx = DisplayContext {
+            precisions: hashmap! {"USD".to_string() => 4},
+        };
+        assert_eq!(
+            format!(
+                "{}{}{}{}{}",
+                with_ctx(&ctx, &all),
+                with_ctx(&ctx, &total),
+                with_ctx(&ctx, &nocost),
+                with_ctx(&ctx, &noamount),
+                with_ctx(&ctx, &zerobalance),
+            ),
+            concat!(
+                //       10        20        30        40        50        60        70
+                // 34567890123456789012345678901234567890123456789012345678901234567890
+                "    Account                                   1.0000 USD @ 100 JPY = 1.0000 USD\n",
+                "    Account                                   1.0000 USD @@ 100 JPY\n",
+                "    Account                                   1.0000 USD = 1.0000 USD\n",
+                "    Account                                              = 1.0000 USD\n",
+                "    Account                                           = 0\n"
+            )
+        );
+    }
+}
