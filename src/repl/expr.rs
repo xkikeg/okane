@@ -23,8 +23,7 @@ impl From<data::Amount> for ValueExpr {
 pub enum Expr {
     Unary(UnaryOpExpr),
     Binary(BinaryOpExpr),
-    Paren(Box<Expr>),
-    Amount(data::Amount),
+    Value(Box<ValueExpr>),
 }
 
 /// Represents unary operator.
