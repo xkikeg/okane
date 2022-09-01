@@ -3,6 +3,8 @@
 
 use crate::data;
 
+use core::fmt;
+
 /// Defines value expression.
 /// Value expression is a valid expression when used in amount.
 /// It can be either amount literal or expression wrapped in `()`.
@@ -33,6 +35,15 @@ pub enum UnaryOp {
     Negate,
 }
 
+impl fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let op = match self {
+            UnaryOp::Negate => "!",
+        };
+        write!(f, "{}", op)
+    }
+}
+
 /// Unary operator expression.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct UnaryOpExpr {
@@ -51,6 +62,18 @@ pub enum BinaryOp {
     Mul,
     /// `/`
     Div,
+}
+
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let op = match self {
+            BinaryOp::Add => "+",
+            BinaryOp::Sub => "-",
+            BinaryOp::Mul => "*",
+            BinaryOp::Div => "/",
+        };
+        write!(f, "{}", op)
+    }
 }
 
 /// Represents binary operator expression.

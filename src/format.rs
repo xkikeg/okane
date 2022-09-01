@@ -69,7 +69,7 @@ mod tests {
                 ; My card took commission
                 ; :financial:経済:
                 Assets:Bank                                  -20 CHF = 1 CHF
-                Expenses:Household                                = 0
+                Expenses:Household                               = 0
 
         "};
         let mut output = Vec::new();
