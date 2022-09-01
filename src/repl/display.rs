@@ -18,6 +18,15 @@ pub struct WithContext<'a, T> {
     context: &'a DisplayContext,
 }
 
+impl<'a, T> WithContext<'a, T> {
+    fn pass_context<U>(&self, other: &'a U) -> WithContext<'a, U> {
+        WithContext {
+            value: other,
+            context: self.context,
+        }
+    }
+}
+
 impl Transaction {
     pub fn display<'a>(&'a self, context: &'a DisplayContext) -> WithContext<'a, Transaction> {
         WithContext {
@@ -64,64 +73,146 @@ impl<'a> fmt::Display for WithContext<'a, Posting> {
         let account_width =
             UnicodeWidthStr::width_cjk(post.account.as_str()) + UnicodeWidthStr::width(post_clear);
         if let Some(amount) = &post.amount {
-            if let expr::ValueExpr::Amount(amount) = &amount.amount {
-                let amount_str = rescale(amount, self.context).to_string();
-                write!(
-                    f,
-                    "{:>width$}{} {}",
-                    "",
-                    amount_str.as_str(),
-                    amount.commodity,
-                    width = get_column(
-                        48,
-                        account_width + UnicodeWidthStr::width(amount_str.as_str()),
-                        2
-                    )
-                )?;
-            }
+            let mut amount_str = String::new();
+            let alignment = self
+                .pass_context(&amount.amount)
+                .fmt_with_alignment(&mut amount_str)?
+                .absolute();
+            write!(
+                f,
+                "{:>width$}{}",
+                "",
+                amount_str.as_str(),
+                width = get_column(48, account_width + alignment, 2)
+            )?;
             if let Some(exchange) = &amount.cost {
                 match exchange {
-                    Exchange::Rate(expr::ValueExpr::Amount(v)) => {
-                        write!(f, " @ {} {}", v.value, v.commodity)
-                    }
-                    Exchange::Total(expr::ValueExpr::Amount(v)) => {
-                        write!(
-                            f,
-                            " @@ {} {}",
-                            display::rescale(v, self.context),
-                            v.commodity
-                        )
-                    }
-                    _ => todo!("non-literal value expression isn't supported yet"),
+                    Exchange::Rate(v) => write!(f, " @ {}", self.pass_context(v)),
+                    Exchange::Total(v) => write!(f, " @@ {}", self.pass_context(v)),
                 }?
             }
         }
-        if let Some(expr::ValueExpr::Amount(balance)) = &post.balance {
+        if let Some(balance) = &post.balance {
+            let mut balance_str = String::new();
+            let alignment = self
+                .pass_context(balance)
+                .fmt_with_alignment(&mut balance_str)?
+                .absolute();
+            let trailing = UnicodeWidthStr::width_cjk(balance_str.as_str()) - alignment;
             let balance_padding = if post.amount.is_some() {
                 0
             } else {
-                get_column(
-                    51 + UnicodeWidthStr::width_cjk(balance.commodity.as_str()),
-                    account_width,
-                    3,
-                )
+                get_column(50 + trailing, account_width, 2)
             };
             write!(
                 f,
                 "{:>width$} {}",
                 " =",
-                rescale(balance, self.context),
+                self.pass_context(balance),
                 width = balance_padding
             )?;
-            if !balance.commodity.is_empty() {
-                write!(f, " {}", balance.commodity)?;
-            }
         }
         writeln!(f)?;
         for m in &post.metadata {
             writeln!(f, "    ; {}", m)?;
         }
         Ok(())
+    }
+}
+
+/// Alignment of the expression.
+#[derive(Debug, PartialEq, Copy, Clone)]
+enum Alignment {
+    /// Still alignment wasn't found.
+    Partial(usize),
+    /// Already alignment was found.
+    Complete(usize),
+}
+
+impl Alignment {
+    fn absolute(self) -> usize {
+        match self {
+            Alignment::Complete(x) => x,
+            Alignment::Partial(x) => x,
+        }
+    }
+
+    fn plus(self, prefix_length: usize, suffix_length: usize) -> Alignment {
+        match self {
+            Alignment::Partial(x) => Alignment::Partial(prefix_length + x + suffix_length),
+            Alignment::Complete(x) => Alignment::Complete(prefix_length + x),
+        }
+    }
+}
+
+trait DisplayWithAlignment {
+    fn fmt_with_alignment<W: fmt::Write>(&self, f: &mut W) -> Result<Alignment, fmt::Error>;
+}
+
+impl<'a, T> fmt::Display for WithContext<'a, T>
+where
+    Self: DisplayWithAlignment,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.fmt_with_alignment(f).map(|_| ())
+    }
+}
+
+/// Prints expression under the context, and also returns the length until the alignment.
+/// Example:
+/// - `0` -> returns 1.
+/// - `(1 + 1)` -> returns 7.
+/// - `2 USD` -> returns 1.
+/// - `(1 USD * 2)` -> returns 2.
+/// - `(2 * 1 USD)` -> returns 6.
+impl<'a> DisplayWithAlignment for WithContext<'a, expr::ValueExpr> {
+    fn fmt_with_alignment<W: fmt::Write>(&self, f: &mut W) -> Result<Alignment, fmt::Error> {
+        match self.value {
+            expr::ValueExpr::Amount(a) => self.pass_context(a).fmt_with_alignment(f),
+            expr::ValueExpr::Paren(expr) => {
+                write!(f, "(")?;
+                let alignment = self.pass_context(expr).fmt_with_alignment(f)?;
+                write!(f, ")")?;
+                Ok(alignment.plus(1, 1))
+            }
+        }
+    }
+}
+
+impl<'a> DisplayWithAlignment for WithContext<'a, expr::Expr> {
+    fn fmt_with_alignment<W: fmt::Write>(&self, f: &mut W) -> Result<Alignment, fmt::Error> {
+        match self.value {
+            expr::Expr::Unary(e) => {
+                write!(f, "{}", e.op)?;
+                self.pass_context(e.expr.as_ref())
+                    .fmt_with_alignment(f)
+                    .map(|x| x.plus(1, 0))
+            }
+            expr::Expr::Binary(e) => {
+                let a1 = self.pass_context(e.lhs.as_ref()).fmt_with_alignment(f)?;
+                write!(f, " {} ", e.op)?;
+                let a2 = self.pass_context(e.rhs.as_ref()).fmt_with_alignment(f)?;
+                Ok(match a1.plus(0, 3) {
+                    Alignment::Complete(x) => Alignment::Complete(x),
+                    Alignment::Partial(x) => a2.plus(x, 0),
+                })
+            }
+            expr::Expr::Value(e) => self.pass_context(e.as_ref()).fmt_with_alignment(f),
+        }
+    }
+}
+
+impl<'a> DisplayWithAlignment for WithContext<'a, Amount> {
+    fn fmt_with_alignment<W: fmt::Write>(&self, f: &mut W) -> Result<Alignment, fmt::Error> {
+        let amount_str = rescale(self.value, self.context).to_string();
+        // TODO: Implement prefix-amount.
+        if self.value.commodity.is_empty() {
+            write!(f, "{}", amount_str)?;
+            return Ok(Alignment::Partial(amount_str.as_str().len()));
+        }
+        write!(f, "{} {}", amount_str, self.value.commodity)?;
+        // Given the amount is only [0-9.], it's ok to count bytes.
+        Ok(Alignment::Complete(amount_str.as_str().len()))
     }
 }
 
@@ -160,55 +251,54 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
-    fn with_ctx<'a>(context: &'a DisplayContext, value: &'a Posting) -> WithContext<'a, Posting> {
+    fn with_ctx<'a, T>(context: &'a DisplayContext, value: &'a T) -> WithContext<'a, T> {
         WithContext { context, value }
+    }
+
+    fn amount<T: Into<Decimal>>(value: T, commodity: &'static str) -> expr::ValueExpr {
+        expr::ValueExpr::Amount(Amount {
+            commodity: commodity.to_string(),
+            value: value.into(),
+        })
+    }
+
+    fn amount_expr<T: Into<Decimal>>(value: T, commodity: &'static str) -> expr::Expr {
+        expr::Expr::Value(Box::new(amount(value, commodity)))
     }
 
     #[test]
     fn posting_non_expr() {
-        let zero = expr::ValueExpr::Amount(Amount {
-            commodity: "".to_string(),
-            value: dec!(0),
-        });
-        let usd1 = expr::ValueExpr::Amount(Amount {
-            commodity: "USD".to_string(),
-            value: dec!(1),
-        });
-        let jpy100 = expr::ValueExpr::Amount(Amount {
-            commodity: "JPY".to_string(),
-            value: dec!(100),
-        });
         let all = Posting {
             amount: Some(PostingAmount {
-                amount: usd1.clone(),
-                cost: Some(Exchange::Rate(jpy100.clone())),
+                amount: amount(1, "USD"),
+                cost: Some(Exchange::Rate(amount(100, "JPY"))),
             }),
-            balance: Some(usd1.clone()),
+            balance: Some(amount(1, "USD")),
             ..Posting::new("Account".to_string())
         };
         let total = Posting {
             amount: Some(PostingAmount {
-                amount: usd1.clone(),
-                cost: Some(Exchange::Total(jpy100.clone())),
+                amount: amount(1, "USD"),
+                cost: Some(Exchange::Total(amount(100, "JPY"))),
             }),
             ..Posting::new("Account".to_string())
         };
         let nocost = Posting {
             amount: Some(PostingAmount {
-                amount: usd1.clone(),
+                amount: amount(1, "USD"),
                 cost: None,
             }),
-            balance: Some(usd1.clone()),
+            balance: Some(amount(1, "USD")),
             ..Posting::new("Account".to_string())
         };
         let noamount = Posting {
             amount: None,
-            balance: Some(usd1.clone()),
+            balance: Some(amount(1, "USD")),
             ..Posting::new("Account".to_string())
         };
         let zerobalance = Posting {
             amount: None,
-            balance: Some(zero.clone()),
+            balance: Some(amount(0, "")),
             ..Posting::new("Account".to_string())
         };
 
@@ -229,7 +319,7 @@ mod tests {
                 "    Account                                        1 USD = 1 USD\n",
                 "    Account                                              = 1 USD\n",
                 // we don't have shared state to determine where = should be aligned
-                "    Account                                           = 0\n"
+                "    Account                                          = 0\n"
             )
         );
 
@@ -252,8 +342,68 @@ mod tests {
                 "    Account                                   1.0000 USD @@ 100 JPY\n",
                 "    Account                                   1.0000 USD = 1.0000 USD\n",
                 "    Account                                              = 1.0000 USD\n",
-                "    Account                                           = 0\n"
+                "    Account                                          = 0\n"
             )
         );
+    }
+
+    #[test]
+    fn fmt_with_alignment_simple_amount_without_commodity() {
+        let mut buffer = String::new();
+        let alignment = with_ctx(&DisplayContext::default(), &amount(123i8, ""))
+            .fmt_with_alignment(&mut buffer)
+            .unwrap();
+        assert_eq!("123", buffer.as_str());
+        assert_eq!(Alignment::Partial(3), alignment);
+    }
+
+    #[test]
+    fn fmt_with_alignment_simple_amount_with_commodity() {
+        let mut buffer = String::new();
+        let usd123 = amount(123i8, "USD");
+        let alignment = with_ctx(&DisplayContext::default(), &usd123)
+            .fmt_with_alignment(&mut buffer)
+            .unwrap();
+        assert_eq!("123 USD", buffer.as_str());
+        assert_eq!(Alignment::Complete(3), alignment);
+
+        buffer.clear();
+        let alignment = with_ctx(
+            &DisplayContext {
+                precisions: hashmap! {"USD".to_string() => 2},
+                ..DisplayContext::default()
+            },
+            &usd123,
+        )
+        .fmt_with_alignment(&mut buffer)
+        .unwrap();
+        assert_eq!("123.00 USD", buffer.as_str());
+        assert_eq!(Alignment::Complete(6), alignment);
+    }
+
+    #[test]
+    fn test_fmt_with_alignment_complex_expr() {
+        // ((1.20 + 2.67) * 3.1 USD + 5 USD)
+        let expr = expr::ValueExpr::Paren(expr::Expr::Binary(expr::BinaryOpExpr {
+            lhs: Box::new(expr::Expr::Binary(expr::BinaryOpExpr {
+                lhs: Box::new(expr::Expr::Value(Box::new(expr::ValueExpr::Paren(
+                    expr::Expr::Binary(expr::BinaryOpExpr {
+                        lhs: Box::new(amount_expr(dec!(1.20), "")),
+                        op: expr::BinaryOp::Add,
+                        rhs: Box::new(amount_expr(dec!(2.67), "")),
+                    }),
+                )))),
+                op: expr::BinaryOp::Mul,
+                rhs: Box::new(amount_expr(dec!(3.1), "USD")),
+            })),
+            op: expr::BinaryOp::Add,
+            rhs: Box::new(amount_expr(5i32, "USD")),
+        }));
+        let mut got = String::new();
+        let alignment = with_ctx(&DisplayContext::default(), &expr)
+            .fmt_with_alignment(&mut got)
+            .unwrap();
+        assert_eq!("((1.20 + 2.67) * 3.1 USD + 5 USD)", got.as_str());
+        assert_eq!(Alignment::Complete(20), alignment);
     }
 }
