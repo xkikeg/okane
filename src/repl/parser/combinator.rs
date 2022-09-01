@@ -7,7 +7,7 @@ use nom::{
 };
 
 /// Calls first parser if the condition is met, otherwise the second parser.
-pub fn branch<I, O, E: ParseError<I>, F, G>(
+pub fn cond_else<I, O, E: ParseError<I>, F, G>(
     b: bool,
     mut first: F,
     mut second: G,
@@ -43,17 +43,17 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn branch_takes_first_given_true() {
+    fn cond_else_takes_first_given_true() {
         assert_eq!(
-            expect_parse_ok(branch(true, is_a("true"), is_a("false")), "true"),
+            expect_parse_ok(cond_else(true, is_a("true"), is_a("false")), "true"),
             ("", "true")
         );
     }
 
     #[test]
-    fn branch_takes_second_given_false() {
+    fn cond_else_takes_second_given_false() {
         assert_eq!(
-            expect_parse_ok(branch(false, is_a("true"), is_a("false")), "false"),
+            expect_parse_ok(cond_else(false, is_a("true"), is_a("false")), "false"),
             ("", "false")
         );
     }
