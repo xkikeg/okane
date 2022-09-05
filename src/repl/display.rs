@@ -371,7 +371,6 @@ mod tests {
         let alignment = with_ctx(
             &DisplayContext {
                 precisions: hashmap! {"USD".to_string() => 2},
-                ..DisplayContext::default()
             },
             &usd123,
         )

@@ -41,7 +41,7 @@ pub enum UnaryOp {
 impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let op = match self {
-            UnaryOp::Negate => "!",
+            UnaryOp::Negate => "-",
         };
         write!(f, "{}", op)
     }
@@ -55,7 +55,7 @@ pub struct UnaryOpExpr {
 }
 
 /// Binary operator.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, strum::EnumIter)]
 pub enum BinaryOp {
     /// `+`
     Add,
