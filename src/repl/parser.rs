@@ -374,32 +374,6 @@ mod tests {
     #[test]
     fn posting_cost_parses_valid_input() {
         assert_eq!(
-            expect_parse_ok(parse_posting_amount, "1000 JPY"),
-            (
-                "",
-                repl::PostingAmount {
-                    amount: repl::expr::ValueExpr::Amount(repl::Amount {
-                        value: dec!(1000),
-                        commodity: "JPY".to_string()
-                    }),
-                    cost: None
-                }
-            )
-        );
-        assert_eq!(
-            expect_parse_ok(parse_posting_amount, "1,234,567.89 USD"),
-            (
-                "",
-                repl::PostingAmount {
-                    amount: repl::expr::ValueExpr::Amount(repl::Amount {
-                        value: dec!(1234567.89),
-                        commodity: "USD".to_string()
-                    }),
-                    cost: None
-                }
-            )
-        );
-        assert_eq!(
             expect_parse_ok(parse_posting_amount, "100 EUR @ 1.2 CHF"),
             (
                 "",

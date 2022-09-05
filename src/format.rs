@@ -53,6 +53,7 @@ mod tests {
                 ; :financial:経済:
                 Assets:Bank  -20 CHF=1CHF
                 Expenses:Household  = 0
+                Assets:Complex  (-10 * 2.1 $) @ (1 $ + 1 $) = 2.5 $
         "};
         // TODO: 1. guess commodity width if not available.
         // TOOD: 2. remove trailing space on non-commodity value.
@@ -70,6 +71,7 @@ mod tests {
                 ; :financial:経済:
                 Assets:Bank                                  -20 CHF = 1 CHF
                 Expenses:Household                               = 0
+                Assets:Complex                        (-10 * 2.1 $) @ (1 $ + 1 $) = 2.5 $
 
         "};
         let mut output = Vec::new();
