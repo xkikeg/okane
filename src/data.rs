@@ -8,7 +8,7 @@ use std::cmp::Ordering;
 use rust_decimal::Decimal;
 
 /// Represents a transaction where the money transfered across the accounts.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Transaction {
     /// Date when the transaction issued.
     pub date: chrono::NaiveDate,
@@ -56,7 +56,7 @@ impl Default for ClearState {
 }
 
 /// Posting in a transaction to represent a particular account amount increase / decrease.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Posting {
     /// Account of the post target.
     pub account: String,

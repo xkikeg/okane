@@ -16,13 +16,13 @@ use rust_decimal::Decimal;
 use unicode_width::UnicodeWidthStr;
 
 /// Top-level entry of the LedgerFile.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum LedgerEntry {
     Txn(Transaction),
 }
 
 /// Represents a transaction where the money transfered across the accounts.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Transaction {
     /// Date when the transaction issued.
     pub date: NaiveDate,
@@ -69,7 +69,7 @@ impl From<&data::Transaction> for Transaction {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 /// Posting in a transaction to represent a particular account amount increase / decrease.
 pub struct Posting {
     /// Account of the post target.
@@ -117,7 +117,7 @@ impl From<&data::Posting> for Posting {
 }
 
 /// Metadata represents meta information associated with transactions / posts.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Metadata {
     /// Comment, which covers just one line (without the suceeding new line).
     Comment(String),

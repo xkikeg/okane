@@ -35,7 +35,7 @@ where
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct Fragment<'a> {
     pub cleared: bool,
     pub payee: Option<&'a str>,
@@ -98,13 +98,13 @@ pub trait EntityMatcher:
 
 /// Matched is a result of EntityMatcher::captures method,
 /// Most likely it can be regex::Capture or Matched::default().
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct Matched<'a> {
     pub payee: Option<&'a str>,
     pub code: Option<&'a str>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Conversion {
     Primary,
     Specified { commodity: String },
