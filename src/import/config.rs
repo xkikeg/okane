@@ -59,7 +59,7 @@ impl ConfigSet {
 }
 
 /// One entry corresponding to particular file.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ConfigEntry {
     /// Path pattern which file the entry will match against.
     pub path: String,
@@ -147,7 +147,7 @@ impl ConfigFragment {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Encoding(pub &'static encoding_rs::Encoding);
 
 impl Encoding {
@@ -187,7 +187,7 @@ pub enum AccountType {
 }
 
 /// FormatSpec describes the several format used in import target.
-#[derive(Default, Debug, PartialEq, Serialize, Deserialize, Clone)]
+#[derive(Default, Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub struct FormatSpec {
     /// Specify the date format, in chrono::format::strftime compatible format.
     #[serde(default)]
@@ -206,7 +206,7 @@ pub struct FormatSpec {
     pub row_order: RowOrder,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum RowOrder {
     OldToNew,
@@ -219,7 +219,7 @@ impl Default for RowOrder {
     }
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub struct CommodityFormatSpec {
     pub precision: u8,
 }
@@ -254,7 +254,7 @@ pub enum FieldKey {
     EquivalentAbsolute,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum FieldPos {
     Index(usize),
@@ -262,7 +262,7 @@ pub enum FieldPos {
 }
 
 /// RewriteRule specifies the rewrite rule matched against transaction.
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub struct RewriteRule {
     /// matcher for the rewrite.
     pub matcher: RewriteMatcher,
@@ -285,7 +285,7 @@ pub struct RewriteRule {
 }
 
 /// Specify what kind of the conversion is done in the transaction.
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum CommodityConversion {
     Unspecified(UnspecifiedCommodityConversion),
@@ -295,20 +295,20 @@ pub enum CommodityConversion {
     },
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum UnspecifiedCommodityConversion {
     Primary,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum RewriteMatcher {
     Or(Vec<FieldMatcher>),
     Field(FieldMatcher),
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 #[serde(transparent)]
 pub struct FieldMatcher {
     pub fields: HashMap<RewriteField, String>,
@@ -469,7 +469,7 @@ mod tests {
     #[test]
     fn test_config_entry_try_from() {
         let f = create_config_fragment("tmp/foo");
-        let tryinto = |x| TryInto::<ConfigEntry>::try_into(x);
+        let tryinto = TryInto::<ConfigEntry>::try_into;
         tryinto(f.clone()).expect("create_config_fragment() should return solo valid fragment");
         let err = |x| tryinto(x).unwrap_err().to_string();
         assert!(err(ConfigFragment {
@@ -489,7 +489,7 @@ mod tests {
         .contains("account_type"));
         assert!(err(ConfigFragment {
             commodity: None,
-            ..f.clone()
+            ..f
         })
         .contains("commodity"));
     }

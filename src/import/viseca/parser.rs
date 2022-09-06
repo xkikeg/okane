@@ -40,7 +40,7 @@ impl<T: BufRead> Parser<T> {
             .ok_or_else(|| self.err(format!("unsupported entry line: {:?}", l)))?;
         let entry_base = self.parse_first_line(c)?;
         let next_line_size = self.reader.peek()?;
-        if next_line_size == 0 || self.reader.buf.chars().next().unwrap().is_digit(10) {
+        if next_line_size == 0 || self.reader.buf.chars().next().unwrap().is_ascii_digit() {
             return Ok(Some(Entry {
                 line_count,
                 ..entry_base

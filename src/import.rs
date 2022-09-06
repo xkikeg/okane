@@ -14,7 +14,7 @@ pub use error::ImportError;
 use crate::data::Transaction;
 
 /// Format of the supported importer.
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Format {
     Csv,
     IsoCamt053,
