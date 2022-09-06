@@ -5,4 +5,4 @@ workflows:
   production:
     jobs:
       - rust/lint-test-build:
-          version: "1.59"
+          version: "1.63"
