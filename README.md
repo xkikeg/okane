@@ -4,11 +4,23 @@
 
 Rust based plain text accounting software, influenced by [ledger](https://github.com/ledger/ledger/).
 
-Currently this software is developed just to meet author personal needs, and implementing `import` functionality from CSV to Ledger.
+Currently this software is developed just to meet author personal needs, and implementing two features.
+*  `format` is to format given Ledger file into organized format.
+*  `import` is to convert various source including CSV, ISO Camt053 XML into Ledger format.
 
 ## How to use
 
 Disclaimer: This software is still in early phase, subject to any kind of change.
+
+### Format the file
+
+```shell
+cargo build
+RUST_LOG=info ./target/debug/okane format ~/ledger/account.ledger
+```
+
+This command currently prints the formatted output into standard output.
+I'll work to replace the files in-place, also to emit diffs to be used as Git hook.
 
 ### Import CSV or ISO Camt053 XML files
 
