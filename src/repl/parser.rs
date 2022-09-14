@@ -140,7 +140,14 @@ fn parse_posting_amount<'a>(
             cond_else(is_double_at, parse_total_cost, parse_rate_cost),
         ),
     )(input)?;
-    Ok((input, repl::PostingAmount { amount, cost }))
+    Ok((
+        input,
+        repl::PostingAmount {
+            amount,
+            cost,
+            lot: repl::Lot::default(),
+        },
+    ))
 }
 
 fn parse_total_cost<'a>(input: &'a str) -> IResult<&str, repl::Exchange, VerboseError<&'a str>> {
@@ -280,6 +287,7 @@ mod tests {
                                     commodity: "USD".to_string(),
                                 }),
                                 cost: None,
+                                lot: repl::Lot::default(),
                             }),
                             ..repl::Posting::new("Expense A".to_string())
                         },
@@ -324,6 +332,7 @@ mod tests {
                                     commodity: "USD".to_string(),
                                 }),
                                 cost: None,
+                                lot: repl::Lot::default(),
                             }),
                             metadata: vec![
                                 repl::Metadata::Comment("Note expense A".to_string()),
@@ -341,6 +350,7 @@ mod tests {
                                     commodity: "JPY".to_string(),
                                 }),
                                 cost: None,
+                                lot: repl::Lot::default(),
                             }),
                             balance: Some(repl::expr::ValueExpr::Amount(repl::Amount {
                                 value: dec!(-1000),
@@ -387,7 +397,8 @@ mod tests {
                             value: dec!(1.2),
                             commodity: "CHF".to_string(),
                         }
-                    )))
+                    ))),
+                    lot: repl::Lot::default(),
                 }
             )
         );
@@ -405,7 +416,8 @@ mod tests {
                             value: dec!(120),
                             commodity: "CHF".to_string(),
                         }
-                    )))
+                    ))),
+                    lot: repl::Lot::default()
                 }
             )
         );
@@ -419,13 +431,13 @@ mod tests {
             (
                 "",
                 repl::Posting {
-                    amount: Some(repl::PostingAmount {
-                        amount: repl::expr::ValueExpr::Amount(repl::Amount {
+                    amount: Some(
+                        repl::expr::ValueExpr::Amount(repl::Amount {
                             value: dec!(1),
                             commodity: "USD".to_string(),
-                        }),
-                        cost: None,
-                    },),
+                        })
+                        .into()
+                    ),
                     metadata: vec![
                         repl::Metadata::KeyValueTag {
                             key: "Payee".to_string(),

@@ -85,6 +85,7 @@ impl<'a> fmt::Display for WithContext<'a, Posting> {
                 amount_str.as_str(),
                 width = get_column(48, account_width + alignment, 2)
             )?;
+            write!(f, "{}", self.pass_context(&amount.lot))?;
             if let Some(exchange) = &amount.cost {
                 match exchange {
                     Exchange::Rate(v) => write!(f, " @ {}", self.pass_context(v)),
@@ -115,6 +116,24 @@ impl<'a> fmt::Display for WithContext<'a, Posting> {
         writeln!(f)?;
         for m in &post.metadata {
             writeln!(f, "    ; {}", m)?;
+        }
+        Ok(())
+    }
+}
+
+impl<'a> fmt::Display for WithContext<'a, Lot> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(price) = &self.value.price {
+            match price {
+                Exchange::Total(e) => write!(f, " {{{{{}}}}}", self.pass_context(e)),
+                Exchange::Rate(e) => write!(f, " {{{}}}", self.pass_context(e)),
+            }?;
+        }
+        if let Some(date) = &self.value.date {
+            write!(f, " [{}]", date.format("%Y/%m/%d"))?;
+        }
+        if let Some(note) = &self.value.note {
+            write!(f, " ({})", note.as_str())?;
         }
         Ok(())
     }
@@ -272,6 +291,20 @@ mod tests {
             amount: Some(PostingAmount {
                 amount: amount(1, "USD"),
                 cost: Some(Exchange::Rate(amount(100, "JPY"))),
+                lot: Lot {
+                    price: Some(Exchange::Rate(amount(dec!(1.1), "USD"))),
+                    date: Some(NaiveDate::from_ymd(2022, 5, 20)),
+                    note: Some("printable note".to_string()),
+                },
+            }),
+            balance: Some(amount(1, "USD")),
+            ..Posting::new("Account".to_string())
+        };
+        let costbalance = Posting {
+            amount: Some(PostingAmount {
+                amount: amount(1, "USD"),
+                cost: Some(Exchange::Rate(amount(100, "JPY"))),
+                lot: Lot::default(),
             }),
             balance: Some(amount(1, "USD")),
             ..Posting::new("Account".to_string())
@@ -280,6 +313,7 @@ mod tests {
             amount: Some(PostingAmount {
                 amount: amount(1, "USD"),
                 cost: Some(Exchange::Total(amount(100, "JPY"))),
+                lot: Lot::default(),
             }),
             ..Posting::new("Account".to_string())
         };
@@ -287,6 +321,7 @@ mod tests {
             amount: Some(PostingAmount {
                 amount: amount(1, "USD"),
                 cost: None,
+                lot: Lot::default(),
             }),
             balance: Some(amount(1, "USD")),
             ..Posting::new("Account".to_string())
@@ -303,47 +338,51 @@ mod tests {
         };
 
         assert_eq!(
-            format!(
-                "{}{}{}{}{}",
-                with_ctx(&DisplayContext::default(), &all),
-                with_ctx(&DisplayContext::default(), &total),
-                with_ctx(&DisplayContext::default(), &nocost),
-                with_ctx(&DisplayContext::default(), &noamount),
-                with_ctx(&DisplayContext::default(), &zerobalance),
-            ),
             concat!(
                 //       10        20        30        40        50        60        70
                 // 34567890123456789012345678901234567890123456789012345678901234567890
+                "    Account                                        1 USD {1.1 USD} [2022/05/20] (printable note) @ 100 JPY = 1 USD\n",
                 "    Account                                        1 USD @ 100 JPY = 1 USD\n",
                 "    Account                                        1 USD @@ 100 JPY\n",
                 "    Account                                        1 USD = 1 USD\n",
                 "    Account                                              = 1 USD\n",
                 // we don't have shared state to determine where = should be aligned
                 "    Account                                          = 0\n"
-            )
+            ),
+            format!(
+                "{}{}{}{}{}{}",
+                with_ctx(&DisplayContext::default(), &all),
+                with_ctx(&DisplayContext::default(), &costbalance),
+                with_ctx(&DisplayContext::default(), &total),
+                with_ctx(&DisplayContext::default(), &nocost),
+                with_ctx(&DisplayContext::default(), &noamount),
+                with_ctx(&DisplayContext::default(), &zerobalance),
+            ),
         );
 
         let ctx = DisplayContext {
             precisions: hashmap! {"USD".to_string() => 4},
         };
         assert_eq!(
-            format!(
-                "{}{}{}{}{}",
-                with_ctx(&ctx, &all),
-                with_ctx(&ctx, &total),
-                with_ctx(&ctx, &nocost),
-                with_ctx(&ctx, &noamount),
-                with_ctx(&ctx, &zerobalance),
-            ),
             concat!(
                 //       10        20        30        40        50        60        70
                 // 34567890123456789012345678901234567890123456789012345678901234567890
+                "    Account                                   1.0000 USD {1.1000 USD} [2022/05/20] (printable note) @ 100 JPY = 1.0000 USD\n",
                 "    Account                                   1.0000 USD @ 100 JPY = 1.0000 USD\n",
                 "    Account                                   1.0000 USD @@ 100 JPY\n",
                 "    Account                                   1.0000 USD = 1.0000 USD\n",
                 "    Account                                              = 1.0000 USD\n",
                 "    Account                                          = 0\n"
-            )
+            ),
+            format!(
+                "{}{}{}{}{}{}",
+                with_ctx(&ctx, &all),
+                with_ctx(&ctx, &costbalance),
+                with_ctx(&ctx, &total),
+                with_ctx(&ctx, &nocost),
+                with_ctx(&ctx, &noamount),
+                with_ctx(&ctx, &zerobalance),
+            ),
         );
     }
 
