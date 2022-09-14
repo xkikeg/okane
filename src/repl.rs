@@ -151,6 +151,17 @@ impl fmt::Display for Metadata {
 pub struct PostingAmount {
     pub amount: expr::ValueExpr,
     pub cost: Option<Exchange>,
+    pub lot: Lot,
+}
+
+impl From<expr::ValueExpr> for PostingAmount {
+    fn from(v: expr::ValueExpr) -> Self {
+        PostingAmount {
+            amount: v,
+            cost: None,
+            lot: Lot::default(),
+        }
+    }
 }
 
 impl From<data::ExchangedAmount> for PostingAmount {
@@ -158,8 +169,17 @@ impl From<data::ExchangedAmount> for PostingAmount {
         PostingAmount {
             amount: v.amount.into(),
             cost: v.exchange.map(Into::into),
+            lot: Lot::default(),
         }
     }
+}
+
+/// Lot information is a set of metadata to record the original lot which the commodity is acquired with.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Lot {
+    pub price: Option<Exchange>,
+    pub date: Option<NaiveDate>,
+    pub note: Option<String>,
 }
 
 /// Exchange represents the amount expressed in the different commodity.
