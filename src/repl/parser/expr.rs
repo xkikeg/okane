@@ -100,7 +100,7 @@ where
 }
 
 /// Parses amount expression.
-fn amount<'a, E>(input: &'a str) -> IResult<&'a str, expr::ValueExpr, E>
+pub fn amount<'a, E>(input: &'a str) -> IResult<&'a str, expr::ValueExpr, E>
 where
     E: ParseError<&'a str>
         + FromExternalError<&'a str, rust_decimal::Error>

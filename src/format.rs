@@ -54,6 +54,7 @@ mod tests {
                 Assets:Bank  -20 CHF=1CHF
                 Expenses:Household  = 0
                 Assets:Complex  (-10 * 2.1 $) @ (1 $ + 1 $) = 2.5 $
+                Assets:Broker  -2 SPINX (bought before Xmas) {100 USD} [2010/12/23] @ 10000 USD
         "};
         // TODO: 1. guess commodity width if not available.
         // TOOD: 2. remove trailing space on non-commodity value.
@@ -72,6 +73,7 @@ mod tests {
                 Assets:Bank                                  -20 CHF = 1 CHF
                 Expenses:Household                               = 0
                 Assets:Complex                        (-10 * 2.1 $) @ (1 $ + 1 $) = 2.5 $
+                Assets:Broker                                 -2 SPINX {100 USD} [2010/12/23] (bought before Xmas) @ 10000 USD
 
         "};
         let mut output = Vec::new();
