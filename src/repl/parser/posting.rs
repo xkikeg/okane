@@ -2,17 +2,17 @@
 
 use crate::repl;
 use repl::parser::{
-    character,
+    character::{line_ending_or_semi, not_line_ending_or_semi, paren},
     combinator::{cond_else, has_peek},
-    expr, metadata,
+    expr, metadata, primitive,
 };
 
 use std::cmp::min;
 
 use nom::{
-    bytes::complete::{tag, take},
-    character::complete::{char, space0, space1},
-    combinator::{cond, opt, peek},
+    bytes::complete::{is_not, tag, take},
+    character::complete::{char, one_of, space0, space1},
+    combinator::{cond, fail, opt, peek},
     error::{context, ParseError, VerboseError},
     sequence::{delimited, pair, preceded, terminated},
     IResult,
@@ -22,7 +22,7 @@ pub fn posting(input: &str) -> IResult<&str, repl::Posting, VerboseError<&str>> 
     context("posting of the transaction", |input| {
         let (input, account) =
             context("account of the posting", preceded(space1, posting_account))(input)?;
-        let (input, shortcut_amount) = has_peek(character::line_ending_or_semi)(input)?;
+        let (input, shortcut_amount) = has_peek(line_ending_or_semi)(input)?;
         if shortcut_amount {
             let (input, metadata) = metadata::block_metadata(input)?;
             return Ok((
@@ -56,7 +56,7 @@ pub fn posting(input: &str) -> IResult<&str, repl::Posting, VerboseError<&str>> 
 
 /// Parses the posting account name, and consumes the trailing spaces and tabs.
 fn posting_account<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
-    let (input, line) = peek(character::not_line_ending_or_semi)(input)?;
+    let (input, line) = peek(not_line_ending_or_semi)(input)?;
     let space = line.find("  ");
     let tab = line.find('\t');
     let length = match (space, tab) {
@@ -71,6 +71,7 @@ fn posting_account<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, 
 
 fn posting_amount<'a>(input: &'a str) -> IResult<&str, repl::PostingAmount, VerboseError<&'a str>> {
     let (input, amount) = terminated(expr::value_expr, space0)(input)?;
+    let (input, lot) = lot(input)?;
     let (input, is_at) = has_peek(char('@'))(input)?;
     let (input, is_double_at) = has_peek(tag("@@"))(input)?;
     let (input, cost) = cond(
@@ -80,14 +81,56 @@ fn posting_amount<'a>(input: &'a str) -> IResult<&str, repl::PostingAmount, Verb
             cond_else(is_double_at, total_cost, rate_cost),
         ),
     )(input)?;
-    Ok((
-        input,
-        repl::PostingAmount {
-            amount,
-            cost,
-            lot: repl::Lot::default(),
-        },
-    ))
+    Ok((input, repl::PostingAmount { amount, cost, lot }))
+}
+
+fn lot<'a>(input: &'a str) -> IResult<&'a str, repl::Lot, VerboseError<&'a str>> {
+    let (mut input, _) = space0(input)?;
+    let mut lot = repl::Lot::default();
+    loop {
+        let (_, open) = peek(opt(one_of("([{")))(input)?;
+        match open {
+            None => return Ok((input, lot)),
+            Some('{') if lot.price.is_none() => {
+                let (_, is_total) = has_peek(tag("{{"))(input)?;
+                if is_total {
+                    let (i1, amount) = delimited(
+                        pair(tag("{{"), space0),
+                        expr::amount,
+                        pair(space0, tag("}}")),
+                    )(input)?;
+                    lot.price = Some(repl::Exchange::Total(amount));
+                    input = i1;
+                } else {
+                    let (i1, amount) =
+                        delimited(pair(tag("{"), space0), expr::amount, pair(space0, tag("}")))(
+                            input,
+                        )?;
+                    lot.price = Some(repl::Exchange::Rate(amount));
+                    input = i1;
+                }
+            }
+            Some('{') => return context("lot price duplicated", fail)(input),
+            Some('[') if lot.date.is_none() => {
+                let (i1, date) = delimited(
+                    pair(char('['), space0),
+                    primitive::date,
+                    pair(space0, char(']')),
+                )(input)?;
+                lot.date = Some(date);
+                input = i1;
+            }
+            Some('[') => return context("lot date duplicated", fail)(input),
+            Some('(') if lot.note.is_none() => {
+                let (i1, note) = paren(is_not("()@"))(input)?;
+                lot.note = Some(note.to_string());
+                input = i1;
+            }
+            Some('(') => return context("lot note duplicated", fail)(input),
+            Some(c) => unreachable!("unexpected lot opening {}", c),
+        }
+        (input, _) = space0(input)?;
+    }
 }
 
 fn total_cost<'a>(input: &'a str) -> IResult<&str, repl::Exchange, VerboseError<&'a str>> {
@@ -105,6 +148,7 @@ mod tests {
     use super::*;
     use crate::repl::parser::testing::expect_parse_ok;
 
+    use chrono::NaiveDate;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
@@ -208,5 +252,38 @@ mod tests {
             expect_parse_ok(posting_account, input),
             ("\nNext Account Value\n", "Account Value")
         );
+    }
+
+    #[test]
+    fn lot_random_input() {
+        let segment = vec![" {  200 JPY }", " [ 2022/09/01 ]", "  (note foobar)"];
+        for i in 0..=2 {
+            for j in 0..=2 {
+                for k in 0..=2 {
+                    let want_fail = i == j || j == k || i == k;
+                    let input = format!("{}{}{}", segment[i], segment[j], segment[k]);
+                    if want_fail {
+                        preceded(space0, lot)(&input).expect_err("should fail");
+                    } else {
+                        assert_eq!(
+                            expect_parse_ok(preceded(space0, lot), &input),
+                            (
+                                "",
+                                repl::Lot {
+                                    price: Some(repl::Exchange::Rate(
+                                        repl::expr::ValueExpr::Amount(repl::Amount {
+                                            value: dec!(200),
+                                            commodity: "JPY".to_string()
+                                        })
+                                    )),
+                                    date: Some(NaiveDate::from_ymd(2022, 9, 1)),
+                                    note: Some("note foobar".to_string()),
+                                }
+                            )
+                        )
+                    }
+                }
+            }
+        }
     }
 }
