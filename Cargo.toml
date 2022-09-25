@@ -22,7 +22,7 @@ lazy_static = "1.4"
 log = "0.4"
 nom = "7.1"
 path-slash = "0.2"
-quick-xml = { version = "0.24", features = [ "serialize" ] }
+quick-xml = { version = "0.25", features = [ "serialize" ] }
 regex = "1"
 rust_decimal = "1.26"
 serde = { version = "1.0", features = [ "derive" ] }
@@ -30,12 +30,11 @@ serde_with = { version = "2.0", features = [ "chrono" ] }
 serde_yaml = "0.9"
 strum = { version = "0.24", features = ["derive"] }
 thiserror = "1.0"
-unicode-width = "0.1.9"
+unicode-width = "0.1.10"
 
 [dev-dependencies]
 assert_cmd = "2.0"
 # assert_fs = "1.0"
-colored-diff = "0.2"
 ctor = "0.1"
 indoc = "1.0"
 maplit = "1.0"
