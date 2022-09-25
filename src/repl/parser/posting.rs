@@ -12,7 +12,7 @@ use std::cmp::min;
 use nom::{
     bytes::complete::{is_not, tag, take},
     character::complete::{char, one_of, space0, space1},
-    combinator::{cond, fail, opt, peek},
+    combinator::{cond, fail, map, opt, peek},
     error::{context, ParseError, VerboseError},
     sequence::{delimited, pair, preceded, terminated},
     IResult,
@@ -55,7 +55,7 @@ pub fn posting(input: &str) -> IResult<&str, repl::Posting, VerboseError<&str>> 
 }
 
 /// Parses the posting account name, and consumes the trailing spaces and tabs.
-fn posting_account<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
+fn posting_account<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, &'a str, E> {
     let (input, line) = peek(not_line_ending_or_semi)(input)?;
     let space = line.find("  ");
     let tab = line.find('\t');
@@ -69,7 +69,7 @@ fn posting_account<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, 
     terminated(take(length), space0)(input)
 }
 
-fn posting_amount<'a>(input: &'a str) -> IResult<&str, repl::PostingAmount, VerboseError<&'a str>> {
+fn posting_amount(input: &str) -> IResult<&str, repl::PostingAmount, VerboseError<&str>> {
     let (input, amount) = terminated(expr::value_expr, space0)(input)?;
     let (input, lot) = lot(input)?;
     let (input, is_at) = has_peek(char('@'))(input)?;
@@ -84,7 +84,7 @@ fn posting_amount<'a>(input: &'a str) -> IResult<&str, repl::PostingAmount, Verb
     Ok((input, repl::PostingAmount { amount, cost, lot }))
 }
 
-fn lot<'a>(input: &'a str) -> IResult<&'a str, repl::Lot, VerboseError<&'a str>> {
+fn lot(input: &str) -> IResult<&str, repl::Lot, VerboseError<&str>> {
     let (mut input, _) = space0(input)?;
     let mut lot = repl::Lot::default();
     loop {
@@ -133,14 +133,18 @@ fn lot<'a>(input: &'a str) -> IResult<&'a str, repl::Lot, VerboseError<&'a str>>
     }
 }
 
-fn total_cost<'a>(input: &'a str) -> IResult<&str, repl::Exchange, VerboseError<&'a str>> {
-    let (input, v) = preceded(pair(tag("@@"), space0), expr::value_expr)(input)?;
-    Ok((input, repl::Exchange::Total(v)))
+fn total_cost(input: &str) -> IResult<&str, repl::Exchange, VerboseError<&str>> {
+    map(
+        preceded(pair(tag("@@"), space0), expr::value_expr),
+        repl::Exchange::Total,
+    )(input)
 }
 
-fn rate_cost<'a>(input: &'a str) -> IResult<&str, repl::Exchange, VerboseError<&'a str>> {
-    let (input, v) = preceded(pair(tag("@"), space0), expr::value_expr)(input)?;
-    Ok((input, repl::Exchange::Rate(v)))
+fn rate_cost(input: &str) -> IResult<&str, repl::Exchange, VerboseError<&str>> {
+    map(
+        preceded(pair(tag("@"), space0), expr::value_expr),
+        repl::Exchange::Rate,
+    )(input)
 }
 
 #[cfg(test)]
