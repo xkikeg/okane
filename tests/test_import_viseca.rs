@@ -1,5 +1,7 @@
 mod testing;
 
+use pretty_assertions::assert_str_eq;
+
 #[ctor::ctor]
 fn init() {
     env_logger::init();
@@ -20,13 +22,5 @@ fn test_import() {
     .expect("execution failed");
 
     let got = String::from_utf8(result).expect("invalid UTF-8");
-    if want != got {
-        panic!(
-            "unexpected output: diff\n{}",
-            colored_diff::PrettyDifference {
-                expected: want.as_str(),
-                actual: got.as_str()
-            }
-        )
-    }
+    assert_str_eq!(want, got);
 }

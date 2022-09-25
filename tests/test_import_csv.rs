@@ -1,6 +1,6 @@
 mod testing;
 
-use pretty_assertions::assert_eq;
+use pretty_assertions::assert_str_eq;
 
 #[ctor::ctor]
 fn init() {
@@ -22,7 +22,7 @@ fn test_import_csv_index() {
     .expect("execution failed");
 
     let got = String::from_utf8(result).expect("invalid UTF-8");
-    assert_eq!(want, got);
+    assert_str_eq!(want, got);
 }
 
 #[test]
@@ -39,7 +39,7 @@ fn test_import_csv_label() {
     .run(&mut result)
     .expect("execution failed");
     let got = String::from_utf8(result).expect("invalid UTF-8");
-    assert_eq!(want, got);
+    assert_str_eq!(want, got);
 }
 
 #[test]
@@ -56,5 +56,5 @@ fn test_import_csv_multi_currency() {
     .run(&mut result)
     .expect("execution failed");
     let got = String::from_utf8(result).expect("invalid UTF-8");
-    assert_eq!(want, got);
+    assert_str_eq!(want, got);
 }
