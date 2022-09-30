@@ -201,9 +201,18 @@ pub struct FormatSpec {
     /// Delimiter for the CSV. Leave it empty to use default ",".
     #[serde(default)]
     pub delimiter: String,
+    #[serde(default)]
+    pub skip: SkipSpec,
     /// Order of the row.
     #[serde(default)]
     pub row_order: RowOrder,
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
+pub struct SkipSpec {
+    /// The number of lines skipped at head.
+    /// Only supported for CSV.
+    pub head: i32,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
