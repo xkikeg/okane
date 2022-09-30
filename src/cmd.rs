@@ -39,6 +39,7 @@ impl ImportCmd {
                 self.source.display()
             ))
         })?;
+        log::debug!("config: {:?}", config_entry);
         let file = File::open(&self.source)?;
         // Use dedicated flags or config systems instead.
         let format = match self.source.extension().and_then(OsStr::to_str) {

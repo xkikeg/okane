@@ -8,6 +8,8 @@ use repl::parser::primitive::str_to_comma_decimal;
 
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
+use std::io::BufRead;
+use std::io::BufReader;
 
 use chrono::NaiveDate;
 use log::{info, warn};
@@ -23,12 +25,21 @@ impl super::Importer for CsvImporter {
         config: &config::ConfigEntry,
     ) -> Result<Vec<single_entry::Txn>, ImportError> {
         let mut res: Vec<single_entry::Txn> = Vec::new();
+        let mut br = BufReader::new(r);
         let mut rb = csv::ReaderBuilder::new();
         rb.flexible(true);
         if !config.format.delimiter.is_empty() {
             rb.delimiter(config.format.delimiter.as_bytes()[0]);
         }
-        let mut rdr = rb.from_reader(r);
+        if config.format.skip.head > 0 {
+            let mut skipped = String::new();
+            for i in 0..config.format.skip.head {
+                skipped.clear();
+                br.read_line(&mut skipped)?;
+                log::info!("skipped {}-th line: {}", i, skipped.as_str().trim_end());
+            }
+        }
+        let mut rdr = rb.from_reader(br);
         if !rdr.has_headers() {
             return Err(ImportError::Other("no header of CSV".to_string()));
         }
