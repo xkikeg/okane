@@ -155,6 +155,8 @@ pub enum DomainSubFamilyCode {
     PaymentDirectDebit,
     #[serde(rename = "SALA")]
     Salary,
+    #[serde(rename = "STDO")]
+    StandingOrder,
     #[serde(rename = "OTHR")]
     Other,
 }
