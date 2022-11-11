@@ -12,7 +12,7 @@ repository = "https://github.com/xkikeg/okane"
 
 [dependencies]
 chrono = "0.4"
-clap = { version = "3.2", features = ["derive", "unicode"] }
+clap = { version = "4.0", features = ["derive", "unicode"] }
 csv = "1"
 either = "1"
 encoding_rs = "0.8"
@@ -22,7 +22,7 @@ lazy_static = "1.4"
 log = "0.4"
 nom = "7.1"
 path-slash = "0.2"
-quick-xml = { version = "0.25", features = [ "serialize" ] }
+quick-xml = { version = "0.26", features = [ "serialize" ] }
 regex = "1"
 rust_decimal = "1.26"
 serde = { version = "1.0", features = [ "derive" ] }
