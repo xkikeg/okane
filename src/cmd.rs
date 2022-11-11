@@ -21,7 +21,7 @@ pub enum Error {
 
 #[derive(Args, Debug)]
 pub struct ImportCmd {
-    #[clap(short, long, parse(from_os_str), value_name = "FILE")]
+    #[arg(short, long, value_name = "FILE")]
     pub config: std::path::PathBuf,
     pub source: std::path::PathBuf,
 }
