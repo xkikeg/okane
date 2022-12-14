@@ -280,7 +280,7 @@ mod tests {
                                             commodity: "JPY".to_string()
                                         })
                                     )),
-                                    date: Some(NaiveDate::from_ymd(2022, 9, 1)),
+                                    date: Some(NaiveDate::from_ymd_opt(2022, 9, 1).unwrap()),
                                     note: Some("note foobar".to_string()),
                                 }
                             )

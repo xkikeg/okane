@@ -243,14 +243,14 @@ mod tests {
     #[test]
     fn test_effective_date_not_set_same_date() {
         let mut txn = Txn::new(
-            NaiveDate::from_ymd(2021, 10, 1),
+            NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
             "foo",
             data::Amount {
                 commodity: "JPY".to_string(),
                 value: dec!(10),
             },
         );
-        txn.effective_date(NaiveDate::from_ymd(2021, 10, 1));
+        txn.effective_date(NaiveDate::from_ymd_opt(2021, 10, 1).unwrap());
 
         assert_eq!(txn.effective_date, None);
     }
@@ -258,15 +258,18 @@ mod tests {
     #[test]
     fn test_effective_date_set_different_date() {
         let mut txn = Txn::new(
-            NaiveDate::from_ymd(2021, 10, 1),
+            NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
             "foo",
             data::Amount {
                 commodity: "JPY".to_string(),
                 value: dec!(10),
             },
         );
-        txn.effective_date(NaiveDate::from_ymd(2021, 10, 2));
+        txn.effective_date(NaiveDate::from_ymd_opt(2021, 10, 2).unwrap());
 
-        assert_eq!(txn.effective_date, Some(NaiveDate::from_ymd(2021, 10, 2)));
+        assert_eq!(
+            txn.effective_date,
+            Some(NaiveDate::from_ymd_opt(2021, 10, 2).unwrap())
+        );
     }
 }

@@ -94,7 +94,7 @@ mod tests {
     #[test]
     fn date_parses_valid_inputs() {
         let res = expect_parse_ok(date, "2022/01/15");
-        assert_eq!(res, ("", NaiveDate::from_ymd(2022, 1, 15)));
+        assert_eq!(res, ("", NaiveDate::from_ymd_opt(2022, 1, 15).unwrap()));
     }
 
     #[test]

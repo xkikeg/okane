@@ -89,7 +89,7 @@ mod tests {
         assert_eq!(
             parse_ledger(input).unwrap(),
             vec![repl::LedgerEntry::Txn(repl::Transaction::new(
-                NaiveDate::from_ymd(2022, 1, 23),
+                NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(),
                 "".to_string()
             ))]
         );
@@ -102,7 +102,10 @@ mod tests {
             expect_parse_ok(parse_transaction, input),
             (
                 "",
-                repl::Transaction::new(NaiveDate::from_ymd(2022, 1, 23), "".to_string())
+                repl::Transaction::new(
+                    NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(),
+                    "".to_string()
+                )
             )
         );
     }
@@ -119,7 +122,7 @@ mod tests {
             (
                 "",
                 repl::Transaction {
-                    effective_date: Some(NaiveDate::from_ymd(2022, 1, 28)),
+                    effective_date: Some(NaiveDate::from_ymd_opt(2022, 1, 28).unwrap()),
                     clear_state: repl::ClearState::Cleared,
                     code: Some("code".to_string()),
                     payee: "Foo".to_string(),
@@ -137,7 +140,10 @@ mod tests {
                         },
                         repl::Posting::new("Liabilities B".to_string())
                     ],
-                    ..repl::Transaction::new(NaiveDate::from_ymd(2022, 1, 23), "".to_string())
+                    ..repl::Transaction::new(
+                        NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(),
+                        "".to_string()
+                    )
                 }
             )
         );
@@ -160,7 +166,7 @@ mod tests {
             (
                 "",
                 repl::Transaction {
-                    effective_date: Some(NaiveDate::from_ymd(2022, 1, 28)),
+                    effective_date: Some(NaiveDate::from_ymd_opt(2022, 1, 28).unwrap()),
                     clear_state: repl::ClearState::Pending,
                     code: Some("code".to_string()),
                     payee: "Foo".to_string(),
@@ -219,7 +225,10 @@ mod tests {
                             ..repl::Posting::new("Assets C".to_string())
                         }
                     ],
-                    ..repl::Transaction::new(NaiveDate::from_ymd(2022, 1, 23), "".to_string())
+                    ..repl::Transaction::new(
+                        NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(),
+                        "".to_string()
+                    )
                 }
             )
         );
