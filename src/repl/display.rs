@@ -293,7 +293,7 @@ mod tests {
                 cost: Some(Exchange::Rate(amount(100, "JPY"))),
                 lot: Lot {
                     price: Some(Exchange::Rate(amount(dec!(1.1), "USD"))),
-                    date: Some(NaiveDate::from_ymd(2022, 5, 20)),
+                    date: Some(NaiveDate::from_ymd_opt(2022, 5, 20).unwrap()),
                     note: Some("printable note".to_string()),
                 },
             }),

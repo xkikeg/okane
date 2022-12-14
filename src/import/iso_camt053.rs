@@ -335,10 +335,10 @@ mod tests {
                 value: xmlnode::CreditOrDebit::Credit,
             },
             booking_date: xmlnode::Date {
-                date: NaiveDate::from_ymd(2021, 10, 1),
+                date: NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
             },
             value_date: xmlnode::Date {
-                date: NaiveDate::from_ymd(2021, 10, 1),
+                date: NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
             },
             bank_transaction_code: xmlnode::BankTransactionCode {
                 domain: xmlnode::Domain {

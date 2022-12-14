@@ -292,7 +292,7 @@ mod tests {
     fn parse_euro_date_valid() {
         assert_eq!(
             parse_euro_date("22.06.20").unwrap(),
-            NaiveDate::from_ymd(2020, 6, 22)
+            NaiveDate::from_ymd_opt(2020, 6, 22).unwrap()
         );
     }
 
@@ -327,8 +327,8 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 1,
-                date: NaiveDate::from_ymd(2020, 6, 21),
-                effective_date: NaiveDate::from_ymd(2020, 6, 22),
+                date: NaiveDate::from_ymd_opt(2020, 6, 21).unwrap(),
+                effective_date: NaiveDate::from_ymd_opt(2020, 6, 22).unwrap(),
                 payee: "Your payment - Thank you".to_string(),
                 amount: dec!(-4204.75),
                 category: String::new(),
@@ -341,8 +341,8 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 2,
-                date: NaiveDate::from_ymd(2020, 6, 22),
-                effective_date: NaiveDate::from_ymd(2020, 6, 24),
+                date: NaiveDate::from_ymd_opt(2020, 6, 22).unwrap(),
+                effective_date: NaiveDate::from_ymd_opt(2020, 6, 24).unwrap(),
                 payee: "foo shop 100".to_owned(),
                 amount: dec!(1234.56),
                 category: "Catering Service".to_owned(),
@@ -355,8 +355,8 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 4,
-                date: NaiveDate::from_ymd(2020, 6, 29),
-                effective_date: NaiveDate::from_ymd(2020, 7, 1),
+                date: NaiveDate::from_ymd_opt(2020, 6, 29).unwrap(),
+                effective_date: NaiveDate::from_ymd_opt(2020, 7, 1).unwrap(),
                 payee: "foo shop 100".to_string(),
                 amount: dec!(-56.23),
                 category: "Catering Service".to_string(),
@@ -399,8 +399,8 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 10,
-                date: NaiveDate::from_ymd(2020, 12, 13),
-                effective_date: NaiveDate::from_ymd(2020, 12, 15),
+                date: NaiveDate::from_ymd_opt(2020, 12, 13).unwrap(),
+                effective_date: NaiveDate::from_ymd_opt(2020, 12, 15).unwrap(),
                 payee: "PAYPAL *STEAM GAMES, 35314369001 GB".to_string(),
                 amount: dec!(19.35),
                 category: "Game, toy, and hobby shops".to_string(),
@@ -437,8 +437,8 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 1,
-                date: NaiveDate::from_ymd(2020, 6, 21),
-                effective_date: NaiveDate::from_ymd(2020, 6, 22),
+                date: NaiveDate::from_ymd_opt(2020, 6, 21).unwrap(),
+                effective_date: NaiveDate::from_ymd_opt(2020, 6, 22).unwrap(),
                 payee: "Your payment - Thank you".to_string(),
                 amount: dec!(-4204.75),
                 category: String::new(),
@@ -475,8 +475,8 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 5,
-                date: NaiveDate::from_ymd(2020, 8, 20),
-                effective_date: NaiveDate::from_ymd(2020, 8, 23),
+                date: NaiveDate::from_ymd_opt(2020, 8, 20).unwrap(),
+                effective_date: NaiveDate::from_ymd_opt(2020, 8, 23).unwrap(),
                 payee: "MY TAXI, Amsterdam NL".to_string(),
                 amount: dec!(1.05),
                 category: "Taxicabs and limousines".to_string(),
