@@ -27,6 +27,15 @@ impl<'a, T> WithContext<'a, T> {
     }
 }
 
+impl fmt::Display for TopLevelComment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for line in self.0.lines() {
+            writeln!(f, ";{}", line.trim_end_matches("\r\n"))?;
+        }
+        Ok(())
+    }
+}
+
 impl Transaction {
     pub fn display<'a>(&'a self, context: &'a DisplayContext) -> WithContext<'a, Transaction> {
         WithContext {

@@ -5,14 +5,34 @@ use repl::parser::{character, combinator::has_peek};
 
 use nom::{
     branch::alt,
-    bytes::complete::take_till1,
+    bytes::complete::{is_a, take_till1},
     character::complete::{char, line_ending, not_line_ending, space0, space1},
     combinator::{cond, map},
     error::{context, ContextError, ParseError},
-    multi::{many1, separated_list0},
+    multi::{fold_many1, many1, separated_list0},
     sequence::{delimited, pair, preceded, terminated},
     IResult,
 };
+
+/// Parses top level comment in the Ledger file format.
+/// Notable difference with block_metadata is, this accepts multiple prefix.
+pub fn top_comment<'a, E>(input: &'a str) -> IResult<&'a str, repl::TopLevelComment, E>
+where
+    E: ParseError<&'a str>,
+{
+    map(
+        fold_many1(
+            delimited(is_a(";#%|*"), not_line_ending, line_ending),
+            || String::new(),
+            |mut ret, l| {
+                ret.push_str(l);
+                ret.push('\n');
+                ret
+            },
+        ),
+        repl::TopLevelComment,
+    )(input)
+}
 
 /// Parses block of metadata including the last line_end.
 /// Note this consumes one line_ending regardless of Metadata existence.
