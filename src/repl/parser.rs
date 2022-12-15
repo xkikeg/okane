@@ -14,11 +14,11 @@ pub mod testing;
 use crate::repl;
 
 use nom::{
-    character::complete::line_ending,
-    combinator::{eof, map},
-    error::{convert_error, VerboseError},
+    character::complete::{anychar, line_ending},
+    combinator::{eof, fail, map, peek},
+    error::{context, convert_error, VerboseError},
     multi::{many0, many_till},
-    sequence::preceded,
+    sequence::{preceded, terminated},
     Finish, IResult,
 };
 
@@ -28,17 +28,26 @@ pub struct ParseLedgerError(String);
 
 /// Parses the whole ledger file.
 pub fn parse_ledger(input: &str) -> Result<Vec<repl::LedgerEntry>, ParseLedgerError> {
-    match many_till(parse_ledger_entry, eof)(input).finish() {
+    match preceded(
+        many0(line_ending),
+        many_till(terminated(parse_ledger_entry, many0(line_ending)), eof),
+    )(input)
+    .finish()
+    {
         Ok((_, (ret, _))) => Ok(ret),
         Err(e) => Err(ParseLedgerError(convert_error(input, e))),
     }
 }
 
 fn parse_ledger_entry(input: &str) -> IResult<&str, repl::LedgerEntry, VerboseError<&str>> {
-    map(
-        preceded(many0(line_ending), transaction::transaction),
-        repl::LedgerEntry::Txn,
-    )(input)
+    let (input, c) = peek(anychar)(input)?;
+    match c {
+        ';' | '#' | '%' | '|' | '*' => {
+            map(metadata::top_comment, repl::LedgerEntry::Comment)(input)
+        }
+        c if c.is_ascii_digit() => map(transaction::transaction, repl::LedgerEntry::Txn)(input),
+        _ => context("unexpected character", fail)(input),
+    }
 }
 
 #[cfg(test)]

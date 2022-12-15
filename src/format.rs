@@ -27,6 +27,7 @@ where
     for txn in txns {
         match txn {
             LedgerEntry::Txn(txn) => writeln!(w, "{}", txn.display(&ctx))?,
+            LedgerEntry::Comment(cmt) => writeln!(w, "{}", cmt)?,
         }
     }
     Ok(())
@@ -42,6 +43,15 @@ mod tests {
     #[test]
     fn format_succeeds_transaction_without_lot_price() {
         let input = indoc! {"
+            ; Top
+            ; level
+            #comment
+            %can
+            |have several prefixes.
+
+            ; second
+            ; round
+
             2021/03/12 Opening Balance  ; initial balance
                 Assets:Bank     = 1000 CHF
                 Equity
@@ -59,6 +69,15 @@ mod tests {
         // TODO: 1. guess commodity width if not available.
         // TOOD: 2. remove trailing space on non-commodity value.
         let want = indoc! {"
+            ; Top
+            ; level
+            ;comment
+            ;can
+            ;have several prefixes.
+
+            ; second
+            ; round
+
             2021/03/12 Opening Balance
                 ; initial balance
                 Assets:Bank                                          = 1000 CHF
