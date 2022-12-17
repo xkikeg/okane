@@ -17,14 +17,26 @@ use chrono::NaiveDate;
 /// Top-level entry of the LedgerFile.
 #[derive(Debug, PartialEq, Eq)]
 pub enum LedgerEntry {
-    // Transaction
+    /// Transaction
     Txn(Transaction),
-    // Comment, not limited to one-line oppose to `Metadata`.
+    /// Comment, not limited to one-line oppose to `Metadata`.
     Comment(TopLevelComment),
+    /// Apply tag directive.
+    ApplyTag(ApplyTag),
+    /// "end apply tag" directive.
+    EndApplyTag,
 }
 
+/// Top-level comment. OK to have multi-line comment.
 #[derive(Debug, PartialEq, Eq)]
 pub struct TopLevelComment(String);
+
+/// "apply tag" directive content.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ApplyTag {
+    pub key: String,
+    pub value: Option<String>,
+}
 
 /// Represents a transaction where the money transfered across the accounts.
 #[derive(Debug, PartialEq, Eq)]

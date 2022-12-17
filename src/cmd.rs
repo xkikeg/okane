@@ -62,7 +62,7 @@ impl ImportCmd {
         };
         for xact in xacts {
             let xact: repl::Transaction = xact.into();
-            writeln!(w, "{}", xact.display(&ctx))?;
+            writeln!(w, "{}", ctx.wrap(&xact))?;
         }
         Ok(())
     }

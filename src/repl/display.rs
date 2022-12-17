@@ -12,6 +12,19 @@ pub struct DisplayContext {
     pub precisions: HashMap<String, u8>,
 }
 
+impl DisplayContext {
+    /// Returns given object reference wrapped with a context.
+    pub fn wrap<'a, T>(&'a self, value: &'a T) -> WithContext<'a, T>
+    where
+        WithContext<'a, T>: fmt::Display,
+    {
+        WithContext {
+            value,
+            context: self,
+        }
+    }
+}
+
 /// Object combined with the `DisplayContext`.
 pub struct WithContext<'a, T> {
     value: &'a T,
@@ -27,20 +40,32 @@ impl<'a, T> WithContext<'a, T> {
     }
 }
 
+impl<'a> fmt::Display for WithContext<'a, LedgerEntry> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.value {
+            LedgerEntry::Txn(txn) => write!(f, "{}", self.pass_context(txn)),
+            LedgerEntry::Comment(v) => write!(f, "{}", v),
+            LedgerEntry::ApplyTag(v) => v.fmt(f),
+            LedgerEntry::EndApplyTag => writeln!(f, "end apply tag"),
+        }
+    }
+}
+
 impl fmt::Display for TopLevelComment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for line in self.0.lines() {
-            writeln!(f, ";{}", line.trim_end_matches("\r\n"))?;
+            writeln!(f, ";{}", line)?;
         }
         Ok(())
     }
 }
 
-impl Transaction {
-    pub fn display<'a>(&'a self, context: &'a DisplayContext) -> WithContext<'a, Transaction> {
-        WithContext {
-            value: self,
-            context,
+impl fmt::Display for ApplyTag {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "apply tag {}", self.key)?;
+        match &self.value {
+            None => writeln!(f),
+            Some(v) => writeln!(f, ": {}", v),
         }
     }
 }
@@ -279,10 +304,6 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
-    fn with_ctx<'a, T>(context: &'a DisplayContext, value: &'a T) -> WithContext<'a, T> {
-        WithContext { context, value }
-    }
-
     fn amount<T: Into<Decimal>>(value: T, commodity: &'static str) -> expr::ValueExpr {
         expr::ValueExpr::Amount(Amount {
             commodity: commodity.to_string(),
@@ -292,6 +313,75 @@ mod tests {
 
     fn amount_expr<T: Into<Decimal>>(value: T, commodity: &'static str) -> expr::Expr {
         expr::Expr::Value(Box::new(amount(value, commodity)))
+    }
+
+    #[test]
+    fn display_ledger_entries_no_txn() {
+        let ctx = DisplayContext::default();
+        assert_eq!(
+            concat!(";this\n", ";is\n", ";a pen pineapple apple pen.\n"),
+            format!(
+                "{}",
+                ctx.wrap(&LedgerEntry::Comment(TopLevelComment(
+                    "this\nis\na pen pineapple apple pen.".to_string(),
+                )))
+            )
+        );
+        assert_eq!(
+            "apply tag foo\n",
+            format!(
+                "{}",
+                ctx.wrap(&LedgerEntry::ApplyTag(ApplyTag {
+                    key: "foo".to_string(),
+                    value: None
+                })),
+            )
+        );
+        assert_eq!(
+            "apply tag foo: bar\n",
+            format!(
+                "{}",
+                ctx.wrap(&LedgerEntry::ApplyTag(ApplyTag {
+                    key: "foo".to_string(),
+                    value: Some("bar".to_string())
+                }))
+            ),
+        );
+        assert_eq!(
+            "end apply tag\n",
+            format!("{}", ctx.wrap(&LedgerEntry::EndApplyTag))
+        );
+    }
+
+    #[test]
+    fn display_txn() {
+        let got = format!(
+            "{}",
+            DisplayContext::default().wrap(&LedgerEntry::Txn(Transaction {
+                date: NaiveDate::from_ymd_opt(2022, 12, 23).unwrap(),
+                effective_date: None,
+                clear_state: ClearState::Uncleared,
+                code: None,
+                payee: "Example Grocery".to_string(),
+                posts: vec![Posting {
+                    account: "Assets".to_string(),
+                    clear_state: ClearState::Uncleared,
+                    amount: Some(PostingAmount {
+                        amount: amount(dec!(123.45), "USD"),
+                        cost: None,
+                        lot: Lot::default(),
+                    }),
+                    balance: None,
+                    metadata: Vec::new(),
+                }],
+                metadata: Vec::new(),
+            }))
+        );
+        let want = concat!(
+            "2022/12/23 Example Grocery\n",
+            "    Assets                                    123.45 USD\n",
+        );
+        assert_eq!(want, got);
     }
 
     #[test]
@@ -360,12 +450,12 @@ mod tests {
             ),
             format!(
                 "{}{}{}{}{}{}",
-                with_ctx(&DisplayContext::default(), &all),
-                with_ctx(&DisplayContext::default(), &costbalance),
-                with_ctx(&DisplayContext::default(), &total),
-                with_ctx(&DisplayContext::default(), &nocost),
-                with_ctx(&DisplayContext::default(), &noamount),
-                with_ctx(&DisplayContext::default(), &zerobalance),
+                DisplayContext::default().wrap(&all),
+                DisplayContext::default().wrap(&costbalance),
+                DisplayContext::default().wrap(&total),
+                DisplayContext::default().wrap(&nocost),
+                DisplayContext::default().wrap(&noamount),
+                DisplayContext::default().wrap(&zerobalance),
             ),
         );
 
@@ -385,12 +475,12 @@ mod tests {
             ),
             format!(
                 "{}{}{}{}{}{}",
-                with_ctx(&ctx, &all),
-                with_ctx(&ctx, &costbalance),
-                with_ctx(&ctx, &total),
-                with_ctx(&ctx, &nocost),
-                with_ctx(&ctx, &noamount),
-                with_ctx(&ctx, &zerobalance),
+                ctx.wrap(&all),
+                ctx.wrap(&costbalance),
+                ctx.wrap(&total),
+                ctx.wrap(&nocost),
+                ctx.wrap(&noamount),
+                ctx.wrap(&zerobalance),
             ),
         );
     }
@@ -398,7 +488,8 @@ mod tests {
     #[test]
     fn fmt_with_alignment_simple_amount_without_commodity() {
         let mut buffer = String::new();
-        let alignment = with_ctx(&DisplayContext::default(), &amount(123i8, ""))
+        let alignment = DisplayContext::default()
+            .wrap(&amount(123i8, ""))
             .fmt_with_alignment(&mut buffer)
             .unwrap();
         assert_eq!("123", buffer.as_str());
@@ -409,19 +500,18 @@ mod tests {
     fn fmt_with_alignment_simple_amount_with_commodity() {
         let mut buffer = String::new();
         let usd123 = amount(123i8, "USD");
-        let alignment = with_ctx(&DisplayContext::default(), &usd123)
+        let alignment = DisplayContext::default()
+            .wrap(&usd123)
             .fmt_with_alignment(&mut buffer)
             .unwrap();
         assert_eq!("123 USD", buffer.as_str());
         assert_eq!(Alignment::Complete(3), alignment);
 
         buffer.clear();
-        let alignment = with_ctx(
-            &DisplayContext {
-                precisions: hashmap! {"USD".to_string() => 2},
-            },
-            &usd123,
-        )
+        let alignment = DisplayContext {
+            precisions: hashmap! {"USD".to_string() => 2},
+        }
+        .wrap(&usd123)
         .fmt_with_alignment(&mut buffer)
         .unwrap();
         assert_eq!("123.00 USD", buffer.as_str());
@@ -447,7 +537,8 @@ mod tests {
             rhs: Box::new(amount_expr(5i32, "USD")),
         }));
         let mut got = String::new();
-        let alignment = with_ctx(&DisplayContext::default(), &expr)
+        let alignment = DisplayContext::default()
+            .wrap(&expr)
             .fmt_with_alignment(&mut got)
             .unwrap();
         assert_eq!("((1.20 + 2.67) * 3.1 USD + 5 USD)", got.as_str());

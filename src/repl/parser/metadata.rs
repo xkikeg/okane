@@ -5,34 +5,14 @@ use repl::parser::{character, combinator::has_peek};
 
 use nom::{
     branch::alt,
-    bytes::complete::{is_a, take_till1},
+    bytes::complete::take_till1,
     character::complete::{char, line_ending, not_line_ending, space0, space1},
     combinator::{cond, map},
     error::{context, ContextError, ParseError},
-    multi::{fold_many1, many1, separated_list0},
+    multi::{many1, separated_list0},
     sequence::{delimited, pair, preceded, terminated},
     IResult,
 };
-
-/// Parses top level comment in the Ledger file format.
-/// Notable difference with block_metadata is, this accepts multiple prefix.
-pub fn top_comment<'a, E>(input: &'a str) -> IResult<&'a str, repl::TopLevelComment, E>
-where
-    E: ParseError<&'a str>,
-{
-    map(
-        fold_many1(
-            delimited(is_a(";#%|*"), not_line_ending, line_ending),
-            || String::new(),
-            |mut ret, l| {
-                ret.push_str(l);
-                ret.push('\n');
-                ret
-            },
-        ),
-        repl::TopLevelComment,
-    )(input)
-}
 
 /// Parses block of metadata including the last line_end.
 /// Note this consumes one line_ending regardless of Metadata existence.
@@ -44,16 +24,17 @@ pub fn block_metadata<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     separated_list0(space1, preceded(space0, line_metadata))(input)
 }
 
-fn line_metadata<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-    input: &'a str,
-) -> IResult<&str, repl::Metadata, E> {
+fn line_metadata<'a, E>(input: &'a str) -> IResult<&'a str, repl::Metadata, E>
+where
+    E: ParseError<&'a str> + ContextError<&'a str>,
+{
     context(
         "parsing a line for Metadata",
         delimited(
             pair(char(';'), space0),
             alt((
-                parse_metadata_tags,
-                parse_metadata_kv,
+                metadata_tags,
+                metadata_kv,
                 map(not_line_ending, |s: &str| {
                     if s.contains(':') {
                         log::warn!("metadata containing `:` not parsed as tags");
@@ -66,31 +47,23 @@ fn line_metadata<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     )(input)
 }
 
-fn parse_metadata_tags<'a, E: ParseError<&'a str>>(
-    input: &'a str,
-) -> IResult<&str, repl::Metadata, E> {
-    let (input, tags) = delimited(
-        char(':'),
-        many1(terminated(
-            take_till1(|c: char| c.is_whitespace() || c == ':'),
-            char(':'),
-        )),
-        space0,
-    )(input)?;
+fn metadata_tags<'a, E>(input: &'a str) -> IResult<&'a str, repl::Metadata, E>
+where
+    E: ParseError<&'a str> + ContextError<&'a str>,
+{
+    let (input, tags) = delimited(char(':'), many1(terminated(tag_key, char(':'))), space0)(input)?;
     Ok((
         input,
         repl::Metadata::WordTags(tags.into_iter().map(String::from).collect()),
     ))
 }
 
-fn parse_metadata_kv<'a, E: ParseError<&'a str>>(
-    input: &'a str,
-) -> IResult<&str, repl::Metadata, E> {
+fn metadata_kv<'a, E>(input: &'a str) -> IResult<&'a str, repl::Metadata, E>
+where
+    E: ParseError<&'a str> + ContextError<&'a str>,
+{
     let (input, (key, value)) = pair(
-        terminated(
-            take_till1(|c: char| c.is_whitespace() || c == ':'),
-            pair(space0, char(':')),
-        ),
+        terminated(tag_key, pair(space0, char(':'))),
         preceded(space0, not_line_ending),
     )(input)?;
     Ok((
@@ -101,6 +74,18 @@ fn parse_metadata_kv<'a, E: ParseError<&'a str>>(
         },
     ))
 }
+
+/// Parses metadata tag.
+pub fn tag_key<'a, E>(input: &'a str) -> IResult<&'a str, &'a str, E>
+where
+    E: ParseError<&'a str> + ContextError<&'a str>,
+{
+    context(
+        "metadata tag",
+        take_till1(|c: char| c.is_whitespace() || c == ':'),
+    )(input)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
