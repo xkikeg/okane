@@ -13,8 +13,8 @@ pub struct DisplayContext {
 }
 
 impl DisplayContext {
-    /// Returns given object reference wrapped with a context.
-    pub fn wrap<'a, T>(&'a self, value: &'a T) -> WithContext<'a, T>
+    /// Returns given object reference wrapped with a context for `fmt::Display`.
+    pub fn as_display<'a, T>(&'a self, value: &'a T) -> WithContext<'a, T>
     where
         WithContext<'a, T>: fmt::Display,
     {
@@ -322,7 +322,7 @@ mod tests {
             concat!(";this\n", ";is\n", ";a pen pineapple apple pen.\n"),
             format!(
                 "{}",
-                ctx.wrap(&LedgerEntry::Comment(TopLevelComment(
+                ctx.as_display(&LedgerEntry::Comment(TopLevelComment(
                     "this\nis\na pen pineapple apple pen.".to_string(),
                 )))
             )
@@ -331,7 +331,7 @@ mod tests {
             "apply tag foo\n",
             format!(
                 "{}",
-                ctx.wrap(&LedgerEntry::ApplyTag(ApplyTag {
+                ctx.as_display(&LedgerEntry::ApplyTag(ApplyTag {
                     key: "foo".to_string(),
                     value: None
                 })),
@@ -341,7 +341,7 @@ mod tests {
             "apply tag foo: bar\n",
             format!(
                 "{}",
-                ctx.wrap(&LedgerEntry::ApplyTag(ApplyTag {
+                ctx.as_display(&LedgerEntry::ApplyTag(ApplyTag {
                     key: "foo".to_string(),
                     value: Some("bar".to_string())
                 }))
@@ -349,7 +349,7 @@ mod tests {
         );
         assert_eq!(
             "end apply tag\n",
-            format!("{}", ctx.wrap(&LedgerEntry::EndApplyTag))
+            format!("{}", ctx.as_display(&LedgerEntry::EndApplyTag))
         );
     }
 
@@ -357,7 +357,7 @@ mod tests {
     fn display_txn() {
         let got = format!(
             "{}",
-            DisplayContext::default().wrap(&LedgerEntry::Txn(Transaction {
+            DisplayContext::default().as_display(&LedgerEntry::Txn(Transaction {
                 date: NaiveDate::from_ymd_opt(2022, 12, 23).unwrap(),
                 effective_date: None,
                 clear_state: ClearState::Uncleared,
@@ -450,12 +450,12 @@ mod tests {
             ),
             format!(
                 "{}{}{}{}{}{}",
-                DisplayContext::default().wrap(&all),
-                DisplayContext::default().wrap(&costbalance),
-                DisplayContext::default().wrap(&total),
-                DisplayContext::default().wrap(&nocost),
-                DisplayContext::default().wrap(&noamount),
-                DisplayContext::default().wrap(&zerobalance),
+                DisplayContext::default().as_display(&all),
+                DisplayContext::default().as_display(&costbalance),
+                DisplayContext::default().as_display(&total),
+                DisplayContext::default().as_display(&nocost),
+                DisplayContext::default().as_display(&noamount),
+                DisplayContext::default().as_display(&zerobalance),
             ),
         );
 
@@ -475,12 +475,12 @@ mod tests {
             ),
             format!(
                 "{}{}{}{}{}{}",
-                ctx.wrap(&all),
-                ctx.wrap(&costbalance),
-                ctx.wrap(&total),
-                ctx.wrap(&nocost),
-                ctx.wrap(&noamount),
-                ctx.wrap(&zerobalance),
+                ctx.as_display(&all),
+                ctx.as_display(&costbalance),
+                ctx.as_display(&total),
+                ctx.as_display(&nocost),
+                ctx.as_display(&noamount),
+                ctx.as_display(&zerobalance),
             ),
         );
     }
@@ -489,7 +489,7 @@ mod tests {
     fn fmt_with_alignment_simple_amount_without_commodity() {
         let mut buffer = String::new();
         let alignment = DisplayContext::default()
-            .wrap(&amount(123i8, ""))
+            .as_display(&amount(123i8, ""))
             .fmt_with_alignment(&mut buffer)
             .unwrap();
         assert_eq!("123", buffer.as_str());
@@ -501,7 +501,7 @@ mod tests {
         let mut buffer = String::new();
         let usd123 = amount(123i8, "USD");
         let alignment = DisplayContext::default()
-            .wrap(&usd123)
+            .as_display(&usd123)
             .fmt_with_alignment(&mut buffer)
             .unwrap();
         assert_eq!("123 USD", buffer.as_str());
@@ -511,7 +511,7 @@ mod tests {
         let alignment = DisplayContext {
             precisions: hashmap! {"USD".to_string() => 2},
         }
-        .wrap(&usd123)
+        .as_display(&usd123)
         .fmt_with_alignment(&mut buffer)
         .unwrap();
         assert_eq!("123.00 USD", buffer.as_str());
@@ -538,7 +538,7 @@ mod tests {
         }));
         let mut got = String::new();
         let alignment = DisplayContext::default()
-            .wrap(&expr)
+            .as_display(&expr)
             .fmt_with_alignment(&mut got)
             .unwrap();
         assert_eq!("((1.20 + 2.67) * 3.1 USD + 5 USD)", got.as_str());

@@ -24,7 +24,7 @@ where
     let txns = parse_ledger(&buf)?;
     let ctx = DisplayContext::default();
     for txn in txns {
-        writeln!(w, "{}", ctx.wrap(&txn))?;
+        writeln!(w, "{}", ctx.as_display(&txn))?;
     }
     Ok(())
 }
