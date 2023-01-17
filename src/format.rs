@@ -1,7 +1,6 @@
 use crate::repl::{
     display::DisplayContext,
     parser::{parse_ledger, ParseLedgerError},
-    LedgerEntry,
 };
 
 use std::io::{Read, Write};
@@ -25,10 +24,7 @@ where
     let txns = parse_ledger(&buf)?;
     let ctx = DisplayContext::default();
     for txn in txns {
-        match txn {
-            LedgerEntry::Txn(txn) => writeln!(w, "{}", txn.display(&ctx))?,
-            LedgerEntry::Comment(cmt) => writeln!(w, "{}", cmt)?,
-        }
+        writeln!(w, "{}", ctx.as_display(&txn))?;
     }
     Ok(())
 }
@@ -52,9 +48,13 @@ mod tests {
             ; second
             ; round
 
+            apply    tag   foo
+
+            end  apply   tag
+
             2021/03/12 Opening Balance  ; initial balance
-                Assets:Bank     = 1000 CHF
-                Equity
+             Assets:Bank     = 1000 CHF
+             Equity
 
             2021/05/14 !(#txn-1) My Grocery
                 Expenses:Grocery\t10 CHF
@@ -77,6 +77,10 @@ mod tests {
 
             ; second
             ; round
+            
+            apply tag foo
+
+            end apply tag
 
             2021/03/12 Opening Balance
                 ; initial balance

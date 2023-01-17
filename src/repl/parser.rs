@@ -2,6 +2,7 @@
 
 mod character;
 mod combinator;
+mod directive;
 mod expr;
 mod metadata;
 mod posting;
@@ -43,8 +44,10 @@ fn parse_ledger_entry(input: &str) -> IResult<&str, repl::LedgerEntry, VerboseEr
     let (input, c) = peek(anychar)(input)?;
     match c {
         ';' | '#' | '%' | '|' | '*' => {
-            map(metadata::top_comment, repl::LedgerEntry::Comment)(input)
+            map(directive::top_comment, repl::LedgerEntry::Comment)(input)
         }
+        'a' => map(directive::apply_tag, repl::LedgerEntry::ApplyTag)(input),
+        'e' => map(directive::end_apply_tag, |_| repl::LedgerEntry::EndApplyTag)(input),
         c if c.is_ascii_digit() => map(transaction::transaction, repl::LedgerEntry::Txn)(input),
         _ => context("unexpected character", fail)(input),
     }
