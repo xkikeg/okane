@@ -25,6 +25,8 @@ pub enum Command {
     Import(ImportCmd),
     /// Format the given file (in future it'll work without file arg)
     Format(FormatCmd),
+    /// Primitive is a set of commands which are primitive and suitable for debugging.
+    Primitive(Primitives),
 }
 
 impl Command {
@@ -32,6 +34,7 @@ impl Command {
         match self {
             Command::Import(cmd) => cmd.run(&mut std::io::stdout().lock()),
             Command::Format(cmd) => cmd.run(&mut std::io::stdout().lock()),
+            Command::Primitive(cmd) => cmd.run(),
         }
     }
 }
@@ -98,5 +101,31 @@ impl FormatCmd {
         let mut r = BufReader::new(File::open(&self.source)?);
         format::format(&mut r, w)?;
         Ok(())
+    }
+}
+
+#[derive(Args, Debug)]
+pub struct Primitives {
+    #[command(subcommand)]
+    command: PrimitiveCmd,
+}
+
+impl Primitives {
+    fn run(self) -> Result<(), Error> {
+        self.command.run()
+    }
+}
+
+#[derive(Subcommand, Debug)]
+enum PrimitiveCmd {
+    /// Format the given one ledger file, to stdout.
+    Format(FormatCmd),
+}
+
+impl PrimitiveCmd {
+    fn run(self) -> Result<(), Error> {
+        match self {
+            PrimitiveCmd::Format(cmd) => cmd.run(&mut std::io::stdout().lock()),
+        }
     }
 }
