@@ -6,7 +6,7 @@ use std::ffi::OsStr;
 use std::fs::File;
 use std::io::BufReader;
 
-use clap::Args;
+use clap::{Args, Subcommand};
 use encoding_rs_io::DecodeReaderBytesBuilder;
 
 #[derive(thiserror::Error, Debug)]
@@ -17,6 +17,23 @@ pub enum Error {
     Import(#[from] import::ImportError),
     #[error("failed to format")]
     Format(#[from] format::FormatError),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    /// Import other format into ledger.
+    Import(ImportCmd),
+    /// Format the given file (in future it'll work without file arg)
+    Format(FormatCmd),
+}
+
+impl Command {
+    pub fn run(self) -> Result<(), Error> {
+        match self {
+            Command::Import(cmd) => cmd.run(&mut std::io::stdout().lock()),
+            Command::Format(cmd) => cmd.run(&mut std::io::stdout().lock()),
+        }
+    }
 }
 
 #[derive(Args, Debug)]

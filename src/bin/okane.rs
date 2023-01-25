@@ -1,31 +1,18 @@
 use okane::cmd;
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[clap(about, version, author)]
 struct Cli {
     #[clap(subcommand)]
-    command: Command,
+    command: cmd::Command,
 }
-
-#[derive(Subcommand, Debug)]
-enum Command {
-    /// Import other format into ledger.
-    Import(cmd::ImportCmd),
-    /// Format the given file (in future it'll work without file arg)
-    Format(cmd::FormatCmd),
-}
-
 impl Cli {
     fn run(self) -> Result<(), cmd::Error> {
-        match self.command {
-            Command::Import(cmd) => cmd.run(&mut std::io::stdout().lock()),
-            Command::Format(cmd) => cmd.run(&mut std::io::stdout().lock()),
-        }
+        self.command.run()
     }
 }
-
 fn main() {
     env_logger::init();
     let cli = Cli::parse();
