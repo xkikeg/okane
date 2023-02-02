@@ -25,6 +25,8 @@ pub enum LedgerEntry {
     ApplyTag(ApplyTag),
     /// "end apply tag" directive.
     EndApplyTag,
+    /// "include" directive.
+    Include(IncludeFile),
 }
 
 /// Top-level comment. OK to have multi-line comment.
@@ -37,6 +39,11 @@ pub struct ApplyTag {
     pub key: String,
     pub value: Option<String>,
 }
+
+/// "include" directive, taking a path as an argument.
+/// Path can be a relative path or an absolute path.
+#[derive(Debug, PartialEq, Eq)]
+pub struct IncludeFile(String);
 
 /// Represents a transaction where the money transfered across the accounts.
 #[derive(Debug, PartialEq, Eq)]

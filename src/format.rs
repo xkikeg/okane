@@ -52,6 +52,8 @@ mod tests {
 
             end  apply   tag
 
+            include        path/to/other.ledger
+
             2021/03/12 Opening Balance  ; initial balance
              Assets:Bank     = 1000 CHF
              Equity
@@ -81,6 +83,8 @@ mod tests {
             apply tag foo
 
             end apply tag
+
+            include path/to/other.ledger
 
             2021/03/12 Opening Balance
                 ; initial balance
