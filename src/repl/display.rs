@@ -47,6 +47,7 @@ impl<'a> fmt::Display for WithContext<'a, LedgerEntry> {
             LedgerEntry::Comment(v) => write!(f, "{}", v),
             LedgerEntry::ApplyTag(v) => v.fmt(f),
             LedgerEntry::EndApplyTag => writeln!(f, "end apply tag"),
+            LedgerEntry::Include(v) => v.fmt(f),
         }
     }
 }
@@ -67,6 +68,12 @@ impl fmt::Display for ApplyTag {
             None => writeln!(f),
             Some(v) => writeln!(f, ": {}", v),
         }
+    }
+}
+
+impl fmt::Display for IncludeFile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "include {}", self.0)
     }
 }
 

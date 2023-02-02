@@ -58,6 +58,26 @@ where
     )(input)
 }
 
+/// Parses include directive.
+/// Note given we'll always have UTF-8 input,
+/// we're not using PathBuf but String for the path.
+pub fn include<'a, E>(input: &'a str) -> IResult<&'a str, repl::IncludeFile, E>
+where
+    E: ParseError<&'a str> + ContextError<&'a str>,
+{
+    context(
+        "include directive",
+        map(
+            delimited(
+                pair(tag("include"), space1),
+                not_line_ending,
+                line_ending_or_eof,
+            ),
+            |x| repl::IncludeFile(x.trim_end().to_string()),
+        ),
+    )(input)
+}
+
 /// Parses top level comment in the Ledger file format.
 /// Notable difference with block_metadata is, this accepts multiple prefix.
 pub fn top_comment<'a, E>(input: &'a str) -> IResult<&'a str, repl::TopLevelComment, E>
@@ -136,5 +156,29 @@ mod tests {
 
         let input: &str = "endapply tag";
         end_apply_tag(input).expect_err("should fail");
+    }
+
+    #[test]
+    fn include_parses_normal_file() {
+        assert_eq!(
+            expect_parse_ok(include, "include foobar.ledger\n"),
+            ("", repl::IncludeFile("foobar.ledger".to_string()))
+        );
+    }
+
+    #[test]
+    fn include_trims_space_in_end() {
+        assert_eq!(
+            expect_parse_ok(include, "include foobar.ledger  \n"),
+            ("", repl::IncludeFile("foobar.ledger".to_string()))
+        );
+    }
+
+    #[test]
+    fn include_keeps_spaces_in_the_middle() {
+        assert_eq!(
+            expect_parse_ok(include, "include\t\t /path/to/foo bar.ledger  \n"),
+            ("", repl::IncludeFile("/path/to/foo bar.ledger".to_string()))
+        );
     }
 }

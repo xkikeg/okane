@@ -48,6 +48,7 @@ fn parse_ledger_entry(input: &str) -> IResult<&str, repl::LedgerEntry, VerboseEr
         }
         'a' => map(directive::apply_tag, repl::LedgerEntry::ApplyTag)(input),
         'e' => map(directive::end_apply_tag, |_| repl::LedgerEntry::EndApplyTag)(input),
+        'i' => map(directive::include, repl::LedgerEntry::Include)(input),
         c if c.is_ascii_digit() => map(transaction::transaction, repl::LedgerEntry::Txn)(input),
         _ => context("unexpected character", fail)(input),
     }
