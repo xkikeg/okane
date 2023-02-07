@@ -54,7 +54,8 @@ rewrite:
     account: Income:Misc
     pending: true
   - matcher:
-      payee: Migros
+      # test case insensitive
+      payee: MIGROS
     account: Expenses:Grocery
 ---
 path: testdata/label_credit_debit.csv

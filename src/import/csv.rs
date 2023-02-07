@@ -13,7 +13,7 @@ use std::io::BufReader;
 
 use chrono::NaiveDate;
 use log::{info, warn};
-use regex::Regex;
+use regex::{Regex, RegexBuilder};
 use rust_decimal::Decimal;
 
 pub struct CsvImporter {}
@@ -328,7 +328,7 @@ enum Field {
 #[derive(Debug)]
 struct CsvMatcher {
     field: Field,
-    pattern: regex::Regex,
+    pattern: Regex,
 }
 
 impl<'a> extract::Entity<'a> for CsvMatcher {
@@ -346,7 +346,7 @@ impl TryFrom<(config::RewriteField, &str)> for CsvMatcher {
                 "CSV only supports payee or category matcher.",
             )),
         }?;
-        let pattern = Regex::new(pattern)?;
+        let pattern = RegexBuilder::new(pattern).case_insensitive(true).build()?;
         Ok(CsvMatcher { field, pattern })
     }
 }

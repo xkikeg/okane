@@ -9,6 +9,7 @@ use crate::data;
 use std::convert::{TryFrom, TryInto};
 
 use regex::Regex;
+use regex::RegexBuilder;
 use rust_decimal::Decimal;
 
 pub struct IsoCamt053Importer {}
@@ -235,7 +236,9 @@ impl TryFrom<(config::RewriteField, &str)> for FieldMatch {
                 FieldMatch::DomainSubFamily(code)
             }
             _ => {
-                let pattern = Regex::new(v)?;
+                // Most likely we don't need case sensitivity.
+                // If needed, we'll go back and change the config as needed.
+                let pattern = RegexBuilder::new(v).case_insensitive(true).build()?;
                 let field = to_field(f)?;
                 FieldMatch::RegexMatch(field, pattern)
             }
