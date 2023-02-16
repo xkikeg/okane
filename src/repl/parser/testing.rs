@@ -17,7 +17,7 @@ where
         Err(e) => match e {
             nom::Err::Incomplete(_) => panic!("failed with incomplete: input: {}", input),
             nom::Err::Error(e) => panic!("error: {}", convert_error(input, e)),
-            nom::Err::Failure(e) => panic!("error: {}", convert_error(input, e)),
+            nom::Err::Failure(e) => panic!("failure: {}", convert_error(input, e)),
         },
     }
 }

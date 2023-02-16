@@ -15,6 +15,7 @@ pub mod testing;
 use crate::repl;
 
 use nom::{
+    branch::alt,
     character::complete::{anychar, line_ending},
     combinator::{eof, fail, map, peek},
     error::{context, convert_error, VerboseError},
@@ -46,7 +47,14 @@ fn parse_ledger_entry(input: &str) -> IResult<&str, repl::LedgerEntry, VerboseEr
         ';' | '#' | '%' | '|' | '*' => {
             map(directive::top_comment, repl::LedgerEntry::Comment)(input)
         }
-        'a' => map(directive::apply_tag, repl::LedgerEntry::ApplyTag)(input),
+        'a' => alt((
+            map(directive::account_declaration, repl::LedgerEntry::Account),
+            map(directive::apply_tag, repl::LedgerEntry::ApplyTag),
+        ))(input),
+        'c' => map(
+            directive::commodity_declaration,
+            repl::LedgerEntry::Commodity,
+        )(input),
         'e' => map(directive::end_apply_tag, |_| repl::LedgerEntry::EndApplyTag)(input),
         'i' => map(directive::include, repl::LedgerEntry::Include)(input),
         c if c.is_ascii_digit() => map(transaction::transaction, repl::LedgerEntry::Txn)(input),

@@ -27,6 +27,10 @@ pub enum LedgerEntry {
     EndApplyTag,
     /// "include" directive.
     Include(IncludeFile),
+    /// "account" directive.
+    Account(AccountDeclaration),
+    /// "commodity" directive.
+    Commodity(CommodityDeclaration),
 }
 
 /// Top-level comment. OK to have multi-line comment.
@@ -44,6 +48,49 @@ pub struct ApplyTag {
 /// Path can be a relative path or an absolute path.
 #[derive(Debug, PartialEq, Eq)]
 pub struct IncludeFile(String);
+
+/// "account" directive to declare account information.
+#[derive(Debug, PartialEq, Eq)]
+pub struct AccountDeclaration {
+    /// Canonical name of the account.
+    name: String,
+    /// sub-directives for the account.
+    details: Vec<AccountDetail>,
+}
+
+/// Sub directives for "account" directive.
+#[derive(Debug, PartialEq, Eq)]
+pub enum AccountDetail {
+    /// Comment is a pure comment without any semantics, similar to `TopLevelComment`.
+    Comment(String),
+    /// Note is a "note" sub-directive.
+    /// Usually it would be one-line.
+    Note(String),
+    /// Declare the given string is an alias for the declared account.
+    Alias(String),
+}
+
+/// "commodity" directive to declare commodity information.
+#[derive(Debug, PartialEq, Eq)]
+pub struct CommodityDeclaration {
+    /// Canonical name of the commodity.
+    name: String,
+    /// sub-directives for the commodity.
+    details: Vec<CommodityDetail>,
+}
+
+/// Sub directives for "commodity" directive.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CommodityDetail {
+    /// Comment is a pure comment without any semantics, similar to `TopLevelComment`.
+    Comment(String),
+    /// Note is a "note" sub-directive to note the commodity.
+    /// Usually it would be one-line.
+    Note(String),
+    /// Declare the given string is an alias for the declared account.
+    /// Multiple declaration should work.
+    Alias(String),
+}
 
 /// Represents a transaction where the money transfered across the accounts.
 #[derive(Debug, PartialEq, Eq)]
