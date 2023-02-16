@@ -2,6 +2,7 @@
 
 use chrono::NaiveDate;
 use nom::{
+    branch::alt,
     bytes::complete::{is_a, is_not},
     character::complete::{char, digit1},
     combinator::{map, map_res, opt, recognize},
@@ -43,10 +44,16 @@ pub fn commodity<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &s
 pub fn date<'a, E: ParseError<&'a str> + FromExternalError<&'a str, chrono::ParseError>>(
     input: &'a str,
 ) -> IResult<&str, NaiveDate, E> {
-    map_res(
-        recognize(tuple((digit1, char('/'), digit1, char('/'), digit1))),
-        |s| NaiveDate::parse_from_str(s, "%Y/%m/%d"),
-    )(input)
+    alt((
+        map_res(
+            recognize(tuple((digit1, char('/'), digit1, char('/'), digit1))),
+            |s| NaiveDate::parse_from_str(s, "%Y/%m/%d"),
+        ),
+        map_res(
+            recognize(tuple((digit1, char('-'), digit1, char('-'), digit1))),
+            |s| NaiveDate::parse_from_str(s, "%F"),
+        ),
+    ))(input)
 }
 
 #[cfg(test)]
@@ -94,6 +101,12 @@ mod tests {
     #[test]
     fn date_parses_valid_inputs() {
         let res = expect_parse_ok(date, "2022/01/15");
+        assert_eq!(res, ("", NaiveDate::from_ymd_opt(2022, 1, 15).unwrap()));
+
+        let res = expect_parse_ok(date, "2022/2/3");
+        assert_eq!(res, ("", NaiveDate::from_ymd_opt(2022, 2, 3).unwrap()));
+
+        let res = expect_parse_ok(date, "2022-01-15");
         assert_eq!(res, ("", NaiveDate::from_ymd_opt(2022, 1, 15).unwrap()));
     }
 
