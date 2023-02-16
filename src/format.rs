@@ -48,6 +48,15 @@ mod tests {
             ; second
             ; round
 
+            account  Foo\t
+             alias Bar\t
+               note これは何でしょうか
+              alias Baz
+
+            commodity  USD\t
+             \talias 米ドル\t
+             \talias $\t
+
             apply    tag   foo
 
             end  apply   tag
@@ -79,7 +88,16 @@ mod tests {
 
             ; second
             ; round
+
+            account Foo
+                alias Bar
+                note これは何でしょうか
+                alias Baz
             
+            commodity USD
+                alias 米ドル
+                alias $
+
             apply tag foo
 
             end apply tag

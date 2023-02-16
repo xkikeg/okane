@@ -48,16 +48,36 @@ impl<'a> fmt::Display for WithContext<'a, LedgerEntry> {
             LedgerEntry::ApplyTag(v) => v.fmt(f),
             LedgerEntry::EndApplyTag => writeln!(f, "end apply tag"),
             LedgerEntry::Include(v) => v.fmt(f),
+            LedgerEntry::Account(v) => v.fmt(f),
+            LedgerEntry::Commodity(v) => v.fmt(f),
         }
+    }
+}
+
+#[derive(Debug)]
+struct LineWrapStr<'a> {
+    prefix: &'static str,
+    content: &'a str,
+}
+
+impl<'a> LineWrapStr<'a> {
+    fn wrap(prefix: &'static str, content: &'a str) -> Self {
+        Self { prefix, content }
+    }
+}
+
+impl<'a> fmt::Display for LineWrapStr<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for line in self.content.lines() {
+            writeln!(f, "{}{}", self.prefix, line)?;
+        }
+        Ok(())
     }
 }
 
 impl fmt::Display for TopLevelComment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for line in self.0.lines() {
-            writeln!(f, ";{}", line)?;
-        }
-        Ok(())
+        LineWrapStr::wrap(";", &self.0).fmt(f)
     }
 }
 
@@ -77,6 +97,43 @@ impl fmt::Display for IncludeFile {
     }
 }
 
+impl fmt::Display for AccountDeclaration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "account {}", self.name)?;
+        for detail in &self.details {
+            detail.fmt(f)?;
+        }
+        Ok(())
+    }
+}
+impl fmt::Display for AccountDetail {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AccountDetail::Comment(v) => LineWrapStr::wrap("    ; ", v).fmt(f),
+            AccountDetail::Note(v) => LineWrapStr::wrap("    note ", v).fmt(f),
+            AccountDetail::Alias(v) => writeln!(f, "    alias {}", v),
+        }
+    }
+}
+
+impl fmt::Display for CommodityDeclaration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "commodity {}", self.name)?;
+        for detail in &self.details {
+            detail.fmt(f)?;
+        }
+        Ok(())
+    }
+}
+impl fmt::Display for CommodityDetail {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CommodityDetail::Comment(v) => LineWrapStr::wrap("    ; ", v).fmt(f),
+            CommodityDetail::Note(v) => LineWrapStr::wrap("    note ", v).fmt(f),
+            CommodityDetail::Alias(v) => writeln!(f, "    alias {}", v),
+        }
+    }
+}
 impl<'a> fmt::Display for WithContext<'a, Transaction> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let xact = self.value;
