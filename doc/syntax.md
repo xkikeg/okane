@@ -1,6 +1,6 @@
 # Accepted ledger syntax
 
-okane accepts files in ledger format. However, reading [ledger-cli 3.0 official document](https://www.ledger-cli.org/3.0/doc/ledger3.html), it's not obvious what is the strictly exact syntax. This document explains what syntax okane can parse.
+okane accepts files in Ledger format. Unfortunately it's not obvious on the [ledger-cli 3.0 official document](https://www.ledger-cli.org/3.0/doc/ledger3.html)what is the exact syntax of Ledger format. This document explains the syntax that okane can handle.
 
 ## directives
 
@@ -11,6 +11,8 @@ ledger-file ::= (directive vertical-space*)*
 
 directive ::= transaction
             | top-comment
+            | account-declaration
+            | commodity-declaration
             | apply-tag
             | end-apply-tag
             ; TODO: more directives must be supported
@@ -37,12 +39,12 @@ transaction-code ::= "(" sp* [^()\r\n]* sp* ")"
 
 payee ::= [^\r\n;]*
 
-posting ::= posting-line (new-line | metadata) metadata*
+posting ::= posting-line metadata? new-line (metadata new-line)*
 
-posting-line ::= sp+ posting-account posting-value?
+posting-line ::= sp+ account posting-value?
 
-; posting-account can't contain \t or two spaces
-posting-account ::= (no-sp | " " no-sp)+
+; account can't contain \t or two spaces
+account ::= no-sp (no-sp | " " no-sp)*
 
 posting-value ::= ("  " | "\t") sp* (posting-amount sp*)? balance?
 
@@ -64,35 +66,103 @@ posting-cost ::= "@@" sp* value-expr  ; total
 
 balance ::= "=" sp* value-expr sp*
 
-metadata ::= ";" (key-value | tag-words | comment) new-line
+metadata ::= ";" (metadata-key-value | metadata-tag-words | metadata-comment)
 
-key-value ::= sp* tag sp* ":" sp* no-new-line*
+metadata-key-value ::= sp* tag sp* ":" sp* no-new-line*
+                     | sp* tag sp* "::" sp* expr ; TODO(#78)
 
-tag-words ::= sp* ":" (tag ":")+
+metadata-tag-words ::= sp* ":" (tag ":")+
 
-comment ::= ";" no-new-line*
+metadata-comment ::= ";" no-new-line*
 
-tag ::= no-sp+
+tag ::= <no-sp except ":">+
 ```
 
-## Top level comments
+### Top level comments
 
-Ledger file can contain comments. It's similar to transaction metadata,
-but it won't have any meaning for transaction data.
+In Ledger format, you can contain comments which is completely no-op and won't have any meanings.
 
 ```ebnf
-top-level-comment ::= ([;#%|*] no-new-line* new-line)+
+top-level-comment ::= (comment-prefix no-new-line* new-line)+
+
+comment-prefix ::= [;#%|*]
 ```
+
+### account declaration
+
+Ledger format allows you to declare the account. Using the declaration, an account can have descriptive note or aliases.
+
+```ebnf
+account-declaration ::= "account" sp+ account sp* new-line account-detail*
+
+account-detail ::= account-note
+                 | account-alias
+                 | account-comment
+
+; FYI information of the account.
+; Currently it's no-op.
+account-note ::= sp+ "note" sp+ no-new-line* new-line
+
+; Declares alias of the account.
+account-alias ::= sp+ "alias" sp+ account new-line
+
+; Comment is pure no-op comment.
+account-comment ::= sp+ comment-prefix no-new-line* new-line
+```
+
+### commodity declaration
+
+Ledger format allows you to declare the commodity. Using the declaration, an commodity can have descriptive note or aliases.
+
+```ebnf
+commodity-declaration ::= "commodity" sp+ commodity sp* new-line commodity-detail*
+
+commodity-detail ::= commodity-note
+                   | commodity-alias
+                   | commodity-comment
+
+; FYI information of the commodity.
+; Currently it's no-op.
+commodity-note ::= sp+ "note" sp+ no-new-line* new-line
+
+; Declares alias of the commodity.
+commodity-alias ::= sp+ "alias" sp+ commodity new-line
+
+; Comment is pure no-op comment.
+commodity-comment ::= sp+ comment-prefix no-new-line* new-line
+```
+
+### apply directives
 
 ## Expressions
 
-TODO
+Ledger allows to use expression in various places, including basic arithmetic operations.
+
+```ebnf
+value-expr ::= amount-expr | paren-expr
+
+paren-expr ::= "(" sp* add-expr sp* ")"
+
+add-expr ::= mul-expr (sp* [+-] sp* add-expr)*
+
+mul-expr ::= unary-expr (sp* [*/] sp* unary-expr)*
+
+unary-expr ::= "-"? value-expr
+
+; Not supporting a prefix commodity like $100.
+amount-expr ::= comma-decimal commodity?
+```
 
 ## primitives
 
 Here some primitive data structures are defined.
 
 ```ebnf
+comma-decimal ::= [0-9][0-9,]* | [0-9][0-9,]* "." [0-9]*
+
+commodity ::= [^- \t\r\n0123456789.,;:?!+*/^&|=<>[](){}@]
+
+date ::= <yyyy-mm-dd> | <yyyy-mm-dd>
 ```
 
 ## characters
@@ -106,7 +176,7 @@ sp ::= " " | "\t"
 
 no-sp ::= ; any char except Unicode white space https://doc.rust-lang.org/std/primitive.char.html#method.is_whitespace
 
-new-line ::= "\r"? "\n"
+new-line ::= "\r"? "\n" | <EOF>
 
 no-new-line ::= [^\r\n]
 ```
