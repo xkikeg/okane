@@ -5,9 +5,9 @@ use repl::parser::{character, combinator::has_peek};
 
 use nom::{
     branch::alt,
-    bytes::complete::take_till1,
+    bytes::complete::{tag, take_till1},
     character::complete::{char, line_ending, not_line_ending, space0, space1},
-    combinator::{cond, map},
+    combinator::{cond, cut, map},
     error::{context, ContextError, ParseError},
     multi::{many1, separated_list0},
     sequence::{delimited, pair, preceded, terminated},
@@ -62,17 +62,29 @@ fn metadata_kv<'a, E>(input: &'a str) -> IResult<&'a str, repl::Metadata, E>
 where
     E: ParseError<&'a str> + ContextError<&'a str>,
 {
-    let (input, (key, value)) = pair(
-        terminated(tag_key, pair(space0, char(':'))),
-        preceded(space0, not_line_ending),
-    )(input)?;
+    let (input, (key, value)) = pair(terminated(tag_key, space0), metadata_value)(input)?;
     Ok((
         input,
         repl::Metadata::KeyValueTag {
             key: key.to_string(),
-            value: value.trim_end().to_string(),
+            value,
         },
     ))
+}
+
+/// Parses metadata value with `:` or `::` prefix.
+pub fn metadata_value<'a, E>(input: &'a str) -> IResult<&'a str, repl::MetadataValue, E>
+where
+    E: ParseError<&'a str> + ContextError<&'a str>,
+{
+    let expr = map(
+        preceded(tag::<&str, &str, E>("::"), cut(not_line_ending)),
+        |x| repl::MetadataValue::Expr(x.trim().to_string()),
+    );
+    let text = map(preceded(char::<&str, E>(':'), cut(not_line_ending)), |x| {
+        repl::MetadataValue::Text(x.trim().to_string())
+    });
+    alt((expr, text))(input)
 }
 
 /// Parses metadata tag.
@@ -118,10 +130,22 @@ mod tests {
                 "",
                 repl::Metadata::KeyValueTag {
                     key: "場所".to_string(),
-                    value: "ドラッグストア".to_string(),
+                    value: repl::MetadataValue::Text("ドラッグストア".to_string()),
                 }
             )
-        )
+        );
+
+        let input: &str = ";   日付:: [2022-01-19] \n";
+        assert_eq!(
+            expect_parse_ok(line_metadata, input),
+            (
+                "",
+                repl::Metadata::KeyValueTag {
+                    key: "日付".to_string(),
+                    value: repl::MetadataValue::Expr("[2022-01-19]".to_string()),
+                }
+            )
+        );
     }
 
     #[test]

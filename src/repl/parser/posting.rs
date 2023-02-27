@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn posting_many_comments() {
-        let input: &str = " Expenses:Commissions    1 USD ; Payee: My Card\n ; My card took commission\n ; :financial:経済:\n";
+        let input: &str = " Expenses:Commissions    1 USD ; Payee: My Card\n ;Date ::  [2022-3-4] \n ; My card took commission\n ; :financial:経済:\n";
         assert_eq!(
             expect_parse_ok(posting, input),
             (
@@ -217,7 +217,11 @@ mod tests {
                     metadata: vec![
                         repl::Metadata::KeyValueTag {
                             key: "Payee".to_string(),
-                            value: "My Card".to_string(),
+                            value: repl::MetadataValue::Text("My Card".to_string()),
+                        },
+                        repl::Metadata::KeyValueTag {
+                            key: "Date".to_string(),
+                            value: repl::MetadataValue::Expr("[2022-3-4]".to_string()),
                         },
                         repl::Metadata::Comment("My card took commission".to_string()),
                         repl::Metadata::WordTags(

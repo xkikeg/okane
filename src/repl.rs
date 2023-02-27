@@ -41,7 +41,7 @@ pub struct TopLevelComment(String);
 #[derive(Debug, PartialEq, Eq)]
 pub struct ApplyTag {
     pub key: String,
-    pub value: Option<String>,
+    pub value: Option<MetadataValue>,
 }
 
 /// "include" directive, taking a path as an argument.
@@ -174,7 +174,7 @@ impl From<data::Posting> for Posting {
             .into_iter()
             .map(|v| Metadata::KeyValueTag {
                 key: "Payee".to_string(),
-                value: v,
+                value: MetadataValue::Text(v),
             })
             .collect();
         Posting {
@@ -195,7 +195,16 @@ pub enum Metadata {
     /// Tags of word, in a format :tag1:tag2:tag3:, each tag can't contain white spaces.
     WordTags(Vec<String>),
     /// Key-value paired tag. Key can't contain white spaces.
-    KeyValueTag { key: String, value: String },
+    KeyValueTag { key: String, value: MetadataValue },
+}
+
+/// MetadataValue represents the value in key-value pair used in `Metadata`.
+#[derive(Debug, PartialEq, Eq)]
+pub enum MetadataValue {
+    /// Regular string.
+    Text(String),
+    /// Expression parsed properly prefixed by `::` instead of `:`. Note it should be Expr not String.
+    Expr(String),
 }
 
 /// This is an amout for each posting.
