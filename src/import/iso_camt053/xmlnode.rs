@@ -279,7 +279,7 @@ pub struct OtherAccountId {
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct Amount {
-    #[serde(rename = "Ccy")]
+    #[serde(rename = "@Ccy")]
     pub currency: String,
     #[serde(rename = "$value")]
     pub value: Decimal,
