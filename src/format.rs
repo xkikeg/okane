@@ -58,8 +58,13 @@ mod tests {
              \talias $\t
 
             apply    tag   foo
+            apply tag key: value
+            apply tag key:: 10 USD
 
             end  apply   tag
+
+            end apply tag
+            end apply tag
 
             include        path/to/other.ledger
 
@@ -99,6 +104,14 @@ mod tests {
                 alias $
 
             apply tag foo
+
+            apply tag key: value
+
+            apply tag key:: 10 USD
+
+            end apply tag
+
+            end apply tag
 
             end apply tag
 
