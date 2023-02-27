@@ -1,12 +1,15 @@
 use crate::repl;
 
-use super::{character::line_ending_or_eof, metadata};
+use super::{
+    character::line_ending_or_eof,
+    metadata::{self},
+};
 
 use nom::{
     branch::alt,
     bytes::complete::{is_a, tag},
     character::complete::{not_line_ending, space0, space1},
-    combinator::{map, recognize},
+    combinator::{map, opt, recognize},
     error::{context, ContextError, ParseError},
     multi::{fold_many1, many0},
     sequence::{delimited, pair, preceded, terminated, tuple},
@@ -103,16 +106,17 @@ where
     E: ParseError<&'a str> + ContextError<&'a str>,
 {
     // TODO: value needs to be supported.
-    let (input, tag) = preceded(
+    let (input, key) = preceded(
         tuple((tag("apply"), space1, tag("tag"), space1)),
         metadata::tag_key,
     )(input)?;
-    let (input, _) = line_ending_or_eof(input)?;
+    let (input, value) =
+        delimited(space0, opt(metadata::metadata_value), line_ending_or_eof)(input)?;
     Ok((
         input,
         repl::ApplyTag {
-            key: tag.to_string(),
-            value: None,
+            key: key.to_string(),
+            value: value,
         },
     ))
 }
@@ -262,7 +266,7 @@ mod tests {
 
     #[test]
     fn apply_tag_without_value() {
-        let input = "apply tag foo";
+        let input = "apply tag foo   ";
         assert_eq!(
             expect_parse_ok(apply_tag, input),
             (
@@ -274,7 +278,7 @@ mod tests {
             )
         );
 
-        let input = "apply tag test@1-2!#[]\n";
+        let input = "apply  tag  test@1-2!#[]   \n";
         assert_eq!(
             expect_parse_ok(apply_tag, input),
             (
@@ -282,6 +286,44 @@ mod tests {
                 repl::ApplyTag {
                     key: "test@1-2!#[]".to_string(),
                     value: None,
+                }
+            )
+        );
+    }
+    #[test]
+    fn apply_tag_with_value() {
+        let input = "apply tag foo:bar\n";
+        assert_eq!(
+            expect_parse_ok(apply_tag, input),
+            (
+                "",
+                repl::ApplyTag {
+                    key: "foo".to_string(),
+                    value: Some(repl::MetadataValue::Text("bar".to_string())),
+                }
+            )
+        );
+
+        let input = "apply tag foo: bar  ";
+        assert_eq!(
+            expect_parse_ok(apply_tag, input),
+            (
+                "",
+                repl::ApplyTag {
+                    key: "foo".to_string(),
+                    value: Some(repl::MetadataValue::Text("bar".to_string())),
+                }
+            )
+        );
+
+        let input = "apply tag test@1-2!#[]  ::  [2022-3-4]  \n";
+        assert_eq!(
+            expect_parse_ok(apply_tag, input),
+            (
+                "",
+                repl::ApplyTag {
+                    key: "test@1-2!#[]".to_string(),
+                    value: Some(repl::MetadataValue::Expr("[2022-3-4]".to_string())),
                 }
             )
         );
