@@ -198,22 +198,6 @@ pub enum Metadata {
     KeyValueTag { key: String, value: String },
 }
 
-impl fmt::Display for Metadata {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Metadata::WordTags(tags) => {
-                write!(f, ":")?;
-                for tag in tags {
-                    write!(f, "{}:", tag)?;
-                }
-            }
-            Metadata::KeyValueTag { key, value } => write!(f, "{}: {}", key, value)?,
-            Metadata::Comment(s) => write!(f, "{}", s)?,
-        };
-        Ok(())
-    }
-}
-
 /// This is an amout for each posting.
 /// Which contains
 /// - how much the asset is increased.

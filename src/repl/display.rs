@@ -163,6 +163,22 @@ impl<'a> fmt::Display for WithContext<'a, Transaction> {
     }
 }
 
+impl fmt::Display for Metadata {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Metadata::WordTags(tags) => {
+                write!(f, ":")?;
+                for tag in tags {
+                    write!(f, "{}:", tag)?;
+                }
+            }
+            Metadata::KeyValueTag { key, value } => write!(f, "{}: {}", key, value)?,
+            Metadata::Comment(s) => write!(f, "{}", s)?,
+        };
+        Ok(())
+    }
+}
+
 impl<'a> fmt::Display for WithContext<'a, Posting> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let post = self.value;
