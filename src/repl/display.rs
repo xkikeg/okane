@@ -86,7 +86,7 @@ impl fmt::Display for ApplyTag {
         write!(f, "apply tag {}", self.key)?;
         match &self.value {
             None => writeln!(f),
-            Some(v) => writeln!(f, ": {}", v),
+            Some(v) => writeln!(f, "{}", v),
         }
     }
 }
@@ -172,10 +172,19 @@ impl fmt::Display for Metadata {
                     write!(f, "{}:", tag)?;
                 }
             }
-            Metadata::KeyValueTag { key, value } => write!(f, "{}: {}", key, value)?,
+            Metadata::KeyValueTag { key, value } => write!(f, "{}{}", key, value)?,
             Metadata::Comment(s) => write!(f, "{}", s)?,
         };
         Ok(())
+    }
+}
+
+impl fmt::Display for MetadataValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MetadataValue::Expr(expr) => write!(f, ":: {}", expr),
+            MetadataValue::Text(text) => write!(f, ": {}", text),
+        }
     }
 }
 
@@ -423,7 +432,17 @@ mod tests {
                 "{}",
                 ctx.as_display(&LedgerEntry::ApplyTag(ApplyTag {
                     key: "foo".to_string(),
-                    value: Some("bar".to_string())
+                    value: Some(MetadataValue::Text("bar".to_string()))
+                }))
+            ),
+        );
+        assert_eq!(
+            "apply tag foo:: 100\n",
+            format!(
+                "{}",
+                ctx.as_display(&LedgerEntry::ApplyTag(ApplyTag {
+                    key: "foo".to_string(),
+                    value: Some(MetadataValue::Expr("100".to_string()))
                 }))
             ),
         );

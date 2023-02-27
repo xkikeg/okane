@@ -146,7 +146,7 @@ mod tests {
                                 repl::Metadata::Comment("Note expense A".to_string()),
                                 repl::Metadata::KeyValueTag {
                                     key: "Payee".to_string(),
-                                    value: "Bar".to_string()
+                                    value: repl::MetadataValue::Text("Bar".to_string())
                                 },
                             ],
                             ..repl::Posting::new("Expense A".to_string())
