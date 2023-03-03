@@ -5,7 +5,7 @@
 ### Added
 
 * Added bunch of directives.
-    - #77 - Added account, commodity directive.
+    - Added account, commodity directive (#77).
     - #74 - Added include directive.
     - #71 - Added apply tag directive.
     - #68 - Added top level comment.
