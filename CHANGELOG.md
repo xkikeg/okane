@@ -6,8 +6,8 @@
 
 * Added bunch of directives.
     - Added account, commodity directive (#77).
-    - #74 - Added include directive.
-    - #71 - Added apply tag directive.
+    - Added include directive (GH-74).
+    - Added apply tag directive (https://github.com/xkikeg/okane/issues/71).
     - #68 - Added top level comment.
 
 ### Changed
