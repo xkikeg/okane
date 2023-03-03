@@ -5,19 +5,19 @@
 ### Added
 
 * Added bunch of directives.
-    - Added account, commodity directive (#77).
-    - Added include directive (GH-74).
+    - Added account, commodity directive (https://github.com/xkikeg/okane/issues/77).
+    - Added include directive (https://github.com/xkikeg/okane/issues/74).
     - Added apply tag directive (https://github.com/xkikeg/okane/issues/71).
-    - #68 - Added top level comment.
+    - Added top level comment (https://github.com/xkikeg/okane/issues/68).
 
 ### Changed
 
-* #75 - Made rewrite rule case insensitive, which is more practical.
+* Made rewrite rule case insensitive, which is more practical (https://github.com/xkikeg/okane/issues/75).
 
 ### Fixed
 
-* #80 - Allowed to use "yyyy-mm-dd" syntax date.
-* #81 - Properly handle metadata / apply tag with typed value.
+* Allowed to use "yyyy-mm-dd" syntax date (https://github.com/xkikeg/okane/issues/80).
+* Properly handle metadata / apply tag with typed value (https://github.com/xkikeg/okane/issues/81).
 
 ## [0.5.3] - 2022-12-15
 ### Added
