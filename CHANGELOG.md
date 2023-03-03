@@ -2,6 +2,8 @@
 
 ## [Unreleased] - ReleaseDate
 
+## [0.5.4] - 2023-03-03
+
 ### Added
 
 * Added bunch of directives.
