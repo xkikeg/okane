@@ -3,6 +3,9 @@ use super::error::ImportError;
 
 use std::convert::{From, TryFrom, TryInto};
 
+/// Extractor is a set of `ExtractRule`, so to extract `Fragment` out of the entity.
+///
+/// Usually entity corresponds to one transaction such as a particular CSV row.
 #[derive(Debug)]
 pub struct Extractor<'a, M: EntityMatcher> {
     rules: Vec<ExtractRule<'a, M>>,
@@ -35,12 +38,18 @@ where
     }
 }
 
+/// Fragment is a extracted information out of parcitular entity.
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct Fragment<'a> {
+    /// True if the entity is clearly classified.
     pub cleared: bool,
+    /// Payee of the transaction, `None` if not found.
     pub payee: Option<&'a str>,
+    /// Account of the transaction target, `None` if not found.
     pub account: Option<&'a str>,
+    /// Code identifying the transaction, `None` if not found.
     pub code: Option<&'a str>,
+    /// Currency conversion, `None` if not found.
     pub conversion: Option<Conversion>,
 }
 
@@ -68,9 +77,9 @@ impl<'a> std::ops::Add<Matched<'a>> for Fragment<'a> {
     }
 }
 
-/// Entity declares what is the input entity for the EntityMatcher trait,
-/// as GATs is not yet stable.
-/// Once it's available in stable, we can instead have
+/// Entity is a type of the particular `EntityMatcher` input.
+///
+/// Note that once GAT is available, we can instead have
 ///
 /// type Input<'a>: Copy;
 ///
@@ -85,7 +94,7 @@ pub trait EntityGat: for<'a> Entity<'a> {}
 
 impl<T: ?Sized> EntityGat for T where Self: for<'a> Entity<'a> {}
 
-/// EntityMatcher defines how to match a given Entity against the config.
+/// EntityMatcher defines the concrete logic for matching `Entity` and `Fragment`.
 pub trait EntityMatcher:
     EntityGat + for<'a> TryFrom<(config::RewriteField, &'a str), Error = ImportError>
 {
