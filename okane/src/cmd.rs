@@ -1,6 +1,6 @@
 use crate::format;
 use crate::import::{self, Format, ImportError};
-use crate::repl;
+use okane_core::repl;
 
 use std::ffi::OsStr;
 use std::fs::File;

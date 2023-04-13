@@ -2,8 +2,8 @@ use super::config;
 use super::extract;
 use super::single_entry;
 use super::ImportError;
-use crate::datamodel;
-use crate::repl;
+use okane_core::datamodel;
+use okane_core::repl;
 use repl::parser::primitive::str_to_comma_decimal;
 
 use std::collections::HashMap;

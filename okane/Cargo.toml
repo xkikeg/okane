@@ -1,0 +1,39 @@
+[package]
+name = "okane"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+readme.workspace = true
+repository.workspace = true
+
+[dependencies]
+okane-core = { path = "../okane-core" }
+chrono = "0.4.24"
+clap = { version = "4.0", features = ["derive", "unicode"] }
+csv = "1"
+either = "1"
+encoding_rs = "0.8"
+encoding_rs_io = "0.1"
+env_logger = "0.10"
+lazy_static = "1.4"
+log = "0.4"
+path-slash = "0.2"
+quick-xml = { version = "0.27", features = [ "serialize" ] }
+regex = "1"
+rust_decimal = "1.28"
+serde = { version = "1.0", features = [ "derive" ] }
+serde_with = { version = "2.2", features = [ "chrono" ] }
+serde_yaml = "0.9"
+strum = { version = "0.24", features = ["derive"] }
+thiserror = "1.0"
+
+[dev-dependencies]
+assert_cmd = "2.0"
+# # assert_fs = "1.0"
+ctor = "0.1"
+indoc = "1.0"
+maplit = "1.0"
+pretty_assertions = "1.3"
+rust_decimal_macros = "1.27"

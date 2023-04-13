@@ -4,7 +4,7 @@ use super::config;
 use super::extract;
 use super::single_entry;
 use super::ImportError;
-use crate::datamodel;
+use okane_core::datamodel;
 
 use std::convert::{TryFrom, TryInto};
 

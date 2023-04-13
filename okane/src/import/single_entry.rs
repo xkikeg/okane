@@ -1,5 +1,5 @@
 use super::ImportError;
-use crate::datamodel;
+use okane_core::datamodel;
 
 use chrono::NaiveDate;
 
