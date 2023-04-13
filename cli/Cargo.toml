@@ -9,7 +9,7 @@ readme.workspace = true
 repository.workspace = true
 
 [dependencies]
-okane-core = { path = "../okane-core" }
+okane-core = { path = "../core" }
 chrono = "0.4.24"
 clap = { version = "4.0", features = ["derive", "unicode"] }
 csv = "1"
