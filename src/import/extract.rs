@@ -249,6 +249,14 @@ impl<'a> From<regex::Captures<'a>> for Matched<'a> {
     }
 }
 
+/// Creates standard regex matcher.
+pub fn regex_matcher(value: &str) -> Result<regex::Regex, ImportError> {
+    regex::RegexBuilder::new(value)
+        .case_insensitive(true)
+        .build()
+        .map_err(Into::into)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -315,11 +323,9 @@ mod tests {
         Payee,
     }
 
-    use regex::Regex;
-
     struct TestMatcher {
         field: TestMatcherField,
-        pattern: Regex,
+        pattern: regex::Regex,
     }
 
     impl<'a> TryFrom<(config::RewriteField, &'a str)> for TestMatcher {
@@ -334,7 +340,7 @@ mod tests {
                 config::RewriteField::Payee => Ok(TestMatcherField::Payee),
                 _ => Err(ImportError::Unimplemented("no support")),
             }?;
-            let pattern = Regex::new(from.1)?;
+            let pattern = regex_matcher(from.1)?;
             Ok(TestMatcher { field, pattern })
         }
     }

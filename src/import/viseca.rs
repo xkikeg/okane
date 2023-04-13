@@ -10,7 +10,6 @@ use crate::data;
 use std::convert::{TryFrom, TryInto};
 
 use regex::Regex;
-use regex::RegexBuilder;
 
 pub struct VisecaImporter {}
 
@@ -110,7 +109,7 @@ impl TryFrom<(config::RewriteField, &str)> for VisecaMatcher {
                 return Err(ImportError::InvalidConfig("unsupported rewrite field"));
             }
         };
-        let pattern = RegexBuilder::new(v).case_insensitive(true).build()?;
+        let pattern = extract::regex_matcher(v)?;
         Ok(VisecaMatcher { field, pattern })
     }
 }
