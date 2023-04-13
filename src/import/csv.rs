@@ -2,7 +2,7 @@ use super::config;
 use super::extract;
 use super::single_entry;
 use super::ImportError;
-use crate::data;
+use crate::datamodel;
 use crate::repl;
 use repl::parser::primitive::str_to_comma_decimal;
 
@@ -96,7 +96,7 @@ impl super::Importer for CsvImporter {
             let mut txn = single_entry::Txn::new(
                 date,
                 fragment.payee.unwrap_or(original_payee),
-                data::Amount {
+                datamodel::Amount {
                     value: amount,
                     commodity: commodity.clone(),
                 },
@@ -104,10 +104,10 @@ impl super::Importer for CsvImporter {
             txn.code_option(fragment.code)
                 .dest_account_option(fragment.account);
             if !fragment.cleared {
-                txn.clear_state(data::ClearState::Pending);
+                txn.clear_state(datamodel::ClearState::Pending);
             }
             if let Some(b) = balance {
-                txn.balance(data::Amount {
+                txn.balance(datamodel::Amount {
                     value: b,
                     commodity: commodity.clone(),
                 });
@@ -118,15 +118,15 @@ impl super::Importer for CsvImporter {
                 })?;
                 let tra = match conv {
                     extract::Conversion::Primary => {
-                        txn.rate(data::Exchange::Rate(data::Amount {
+                        txn.rate(datamodel::Exchange::Rate(datamodel::Amount {
                             value: rate,
                             commodity: config.commodity.clone(),
                         }));
                         let eqa = equivalent_amount.ok_or_else(|| ImportError::Other(format!(
                             "equivalent_amount should be specified when primary conversion is used @ line {}", pos.line()
                         )))?;
-                        data::ExchangedAmount {
-                            amount: data::Amount {
+                        datamodel::ExchangedAmount {
+                            amount: datamodel::Amount {
                                 value: eqa,
                                 commodity: config.commodity.clone(),
                             },
@@ -141,12 +141,12 @@ impl super::Importer for CsvImporter {
                             pos.line()
                         );
 
-                        data::ExchangedAmount {
-                            amount: data::Amount {
+                        datamodel::ExchangedAmount {
+                            amount: datamodel::Amount {
                                 value: amount,
                                 commodity: rate_commodity,
                             },
-                            exchange: Some(data::Exchange::Rate(data::Amount {
+                            exchange: Some(datamodel::Exchange::Rate(datamodel::Amount {
                                 value: rate,
                                 commodity,
                             })),

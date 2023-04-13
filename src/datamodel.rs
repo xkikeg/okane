@@ -118,7 +118,7 @@ impl Amount {
 ///
 /// ```
 /// # use rust_decimal_macros::dec;
-/// let x = okane::data::Amount{
+/// let x = okane::datamodel::Amount{
 ///     value: dec!(-5),
 ///     commodity: "JPY".to_string(),
 /// };
