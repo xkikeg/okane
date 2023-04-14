@@ -15,7 +15,8 @@ repository = "https://github.com/xkikeg/okane"
 
 [workspace.dependencies]
 # dependencies
-chrono = "0.4.24"
+# TODO: Revert to = "0.5" once 0.5 is released.
+chrono = { version = "0.4.24", default-features = false, features = ["clock", "std", "wasmbind"] }
 log = "0.4"
 rust_decimal = "1.29"
 thiserror = "1.0"
