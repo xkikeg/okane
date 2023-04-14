@@ -11,7 +11,7 @@ repository.workspace = true
 [dependencies]
 okane-core = { path = "../core" }
 chrono.workspace = true
-clap = { version = "4.0", features = ["derive", "unicode"] }
+clap = { version = "4.2", features = ["derive", "unicode"] }
 csv = "1"
 either = "1"
 encoding_rs = "0.8"
@@ -20,11 +20,11 @@ env_logger = "0.10"
 lazy_static = "1.4"
 log.workspace = true
 path-slash = "0.2"
-quick-xml = { version = "0.27", features = [ "serialize" ] }
+quick-xml = { version = "0.28", features = [ "serialize" ] }
 regex = "1"
 rust_decimal.workspace = true
 serde = { version = "1.0", features = [ "derive" ] }
-serde_with = { version = "2.2", features = [ "chrono" ] }
+serde_with = { version = "2.3", features = [ "chrono" ] }
 serde_yaml = "0.9"
 strum = { version = "0.24", features = ["derive"] }
 thiserror.workspace = true
