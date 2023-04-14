@@ -2,6 +2,10 @@
 
 ## [Unreleased] - ReleaseDate
 
+### Changed
+
+* Factored out core library as an independent crate (https://github.com/xkikeg/okane/pull/90).
+
 ## [0.5.4] - 2023-03-03
 
 ### Added

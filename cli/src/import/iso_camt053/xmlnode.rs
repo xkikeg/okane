@@ -45,7 +45,7 @@ pub struct CodeOrProperty {
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct BalanceCodeValue {
-    #[serde(rename = "$value")]
+    #[serde(rename = "$text")]
     pub value: BalanceCode,
 }
 
@@ -59,7 +59,7 @@ pub enum BalanceCode {
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct CreditDebitIndicator {
-    #[serde(rename = "$value")]
+    #[serde(rename = "$text")]
     pub value: CreditOrDebit,
 }
 
@@ -115,7 +115,7 @@ pub struct DomainFamily {
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct DomainCodeValue {
-    #[serde(rename = "$value")]
+    #[serde(rename = "$text")]
     pub value: DomainCode,
 }
 
@@ -127,13 +127,13 @@ pub enum DomainCode {
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct DomainFamilyCodeValue {
-    #[serde(rename = "$value")]
+    #[serde(rename = "$text")]
     pub value: DomainFamilyCode,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct DomainSubFamilyCodeValue {
-    #[serde(rename = "$value")]
+    #[serde(rename = "$text")]
     pub value: DomainSubFamilyCode,
 }
 
