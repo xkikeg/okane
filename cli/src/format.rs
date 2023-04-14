@@ -1,4 +1,4 @@
-use crate::repl::{
+use okane_core::repl::{
     display::DisplayContext,
     parser::{parse_ledger, ParseLedgerError},
 };

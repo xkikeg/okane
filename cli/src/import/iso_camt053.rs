@@ -4,7 +4,7 @@ use super::config;
 use super::extract;
 use super::single_entry;
 use super::ImportError;
-use crate::data;
+use okane_core::datamodel;
 
 use std::convert::{TryFrom, TryInto};
 
@@ -32,7 +32,7 @@ impl super::Importer for IsoCamt053Importer {
                     let mut txn = single_entry::Txn::new(
                         first.value_date.date,
                         "Initial Balance",
-                        data::Amount {
+                        datamodel::Amount {
                             commodity: opening_balance.commodity.clone(),
                             value: Decimal::ZERO,
                         },
@@ -66,7 +66,7 @@ impl super::Importer for IsoCamt053Importer {
                     txn.effective_date(entry.booking_date.date)
                         .dest_account_option(fragment.account);
                     if !fragment.cleared {
-                        txn.clear_state(data::ClearState::Pending);
+                        txn.clear_state(datamodel::ClearState::Pending);
                     }
                     add_charges(&mut txn, config, &entry.charges)?;
                     res.push(txn);
@@ -91,11 +91,11 @@ impl super::Importer for IsoCamt053Importer {
                         .code_option(code)
                         .dest_account_option(fragment.account);
                     if !fragment.cleared {
-                        txn.clear_state(data::ClearState::Pending);
+                        txn.clear_state(datamodel::ClearState::Pending);
                     }
                     if let Some(amount_details) = transaction.amount_details.as_ref() {
                         if transaction.amount != amount_details.transaction.amount {
-                            txn.transferred_amount(data::ExchangedAmount {
+                            txn.transferred_amount(datamodel::ExchangedAmount {
                                 amount: amount_details
                                     .transaction
                                     .amount
@@ -105,7 +105,7 @@ impl super::Importer for IsoCamt053Importer {
                                     .currency_exchange
                                     .as_ref()
                                     .map(|x| {
-                                        data::Exchange::Rate(data::Amount {
+                                        datamodel::Exchange::Rate(datamodel::Amount {
                                             value: x.exchange_rate.value,
                                             commodity: x.source_currency.clone(),
                                         })
@@ -128,7 +128,10 @@ impl super::Importer for IsoCamt053Importer {
     }
 }
 
-fn find_balance(stmt: &xmlnode::Statement, code: xmlnode::BalanceCode) -> Option<data::Amount> {
+fn find_balance(
+    stmt: &xmlnode::Statement,
+    code: xmlnode::BalanceCode,
+) -> Option<datamodel::Amount> {
     stmt.balance
         .iter()
         .filter(|x| x.balance_type.credit_or_property.code.value == code)
@@ -164,8 +167,8 @@ fn add_charges(
 }
 
 impl xmlnode::Amount {
-    fn to_data(&self, credit_or_debit: xmlnode::CreditOrDebit) -> data::Amount {
-        data::Amount {
+    fn to_data(&self, credit_or_debit: xmlnode::CreditOrDebit) -> datamodel::Amount {
+        datamodel::Amount {
             value: match credit_or_debit {
                 xmlnode::CreditOrDebit::Credit => self.value,
                 xmlnode::CreditOrDebit::Debit => -self.value,

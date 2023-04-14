@@ -1,12 +1,12 @@
 //! Defines value expression representation used in Ledger format.
 //! Note this is purely lexicographical and not always valid expression.
 
-use crate::data;
+use crate::datamodel;
 
 use core::fmt;
 
 /// Re-export data Amount as-is.
-pub use data::Amount;
+pub use datamodel::Amount;
 
 /// Defines value expression.
 /// Value expression is a valid expression when used in amount.

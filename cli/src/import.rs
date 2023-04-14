@@ -11,7 +11,7 @@ mod error;
 
 pub use error::ImportError;
 
-use crate::data::Transaction;
+use okane_core::datamodel::Transaction;
 
 /// Format of the supported importer.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

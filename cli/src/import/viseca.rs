@@ -5,7 +5,7 @@ use super::config;
 use super::extract;
 use super::single_entry;
 use super::ImportError;
-use crate::data;
+use okane_core::datamodel;
 
 use std::convert::{TryFrom, TryInto};
 
@@ -35,7 +35,7 @@ impl super::Importer for VisecaImporter {
             let mut txn = single_entry::Txn::new(
                 entry.date,
                 payee,
-                data::Amount {
+                datamodel::Amount {
                     value: -entry.amount,
                     commodity: config.commodity.clone(),
                 },
@@ -43,7 +43,7 @@ impl super::Importer for VisecaImporter {
             txn.effective_date(entry.effective_date)
                 .dest_account_option(fragment.account);
             if !fragment.cleared {
-                txn.clear_state(data::ClearState::Pending);
+                txn.clear_state(datamodel::ClearState::Pending);
             }
             if let Some(exchange) = entry.exchange {
                 let line_count = entry.line_count;
@@ -53,16 +53,16 @@ impl super::Importer for VisecaImporter {
                         line_count
                     ))
                 })?;
-                txn.transferred_amount(data::ExchangedAmount {
-                    amount: -data::Amount::from(spent),
-                    exchange: Some(data::Exchange::Rate(data::Amount {
+                txn.transferred_amount(datamodel::ExchangedAmount {
+                    amount: -datamodel::Amount::from(spent),
+                    exchange: Some(datamodel::Exchange::Rate(datamodel::Amount {
                         value: exchange.rate,
                         commodity: exchange.equivalent.currency,
                     })),
                 });
             } else if let Some(spent) = entry.spent {
-                txn.transferred_amount(data::ExchangedAmount {
-                    amount: -data::Amount::from(spent),
+                txn.transferred_amount(datamodel::ExchangedAmount {
+                    amount: -datamodel::Amount::from(spent),
                     exchange: None,
                 });
             }
@@ -70,7 +70,7 @@ impl super::Importer for VisecaImporter {
                 let payee = config.operator.as_ref().ok_or(ImportError::InvalidConfig(
                     "config should have operator to have charge",
                 ))?;
-                txn.add_charge(payee, -data::Amount::from(fee.amount));
+                txn.add_charge(payee, -datamodel::Amount::from(fee.amount));
             }
             result.push(txn);
         }
@@ -78,9 +78,9 @@ impl super::Importer for VisecaImporter {
     }
 }
 
-impl From<format::Amount> for data::Amount {
-    fn from(from: format::Amount) -> data::Amount {
-        data::Amount {
+impl From<format::Amount> for datamodel::Amount {
+    fn from(from: format::Amount) -> datamodel::Amount {
+        datamodel::Amount {
             value: from.value,
             commodity: from.currency,
         }

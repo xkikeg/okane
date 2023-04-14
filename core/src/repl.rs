@@ -7,8 +7,8 @@ pub mod display;
 pub mod expr;
 pub mod parser;
 
-use crate::data;
-pub use crate::data::{Amount, ClearState};
+use crate::datamodel;
+pub use crate::datamodel::{Amount, ClearState};
 
 use std::fmt;
 
@@ -126,8 +126,8 @@ impl Transaction {
     }
 }
 
-impl From<data::Transaction> for Transaction {
-    fn from(orig: data::Transaction) -> Transaction {
+impl From<datamodel::Transaction> for Transaction {
+    fn from(orig: datamodel::Transaction) -> Transaction {
         Transaction {
             date: orig.date,
             effective_date: orig.effective_date,
@@ -167,8 +167,8 @@ impl Posting {
     }
 }
 
-impl From<data::Posting> for Posting {
-    fn from(orig: data::Posting) -> Posting {
+impl From<datamodel::Posting> for Posting {
+    fn from(orig: datamodel::Posting) -> Posting {
         let metadata = orig
             .payee
             .into_iter()
@@ -229,8 +229,8 @@ impl From<expr::ValueExpr> for PostingAmount {
     }
 }
 
-impl From<data::ExchangedAmount> for PostingAmount {
-    fn from(v: data::ExchangedAmount) -> Self {
+impl From<datamodel::ExchangedAmount> for PostingAmount {
+    fn from(v: datamodel::ExchangedAmount) -> Self {
         PostingAmount {
             amount: v.amount.into(),
             cost: v.exchange.map(Into::into),
@@ -262,11 +262,11 @@ pub enum Exchange {
     Rate(expr::ValueExpr),
 }
 
-impl From<data::Exchange> for Exchange {
-    fn from(v: data::Exchange) -> Self {
+impl From<datamodel::Exchange> for Exchange {
+    fn from(v: datamodel::Exchange) -> Self {
         match v {
-            data::Exchange::Total(total) => Exchange::Total(total.into()),
-            data::Exchange::Rate(rate) => Exchange::Rate(rate.into()),
+            datamodel::Exchange::Total(total) => Exchange::Total(total.into()),
+            datamodel::Exchange::Rate(rate) => Exchange::Rate(rate.into()),
         }
     }
 }
