@@ -53,9 +53,9 @@ pub struct IncludeFile(String);
 #[derive(Debug, PartialEq, Eq)]
 pub struct AccountDeclaration {
     /// Canonical name of the account.
-    name: String,
+    pub name: String,
     /// sub-directives for the account.
-    details: Vec<AccountDetail>,
+    pub details: Vec<AccountDetail>,
 }
 
 /// Sub directives for "account" directive.
@@ -74,9 +74,9 @@ pub enum AccountDetail {
 #[derive(Debug, PartialEq, Eq)]
 pub struct CommodityDeclaration {
     /// Canonical name of the commodity.
-    name: String,
+    pub name: String,
     /// sub-directives for the commodity.
-    details: Vec<CommodityDetail>,
+    pub details: Vec<CommodityDetail>,
 }
 
 /// Sub directives for "commodity" directive.
@@ -108,7 +108,7 @@ pub struct Transaction {
     /// Postings of the transaction, could be empty.
     pub posts: Vec<Posting>,
     /// Transaction level metadata.
-    metadata: Vec<Metadata>,
+    pub metadata: Vec<Metadata>,
 }
 
 impl Transaction {
