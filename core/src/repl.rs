@@ -6,6 +6,7 @@
 pub mod display;
 pub mod expr;
 pub mod parser;
+pub mod pretty_decimal;
 
 use crate::datamodel;
 pub use crate::datamodel::ClearState;
