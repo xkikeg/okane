@@ -7,7 +7,7 @@ members = [
 [workspace.package]
 version = "0.6.1-dev"
 authors = ["xkikeg"]
-edition = "2018"
+edition = "2021"
 license = "MIT"
 description = "CLI tool to support Ledger (https://www.ledger-cli.org/) usecases. Curently it provides import feature."
 readme = "README.md"
