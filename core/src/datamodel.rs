@@ -39,20 +39,15 @@ impl Transaction {
 }
 
 /// Represents a clearing state, often combined with the ambiguity.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 pub enum ClearState {
     /// No specific meaning.
+    #[default]
     Uncleared,
     /// Useful to declare that the transaction / post is confirmed.
     Cleared,
     /// Useful to declare that the transaction / post is still pending.
     Pending,
-}
-
-impl Default for ClearState {
-    fn default() -> ClearState {
-        ClearState::Uncleared
-    }
 }
 
 /// Posting in a transaction to represent a particular account amount increase / decrease.
