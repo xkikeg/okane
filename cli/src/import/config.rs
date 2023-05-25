@@ -187,7 +187,7 @@ pub enum AccountType {
 }
 
 /// FormatSpec describes the several format used in import target.
-#[derive(Default, Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub struct FormatSpec {
     /// Specify the date format, in chrono::format::strftime compatible format.
     #[serde(default)]
@@ -215,17 +215,12 @@ pub struct SkipSpec {
     pub head: i32,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum RowOrder {
+    #[default]
     OldToNew,
     NewToOld,
-}
-
-impl Default for RowOrder {
-    fn default() -> Self {
-        RowOrder::OldToNew
-    }
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]

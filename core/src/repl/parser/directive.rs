@@ -116,7 +116,7 @@ where
         input,
         repl::ApplyTag {
             key: key.to_string(),
-            value: value,
+            value,
         },
     ))
 }
