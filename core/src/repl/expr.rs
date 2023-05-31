@@ -1,12 +1,27 @@
 //! Defines value expression representation used in Ledger format.
 //! Note this is purely lexicographical and not always valid expression.
 
+use super::pretty_decimal::PrettyDecimal;
 use crate::datamodel;
 
 use core::fmt;
 
-/// Re-export data Amount as-is.
-pub use datamodel::Amount;
+/// Amount with presentation information.
+/// Similar to `datamodel::Amount` with extra formatting information.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Amount {
+    pub value: PrettyDecimal,
+    pub commodity: String,
+}
+
+impl From<datamodel::Amount> for Amount {
+    fn from(value: datamodel::Amount) -> Self {
+        Self {
+            value: PrettyDecimal::unformatted(value.value),
+            commodity: value.commodity,
+        }
+    }
+}
 
 /// Defines value expression.
 /// Value expression is a valid expression when used in amount.
@@ -20,6 +35,12 @@ pub enum ValueExpr {
 impl From<Amount> for ValueExpr {
     fn from(v: Amount) -> Self {
         ValueExpr::Amount(v)
+    }
+}
+
+impl From<datamodel::Amount> for ValueExpr {
+    fn from(value: datamodel::Amount) -> Self {
+        ValueExpr::Amount(value.into())
     }
 }
 
