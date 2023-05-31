@@ -87,7 +87,7 @@ mod tests {
                     posts: vec![
                         repl::Posting {
                             amount: Some(repl::PostingAmount {
-                                amount: repl::expr::ValueExpr::Amount(repl::Amount {
+                                amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
                                     value: dec!(123456.78),
                                     commodity: "USD".to_string(),
                                 }),
@@ -135,7 +135,7 @@ mod tests {
                     posts: vec![
                         repl::Posting {
                             amount: Some(repl::PostingAmount {
-                                amount: repl::expr::ValueExpr::Amount(repl::Amount {
+                                amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
                                     value: dec!(-123456.78),
                                     commodity: "USD".to_string(),
                                 }),
@@ -153,14 +153,14 @@ mod tests {
                         },
                         repl::Posting {
                             amount: Some(repl::PostingAmount {
-                                amount: repl::expr::ValueExpr::Amount(repl::Amount {
+                                amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
                                     value: dec!(12),
                                     commodity: "JPY".to_string(),
                                 }),
                                 cost: None,
                                 lot: repl::Lot::default(),
                             }),
-                            balance: Some(repl::expr::ValueExpr::Amount(repl::Amount {
+                            balance: Some(repl::expr::ValueExpr::Amount(repl::expr::Amount {
                                 value: dec!(-1000),
                                 commodity: "CHF".to_string(),
                             })),
@@ -171,7 +171,7 @@ mod tests {
                             ..repl::Posting::new("Liabilities B".to_string())
                         },
                         repl::Posting {
-                            balance: Some(repl::expr::ValueExpr::Amount(repl::Amount {
+                            balance: Some(repl::expr::ValueExpr::Amount(repl::expr::Amount {
                                 value: dec!(0),
                                 commodity: "".to_string(),
                             })),

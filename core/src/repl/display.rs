@@ -344,7 +344,7 @@ impl<'a> DisplayWithAlignment for WithContext<'a, expr::Expr> {
     }
 }
 
-impl<'a> DisplayWithAlignment for WithContext<'a, Amount> {
+impl<'a> DisplayWithAlignment for WithContext<'a, expr::Amount> {
     fn fmt_with_alignment<W: fmt::Write>(&self, f: &mut W) -> Result<Alignment, fmt::Error> {
         let amount_str = rescale(self.value, self.context).to_string();
         // TODO: Implement prefix-amount.
@@ -368,7 +368,7 @@ fn get_column(colsize: usize, left: usize, padding: usize) -> usize {
     }
 }
 
-fn rescale(x: &Amount, context: &DisplayContext) -> Decimal {
+fn rescale(x: &expr::Amount, context: &DisplayContext) -> Decimal {
     let mut v = x.value;
     v.rescale(std::cmp::max(
         x.value.scale(),
@@ -394,7 +394,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     fn amount<T: Into<Decimal>>(value: T, commodity: &'static str) -> expr::ValueExpr {
-        expr::ValueExpr::Amount(Amount {
+        expr::ValueExpr::Amount(expr::Amount {
             commodity: commodity.to_string(),
             value: value.into(),
         })

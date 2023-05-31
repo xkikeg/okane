@@ -112,7 +112,7 @@ where
     let (input, c) = primitive::commodity(input)?;
     Ok((
         input,
-        repl::expr::ValueExpr::Amount(repl::Amount {
+        expr::ValueExpr::Amount(expr::Amount {
             value,
             commodity: c.to_string(),
         }),
@@ -171,7 +171,7 @@ mod tests {
             expect_parse_ok(value_expr, "1000 JPY"),
             (
                 "",
-                expr::ValueExpr::Amount(repl::Amount {
+                expr::ValueExpr::Amount(expr::Amount {
                     value: dec!(1000),
                     commodity: "JPY".to_string()
                 }),
@@ -182,7 +182,7 @@ mod tests {
             expect_parse_ok(value_expr, "1,234,567.89 USD"),
             (
                 "",
-                expr::ValueExpr::Amount(repl::Amount {
+                expr::ValueExpr::Amount(expr::Amount {
                     value: dec!(1234567.89),
                     commodity: "USD".to_string()
                 })
@@ -191,7 +191,7 @@ mod tests {
     }
 
     fn amount_expr<T: Into<Decimal>>(value: T, commodity: &'static str) -> expr::Expr {
-        expr::Expr::Value(Box::new(expr::ValueExpr::Amount(repl::Amount {
+        expr::Expr::Value(Box::new(expr::ValueExpr::Amount(expr::Amount {
             commodity: commodity.to_string(),
             value: value.into(),
         })))

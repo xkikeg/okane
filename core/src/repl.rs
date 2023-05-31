@@ -8,7 +8,7 @@ pub mod expr;
 pub mod parser;
 
 use crate::datamodel;
-pub use crate::datamodel::{Amount, ClearState};
+pub use crate::datamodel::ClearState;
 
 use std::fmt;
 

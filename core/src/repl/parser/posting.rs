@@ -164,12 +164,12 @@ mod tests {
             (
                 "",
                 repl::PostingAmount {
-                    amount: repl::expr::ValueExpr::Amount(repl::Amount {
+                    amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
                         value: dec!(100),
                         commodity: "EUR".to_string()
                     }),
                     cost: Some(repl::Exchange::Rate(repl::expr::ValueExpr::Amount(
-                        repl::Amount {
+                        repl::expr::Amount {
                             value: dec!(1.2),
                             commodity: "CHF".to_string(),
                         }
@@ -183,12 +183,12 @@ mod tests {
             (
                 "",
                 repl::PostingAmount {
-                    amount: repl::expr::ValueExpr::Amount(repl::Amount {
+                    amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
                         value: dec!(100),
                         commodity: "EUR".to_string()
                     }),
                     cost: Some(repl::Exchange::Total(repl::expr::ValueExpr::Amount(
-                        repl::Amount {
+                        repl::expr::Amount {
                             value: dec!(120),
                             commodity: "CHF".to_string(),
                         }
@@ -208,7 +208,7 @@ mod tests {
                 "",
                 repl::Posting {
                     amount: Some(
-                        repl::expr::ValueExpr::Amount(repl::Amount {
+                        repl::expr::ValueExpr::Amount(repl::expr::Amount {
                             value: dec!(1),
                             commodity: "USD".to_string(),
                         })
@@ -279,7 +279,7 @@ mod tests {
                                 "",
                                 repl::Lot {
                                     price: Some(repl::Exchange::Rate(
-                                        repl::expr::ValueExpr::Amount(repl::Amount {
+                                        repl::expr::ValueExpr::Amount(repl::expr::Amount {
                                             value: dec!(200),
                                             commodity: "JPY".to_string()
                                         })
