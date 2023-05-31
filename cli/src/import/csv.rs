@@ -4,7 +4,7 @@ use super::single_entry;
 use super::ImportError;
 use okane_core::datamodel;
 use okane_core::repl;
-use repl::parser::primitive::str_to_comma_decimal;
+use repl::pretty_decimal::{self, PrettyDecimal};
 
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
@@ -17,6 +17,11 @@ use regex::Regex;
 use rust_decimal::Decimal;
 
 pub struct CsvImporter {}
+
+fn str_to_comma_decimal(input: &str) -> Result<Decimal, pretty_decimal::Error> {
+    let r: Result<PrettyDecimal, pretty_decimal::Error> = input.parse();
+    r.map(|x| x.into())
+}
 
 impl super::Importer for CsvImporter {
     fn import<R: std::io::Read>(

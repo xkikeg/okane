@@ -1,5 +1,7 @@
 //! Defines parser functions for the primitive types used in Ledger format.
 
+use crate::repl::pretty_decimal::{self, PrettyDecimal};
+
 use chrono::NaiveDate;
 use nom::{
     branch::alt,
@@ -10,24 +12,15 @@ use nom::{
     sequence::tuple,
     IResult,
 };
-use rust_decimal::Decimal;
-
-/// Parses number including comma, returns the decimal.
-pub fn str_to_comma_decimal(x: &str) -> Result<Decimal, rust_decimal::Error> {
-    x.replace(',', "").parse()
-}
 
 /// Parses comma separated decimal.
-pub fn comma_decimal<'a, E>(input: &'a str) -> IResult<&str, Decimal, E>
+pub fn comma_decimal<'a, E>(input: &'a str) -> IResult<&str, PrettyDecimal, E>
 where
-    E: FromExternalError<&'a str, rust_decimal::Error>
+    E: FromExternalError<&'a str, pretty_decimal::Error>
         + ContextError<&'a str>
         + ParseError<&'a str>,
 {
-    context(
-        "decimal",
-        map_res(is_a("-0123456789,."), str_to_comma_decimal),
-    )(input)
+    context("decimal", map_res(is_a("-0123456789,."), str::parse))(input)
 }
 
 /// Parses commodity in greedy manner.
@@ -66,14 +59,17 @@ mod tests {
 
     #[test]
     fn comma_decimal_parses_valid_inputs() {
-        assert_eq!(expect_parse_ok(comma_decimal, "123"), ("", dec!(123)));
         assert_eq!(
-            expect_parse_ok(comma_decimal, "1,2,3.45 JPY"),
-            (" JPY", dec!(123.45))
+            expect_parse_ok(comma_decimal, "123"),
+            ("", PrettyDecimal::unformatted(dec!(123)))
+        );
+        assert_eq!(
+            expect_parse_ok(comma_decimal, "-12,345.67 JPY"),
+            (" JPY", PrettyDecimal::comma3dot(dec!(-12345.67)))
         );
         assert_eq!(
             expect_parse_ok(comma_decimal, "-012.3$"),
-            ("$", dec!(-12.3))
+            ("$", PrettyDecimal::unformatted(dec!(-12.3)))
         );
     }
 

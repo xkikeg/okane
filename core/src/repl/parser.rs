@@ -6,7 +6,7 @@ mod directive;
 mod expr;
 mod metadata;
 mod posting;
-pub mod primitive;
+mod primitive;
 mod transaction;
 
 #[cfg(test)]

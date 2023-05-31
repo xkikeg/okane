@@ -1,8 +1,8 @@
 //! repl::display contains data & functions for displaying repl data.
 
 use super::*;
+use crate::repl::pretty_decimal::PrettyDecimal;
 
-use rust_decimal::Decimal;
 use std::collections::HashMap;
 use unicode_width::UnicodeWidthStr;
 
@@ -368,10 +368,10 @@ fn get_column(colsize: usize, left: usize, padding: usize) -> usize {
     }
 }
 
-fn rescale(x: &expr::Amount, context: &DisplayContext) -> Decimal {
-    let mut v = x.value;
+fn rescale(x: &expr::Amount, context: &DisplayContext) -> PrettyDecimal {
+    let mut v = x.value.clone();
     v.rescale(std::cmp::max(
-        x.value.scale(),
+        v.scale(),
         context.precisions.get(&x.commodity).cloned().unwrap_or(0) as u32,
     ));
     v
@@ -391,16 +391,19 @@ mod tests {
 
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
+    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
     fn amount<T: Into<Decimal>>(value: T, commodity: &'static str) -> expr::ValueExpr {
+        let value: Decimal = value.into();
         expr::ValueExpr::Amount(expr::Amount {
             commodity: commodity.to_string(),
-            value: value.into(),
+            value: PrettyDecimal::unformatted(value),
         })
     }
 
     fn amount_expr<T: Into<Decimal>>(value: T, commodity: &'static str) -> expr::Expr {
+        let value: Decimal = value.into();
         expr::Expr::Value(Box::new(amount(value, commodity)))
     }
 

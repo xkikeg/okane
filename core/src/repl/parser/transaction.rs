@@ -46,7 +46,7 @@ pub fn transaction(input: &str) -> IResult<&str, repl::Transaction, VerboseError
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repl::parser::testing::expect_parse_ok;
+    use crate::repl::{parser::testing::expect_parse_ok, pretty_decimal::PrettyDecimal};
 
     use chrono::NaiveDate;
     use indoc::indoc;
@@ -88,7 +88,7 @@ mod tests {
                         repl::Posting {
                             amount: Some(repl::PostingAmount {
                                 amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
-                                    value: dec!(123456.78),
+                                    value: PrettyDecimal::comma3dot(dec!(123456.78)),
                                     commodity: "USD".to_string(),
                                 }),
                                 cost: None,
@@ -114,7 +114,7 @@ mod tests {
               ; :取引:
              Expense A\t\t-123,456.78 USD;  Note expense A
              ; Payee: Bar
-             Liabilities B  12 JPY  =  -1,000 CHF
+             Liabilities B  12 JPY  =  -1000 CHF
              ; :tag1:他のタグ:
              Assets C    =0    ; Cのノート
              ; これなんだっけ
@@ -136,7 +136,7 @@ mod tests {
                         repl::Posting {
                             amount: Some(repl::PostingAmount {
                                 amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
-                                    value: dec!(-123456.78),
+                                    value: PrettyDecimal::comma3dot(dec!(-123456.78)),
                                     commodity: "USD".to_string(),
                                 }),
                                 cost: None,
@@ -154,14 +154,14 @@ mod tests {
                         repl::Posting {
                             amount: Some(repl::PostingAmount {
                                 amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
-                                    value: dec!(12),
+                                    value: PrettyDecimal::unformatted(dec!(12)),
                                     commodity: "JPY".to_string(),
                                 }),
                                 cost: None,
                                 lot: repl::Lot::default(),
                             }),
                             balance: Some(repl::expr::ValueExpr::Amount(repl::expr::Amount {
-                                value: dec!(-1000),
+                                value: PrettyDecimal::plain(dec!(-1000)),
                                 commodity: "CHF".to_string(),
                             })),
                             metadata: vec![repl::Metadata::WordTags(vec![
@@ -172,7 +172,7 @@ mod tests {
                         },
                         repl::Posting {
                             balance: Some(repl::expr::ValueExpr::Amount(repl::expr::Amount {
-                                value: dec!(0),
+                                value: PrettyDecimal::unformatted(dec!(0)),
                                 commodity: "".to_string(),
                             })),
                             metadata: vec![

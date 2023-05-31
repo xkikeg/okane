@@ -150,7 +150,7 @@ fn rate_cost(input: &str) -> IResult<&str, repl::Exchange, VerboseError<&str>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repl::parser::testing::expect_parse_ok;
+    use crate::repl::{parser::testing::expect_parse_ok, pretty_decimal::PrettyDecimal};
 
     use chrono::NaiveDate;
     use indoc::indoc;
@@ -165,12 +165,12 @@ mod tests {
                 "",
                 repl::PostingAmount {
                     amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
-                        value: dec!(100),
+                        value: PrettyDecimal::unformatted(dec!(100)),
                         commodity: "EUR".to_string()
                     }),
                     cost: Some(repl::Exchange::Rate(repl::expr::ValueExpr::Amount(
                         repl::expr::Amount {
-                            value: dec!(1.2),
+                            value: PrettyDecimal::unformatted(dec!(1.2)),
                             commodity: "CHF".to_string(),
                         }
                     ))),
@@ -179,17 +179,17 @@ mod tests {
             )
         );
         assert_eq!(
-            expect_parse_ok(posting_amount, "100 EUR @@ 120 CHF"),
+            expect_parse_ok(posting_amount, "1000 EUR @@ 1,020 CHF"),
             (
                 "",
                 repl::PostingAmount {
                     amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
-                        value: dec!(100),
+                        value: PrettyDecimal::plain(dec!(1000)),
                         commodity: "EUR".to_string()
                     }),
                     cost: Some(repl::Exchange::Total(repl::expr::ValueExpr::Amount(
                         repl::expr::Amount {
-                            value: dec!(120),
+                            value: PrettyDecimal::comma3dot(dec!(1020)),
                             commodity: "CHF".to_string(),
                         }
                     ))),
@@ -209,7 +209,7 @@ mod tests {
                 repl::Posting {
                     amount: Some(
                         repl::expr::ValueExpr::Amount(repl::expr::Amount {
-                            value: dec!(1),
+                            value: PrettyDecimal::unformatted(dec!(1)),
                             commodity: "USD".to_string(),
                         })
                         .into()
@@ -280,7 +280,7 @@ mod tests {
                                 repl::Lot {
                                     price: Some(repl::Exchange::Rate(
                                         repl::expr::ValueExpr::Amount(repl::expr::Amount {
-                                            value: dec!(200),
+                                            value: PrettyDecimal::unformatted(dec!(200)),
                                             commodity: "JPY".to_string()
                                         })
                                     )),

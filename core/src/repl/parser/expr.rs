@@ -6,6 +6,7 @@ use crate::repl::{
         combinator::{cond_else, has_peek},
         primitive,
     },
+    pretty_decimal,
 };
 
 use nom::{
@@ -21,7 +22,7 @@ pub fn value_expr<'a, E>(input: &'a str) -> IResult<&'a str, expr::ValueExpr, E>
 where
     E: ParseError<&'a str>
         + ContextError<&'a str>
-        + FromExternalError<&'a str, rust_decimal::Error>,
+        + FromExternalError<&'a str, pretty_decimal::Error>,
 {
     let (input, is_paren) = has_peek(char('('))(input)?;
     context("value-expr", cond_else(is_paren, paren, amount))(input)
@@ -31,7 +32,7 @@ fn paren<'a, E>(input: &'a str) -> IResult<&'a str, expr::ValueExpr, E>
 where
     E: ParseError<&'a str>
         + ContextError<&'a str>
-        + FromExternalError<&'a str, rust_decimal::Error>,
+        + FromExternalError<&'a str, pretty_decimal::Error>,
 {
     map(
         delimited(pair(char('('), space0), add_expr, pair(space0, char(')'))),
@@ -43,7 +44,7 @@ fn add_expr<'a, E>(input: &'a str) -> IResult<&'a str, expr::Expr, E>
 where
     E: ParseError<&'a str>
         + ContextError<&'a str>
-        + FromExternalError<&'a str, rust_decimal::Error>,
+        + FromExternalError<&'a str, pretty_decimal::Error>,
 {
     infixl(add_op, mul_expr)(input)
 }
@@ -62,7 +63,7 @@ where
 fn mul_expr<'a, E>(input: &'a str) -> IResult<&'a str, expr::Expr, E>
 where
     E: ParseError<&'a str>
-        + FromExternalError<&'a str, rust_decimal::Error>
+        + FromExternalError<&'a str, pretty_decimal::Error>
         + ContextError<&'a str>,
 {
     infixl(mul_op, unary_expr)(input)
@@ -82,7 +83,7 @@ where
 fn unary_expr<'a, E>(input: &'a str) -> IResult<&'a str, expr::Expr, E>
 where
     E: ParseError<&'a str>
-        + FromExternalError<&'a str, rust_decimal::Error>
+        + FromExternalError<&'a str, pretty_decimal::Error>
         + ContextError<&'a str>,
 {
     let (input, negate) = opt(char('-'))(input)?;
@@ -103,7 +104,7 @@ where
 pub fn amount<'a, E>(input: &'a str) -> IResult<&'a str, expr::ValueExpr, E>
 where
     E: ParseError<&'a str>
-        + FromExternalError<&'a str, rust_decimal::Error>
+        + FromExternalError<&'a str, pretty_decimal::Error>
         + ContextError<&'a str>,
 {
     // Currently it only supports suffix commodity.
@@ -160,6 +161,7 @@ mod tests {
     use super::*;
 
     use crate::repl::parser::testing::expect_parse_ok;
+    use crate::repl::pretty_decimal::PrettyDecimal;
 
     use pretty_assertions::assert_eq;
     use rust_decimal::Decimal;
@@ -172,7 +174,7 @@ mod tests {
             (
                 "",
                 expr::ValueExpr::Amount(expr::Amount {
-                    value: dec!(1000),
+                    value: PrettyDecimal::plain(dec!(1000)),
                     commodity: "JPY".to_string()
                 }),
             )
@@ -183,7 +185,7 @@ mod tests {
             (
                 "",
                 expr::ValueExpr::Amount(expr::Amount {
-                    value: dec!(1234567.89),
+                    value: PrettyDecimal::comma3dot(dec!(1234567.89)),
                     commodity: "USD".to_string()
                 })
             )
@@ -191,9 +193,10 @@ mod tests {
     }
 
     fn amount_expr<T: Into<Decimal>>(value: T, commodity: &'static str) -> expr::Expr {
+        let v: Decimal = value.into();
         expr::Expr::Value(Box::new(expr::ValueExpr::Amount(expr::Amount {
             commodity: commodity.to_string(),
-            value: value.into(),
+            value: PrettyDecimal::unformatted(v),
         })))
     }
 
