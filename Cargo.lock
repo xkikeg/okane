@@ -708,7 +708,7 @@ dependencies = [
 
 [[package]]
 name = "okane"
-version = "0.6.1-dev"
+version = "0.7.0-dev"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -739,7 +739,7 @@ dependencies = [
 
 [[package]]
 name = "okane-core"
-version = "0.6.1-dev"
+version = "0.7.0-dev"
 dependencies = [
  "chrono",
  "indoc",
