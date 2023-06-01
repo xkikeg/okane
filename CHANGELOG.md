@@ -2,6 +2,11 @@
 
 ## [Unreleased] - ReleaseDate
 
+### Changed
+
+* Exposed more fields in repl structs.
+* Unify repl::Amount into repl::expr::Amount.
+
 ## [0.6] - 2023-04-14
 
 ### Changed
