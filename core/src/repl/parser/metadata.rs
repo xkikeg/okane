@@ -37,7 +37,7 @@ where
                 metadata_kv,
                 map(not_line_ending, |s: &str| {
                     if s.contains(':') {
-                        log::warn!("metadata containing `:` not parsed as tags");
+                        log::warn!("metadata containing `:` not parsed as tags: {}", s);
                     }
                     repl::Metadata::Comment(s.trim_end().to_string())
                 }),
