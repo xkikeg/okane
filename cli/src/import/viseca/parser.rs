@@ -13,6 +13,7 @@ lazy_static! {
     static ref FIRST_LINE: Regex = Regex::new(r"^(?P<date>\d{2}.\d{2}.\d{2}) (?P<edate>\d{2}.\d{2}.\d{2}) (?P<payee>.*?)(?: (?P<currency>[A-Z]{3}) (?P<examount>[0-9.']+))? (?P<amount>[0-9.']+)(?P<neg> -)?$").unwrap();
     static ref EXCHANGE_RATE_LINE: Regex = Regex::new(r"^Exchange rate (?P<rate>[0-9.]+) of (?P<date>\d{2}.\d{2}.\d{2}) (?P<scurrency>[A-Z]{3}) (?P<samount>[0-9.']+)$").unwrap();
     static ref FEE_LINE: Regex = Regex::new(r"^(?P<credit>Credit of )?[Pp]rocessing fee (?P<percent>[0-9.]+)% (?P<fcurrency>[A-Z]{3}) (?P<famount>[0-9.']+)$").unwrap();
+    static ref AIR_TAG_LINE: Regex = Regex::new(r"Air-[[:alnum:]-]+:").unwrap();
 }
 
 pub struct Parser<T: BufRead> {
@@ -63,6 +64,7 @@ impl<T: BufRead> Parser<T> {
             .map(|_| self.parse_fee())
             .transpose()?
             .flatten();
+        self.skip_air_tags()?;
         Ok(Some(Entry {
             line_count,
             category,
@@ -176,6 +178,17 @@ impl<T: BufRead> Parser<T> {
                 value: fee_amount * credit_applier,
             },
         }))
+    }
+
+    fn skip_air_tags(&mut self) -> Result<(), ImportError> {
+        loop {
+            let next_line_size = self.reader.peek()?;
+            if next_line_size == 0 || !AIR_TAG_LINE.is_match_at(&self.reader.buf, 0) {
+                break;
+            }
+            self.reader.read_line()?;
+        }
+        Ok(())
     }
 
     fn expect_name<'a>(
@@ -494,6 +507,70 @@ mod tests {
                 }),
                 fee: None,
             },),
+            p.parse_entry().unwrap()
+        );
+        assert_eq!(None, p.parse_entry().unwrap());
+    }
+
+    #[test]
+    fn test_parse_entry_air() {
+        let input = indoc! {"
+            16.08.23 18.08.23 MY AIR, FRANKFURT AT EUR 942.84 935.05
+            Air carriers, airlines
+            Exchange rate 0.9746651982 of 16.08.23 CHF 918.95
+            Processing fee 1.75% CHF 16.10
+            Air-Pass-Name: kikeg MR
+            Air-Ticket-Nbr: 0123456789
+            Air-Trav-Agt-Name: KIKEG AIR
+            Air-Departure-Date: 230816
+            Air-Origin-City: HND
+            Air-Des-City: ZRH
+            22.06.20 24.06.20 foo shop 100 1'234.56
+            Catering Service
+        "};
+        let mut p = Parser::new(input.as_bytes(), "CHF".to_string());
+        assert_eq!(
+            Some(Entry {
+                line_count: 1,
+                date: NaiveDate::from_ymd_opt(2023, 8, 16).unwrap(),
+                effective_date: NaiveDate::from_ymd_opt(2023, 8, 18).unwrap(),
+                payee: "MY AIR, FRANKFURT AT".to_string(),
+                amount: dec!(935.05),
+                category: "Air carriers, airlines".to_string(),
+                spent: Some(Amount {
+                    value: dec!(942.84),
+                    currency: "EUR".to_string(),
+                }),
+                exchange: Some(Exchange {
+                    rate: dec!(0.9746651982),
+                    rate_date: NaiveDate::from_ymd_opt(2023, 8, 16).unwrap(),
+                    equivalent: Amount {
+                        value: dec!(918.95),
+                        currency: "CHF".to_string(),
+                    },
+                }),
+                fee: Some(Fee {
+                    percent: dec!(1.75),
+                    amount: Amount {
+                        currency: "CHF".to_string(),
+                        value: dec!(16.10),
+                    },
+                },),
+            }),
+            p.parse_entry().unwrap()
+        );
+        assert_eq!(
+            Some(Entry {
+                line_count: 11,
+                date: NaiveDate::from_ymd_opt(2020, 6, 22).unwrap(),
+                effective_date: NaiveDate::from_ymd_opt(2020, 6, 24).unwrap(),
+                payee: "foo shop 100".to_owned(),
+                amount: dec!(1234.56),
+                category: "Catering Service".to_owned(),
+                spent: None,
+                exchange: None,
+                fee: None,
+            }),
             p.parse_entry().unwrap()
         );
         assert_eq!(None, p.parse_entry().unwrap());

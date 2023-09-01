@@ -1,7 +1,7 @@
 //! Defines parsers related to value expression.
 
 use crate::repl::{
-    self, expr,
+    expr,
     parser::{
         combinator::{cond_else, has_peek},
         primitive,
@@ -159,7 +159,7 @@ where
 mod tests {
     use super::*;
 
-    use repl::parser::testing::expect_parse_ok;
+    use crate::repl::parser::testing::expect_parse_ok;
 
     use pretty_assertions::assert_eq;
     use rust_decimal::Decimal;
