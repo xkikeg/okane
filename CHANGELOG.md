@@ -2,6 +2,10 @@
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+
+* Supported "Air-*:" annotations in viseca format.
+
 ### Changed
 
 * Exposed more fields in repl structs.
