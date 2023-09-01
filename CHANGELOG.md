@@ -2,10 +2,14 @@
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+
+* Supported "Air-*:" annotations in viseca format (https://github.com/xkikeg/okane/pull/98).
+
 ### Changed
 
-* Exposed more fields in repl structs.
-* Unify repl::Amount into repl::expr::Amount.
+* Exposed more fields in `repl` structs (https://github.com/xkikeg/okane/pull/97).
+* Unify `repl::Amount` into `repl::expr::Amount` (https://github.com/xkikeg/okane/pull/97).
 
 ## [0.6] - 2023-04-14
 
