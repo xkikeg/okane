@@ -81,6 +81,7 @@ mod tests {
                 Expenses:Household  = 0
                 Assets:Complex  (-10 * 2.1 $) @ (1 $ + 1 $) = 2.5 $
                 Assets:Broker  -2 SPINX (bought before Xmas) {100 USD} [2010/12/23] @ 10000 USD
+                Liabilities:Comma      5,678.00 CHF @ 1,000,000 JPYRIN = -123,456.12 CHF
         "};
         // TODO: 1. guess commodity width if not available.
         // TOOD: 2. remove trailing space on non-commodity value.
@@ -132,6 +133,7 @@ mod tests {
                 Expenses:Household                               = 0
                 Assets:Complex                        (-10 * 2.1 $) @ (1 $ + 1 $) = 2.5 $
                 Assets:Broker                                 -2 SPINX {100 USD} [2010/12/23] (bought before Xmas) @ 10000 USD
+                Liabilities:Comma                       5,678.00 CHF @ 1,000,000 JPYRIN = -123,456.12 CHF
 
         "};
         let mut output = Vec::new();

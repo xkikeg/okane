@@ -25,7 +25,10 @@ where
         + FromExternalError<&'a str, pretty_decimal::Error>,
 {
     let (input, is_paren) = has_peek(char('('))(input)?;
-    context("value-expr", cond_else(is_paren, paren, amount))(input)
+    context(
+        "value-expr",
+        cond_else(is_paren, paren, map(amount, expr::ValueExpr::Amount)),
+    )(input)
 }
 
 fn paren<'a, E>(input: &'a str) -> IResult<&'a str, expr::ValueExpr, E>
@@ -101,7 +104,7 @@ where
 }
 
 /// Parses amount expression.
-pub fn amount<'a, E>(input: &'a str) -> IResult<&'a str, expr::ValueExpr, E>
+pub fn amount<'a, E>(input: &'a str) -> IResult<&'a str, expr::Amount, E>
 where
     E: ParseError<&'a str>
         + FromExternalError<&'a str, pretty_decimal::Error>
@@ -113,10 +116,10 @@ where
     let (input, c) = primitive::commodity(input)?;
     Ok((
         input,
-        expr::ValueExpr::Amount(expr::Amount {
+        expr::Amount {
             value,
             commodity: c.to_string(),
-        }),
+        },
     ))
 }
 

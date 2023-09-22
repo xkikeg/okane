@@ -43,13 +43,13 @@ impl<'a, T> WithContext<'a, T> {
 impl<'a> fmt::Display for WithContext<'a, LedgerEntry> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.value {
-            LedgerEntry::Txn(txn) => write!(f, "{}", self.pass_context(txn)),
-            LedgerEntry::Comment(v) => write!(f, "{}", v),
+            LedgerEntry::Txn(txn) => self.pass_context(txn).fmt(f),
+            LedgerEntry::Comment(v) => v.fmt(f),
             LedgerEntry::ApplyTag(v) => v.fmt(f),
             LedgerEntry::EndApplyTag => writeln!(f, "end apply tag"),
             LedgerEntry::Include(v) => v.fmt(f),
             LedgerEntry::Account(v) => v.fmt(f),
-            LedgerEntry::Commodity(v) => v.fmt(f),
+            LedgerEntry::Commodity(v) => self.pass_context(v).fmt(f),
         }
     }
 }
@@ -116,21 +116,22 @@ impl fmt::Display for AccountDetail {
     }
 }
 
-impl fmt::Display for CommodityDeclaration {
+impl<'a> fmt::Display for WithContext<'a, CommodityDeclaration> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "commodity {}", self.name)?;
-        for detail in &self.details {
-            detail.fmt(f)?;
+        writeln!(f, "commodity {}", self.value.name)?;
+        for detail in &self.value.details {
+            self.pass_context(detail).fmt(f)?;
         }
         Ok(())
     }
 }
-impl fmt::Display for CommodityDetail {
+impl<'a> fmt::Display for WithContext<'a, CommodityDetail> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
+        match self.value {
             CommodityDetail::Comment(v) => LineWrapStr::wrap("    ; ", v).fmt(f),
             CommodityDetail::Note(v) => LineWrapStr::wrap("    note ", v).fmt(f),
             CommodityDetail::Alias(v) => writeln!(f, "    alias {}", v),
+            CommodityDetail::Format(v) => writeln!(f, "    format {}", self.pass_context(v)),
         }
     }
 }
