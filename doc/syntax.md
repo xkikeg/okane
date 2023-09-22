@@ -158,7 +158,11 @@ amount-expr ::= comma-decimal commodity?
 Here some primitive data structures are defined.
 
 ```ebnf
-comma-decimal ::= [0-9][0-9,]* | [0-9][0-9,]* "." [0-9]*
+comma-decimal ::= comma-integer ("." decimal-number*)?
+
+comma-integer ::= number+ | number{1-3} ("," number{3})*
+
+number ::= [0-9]
 
 commodity ::= [^- \t\r\n0123456789.,;:?!+*/^&|=<>[](){}@]
 
