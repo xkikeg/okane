@@ -1,16 +1,13 @@
-use crate::repl;
+use crate::repl::{self, pretty_decimal};
 
-use super::{
-    character::line_ending_or_eof,
-    metadata::{self},
-};
+use super::{character::line_ending_or_eof, expr, metadata};
 
 use nom::{
     branch::alt,
     bytes::complete::{is_a, tag},
     character::complete::{not_line_ending, space0, space1},
     combinator::{map, opt, recognize},
-    error::{context, ContextError, ParseError},
+    error::{context, ContextError, FromExternalError, ParseError},
     multi::{fold_many1, many0},
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult, Parser,
@@ -62,7 +59,9 @@ pub fn commodity_declaration<'a, E>(
     input: &'a str,
 ) -> IResult<&'a str, repl::CommodityDeclaration, E>
 where
-    E: ParseError<&'a str> + ContextError<&'a str>,
+    E: ParseError<&'a str>
+        + FromExternalError<&'a str, pretty_decimal::Error>
+        + ContextError<&'a str>,
 {
     map(
         pair(
@@ -73,7 +72,7 @@ where
             ),
             // Note nesting many0 would cause parse failure at nom 7,
             // as many0 would fail if the sub-parser consumes empty input.
-            // So make sure no branches in alt would emit zero input as success.
+            // So make sure no branches in alt would success for empty input.
             many0(alt((
                 map(
                     multiline_text(pair(space1, is_a(COMMENT_PREFIX))),
@@ -90,6 +89,14 @@ where
                         line_ending_or_eof,
                     ),
                     |a| repl::CommodityDetail::Alias(a.trim_end().to_string()),
+                ),
+                map(
+                    delimited(
+                        tuple((space1, tag("format"), space1)),
+                        expr::amount,
+                        line_ending_or_eof,
+                    ),
+                    repl::CommodityDetail::Format,
                 ),
             ))),
         ),

@@ -96,16 +96,17 @@ fn lot(input: &str) -> IResult<&str, repl::Lot, VerboseError<&str>> {
                 if is_total {
                     let (i1, amount) = delimited(
                         pair(tag("{{"), space0),
-                        expr::amount,
+                        expr::value_expr,
                         pair(space0, tag("}}")),
                     )(input)?;
                     lot.price = Some(repl::Exchange::Total(amount));
                     input = i1;
                 } else {
-                    let (i1, amount) =
-                        delimited(pair(tag("{"), space0), expr::amount, pair(space0, tag("}")))(
-                            input,
-                        )?;
+                    let (i1, amount) = delimited(
+                        pair(tag("{"), space0),
+                        expr::value_expr,
+                        pair(space0, tag("}")),
+                    )(input)?;
                     lot.price = Some(repl::Exchange::Rate(amount));
                     input = i1;
                 }

@@ -91,6 +91,8 @@ pub enum CommodityDetail {
     /// Declare the given string is an alias for the declared account.
     /// Multiple declaration should work.
     Alias(String),
+    /// Format describes how the comodity should be printed.
+    Format(expr::Amount),
 }
 
 /// Represents a transaction where the money transfered across the accounts.
