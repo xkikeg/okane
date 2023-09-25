@@ -119,6 +119,7 @@ commodity-declaration ::= "commodity" sp+ commodity sp* new-line commodity-detai
 
 commodity-detail ::= commodity-note
                    | commodity-alias
+                   | commodity-format
                    | commodity-comment
 
 ; FYI information of the commodity.
