@@ -3,6 +3,7 @@ members = [
     "core",
     "cli",
 ]
+resolver = "2"
 
 [workspace.package]
 version = "0.7.0-dev"
