@@ -9,6 +9,7 @@ resolver = "2"
 version = "0.7.0-dev"
 authors = ["xkikeg"]
 edition = "2021"
+rust-version = "1.70.0"
 license = "MIT"
 description = "CLI tool to support Ledger (https://www.ledger-cli.org/) usecases. Curently it provides import feature."
 readme = "README.md"
