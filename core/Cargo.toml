@@ -3,6 +3,7 @@ name = "okane-core"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description.workspace = true
 readme.workspace = true
@@ -13,9 +14,9 @@ chrono.workspace = true
 log.workspace = true
 nom = "7.1"
 rust_decimal.workspace = true
-strum = { version = "0.24", features = ["derive"] }
+strum = { version = "0.25", features = ["derive"] }
 thiserror.workspace = true
-unicode-width = "0.1.10"
+unicode-width = "0.1.11"
 
 [dev-dependencies]
 indoc.workspace = true
