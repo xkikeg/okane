@@ -4,7 +4,15 @@
 
 ### Added
 
-* Supported "Air-*:" annotations in viseca format (https://github.com/xkikeg/okane/pull/98).
+### Changed
+
+## [0.7.0] - 2023-11-16
+
+### Added
+
+* Supported comma separated amount to be formatted (https://github.com/xkikeg/okane/pull/99).
+* Supported commodity format sub-directive (https://github.com/xkikeg/okane/pull/102).
+* Supported `Air-*:` annotations in viseca format (https://github.com/xkikeg/okane/pull/98).
 
 ### Changed
 
