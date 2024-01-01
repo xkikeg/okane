@@ -17,6 +17,8 @@ format:
     rate: 適用レート
     equivalent_absolute: 取引円換算額
 rewrite:
+  - matcher:
+      payee: ^Visaデビット　(?P<code>\d+)　(?P<payee>.*)$
   - account: Assets:Wire
     matcher:
       payee: 円普通預金(へ|より)振替
