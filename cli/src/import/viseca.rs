@@ -20,7 +20,8 @@ impl super::Importer for VisecaImporter {
         config: &config::ConfigEntry,
     ) -> Result<Vec<single_entry::Txn>, ImportError> {
         let extractor: extract::Extractor<VisecaMatcher> = (&config.rewrite).try_into()?;
-        let mut parser = parser::Parser::new(std::io::BufReader::new(r), config.commodity.clone());
+        let mut parser =
+            parser::Parser::new(std::io::BufReader::new(r), config.commodity.primary.clone());
         let mut result = Vec::new();
         while let Some(entry) = parser.parse_entry()? {
             let fragment = extractor.extract(&entry);
@@ -37,7 +38,7 @@ impl super::Importer for VisecaImporter {
                 payee,
                 datamodel::Amount {
                     value: -entry.amount,
-                    commodity: config.commodity.clone(),
+                    commodity: config.commodity.primary.clone(),
                 },
             );
             txn.effective_date(entry.effective_date)

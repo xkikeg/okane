@@ -82,7 +82,7 @@ impl super::Importer for CsvImporter {
                 .commodity
                 .and_then(|i| r.get(i))
                 .map(|x| x.to_string())
-                .unwrap_or_else(|| config.commodity.clone());
+                .unwrap_or_else(|| config.commodity.primary.clone());
             let rate = fm
                 .rate
                 .map(|i| str_to_comma_decimal(r.get(i).unwrap()))
@@ -125,7 +125,7 @@ impl super::Importer for CsvImporter {
                     extract::Conversion::Primary => {
                         txn.rate(datamodel::Exchange::Rate(datamodel::Amount {
                             value: rate,
-                            commodity: config.commodity.clone(),
+                            commodity: config.commodity.primary.clone(),
                         }));
                         let eqa = equivalent_amount.ok_or_else(|| ImportError::Other(format!(
                             "equivalent_amount should be specified when primary conversion is used @ line {}", pos.line()
@@ -133,7 +133,7 @@ impl super::Importer for CsvImporter {
                         datamodel::ExchangedAmount {
                             amount: datamodel::Amount {
                                 value: eqa,
-                                commodity: config.commodity.clone(),
+                                commodity: config.commodity.primary.clone(),
                             },
                             exchange: None,
                         }
