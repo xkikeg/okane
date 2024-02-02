@@ -4,7 +4,9 @@
 
 ### Added
 
-### Changed
+### Fixed
+
+* Fixed import with commodity conversion spec (https://github.com/xkikeg/okane/pull/108).
 
 ## [0.7.0] - 2023-11-16
 
