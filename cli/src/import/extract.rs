@@ -122,10 +122,10 @@ pub enum Conversion {
 impl From<config::CommodityConversion> for Conversion {
     fn from(config: config::CommodityConversion) -> Conversion {
         match config {
-            config::CommodityConversion::Unspecified(
-                config::UnspecifiedCommodityConversion::Primary,
+            config::CommodityConversion::Preset(
+                config::PresetCommodityConversion::Primary,
             ) => Conversion::Primary,
-            config::CommodityConversion::Specified { commodity } => {
+            config::CommodityConversion::Trivial { commodity } => {
                 Conversion::Specified { commodity }
             }
         }
@@ -440,7 +440,7 @@ mod tests {
                 pending: true,
                 payee: None,
                 account: Some("Expenses:Petrol".to_string()),
-                conversion: Some(config::CommodityConversion::Specified {
+                conversion: Some(config::CommodityConversion::Trivial {
                     commodity: "JPY".to_string(),
                 }),
                 ..into_rule(config::RewriteMatcher::Field(config::FieldMatcher {

@@ -141,14 +141,9 @@ impl super::Importer for CsvImporter {
                     extract::Conversion::Specified {
                         commodity: rate_commodity,
                     } => {
-                        warn!(
-                            "Can't infer converted amount specified @ line {}",
-                            pos.line()
-                        );
-
                         datamodel::ExchangedAmount {
                             amount: datamodel::Amount {
-                                value: amount,
+                                value: amount / rate,
                                 commodity: rate_commodity,
                             },
                             exchange: Some(datamodel::Exchange::Rate(datamodel::Amount {
