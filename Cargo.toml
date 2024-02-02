@@ -17,13 +17,13 @@ repository = "https://github.com/xkikeg/okane"
 
 [workspace.dependencies]
 # dependencies
-chrono = "0.4.31"
+chrono = "0.4.33"
 log = "0.4"
-rust_decimal = "1.33"
+rust_decimal = "1.34"
 thiserror = "1.0"
 
 # dev-dependencies
 indoc = "2.0"
 maplit = "1.0"
 pretty_assertions = "1.4"
-rust_decimal_macros = "1.33"
+rust_decimal_macros = "1.34"

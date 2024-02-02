@@ -17,7 +17,7 @@ csv = "1"
 either = "1"
 encoding_rs = "0.8.33"
 encoding_rs_io = "0.1.7"
-env_logger = "0.10.1"
+env_logger = "0.10.2"
 lazy_static = "1.4"
 log.workspace = true
 path-slash = "0.2.1"
@@ -25,15 +25,15 @@ quick-xml = { version = "0.31", features = [ "serialize" ] }
 regex = "1"
 rust_decimal.workspace = true
 serde = { version = "1.0", features = [ "derive" ] }
-serde_with = { version = "3.4", features = [ "chrono" ] }
-serde_yaml = "0.9.27"
-strum = { version = "0.25", features = ["derive"] }
+serde_with = { version = "3.6", features = [ "chrono" ] }
+serde_yaml = "0.9.31"
+strum = { version = "0.26", features = ["derive"] }
 thiserror.workspace = true
 
 [dev-dependencies]
 assert_cmd = "2.0"
 # assert_fs = "1.0"
-ctor = "0.2.5"
+ctor = "0.2.6"
 indoc.workspace = true
 maplit.workspace = true
 pretty_assertions.workspace = true
