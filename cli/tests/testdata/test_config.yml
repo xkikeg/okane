@@ -16,6 +16,9 @@ format:
     commodity: 通貨
     rate: 適用レート
     equivalent_absolute: 取引円換算額
+  commodity:
+    EUR:
+      precision: 2
 rewrite:
   - matcher:
       payee: ^Visaデビット　(?P<code>\d+)　(?P<payee>.*)$

@@ -309,24 +309,37 @@ pub struct RewriteRule {
     pub account: Option<String>,
 
     /// Commodity (currency) conversion specification.
+    ///
+    /// This field is only used in CSV import, and only applicable when
+    /// the transcation has multi commodities. See details for CommodityConversion.
     #[serde(default)]
     pub conversion: Option<CommodityConversion>,
 }
 
-/// Specify what kind of the conversion is done in the transaction.
+/// Specify the currency conversion described in the transaction.
+///
+/// This is useful when CSV has only one currency on the row,
+/// and it's hard to tell if the conversion rate is FOO/BAR or BAR/FOO.
+///
+/// Example:
+/// When CSV contains commodity="USD" and rate=1.10 and you know the row is USD->EUR conversion,
+/// then you should set the Explicit conversion with commodity "EUR".
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum CommodityConversion {
-    Unspecified(UnspecifiedCommodityConversion),
-    /// Specified in the rewrite rule.
-    Specified {
+    /// Conversion currency is specified as preset.
+    /// As of 2024-02 only primary commodity is supported.
+    Preset(PresetCommodityConversion),
+    /// Conversion commodity is specified by the rule.
+    Trivial {
         commodity: String,
     },
 }
 
+/// Give preset commodity conversion.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case", tag = "type")]
-pub enum UnspecifiedCommodityConversion {
+pub enum PresetCommodityConversion {
     Primary,
 }
 
@@ -685,7 +698,7 @@ mod tests {
                 pending: false,
                 payee: None,
                 account: Some("Assets:Wire:Okane".to_string()),
-                conversion: Some(CommodityConversion::Specified {
+                conversion: Some(CommodityConversion::Trivial {
                     commodity: "EUR".to_string(),
                 }),
             },
@@ -742,8 +755,8 @@ mod tests {
             pending: false,
             payee: None,
             account: Some("Income:Salary".to_string()),
-            conversion: Some(CommodityConversion::Unspecified(
-                UnspecifiedCommodityConversion::Primary,
+            conversion: Some(CommodityConversion::Preset(
+                PresetCommodityConversion::Primary,
             )),
         };
         assert_eq!(matcher, RewriteRule::deserialize(de).unwrap());
