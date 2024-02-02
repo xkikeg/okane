@@ -72,7 +72,7 @@ pub struct ConfigEntry {
     /// Operator of the import target.
     /// Required only when some charges applied.
     pub operator: Option<String>,
-    pub commodity: String,
+    pub commodity: CommoditySpec,
     pub format: FormatSpec,
     pub rewrite: Vec<RewriteRule>,
 }
@@ -91,7 +91,8 @@ impl TryFrom<ConfigFragment> for ConfigEntry {
             .ok_or(ImportError::InvalidConfig("no account_type specified"))?;
         let commodity = value
             .commodity
-            .ok_or(ImportError::InvalidConfig("no commodity specified"))?;
+            .ok_or(ImportError::InvalidConfig("no commodity specified"))?
+            .into();
         let format = value.format.unwrap_or_default();
         Ok(ConfigEntry {
             path: value.path,
@@ -121,7 +122,7 @@ struct ConfigFragment {
     /// Operator of the import target.
     /// Required only when some charges applied.
     pub operator: Option<String>,
-    pub commodity: Option<String>,
+    pub commodity: Option<CommodityConfig>,
     pub format: Option<FormatSpec>,
     #[serde(default)]
     pub rewrite: Vec<RewriteRule>,
@@ -184,6 +185,30 @@ pub enum AccountType {
     Asset,
     /// Account is a liability, +amount will decrease the amount.
     Liability,
+}
+
+/// CommodityConfig contains either primary commodity string, or more complex CommoditySpec.
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+enum CommodityConfig {
+    PrimaryCommodity(String),
+    Spec(CommoditySpec),
+}
+
+/// CommoditySpec describes commodity configs.
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
+pub struct CommoditySpec {
+    /// Primary commodity used in the account.
+    pub primary: String,
+}
+
+impl From<CommodityConfig> for CommoditySpec {
+    fn from(value: CommodityConfig) -> Self {
+        match value {
+            CommodityConfig::PrimaryCommodity(c) => CommoditySpec { primary: c },
+            CommodityConfig::Spec(spec) => spec,
+        }
+    }
 }
 
 /// FormatSpec describes the several format used in import target.
@@ -382,7 +407,7 @@ mod tests {
             path: path.to_owned(),
             account_type: Some(AccountType::Asset),
             operator: None,
-            commodity: Some("JPY".to_owned()),
+            commodity: Some(CommodityConfig::PrimaryCommodity("JPY".to_owned())),
             format: Some(FormatSpec {
                 date: "%Y%m%d".to_owned(),
                 ..FormatSpec::default()
@@ -429,45 +454,104 @@ mod tests {
     }
 
     #[test]
-    fn test_config_select_multi_match() {
-        let config_set = &ConfigSet {
+    fn test_config_select_merge_match() {
+        let config_set = ConfigSet {
             entries: vec![
-                create_config_fragment("path/to/foo"),
-                create_config_fragment("path/to"),
+                ConfigFragment {
+                    path: "bank/".to_string(),
+                    encoding: Some(Encoding(encoding_rs::UTF_8)),
+                    account_type: Some(AccountType::Asset),
+                    commodity: Some(CommodityConfig::PrimaryCommodity("JPY".to_string())),
+                    format: Some(FormatSpec {
+                        date: "%Y/%m/%d".to_string(),
+                        ..Default::default()
+                    }),
+                    rewrite: vec![RewriteRule {
+                        matcher: RewriteMatcher::Field(FieldMatcher {
+                            fields: hashmap! {
+                                RewriteField::Payee => r#"foo"#.to_string(),
+                            },
+                        }),
+                        account: Some("Account Foo".to_string()),
+                        payee: None,
+                        conversion: None,
+                        pending: false,
+                    }],
+                    ..create_empty_config_fragment()
+                },
+                ConfigFragment {
+                    path: "bank/checking/".to_string(),
+                    // Normally commodity won't be overridden by merge.
+                    commodity: Some(CommodityConfig::Spec(CommoditySpec {
+                        primary: "CHF".to_string(),
+                    })),
+                    account: Some("Assets:Banks:Checking".to_string()),
+                    rewrite: vec![RewriteRule {
+                        matcher: RewriteMatcher::Field(FieldMatcher {
+                            fields: hashmap! {
+                                RewriteField::Payee => r#"bar"#.to_string(),
+                            },
+                        }),
+                        account: Some("Account Bar".to_string()),
+                        payee: None,
+                        conversion: None,
+                        pending: false,
+                    }],
+                    ..create_empty_config_fragment()
+                },
             ],
         };
-        let cfg0: ConfigEntry = config_set.entries[0]
-            .clone()
-            .try_into()
-            .expect("config[0] must be valid ConfigEntry");
+        let cfg = config_set
+            .select(
+                &Path::new("path")
+                    .join("to")
+                    .join("bank")
+                    .join("checking")
+                    .join("202109.csv"),
+            )
+            .expect("select must not fail")
+            .expect("entry should be found");
         assert_eq!(
-            cfg0,
-            config_set
-                .select(&Path::new("path").join("to").join("foo").join("202109.csv"))
-                .expect("select must not fail")
-                .expect("select must have result")
+            cfg,
+            ConfigEntry {
+                path: "bank/checking/".to_string(),
+                encoding: Encoding(encoding_rs::UTF_8),
+                account: "Assets:Banks:Checking".to_string(),
+                account_type: AccountType::Asset,
+                operator: None,
+                commodity: CommoditySpec {
+                    primary: "CHF".to_string(),
+                },
+                format: FormatSpec {
+                    date: "%Y/%m/%d".to_string(),
+                    ..Default::default()
+                },
+                rewrite: vec![
+                    RewriteRule {
+                        matcher: RewriteMatcher::Field(FieldMatcher {
+                            fields: hashmap! {
+                                RewriteField::Payee => r#"foo"#.to_string(),
+                            },
+                        }),
+                        account: Some("Account Foo".to_string()),
+                        payee: None,
+                        conversion: None,
+                        pending: false,
+                    },
+                    RewriteRule {
+                        matcher: RewriteMatcher::Field(FieldMatcher {
+                            fields: hashmap! {
+                                RewriteField::Payee => r#"bar"#.to_string(),
+                            },
+                        }),
+                        account: Some("Account Bar".to_string()),
+                        payee: None,
+                        conversion: None,
+                        pending: false,
+                    }
+                ],
+            }
         );
-    }
-
-    #[test]
-    fn test_config_select_merge_match() {
-        // TODO: write test to cover this case.
-        // let config_set = ConfigSet {
-        //     entries: vec![
-        //         ConfigFragment {
-        //             // root
-        //             path: "".to_string(),
-        //             encoding: Some(Encoding(encoding_rs::UTF_8)),
-        //             account_type: Some(AccountType::Asset),
-        //             commodity: Some("JPY".to_string()),
-        //             format: Some(FormatSpec {
-        //                 date: "%Y/%m/%d".to_string(),
-        //                 ..Default::default()
-        //             }),
-        //             ..create_empty_config_fragment()
-        //         },
-        //     ],
-        // };
     }
 
     #[test]
@@ -513,7 +597,9 @@ mod tests {
         };
         let commodity = || ConfigFragment {
             path: "commodity/".to_string(),
-            commodity: Some("FOO COMMODITY".to_string()),
+            commodity: Some(CommodityConfig::Spec(CommoditySpec {
+                primary: "primary commodity".to_string(),
+            })),
             ..empty()
         };
         let operator = || ConfigFragment {
