@@ -74,7 +74,7 @@ impl super::Importer for CsvImporter {
                 .map(|i| str_to_comma_decimal(r.get(i).unwrap()))
                 .transpose()?;
             let equivalent_amount = fm
-                .equivalent_absolute
+                .equivalent_amount
                 .map(|i| str_to_comma_decimal(r.get(i).unwrap()))
                 .transpose()?;
             let category = fm.category.and_then(|i| r.get(i));
@@ -218,7 +218,7 @@ struct FieldMap {
     category: Option<usize>,
     commodity: Option<usize>,
     rate: Option<usize>,
-    equivalent_absolute: Option<usize>,
+    equivalent_amount: Option<usize>,
 }
 
 impl FieldMap {
@@ -231,7 +231,7 @@ impl FieldMap {
             self.commodity.unwrap_or(0),
             self.category.unwrap_or(0),
             self.rate.unwrap_or(0),
-            self.equivalent_absolute.unwrap_or(0),
+            self.equivalent_amount.unwrap_or(0),
         ]
         .iter()
         .max()
@@ -298,7 +298,7 @@ fn resolve_fields(
     let balance = ki.get(&config::FieldKey::Balance).cloned();
     let commodity = ki.get(&config::FieldKey::Commodity).cloned();
     let rate = ki.get(&config::FieldKey::Rate).cloned();
-    let equivalent_absolute = ki.get(&config::FieldKey::EquivalentAbsolute).cloned();
+    let equivalent_amount = ki.get(&config::FieldKey::EquivalentAmount).cloned();
     Ok(FieldMap {
         date: *date,
         payee: *payee,
@@ -307,7 +307,7 @@ fn resolve_fields(
         category,
         commodity,
         rate,
-        equivalent_absolute,
+        equivalent_amount,
     })
 }
 
@@ -404,7 +404,7 @@ mod tests {
                 category: None,
                 commodity: None,
                 rate: None,
-                equivalent_absolute: None,
+                equivalent_amount: None,
             }
         );
     }
@@ -427,7 +427,7 @@ mod tests {
                 category: None,
                 commodity: None,
                 rate: None,
-                equivalent_absolute: None,
+                equivalent_amount: None,
             }
         );
     }
@@ -442,7 +442,7 @@ mod tests {
             FieldKey::Category => FieldPos::Index(4),
             FieldKey::Commodity => FieldPos::Index(5),
             FieldKey::Rate => FieldPos::Index(6),
-            FieldKey::EquivalentAbsolute => FieldPos::Index(7),
+            FieldKey::EquivalentAmount => FieldPos::Index(7),
         };
         let got = resolve_fields(&config, &csv::StringRecord::from(vec!["unrelated"])).unwrap();
         assert_eq!(
@@ -455,7 +455,7 @@ mod tests {
                 category: Some(4),
                 commodity: Some(5),
                 rate: Some(6),
-                equivalent_absolute: Some(7),
+                equivalent_amount: Some(7),
             }
         );
     }

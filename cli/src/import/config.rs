@@ -277,10 +277,10 @@ pub enum FieldKey {
     Commodity,
     /// Currency rate used in the statement.
     Rate,
-    /// Equivalent absolute amount exchanged into the account currency.
+    /// Equivalent amount exchanged into the account currency.
     /// This is the case when your account statement always shows the converted amount
     /// in the primary currency.
-    EquivalentAbsolute,
+    EquivalentAmount,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
