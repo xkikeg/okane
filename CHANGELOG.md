@@ -4,6 +4,14 @@
 
 ### Added
 
+### Changed
+
+## [0.8.0] - 2024-02-03
+
+### Changed
+
+* Renamed `equivalent_absolute` to `equivalent_amount` (https://github.com/xkikeg/okane/pull/109).
+
 ### Fixed
 
 * Fixed import with commodity conversion spec (https://github.com/xkikeg/okane/pull/108).
