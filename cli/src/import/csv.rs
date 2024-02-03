@@ -73,10 +73,11 @@ impl super::Importer for CsvImporter {
                 .balance
                 .map(|i| str_to_comma_decimal(r.get(i).unwrap()))
                 .transpose()?;
-            let equivalent_amount = fm
-                .equivalent_amount
+            let secondary_amount = fm
+                .secondary_amount
                 .map(|i| str_to_comma_decimal(r.get(i).unwrap()))
                 .transpose()?;
+            let secondary_commodity = fm.secondary_commodity.and_then(|i| r.get(i));
             let category = fm.category.and_then(|i| r.get(i));
             let commodity = fm
                 .commodity
@@ -127,31 +128,42 @@ impl super::Importer for CsvImporter {
                             value: rate,
                             commodity: config.commodity.primary.clone(),
                         }));
-                        let eqa = equivalent_amount.ok_or_else(|| ImportError::Other(format!(
-                            "equivalent_amount should be specified when primary conversion is used @ line {}", pos.line()
+                        let value = secondary_amount.ok_or_else(|| ImportError::Other(format!(
+                            "secondary_amount should be specified when primary conversion is used @ line {}", pos.line()
                         )))?;
                         datamodel::ExchangedAmount {
                             amount: datamodel::Amount {
-                                value: eqa,
+                                value,
                                 commodity: config.commodity.primary.clone(),
                             },
                             exchange: None,
                         }
                     }
-                    extract::Conversion::Specified {
-                        commodity: rate_commodity,
-                    } => {
+                    extract::Conversion::Secondary => {
+                        let secondary_commodity = secondary_commodity.ok_or_else(||ImportError::Other(format!("secondary_commodity field must be defined for secondary type conversion @ line {}", pos.line())))?;
+                        let value = secondary_amount.ok_or_else(|| ImportError::Other(format!(
+                            "secondary_amount should be specified when secondary type conversion is used @ line {}", pos.line()
+                        )))?;
                         datamodel::ExchangedAmount {
                             amount: datamodel::Amount {
-                                value: amount / rate,
-                                commodity: rate_commodity,
+                                value,
+                                commodity: secondary_commodity.to_string(),
                             },
-                            exchange: Some(datamodel::Exchange::Rate(datamodel::Amount {
-                                value: rate,
-                                commodity,
-                            })),
+                            exchange: Some(datamodel::Exchange::Rate(datamodel::Amount { value: rate, commodity: commodity.clone() })),
                         }
                     }
+                    extract::Conversion::Specified {
+                        commodity: rate_commodity,
+                    } => datamodel::ExchangedAmount {
+                        amount: datamodel::Amount {
+                            value: amount / rate,
+                            commodity: rate_commodity,
+                        },
+                        exchange: Some(datamodel::Exchange::Rate(datamodel::Amount {
+                            value: rate,
+                            commodity,
+                        })),
+                    },
                 };
                 txn.transferred_amount(tra);
             }
@@ -218,7 +230,8 @@ struct FieldMap {
     category: Option<usize>,
     commodity: Option<usize>,
     rate: Option<usize>,
-    equivalent_amount: Option<usize>,
+    secondary_amount: Option<usize>,
+    secondary_commodity: Option<usize>,
 }
 
 impl FieldMap {
@@ -231,7 +244,8 @@ impl FieldMap {
             self.commodity.unwrap_or(0),
             self.category.unwrap_or(0),
             self.rate.unwrap_or(0),
-            self.equivalent_amount.unwrap_or(0),
+            self.secondary_amount.unwrap_or(0),
+            self.secondary_commodity.unwrap_or(0),
         ]
         .iter()
         .max()
@@ -298,7 +312,8 @@ fn resolve_fields(
     let balance = ki.get(&config::FieldKey::Balance).cloned();
     let commodity = ki.get(&config::FieldKey::Commodity).cloned();
     let rate = ki.get(&config::FieldKey::Rate).cloned();
-    let equivalent_amount = ki.get(&config::FieldKey::EquivalentAmount).cloned();
+    let secondary_amount = ki.get(&config::FieldKey::SecondaryAmount).cloned();
+    let secondary_commodity = ki.get(&config::FieldKey::SecondaryCommodity).cloned();
     Ok(FieldMap {
         date: *date,
         payee: *payee,
@@ -307,7 +322,8 @@ fn resolve_fields(
         category,
         commodity,
         rate,
-        equivalent_amount,
+        secondary_amount,
+        secondary_commodity,
     })
 }
 
@@ -404,7 +420,8 @@ mod tests {
                 category: None,
                 commodity: None,
                 rate: None,
-                equivalent_amount: None,
+                secondary_amount: None,
+                secondary_commodity: None,
             }
         );
     }
@@ -427,7 +444,8 @@ mod tests {
                 category: None,
                 commodity: None,
                 rate: None,
-                equivalent_amount: None,
+                secondary_amount: None,
+                secondary_commodity: None,
             }
         );
     }
@@ -442,7 +460,8 @@ mod tests {
             FieldKey::Category => FieldPos::Index(4),
             FieldKey::Commodity => FieldPos::Index(5),
             FieldKey::Rate => FieldPos::Index(6),
-            FieldKey::EquivalentAmount => FieldPos::Index(7),
+            FieldKey::SecondaryAmount => FieldPos::Index(7),
+            FieldKey::SecondaryCommodity => FieldPos::Index(8),
         };
         let got = resolve_fields(&config, &csv::StringRecord::from(vec!["unrelated"])).unwrap();
         assert_eq!(
@@ -455,7 +474,8 @@ mod tests {
                 category: Some(4),
                 commodity: Some(5),
                 rate: Some(6),
-                equivalent_amount: Some(7),
+                secondary_amount: Some(7),
+                secondary_commodity: Some(8),
             }
         );
     }

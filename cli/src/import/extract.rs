@@ -116,15 +116,19 @@ pub struct Matched<'a> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Conversion {
     Primary,
+    Secondary,
     Specified { commodity: String },
 }
 
 impl From<config::CommodityConversion> for Conversion {
     fn from(config: config::CommodityConversion) -> Conversion {
         match config {
-            config::CommodityConversion::Preset(
-                config::PresetCommodityConversion::Primary,
-            ) => Conversion::Primary,
+            config::CommodityConversion::Preset(config::PresetCommodityConversion::Primary) => {
+                Conversion::Primary
+            }
+            config::CommodityConversion::Preset(config::PresetCommodityConversion::Secondary) => {
+                Conversion::Secondary
+            }
             config::CommodityConversion::Trivial { commodity } => {
                 Conversion::Specified { commodity }
             }
