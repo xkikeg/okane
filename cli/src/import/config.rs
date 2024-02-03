@@ -277,10 +277,13 @@ pub enum FieldKey {
     Commodity,
     /// Currency rate used in the statement.
     Rate,
-    /// Equivalent amount exchanged into the account currency.
-    /// This is the case when your account statement always shows the converted amount
-    /// in the primary currency.
-    EquivalentAmount,
+    /// Secondary amount represents the amount in the secondary currency.
+    /// Useful when the transaction exchanges one one commodity into the other.
+    /// The commodity can be specified via CommodityConversion.
+    SecondaryAmount,
+    /// Secondary commodity for the `SecondaryAmount`.
+    /// Used only when `PresetCommodityConversion::Secondary` is specified.
+    SecondaryCommodity,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
@@ -331,16 +334,17 @@ pub enum CommodityConversion {
     /// As of 2024-02 only primary commodity is supported.
     Preset(PresetCommodityConversion),
     /// Conversion commodity is specified by the rule.
-    Trivial {
-        commodity: String,
-    },
+    Trivial { commodity: String },
 }
 
 /// Give preset commodity conversion.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum PresetCommodityConversion {
+    /// Secondary amount is in the account primary commodity.
     Primary,
+    /// Secondary amount is in the secondary commodity specified in each row.
+    Secondary,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
