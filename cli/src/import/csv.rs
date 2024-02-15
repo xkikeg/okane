@@ -57,8 +57,10 @@ impl super::Importer for CsvImporter {
             let pos = r.position().expect("csv record position");
             if r.len() <= size {
                 return Err(ImportError::Other(format!(
-                    "csv record length too short at line {}",
-                    pos.line()
+                    "csv record length too short at line {}: want {}, got {}",
+                    pos.line(),
+                    size,
+                    r.len()
                 )));
             }
             let datestr = r.get(fm.date).unwrap();
@@ -149,7 +151,10 @@ impl super::Importer for CsvImporter {
                                 value,
                                 commodity: secondary_commodity.to_string(),
                             },
-                            exchange: Some(datamodel::Exchange::Rate(datamodel::Amount { value: rate, commodity: commodity.clone() })),
+                            exchange: Some(datamodel::Exchange::Rate(datamodel::Amount {
+                                value: rate,
+                                commodity: commodity.clone(),
+                            })),
                         }
                     }
                     extract::Conversion::Specified {

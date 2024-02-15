@@ -2,6 +2,7 @@ use super::ImportError;
 use okane_core::datamodel;
 
 use chrono::NaiveDate;
+use rust_decimal::Decimal;
 
 /// Represents single-entry transaction, associated with the particular account.
 pub struct Txn {
@@ -152,7 +153,10 @@ impl Txn {
         self.transferred_amount
             .as_ref()
             .map(|x| datamodel::ExchangedAmount {
-                amount: -x.amount.clone(),
+                // transferred_amount can be absolute value, or signed value.
+                // Assuming all commodities are "positive",
+                // it should have the opposite sign of the original amount.
+                amount: amount_with_sign(x.amount.clone(), -self.amount.value),
                 exchange: x.exchange.clone(),
             })
             .unwrap_or(datamodel::ExchangedAmount {
@@ -237,6 +241,11 @@ impl Txn {
     }
 }
 
+fn amount_with_sign(mut amount: datamodel::Amount, sign: Decimal) -> datamodel::Amount {
+    amount.value.set_sign_positive(sign.is_sign_positive());
+    amount
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,5 +283,71 @@ mod tests {
             txn.effective_date,
             Some(NaiveDate::from_ymd_opt(2021, 10, 2).unwrap())
         );
+    }
+
+    fn amount(value: Decimal, commodity: &str) -> datamodel::Amount {
+        datamodel::Amount {
+            commodity: commodity.to_string(),
+            value,
+        }
+    }
+
+    #[test]
+    fn dest_amount_plain() {
+        let txn = Txn::new(
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            "foo",
+            amount(dec!(10), "JPY"),
+        );
+
+        assert_eq!(
+            txn.dest_amount(),
+            datamodel::ExchangedAmount {
+                amount: amount(dec!(-10), "JPY"),
+                exchange: None,
+            },
+        )
+    }
+
+    #[test]
+    fn dest_amount_exchanged() {
+        let mut txn = Txn::new(
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            "foo",
+            amount(dec!(1000), "JPY"),
+        );
+        txn.transferred_amount(datamodel::ExchangedAmount {
+            amount: amount(dec!(10.00), "USD"),
+            exchange: Some(datamodel::Exchange::Rate(amount(dec!(100), "JPY"))),
+        });
+
+        assert_eq!(
+            txn.dest_amount(),
+            datamodel::ExchangedAmount {
+                amount: amount(dec!(-10.00), "USD"),
+                exchange: Some(datamodel::Exchange::Rate(amount(dec!(100), "JPY"))),
+            },
+        )
+    }
+
+    #[test]
+    fn dest_amount_transferred_negative() {
+        let mut txn = Txn::new(
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            "foo",
+            amount(dec!(1000), "JPY"),
+        );
+        txn.transferred_amount(datamodel::ExchangedAmount {
+            amount: amount(dec!(-10.00), "USD"),
+            exchange: Some(datamodel::Exchange::Rate(amount(dec!(100), "JPY"))),
+        });
+
+        assert_eq!(
+            txn.dest_amount(),
+            datamodel::ExchangedAmount {
+                amount: amount(dec!(-10.00), "USD"),
+                exchange: Some(datamodel::Exchange::Rate(amount(dec!(100), "JPY"))),
+            },
+        )
     }
 }

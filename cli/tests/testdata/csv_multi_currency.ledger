@@ -18,3 +18,7 @@
     Assets:Wire                             -2000.00 EUR
     Assets:Okane Bank                        2000.00 EUR = 2000.00 EUR
 
+2020/07/30 * 円普通預金へ振替
+    Assets:Okane Bank                       -2740.65 USD @ 145.5200 JPY = 26597.73 USD
+    Assets:Wire                               398819 JPY
+
