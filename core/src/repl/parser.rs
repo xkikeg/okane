@@ -67,6 +67,7 @@ mod tests {
     use super::*;
 
     use chrono::NaiveDate;
+    use indoc::indoc;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -80,5 +81,35 @@ mod tests {
                 "".to_string()
             ))]
         );
+    }
+
+    #[test]
+    fn parse_ledger_two_contiguous_transactions() {
+        let input = indoc! {"
+            2024/4/10 Migros
+                Expenses:Grocery
+            2024/4/20 Coop
+                Expenses:Grocery
+        "};
+
+        assert_eq!(
+            parse_ledger(input).unwrap(),
+            vec![
+                repl::LedgerEntry::Txn(repl::Transaction {
+                    posts: vec![repl::Posting::new("Expenses:Grocery".to_string())],
+                    ..repl::Transaction::new(
+                        NaiveDate::from_ymd_opt(2024, 4, 10).unwrap(),
+                        "Migros".to_string(),
+                    )
+                }),
+                repl::LedgerEntry::Txn(repl::Transaction {
+                    posts: vec![repl::Posting::new("Expenses:Grocery".to_string())],
+                    ..repl::Transaction::new(
+                        NaiveDate::from_ymd_opt(2024, 4, 20).unwrap(),
+                        "Coop".to_string(),
+                    )
+                })
+            ]
+        )
     }
 }

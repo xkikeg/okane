@@ -1,13 +1,16 @@
 //! Defines parser functions for transaction.
 
 use crate::repl;
-use repl::parser::{character, combinator::has_peek, metadata, posting, primitive};
+use repl::parser::{
+    character,
+    combinator::{has_peek, many0_while},
+    metadata, posting, primitive,
+};
 
 use nom::{
     character::complete::{char, one_of, space0, space1},
     combinator::{cond, map, opt},
     error::VerboseError,
-    multi::many_till,
     sequence::{preceded, terminated},
     IResult,
 };
@@ -29,7 +32,7 @@ pub fn transaction(input: &str) -> IResult<&str, repl::Transaction, VerboseError
     let (input, code) = opt(terminated(character::paren_str, space0))(input)?;
     let (input, payee) = opt(map(character::not_line_ending_or_semi, str::trim_end))(input)?;
     let (input, metadata) = metadata::block_metadata(input)?;
-    let (input, (posts, _)) = many_till(posting::posting, character::line_ending_or_eof)(input)?;
+    let (input, posts) = many0_while(posting::posting, char(' '))(input)?;
     Ok((
         input,
         repl::Transaction {

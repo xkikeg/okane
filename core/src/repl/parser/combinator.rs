@@ -3,7 +3,7 @@
 use nom::{
     combinator::{map, opt, peek},
     error::ParseError,
-    IResult, Parser,
+    IResult, InputLength, Parser,
 };
 
 /// Calls first parser if the condition is met, otherwise the second parser.
@@ -34,12 +34,50 @@ where
     map(peek(opt(f)), |x| x.is_some())
 }
 
+/// Applies the parser `f` while it can peek with the parser `g`.
+/// Returns a `Vec` containing the result of `f`.
+/// 
+/// Strictly speaking, this has the same output with `many0` as long as the input is well-formed.
+/// However, it'll make the debug easier as `f` failure is immediately caught as long as `g` is met.
+pub fn many0_while<I, O, P, E, F, G>(mut f: F, mut g: G) -> impl FnMut(I) -> IResult<I, Vec<O>, E>
+where
+    I: Clone + InputLength,
+    F: Parser<I, O, E>,
+    G: Parser<I, P, E>,
+    E: ParseError<I>,
+{
+    move |mut i: I| {
+        let mut ret = Vec::new();
+        loop {
+            let len = i.input_len();
+            match g.parse(i.clone()) {
+                Ok((_, _)) => (),
+                Err(nom::Err::Error(_)) => return Ok((i, ret)),
+                Err(e) => return Err(e),
+            };
+            let (i1, o) = f.parse(i)?;
+            ret.push(o);
+            if i1.input_len() == len {
+                return Err(nom::Err::Error(E::from_error_kind(
+                    i1,
+                    nom::error::ErrorKind::ManyTill,
+                )));
+            }
+            i = i1;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::repl::parser::testing::expect_parse_ok;
 
-    use nom::bytes::complete::is_a;
+    use nom::{
+        bytes::complete::is_a,
+        character::complete::{anychar, char, space0, space1},
+        sequence::preceded,
+    };
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -68,5 +106,30 @@ mod tests {
             expect_parse_ok(has_peek(is_a("0123")), "abcde"),
             ("abcde", false)
         );
+    }
+
+    #[test]
+    fn many_while_zero() {
+        assert_eq!(
+            expect_parse_ok(many0_while(preceded(space1, is_a("abc")), char(' ')), "abc"),
+            ("abc", vec![])
+        )
+    }
+
+    #[test]
+    fn many_while_some_items() {
+        assert_eq!(
+            expect_parse_ok(
+                many0_while(preceded(space1, is_a("abc")), char(' ')),
+                " abc   abc abc123"
+            ),
+            ("123", vec!["abc", "abc", "abc"])
+        )
+    }
+
+    #[test]
+    fn many_while_empty_item_error() {
+        let _: nom::Err<nom::error::Error<&'static str>> =
+            many0_while(space0, anychar)("abc").unwrap_err();
     }
 }
