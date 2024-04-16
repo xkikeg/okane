@@ -1,16 +1,13 @@
 //! Defines parser functions for transaction.
 
 use crate::repl;
-use repl::parser::{
-    character,
-    combinator::{has_peek, many0_while},
-    metadata, posting, primitive,
-};
+use repl::parser::{character, combinator::has_peek, metadata, posting, primitive};
 
 use nom::{
     character::complete::{char, one_of, space0, space1},
-    combinator::{cond, map, opt},
+    combinator::{cond, cut, map, opt, peek},
     error::VerboseError,
+    multi::many0,
     sequence::{preceded, terminated},
     IResult,
 };
@@ -27,12 +24,12 @@ pub fn transaction(input: &str) -> IResult<&str, repl::Transaction, VerboseError
         None => repl::ClearState::Uncleared,
         Some('*') => repl::ClearState::Cleared,
         Some('!') => repl::ClearState::Pending,
-        Some(unknown) => unreachable!("unaceptable ClearState {}", unknown),
+        Some(unknown) => unreachable!("unacceptable ClearState {}", unknown),
     };
     let (input, code) = opt(terminated(character::paren_str, space0))(input)?;
     let (input, payee) = opt(map(character::not_line_ending_or_semi, str::trim_end))(input)?;
     let (input, metadata) = metadata::block_metadata(input)?;
-    let (input, posts) = many0_while(posting::posting, char(' '))(input)?;
+    let (input, posts) = many0(preceded(peek(char(' ')), cut(posting::posting)))(input)?;
     Ok((
         input,
         repl::Transaction {
