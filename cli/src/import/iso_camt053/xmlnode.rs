@@ -151,6 +151,8 @@ pub enum DomainFamilyCode {
 pub enum DomainSubFamilyCode {
     #[serde(rename = "AUTT")]
     AutomaticTransfer,
+    #[serde(rename = "DAJT")]
+    DebitAdjustment,
     #[serde(rename = "PMDD")]
     PaymentDirectDebit,
     #[serde(rename = "SALA")]
