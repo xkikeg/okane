@@ -16,8 +16,9 @@ use crate::repl;
 
 use nom::{
     branch::alt,
-    character::complete::{anychar, line_ending},
-    combinator::{eof, fail, map, peek},
+    bytes::complete::{tag, take_while_m_n},
+    character::complete::{line_ending, one_of},
+    combinator::{cut, eof, fail, map, peek},
     error::{context, convert_error, VerboseError},
     multi::{many0, many_till},
     sequence::{preceded, terminated},
@@ -42,24 +43,45 @@ pub fn parse_ledger(input: &str) -> Result<Vec<repl::LedgerEntry>, ParseLedgerEr
 }
 
 fn parse_ledger_entry(input: &str) -> IResult<&str, repl::LedgerEntry, VerboseError<&str>> {
-    let (input, c) = peek(anychar)(input)?;
-    match c {
-        ';' | '#' | '%' | '|' | '*' => {
-            map(directive::top_comment, repl::LedgerEntry::Comment)(input)
-        }
-        'a' => alt((
-            map(directive::account_declaration, repl::LedgerEntry::Account),
-            map(directive::apply_tag, repl::LedgerEntry::ApplyTag),
-        ))(input),
-        'c' => map(
-            directive::commodity_declaration,
-            repl::LedgerEntry::Commodity,
-        )(input),
-        'e' => map(directive::end_apply_tag, |_| repl::LedgerEntry::EndApplyTag)(input),
-        'i' => map(directive::include, repl::LedgerEntry::Include)(input),
-        c if c.is_ascii_digit() => map(transaction::transaction, repl::LedgerEntry::Txn)(input),
-        _ => context("unexpected character", fail)(input),
-    }
+    alt((
+        preceded(
+            peek(one_of(";#%|*")),
+            cut(map(directive::top_comment, repl::LedgerEntry::Comment)),
+        ),
+        preceded(
+            peek(tag("account")),
+            cut(map(
+                directive::account_declaration,
+                repl::LedgerEntry::Account,
+            )),
+        ),
+        preceded(
+            peek(tag("apply")),
+            cut(map(directive::apply_tag, repl::LedgerEntry::ApplyTag)),
+        ),
+        preceded(
+            peek(tag("commodity")),
+            cut(map(
+                directive::commodity_declaration,
+                repl::LedgerEntry::Commodity,
+            )),
+        ),
+        preceded(
+            peek(tag("end")),
+            cut(map(directive::end_apply_tag, |_| {
+                repl::LedgerEntry::EndApplyTag
+            })),
+        ),
+        preceded(
+            peek(tag("include")),
+            cut(map(directive::include, repl::LedgerEntry::Include)),
+        ),
+        preceded(
+            peek(take_while_m_n(1, 1, |c: char| c.is_ascii_digit())),
+            cut(map(transaction::transaction, repl::LedgerEntry::Txn)),
+        ),
+        context("no matching syntax", fail),
+    ))(input)
 }
 
 #[cfg(test)]
@@ -67,6 +89,7 @@ mod tests {
     use super::*;
 
     use chrono::NaiveDate;
+    use indoc::indoc;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -80,5 +103,35 @@ mod tests {
                 "".to_string()
             ))]
         );
+    }
+
+    #[test]
+    fn parse_ledger_two_contiguous_transactions() {
+        let input = indoc! {"
+            2024/4/10 Migros
+                Expenses:Grocery
+            2024/4/20 Coop
+                Expenses:Grocery
+        "};
+
+        assert_eq!(
+            parse_ledger(input).unwrap(),
+            vec![
+                repl::LedgerEntry::Txn(repl::Transaction {
+                    posts: vec![repl::Posting::new("Expenses:Grocery".to_string())],
+                    ..repl::Transaction::new(
+                        NaiveDate::from_ymd_opt(2024, 4, 10).unwrap(),
+                        "Migros".to_string(),
+                    )
+                }),
+                repl::LedgerEntry::Txn(repl::Transaction {
+                    posts: vec![repl::Posting::new("Expenses:Grocery".to_string())],
+                    ..repl::Transaction::new(
+                        NaiveDate::from_ymd_opt(2024, 4, 20).unwrap(),
+                        "Coop".to_string(),
+                    )
+                })
+            ]
+        )
     }
 }
