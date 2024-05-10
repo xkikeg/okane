@@ -1,6 +1,6 @@
 //! Defines abstracted utility to work with other parsers.
 
-use nom::{
+use winnow::{
     combinator::{map, opt, peek},
     error::ParseError,
     IResult, Parser,
@@ -29,7 +29,7 @@ where
 pub fn has_peek<I, O, E: ParseError<I>, F>(f: F) -> impl FnMut(I) -> IResult<I, bool, E>
 where
     F: Parser<I, O, E>,
-    I: Clone,
+    I: winnow::stream::Stream + Clone,
 {
     map(peek(opt(f)), |x| x.is_some())
 }
@@ -39,7 +39,7 @@ mod tests {
     use super::*;
     use crate::repl::parser::testing::expect_parse_ok;
 
-    use nom::bytes::complete::is_a;
+    use winnow::bytes::complete::is_a;
     use pretty_assertions::assert_eq;
 
     #[test]

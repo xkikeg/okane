@@ -12,11 +12,11 @@ repository.workspace = true
 [dependencies]
 chrono.workspace = true
 log.workspace = true
-nom = "7.1"
 rust_decimal.workspace = true
 strum = { version = "0.26", features = ["derive"] }
 thiserror.workspace = true
 unicode-width = "0.1.11"
+winnow = "0.3"
 
 [dev-dependencies]
 indoc.workspace = true

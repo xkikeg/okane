@@ -3,7 +3,7 @@
 use crate::repl;
 use repl::parser::{character, combinator::has_peek};
 
-use nom::{
+use winnow::{
     branch::alt,
     bytes::complete::{tag, take_till1},
     character::complete::{char, line_ending, not_line_ending, space0, space1},
@@ -51,7 +51,7 @@ fn metadata_tags<'a, E>(input: &'a str) -> IResult<&'a str, repl::Metadata, E>
 where
     E: ParseError<&'a str> + ContextError<&'a str>,
 {
-    let (input, tags) = delimited(char(':'), many1(terminated(tag_key, char(':'))), space0)(input)?;
+    let (input, tags): (_, Vec<&str>) = delimited(char(':'), many1(terminated(tag_key, char(':'))), space0)(input)?;
     Ok((
         input,
         repl::Metadata::WordTags(tags.into_iter().map(String::from).collect()),

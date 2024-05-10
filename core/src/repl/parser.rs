@@ -14,15 +14,15 @@ pub mod testing;
 
 use crate::repl;
 
-use nom::{
+use winnow::{
     branch::alt,
     bytes::complete::{tag, take_while_m_n},
     character::complete::{line_ending, one_of},
     combinator::{cut, eof, fail, map, peek},
-    error::{context, convert_error, VerboseError},
+    error::{context, convert_error, ErrMode, VerboseError},
     multi::{many0, many_till},
     sequence::{preceded, terminated},
-    Finish, IResult,
+    FinishIResult, IResult,
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -31,14 +31,16 @@ pub struct ParseLedgerError(String);
 
 /// Parses the whole ledger file.
 pub fn parse_ledger(input: &str) -> Result<Vec<repl::LedgerEntry>, ParseLedgerError> {
-    match preceded(
-        many0(line_ending),
-        many_till(terminated(parse_ledger_entry, many0(line_ending)), eof),
-    )(input)
-    .finish()
-    {
+    let r: Result<(&str, (Vec<repl::LedgerEntry>, &str)), ErrMode<VerboseError<&str>>> =  preceded(
+        many0::<_, _, (), _, _>(line_ending::<&str, _>),
+        many_till(terminated(parse_ledger_entry, many0::<_, _, (), _, _>(line_ending)), eof),
+    )(input);
+    match r {
         Ok((_, (ret, _))) => Ok(ret),
-        Err(e) => Err(ParseLedgerError(convert_error(input, e))),
+        Err(ErrMode::Backtrack(e)) | Err(ErrMode::Cut(e)) => {
+            Err(ParseLedgerError(convert_error(input, e)))
+        }
+        _ => unreachable!("no streaming API"),
     }
 }
 

@@ -2,7 +2,7 @@ use crate::repl::{self, pretty_decimal};
 
 use super::{character::line_ending_or_eof, expr, metadata};
 
-use nom::{
+use winnow::{
     branch::alt,
     bytes::complete::{is_a, tag},
     character::complete::{not_line_ending, space0, space1},
@@ -350,7 +350,7 @@ mod tests {
 
     #[test]
     fn end_apply_tag_rejects_unexpected() {
-        let end_apply_tag = end_apply_tag::<nom::error::Error<_>>;
+        let end_apply_tag = end_apply_tag::<winnow::error::Error<_>>;
 
         let input: &str = "end apply tag   following";
         end_apply_tag(input).expect_err("should fail");

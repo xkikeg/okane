@@ -3,7 +3,7 @@
 use crate::repl;
 use repl::parser::{character, combinator::has_peek, metadata, posting, primitive};
 
-use nom::{
+use winnow::{
     character::complete::{char, one_of, space0, space1},
     combinator::{cond, cut, map, opt, peek},
     error::VerboseError,

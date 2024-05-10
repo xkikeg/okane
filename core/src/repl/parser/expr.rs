@@ -9,12 +9,12 @@ use crate::repl::{
     pretty_decimal,
 };
 
-use nom::{
+use winnow::{
     character::complete::{char, one_of, space0},
     combinator::{fail, map, opt},
     error::{context, ContextError, FromExternalError, ParseError},
     sequence::{delimited, pair, terminated},
-    IResult, InputLength, Parser,
+    IResult, Parser,
 };
 
 /// Parses value expression.
@@ -126,23 +126,24 @@ where
 /// Parses `x (op x)*` format, and feed the list into the given function.
 /// This is similar to foldl, so it'll be evaluated as `f(f(...f(x, x), x), ... x)))`.
 /// operand parser needs to be Copy so that it can be used twice.
-fn infixl<'a, E, F, G>(
+fn infixl<I, E, F, G>(
     mut operator: F,
     mut operand: G,
-) -> impl FnMut(&'a str) -> IResult<&'a str, expr::Expr, E>
+) -> impl FnMut(I) -> IResult<I, expr::Expr, E>
 where
-    E: ParseError<&'a str> + ContextError<&'a str>,
-    F: Parser<&'a str, expr::BinaryOp, E>,
-    G: Parser<&'a str, expr::Expr, E>,
+    E: ParseError<I> + ContextError<I>,
+    F: Parser<I, expr::BinaryOp, E>,
+    G: Parser<I, expr::Expr, E>,
+    I: winnow::stream::Stream,
 {
-    move |i: &'a str| {
+    move |i: I| {
         let (mut i, mut ret) = operand.parse(i)?;
         loop {
-            match operator.parse(i) {
-                Err(nom::Err::Error(_)) => return Ok((i, ret)),
+            match operator.parse(i.clone()) {
+                Err(winnow::Err::Backtrack(_)) => return Ok((i, ret)),
                 Err(x) => return Err(x),
                 Ok((i1, op)) => {
-                    if i1.input_len() == i.input_len() {
+                    if i1.eof_offset() == i.eof_offset() {
                         return context("infixl operator is empty", fail)(i);
                     }
                     i = i1;
