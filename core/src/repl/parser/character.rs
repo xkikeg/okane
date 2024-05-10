@@ -3,7 +3,7 @@
 use crate::repl::parser;
 use parser::combinator::{cond_else, has_peek};
 
-use nom::{
+use winnow::{
     branch::alt,
     bytes::complete::{is_not, take_while},
     character::complete::{char, line_ending},
@@ -40,8 +40,8 @@ pub fn paren_str<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &s
 pub fn paren<I, O, E: ParseError<I>, F>(inner: F) -> impl FnMut(I) -> IResult<I, O, E>
 where
     F: Parser<I, O, E>,
-    I: nom::Slice<core::ops::RangeFrom<usize>> + nom::InputIter,
-    <I as nom::InputIter>::Item: nom::AsChar,
+    I: winnow::stream::Stream,
+    <I as winnow::stream::Stream>::Token: winnow::stream::AsChar,
 {
     delimited(char('('), inner, char(')'))
 }
@@ -51,7 +51,7 @@ mod tests {
     use super::*;
     use crate::repl::parser::testing::expect_parse_ok;
 
-    use nom::bytes::complete::is_a;
+    use winnow::bytes::complete::is_a;
     use pretty_assertions::assert_eq;
 
     #[test]

@@ -1,6 +1,6 @@
 //! Utility only meant for the tests.
 
-use nom::{
+use winnow::{
     error::{convert_error, VerboseError},
     Parser,
 };
@@ -15,9 +15,9 @@ where
     match parser.parse(input) {
         Ok(res) => res,
         Err(e) => match e {
-            nom::Err::Incomplete(_) => panic!("failed with incomplete: input: {}", input),
-            nom::Err::Error(e) => panic!("error: {}", convert_error(input, e)),
-            nom::Err::Failure(e) => panic!("failure: {}", convert_error(input, e)),
+            winnow::Err::Incomplete(_) => panic!("failed with incomplete: input: {}", input),
+            winnow::Err::Backtrack(e) => panic!("error: {}", convert_error(input, e)),
+            winnow::Err::Cut(e) => panic!("failure: {}", convert_error(input, e)),
         },
     }
 }

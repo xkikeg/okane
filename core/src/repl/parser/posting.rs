@@ -9,7 +9,7 @@ use repl::parser::{
 
 use std::cmp::min;
 
-use nom::{
+use winnow::{
     bytes::complete::{is_not, tag, take},
     character::complete::{char, one_of, space0, space1},
     combinator::{cond, fail, map, opt, peek},

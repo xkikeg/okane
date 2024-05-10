@@ -3,7 +3,7 @@
 use crate::repl::pretty_decimal::{self, PrettyDecimal};
 
 use chrono::NaiveDate;
-use nom::{
+use winnow::{
     branch::alt,
     bytes::complete::{is_a, is_not},
     character::complete::{char, digit1},
@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn comma_decimal_fails_on_invalid_inputs() {
-        let cd = comma_decimal::<nom::error::Error<&'static str>>;
+        let cd = comma_decimal::<winnow::error::Error<&'static str>>;
         cd("不可能").unwrap_err();
         cd("!").unwrap_err();
     }
@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn date_fails_on_invalid_inputs() {
-        let pd = date::<nom::error::Error<&'static str>>;
+        let pd = date::<winnow::error::Error<&'static str>>;
         pd("not a date").unwrap_err();
         pd("2022/01").unwrap_err();
         pd("2022/13/21").unwrap_err();
