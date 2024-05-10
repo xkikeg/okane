@@ -16,13 +16,13 @@ use crate::repl;
 
 use winnow::{
     branch::alt,
-    bytes::complete::{tag, take_while_m_n},
-    character::complete::{line_ending, one_of},
-    combinator::{cut, eof, fail, map, peek},
-    error::{context, convert_error, ErrMode, VerboseError},
-    multi::{many0, many_till},
+    bytes::{one_of, tag, take_while_m_n},
+    character::line_ending,
+    combinator::{cut_err, eof, fail, peek},
+    error::{convert_error, ErrMode, VerboseError},
+    multi::{many0, many_till0},
     sequence::{preceded, terminated},
-    FinishIResult, IResult,
+    IResult, Parser,
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -31,10 +31,14 @@ pub struct ParseLedgerError(String);
 
 /// Parses the whole ledger file.
 pub fn parse_ledger(input: &str) -> Result<Vec<repl::LedgerEntry>, ParseLedgerError> {
-    let r: Result<(&str, (Vec<repl::LedgerEntry>, &str)), ErrMode<VerboseError<&str>>> =  preceded(
-        many0::<_, _, (), _, _>(line_ending::<&str, _>),
-        many_till(terminated(parse_ledger_entry, many0::<_, _, (), _, _>(line_ending)), eof),
-    )(input);
+    let r: Result<(&str, (Vec<repl::LedgerEntry>, &str)), ErrMode<VerboseError<&str>>> =
+        preceded(
+            many0::<_, _, (), _, _>(line_ending::<&str, _>),
+            many_till0(
+                terminated(parse_ledger_entry, many0::<_, _, (), _, _>(line_ending)),
+                eof,
+            ),
+        )(input);
     match r {
         Ok((_, (ret, _))) => Ok(ret),
         Err(ErrMode::Backtrack(e)) | Err(ErrMode::Cut(e)) => {
@@ -45,44 +49,37 @@ pub fn parse_ledger(input: &str) -> Result<Vec<repl::LedgerEntry>, ParseLedgerEr
 }
 
 fn parse_ledger_entry(input: &str) -> IResult<&str, repl::LedgerEntry, VerboseError<&str>> {
+    // TODO: Consider using dispatch
     alt((
         preceded(
             peek(one_of(";#%|*")),
-            cut(map(directive::top_comment, repl::LedgerEntry::Comment)),
+            cut_err(directive::top_comment.map(repl::LedgerEntry::Comment)),
         ),
         preceded(
             peek(tag("account")),
-            cut(map(
-                directive::account_declaration,
-                repl::LedgerEntry::Account,
-            )),
+            cut_err(directive::account_declaration.map(repl::LedgerEntry::Account)),
         ),
         preceded(
             peek(tag("apply")),
-            cut(map(directive::apply_tag, repl::LedgerEntry::ApplyTag)),
+            cut_err(directive::apply_tag.map(repl::LedgerEntry::ApplyTag)),
         ),
         preceded(
             peek(tag("commodity")),
-            cut(map(
-                directive::commodity_declaration,
-                repl::LedgerEntry::Commodity,
-            )),
+            cut_err(directive::commodity_declaration.map(repl::LedgerEntry::Commodity)),
         ),
         preceded(
             peek(tag("end")),
-            cut(map(directive::end_apply_tag, |_| {
-                repl::LedgerEntry::EndApplyTag
-            })),
+            cut_err(directive::end_apply_tag.map(|_| repl::LedgerEntry::EndApplyTag)),
         ),
         preceded(
             peek(tag("include")),
-            cut(map(directive::include, repl::LedgerEntry::Include)),
+            cut_err(directive::include.map(repl::LedgerEntry::Include)),
         ),
         preceded(
             peek(take_while_m_n(1, 1, |c: char| c.is_ascii_digit())),
-            cut(map(transaction::transaction, repl::LedgerEntry::Txn)),
+            cut_err(transaction::transaction.map(repl::LedgerEntry::Txn)),
         ),
-        context("no matching syntax", fail),
+        fail.context("no matching syntax"),
     ))(input)
 }
 

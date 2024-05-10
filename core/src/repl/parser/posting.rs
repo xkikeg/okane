@@ -10,19 +10,20 @@ use repl::parser::{
 use std::cmp::min;
 
 use winnow::{
-    bytes::complete::{is_not, tag, take},
-    character::complete::{char, one_of, space0, space1},
-    combinator::{cond, fail, map, opt, peek},
-    error::{context, ParseError, VerboseError},
-    sequence::{delimited, pair, preceded, terminated},
-    IResult,
+    bytes::{one_of, tag, take, take_till1},
+    character::{space0, space1},
+    combinator::{cond, fail, opt, peek},
+    error::{ParseError, VerboseError},
+    sequence::{delimited, preceded, terminated},
+    IResult, Parser,
 };
 
 pub fn posting(input: &str) -> IResult<&str, repl::Posting, VerboseError<&str>> {
-    context("posting of the transaction", |input| {
-        let (input, account) =
-            context("account of the posting", preceded(space1, posting_account))(input)?;
-        let (input, shortcut_amount) = has_peek(line_ending_or_semi)(input)?;
+    (|input| {
+        let (input, account) = preceded(space1, posting_account)
+            .context("account of the posting")
+            .parse_next(input)?;
+        let (input, shortcut_amount) = has_peek(line_ending_or_semi).parse_next(input)?;
         if shortcut_amount {
             let (input, metadata) = metadata::block_metadata(input)?;
             return Ok((
@@ -33,14 +34,12 @@ pub fn posting(input: &str) -> IResult<&str, repl::Posting, VerboseError<&str>> 
                 },
             ));
         }
-        let (input, amount) = context(
-            "amount of the posting",
-            opt(terminated(posting_amount, space0)),
-        )(input)?;
-        let (input, balance) = context(
-            "balance of the posting",
-            opt(delimited(pair(char('='), space0), expr::value_expr, space0)),
-        )(input)?;
+        let (input, amount) = opt(terminated(posting_amount, space0))
+            .context("amount of the posting")
+            .parse_next(input)?;
+        let (input, balance) = opt(delimited((one_of('='), space0), expr::value_expr, space0))
+            .context("balance of the posting")
+            .parse_next(input)?;
         let (input, metadata) = metadata::block_metadata(input)?;
         Ok((
             input,
@@ -51,7 +50,9 @@ pub fn posting(input: &str) -> IResult<&str, repl::Posting, VerboseError<&str>> 
                 ..repl::Posting::new(account.to_string())
             },
         ))
-    })(input)
+    })
+    .context("posting of the transaction")
+    .parse_next(input)
 }
 
 /// Parses the posting account name, and consumes the trailing spaces and tabs.
@@ -72,14 +73,11 @@ fn posting_account<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a st
 fn posting_amount(input: &str) -> IResult<&str, repl::PostingAmount, VerboseError<&str>> {
     let (input, amount) = terminated(expr::value_expr, space0)(input)?;
     let (input, lot) = lot(input)?;
-    let (input, is_at) = has_peek(char('@'))(input)?;
-    let (input, is_double_at) = has_peek(tag("@@"))(input)?;
+    let (input, is_at) = has_peek(one_of('@')).parse_next(input)?;
+    let (input, is_double_at) = has_peek(tag("@@")).parse_next(input)?;
     let (input, cost) = cond(
         is_at,
-        context(
-            "posting cost exchange",
-            cond_else(is_double_at, total_cost, rate_cost),
-        ),
+        cond_else(is_double_at, total_cost, rate_cost).context("posting cost exchange"),
     )(input)?;
     Ok((input, repl::PostingAmount { amount, cost, lot }))
 }
@@ -89,45 +87,42 @@ fn lot(input: &str) -> IResult<&str, repl::Lot, VerboseError<&str>> {
     let mut lot = repl::Lot::default();
     loop {
         let (_, open) = peek(opt(one_of("([{")))(input)?;
+        // TODO Consider if we can implement this with cut_err and permutation.
         match open {
             None => return Ok((input, lot)),
             Some('{') if lot.price.is_none() => {
-                let (_, is_total) = has_peek(tag("{{"))(input)?;
+                let (_, is_total) = has_peek(tag("{{")).parse_next(input)?;
                 if is_total {
-                    let (i1, amount) = delimited(
-                        pair(tag("{{"), space0),
-                        expr::value_expr,
-                        pair(space0, tag("}}")),
-                    )(input)?;
+                    let (i1, amount) =
+                        delimited((tag("{{"), space0), expr::value_expr, (space0, tag("}}")))(
+                            input,
+                        )?;
                     lot.price = Some(repl::Exchange::Total(amount));
                     input = i1;
                 } else {
-                    let (i1, amount) = delimited(
-                        pair(tag("{"), space0),
-                        expr::value_expr,
-                        pair(space0, tag("}")),
-                    )(input)?;
+                    let (i1, amount) =
+                        delimited((tag("{"), space0), expr::value_expr, (space0, tag("}")))(input)?;
                     lot.price = Some(repl::Exchange::Rate(amount));
                     input = i1;
                 }
             }
-            Some('{') => return context("lot price duplicated", fail)(input),
+            Some('{') => return fail.context("lot price duplicated").parse_next(input),
             Some('[') if lot.date.is_none() => {
                 let (i1, date) = delimited(
-                    pair(char('['), space0),
+                    (one_of('['), space0),
                     primitive::date,
-                    pair(space0, char(']')),
+                    (space0, one_of(']')),
                 )(input)?;
                 lot.date = Some(date);
                 input = i1;
             }
-            Some('[') => return context("lot date duplicated", fail)(input),
+            Some('[') => return fail.context("lot date duplicated").parse_next(input),
             Some('(') if lot.note.is_none() => {
-                let (i1, note) = paren(is_not("()@"))(input)?;
+                let (i1, note) = paren(take_till1("()@")).parse_next(input)?;
                 lot.note = Some(note.to_string());
                 input = i1;
             }
-            Some('(') => return context("lot note duplicated", fail)(input),
+            Some('(') => return fail.context("lot note duplicated").parse_next(input),
             Some(c) => unreachable!("unexpected lot opening {}", c),
         }
         (input, _) = space0(input)?;
@@ -135,17 +130,15 @@ fn lot(input: &str) -> IResult<&str, repl::Lot, VerboseError<&str>> {
 }
 
 fn total_cost(input: &str) -> IResult<&str, repl::Exchange, VerboseError<&str>> {
-    map(
-        preceded(pair(tag("@@"), space0), expr::value_expr),
-        repl::Exchange::Total,
-    )(input)
+    preceded((tag("@@"), space0), expr::value_expr)
+        .map(repl::Exchange::Total)
+        .parse_next(input)
 }
 
 fn rate_cost(input: &str) -> IResult<&str, repl::Exchange, VerboseError<&str>> {
-    map(
-        preceded(pair(tag("@"), space0), expr::value_expr),
-        repl::Exchange::Rate,
-    )(input)
+    preceded((tag("@"), space0), expr::value_expr)
+        .map(repl::Exchange::Rate)
+        .parse_next(input)
 }
 
 #[cfg(test)]

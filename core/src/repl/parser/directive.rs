@@ -4,12 +4,12 @@ use super::{character::line_ending_or_eof, expr, metadata};
 
 use winnow::{
     branch::alt,
-    bytes::complete::{is_a, tag},
-    character::complete::{not_line_ending, space0, space1},
-    combinator::{map, opt, recognize},
-    error::{context, ContextError, FromExternalError, ParseError},
+    bytes::{tag, take_while1},
+    character::{not_line_ending, space0, space1},
+    combinator::opt,
+    error::{ContextError, FromExternalError, ParseError},
     multi::{fold_many1, many0},
-    sequence::{delimited, pair, preceded, terminated, tuple},
+    sequence::{delimited, preceded, terminated},
     IResult, Parser,
 };
 
@@ -18,40 +18,32 @@ pub fn account_declaration<'a, E>(input: &'a str) -> IResult<&'a str, repl::Acco
 where
     E: ParseError<&'a str> + ContextError<&'a str>,
 {
-    map(
-        pair(
+    (
+        delimited(
+            (tag("account"), space1),
+            not_line_ending,
+            line_ending_or_eof,
+        ),
+        // TODO: Consider using dispatch
+        // Note nesting many0 would cause parse failure at nom 7,
+        // as many0 would fail if the sub-parser consumes empty input.
+        // So make sure no branches in alt would emit zero input as success.
+        many0(alt((
+            multiline_text((space1, take_while1(COMMENT_PREFIX))).map(repl::AccountDetail::Comment),
+            multiline_text((space1, tag("note"), space1)).map(repl::AccountDetail::Note),
             delimited(
-                pair(tag("account"), space1),
+                (space1, tag("alias"), space1),
                 not_line_ending,
                 line_ending_or_eof,
-            ),
-            // Note nesting many0 would cause parse failure at nom 7,
-            // as many0 would fail if the sub-parser consumes empty input.
-            // So make sure no branches in alt would emit zero input as success.
-            many0(alt((
-                map(
-                    multiline_text(pair(space1, is_a(COMMENT_PREFIX))),
-                    repl::AccountDetail::Comment,
-                ),
-                map(
-                    multiline_text(tuple((space1, tag("note"), space1))),
-                    repl::AccountDetail::Note,
-                ),
-                map(
-                    delimited(
-                        tuple((space1, tag("alias"), space1)),
-                        not_line_ending,
-                        line_ending_or_eof,
-                    ),
-                    |a| repl::AccountDetail::Alias(a.trim_end().to_string()),
-                ),
-            ))),
-        ),
-        |(name, details)| repl::AccountDeclaration {
+            )
+            .map(|a| repl::AccountDetail::Alias(a.trim_end().to_string())),
+        ))),
+    )
+        .map(|(name, details)| repl::AccountDeclaration {
             name: name.trim_end().to_string(),
             details,
-        },
-    )(input)
+        })
+        .parse_next(input)
 }
 
 /// Parses "commodity" directive.
@@ -63,48 +55,38 @@ where
         + FromExternalError<&'a str, pretty_decimal::Error>
         + ContextError<&'a str>,
 {
-    map(
-        pair(
+    (
+        delimited(
+            (tag("commodity"), space1),
+            not_line_ending,
+            line_ending_or_eof,
+        ),
+        // Note nesting many0 would cause parse failure at nom 7,
+        // as many0 would fail if the sub-parser consumes empty input.
+        // So make sure no branches in alt would success for empty input.
+        many0(alt((
+            multiline_text((space1, take_while1(COMMENT_PREFIX)))
+                .map(repl::CommodityDetail::Comment),
+            multiline_text((space1, tag("note"), space1)).map(repl::CommodityDetail::Note),
             delimited(
-                pair(tag("commodity"), space1),
+                (space1, tag("alias"), space1),
                 not_line_ending,
                 line_ending_or_eof,
-            ),
-            // Note nesting many0 would cause parse failure at nom 7,
-            // as many0 would fail if the sub-parser consumes empty input.
-            // So make sure no branches in alt would success for empty input.
-            many0(alt((
-                map(
-                    multiline_text(pair(space1, is_a(COMMENT_PREFIX))),
-                    repl::CommodityDetail::Comment,
-                ),
-                map(
-                    multiline_text(tuple((space1, tag("note"), space1))),
-                    repl::CommodityDetail::Note,
-                ),
-                map(
-                    delimited(
-                        tuple((space1, tag("alias"), space1)),
-                        not_line_ending,
-                        line_ending_or_eof,
-                    ),
-                    |a| repl::CommodityDetail::Alias(a.trim_end().to_string()),
-                ),
-                map(
-                    delimited(
-                        tuple((space1, tag("format"), space1)),
-                        expr::amount,
-                        line_ending_or_eof,
-                    ),
-                    repl::CommodityDetail::Format,
-                ),
-            ))),
-        ),
-        |(name, details)| repl::CommodityDeclaration {
+            )
+            .map(|a| repl::CommodityDetail::Alias(a.trim_end().to_string())),
+            delimited(
+                (space1, tag("format"), space1),
+                expr::amount,
+                line_ending_or_eof,
+            )
+            .map(repl::CommodityDetail::Format),
+        ))),
+    )
+        .map(|(name, details)| repl::CommodityDeclaration {
             name: name.trim_end().to_string(),
             details,
-        },
-    )(input)
+        })
+        .parse_next(input)
 }
 
 /// Parses "apply tag" directive.
@@ -114,7 +96,7 @@ where
 {
     // TODO: value needs to be supported.
     let (input, key) = preceded(
-        tuple((tag("apply"), space1, tag("tag"), space1)),
+        (tag("apply"), space1, tag("tag"), space1),
         metadata::tag_key,
     )(input)?;
     let (input, value) =
@@ -139,19 +121,12 @@ pub fn end_apply_tag<'a, E>(input: &'a str) -> IResult<&'a str, &'a str, E>
 where
     E: ParseError<&'a str> + ContextError<&'a str>,
 {
-    context(
-        "end apply tag",
-        terminated(
-            recognize(tuple((
-                tag("end"),
-                space1,
-                tag("apply"),
-                space1,
-                tag("tag"),
-            ))),
-            pair(space0, line_ending_or_eof),
-        ),
-    )(input)
+    terminated(
+        (tag("end"), space1, tag("apply"), space1, tag("tag")).recognize(),
+        (space0, line_ending_or_eof),
+    )
+    .context("end apply tag")
+    .parse_next(input)
 }
 
 /// Parses include directive.
@@ -161,17 +136,14 @@ pub fn include<'a, E>(input: &'a str) -> IResult<&'a str, repl::IncludeFile, E>
 where
     E: ParseError<&'a str> + ContextError<&'a str>,
 {
-    context(
-        "include directive",
-        map(
-            delimited(
-                pair(tag("include"), space1),
-                not_line_ending,
-                line_ending_or_eof,
-            ),
-            |x| repl::IncludeFile(x.trim_end().to_string()),
-        ),
-    )(input)
+    delimited(
+        (tag("include"), space1),
+        not_line_ending,
+        line_ending_or_eof,
+    )
+    .map(|x| repl::IncludeFile(x.trim_end().to_string()))
+    .context("include directive")
+    .parse_next(input)
 }
 
 static COMMENT_PREFIX: &str = ";#%|*";
@@ -182,14 +154,14 @@ pub fn top_comment<'a, E>(input: &'a str) -> IResult<&'a str, repl::TopLevelComm
 where
     E: ParseError<&'a str> + ContextError<&'a str>,
 {
-    context(
-        "top level comment",
-        map(multiline_text(is_a(COMMENT_PREFIX)), repl::TopLevelComment),
-    )(input)
+    multiline_text(take_while1(COMMENT_PREFIX))
+        .map(repl::TopLevelComment)
+        .context("top level comment")
+        .parse_next(input)
 }
 
 /// Parses multi-line text with preceding prefix.
-fn multiline_text<'a, E, F, O1>(prefix: F) -> impl FnMut(&'a str) -> IResult<&'a str, String, E>
+fn multiline_text<'a, E, F, O1>(prefix: F) -> impl Parser<&'a str, String, E>
 where
     E: ParseError<&'a str>,
     F: Parser<&'a str, O1, E>,

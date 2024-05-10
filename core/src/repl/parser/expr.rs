@@ -10,10 +10,11 @@ use crate::repl::{
 };
 
 use winnow::{
-    character::complete::{char, one_of, space0},
-    combinator::{fail, map, opt},
-    error::{context, ContextError, FromExternalError, ParseError},
-    sequence::{delimited, pair, terminated},
+    bytes::one_of,
+    character::space0,
+    combinator::{fail, opt},
+    error::{ContextError, FromExternalError, ParseError},
+    sequence::{delimited, terminated},
     IResult, Parser,
 };
 
@@ -24,23 +25,23 @@ where
         + ContextError<&'a str>
         + FromExternalError<&'a str, pretty_decimal::Error>,
 {
-    let (input, is_paren) = has_peek(char('('))(input)?;
-    context(
-        "value-expr",
-        cond_else(is_paren, paren, map(amount, expr::ValueExpr::Amount)),
-    )(input)
+    let (input, is_paren) = has_peek(one_of('(')).parse_next(input)?;
+
+    // TODO: Try to remove cond_else / has_peek because it can be removed with backtrack + cut_err.
+    cond_else(is_paren, paren_expr, amount.map(expr::ValueExpr::Amount))
+        .context("value-expr")
+        .parse_next(input)
 }
 
-fn paren<'a, E>(input: &'a str) -> IResult<&'a str, expr::ValueExpr, E>
+fn paren_expr<'a, E>(input: &'a str) -> IResult<&'a str, expr::ValueExpr, E>
 where
     E: ParseError<&'a str>
         + ContextError<&'a str>
         + FromExternalError<&'a str, pretty_decimal::Error>,
 {
-    map(
-        delimited(pair(char('('), space0), add_expr, pair(space0, char(')'))),
-        expr::ValueExpr::Paren,
-    )(input)
+    delimited((one_of('('), space0), add_expr, (space0, one_of(')')))
+        .map(expr::ValueExpr::Paren)
+        .parse_next(input)
 }
 
 fn add_expr<'a, E>(input: &'a str) -> IResult<&'a str, expr::Expr, E>
@@ -49,18 +50,20 @@ where
         + ContextError<&'a str>
         + FromExternalError<&'a str, pretty_decimal::Error>,
 {
-    infixl(add_op, mul_expr)(input)
+    infixl(add_op, mul_expr).parse_next(input)
 }
 
 fn add_op<'a, E>(input: &'a str) -> IResult<&'a str, expr::BinaryOp, E>
 where
     E: ParseError<&'a str>,
 {
-    map(delimited(space0, one_of("+-"), space0), |c| match c {
-        '+' => expr::BinaryOp::Add,
-        '-' => expr::BinaryOp::Sub,
-        _ => unreachable!("add_op unexpected char"),
-    })(input)
+    delimited(space0, one_of("+-"), space0)
+        .map(|c| match c {
+            '+' => expr::BinaryOp::Add,
+            '-' => expr::BinaryOp::Sub,
+            _ => unreachable!("add_op unexpected char"),
+        })
+        .parse_next(input)
 }
 
 fn mul_expr<'a, E>(input: &'a str) -> IResult<&'a str, expr::Expr, E>
@@ -69,18 +72,20 @@ where
         + FromExternalError<&'a str, pretty_decimal::Error>
         + ContextError<&'a str>,
 {
-    infixl(mul_op, unary_expr)(input)
+    infixl(mul_op, unary_expr).parse_next(input)
 }
 
 fn mul_op<'a, E>(input: &'a str) -> IResult<&'a str, expr::BinaryOp, E>
 where
     E: ParseError<&'a str>,
 {
-    map(delimited(space0, one_of("*/"), space0), |c| match c {
-        '*' => expr::BinaryOp::Mul,
-        '/' => expr::BinaryOp::Div,
-        _ => unreachable!("mul_op unexpected char"),
-    })(input)
+    delimited(space0, one_of("*/"), space0)
+        .map(|c| match c {
+            '*' => expr::BinaryOp::Mul,
+            '/' => expr::BinaryOp::Div,
+            _ => unreachable!("mul_op unexpected char"),
+        })
+        .parse_next(input)
 }
 
 fn unary_expr<'a, E>(input: &'a str) -> IResult<&'a str, expr::Expr, E>
@@ -89,7 +94,7 @@ where
         + FromExternalError<&'a str, pretty_decimal::Error>
         + ContextError<&'a str>,
 {
-    let (input, negate) = opt(char('-'))(input)?;
+    let (input, negate) = opt(one_of('-'))(input)?;
     let (input, value) = value_expr(input)?;
     let value = expr::Expr::Value(Box::new(value));
     let expr = if negate.is_some() {
@@ -126,10 +131,7 @@ where
 /// Parses `x (op x)*` format, and feed the list into the given function.
 /// This is similar to foldl, so it'll be evaluated as `f(f(...f(x, x), x), ... x)))`.
 /// operand parser needs to be Copy so that it can be used twice.
-fn infixl<I, E, F, G>(
-    mut operator: F,
-    mut operand: G,
-) -> impl FnMut(I) -> IResult<I, expr::Expr, E>
+fn infixl<I, E, F, G>(mut operator: F, mut operand: G) -> impl Parser<I, expr::Expr, E>
 where
     E: ParseError<I> + ContextError<I>,
     F: Parser<I, expr::BinaryOp, E>,
@@ -137,17 +139,17 @@ where
     I: winnow::stream::Stream,
 {
     move |i: I| {
-        let (mut i, mut ret) = operand.parse(i)?;
+        let (mut i, mut ret) = operand.parse_next(i)?;
         loop {
-            match operator.parse(i.clone()) {
-                Err(winnow::Err::Backtrack(_)) => return Ok((i, ret)),
+            match operator.parse_next(i.clone()) {
+                Err(winnow::error::ErrMode::Backtrack(_)) => return Ok((i, ret)),
                 Err(x) => return Err(x),
                 Ok((i1, op)) => {
                     if i1.eof_offset() == i.eof_offset() {
-                        return context("infixl operator is empty", fail)(i);
+                        return fail.context("infixl operator is empty").parse_next(i);
                     }
                     i = i1;
-                    let (i1, rhs) = operand.parse(i)?;
+                    let (i1, rhs) = operand.parse_next(i)?;
                     i = i1;
                     ret = expr::Expr::Binary(expr::BinaryOpExpr {
                         lhs: Box::new(ret),
