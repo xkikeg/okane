@@ -5,12 +5,11 @@ use crate::repl::pretty_decimal::{self, PrettyDecimal};
 use chrono::NaiveDate;
 use winnow::{
     branch::alt,
-    bytes::complete::{is_a, is_not},
-    character::complete::{char, digit1},
-    combinator::{map, map_res, opt, recognize},
-    error::{context, ContextError, FromExternalError, ParseError},
-    sequence::tuple,
-    IResult,
+    bytes::{one_of, take_till1, take_while1},
+    character::digit1,
+    combinator::opt,
+    error::{ContextError, FromExternalError, ParseError},
+    IResult, Parser,
 };
 
 /// Parses comma separated decimal.
@@ -20,17 +19,20 @@ where
         + ContextError<&'a str>
         + ParseError<&'a str>,
 {
-    context("decimal", map_res(is_a("-0123456789,."), str::parse))(input)
+    take_while1("-0123456789,.")
+        .map_res(str::parse)
+        .context("decimal")
+        .parse_next(input)
 }
 
 /// Parses commodity in greedy manner.
 /// Returns empty string if the upcoming characters are not valid as commodity to support empty commodity.
 pub fn commodity<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
     // Quoted commodity not supported.
-    map(
-        opt(is_not(" \t\r\n0123456789.,;:?!-+*/^&|=<>[](){}@")),
-        |x| x.unwrap_or_default(),
-    )(input)
+
+    opt(take_till1(" \t\r\n0123456789.,;:?!-+*/^&|=<>[](){}@"))
+        .map(|x| x.unwrap_or_default())
+        .parse_next(input)
 }
 
 /// Parses date in yyyy/mm/dd format.
@@ -38,15 +40,14 @@ pub fn date<'a, E: ParseError<&'a str> + FromExternalError<&'a str, chrono::Pars
     input: &'a str,
 ) -> IResult<&str, NaiveDate, E> {
     alt((
-        map_res(
-            recognize(tuple((digit1, char('/'), digit1, char('/'), digit1))),
-            |s| NaiveDate::parse_from_str(s, "%Y/%m/%d"),
-        ),
-        map_res(
-            recognize(tuple((digit1, char('-'), digit1, char('-'), digit1))),
-            |s| NaiveDate::parse_from_str(s, "%F"),
-        ),
-    ))(input)
+        (digit1, one_of('/'), digit1, one_of('/'), digit1)
+            .recognize()
+            .map_res(|s| NaiveDate::parse_from_str(s, "%Y/%m/%d")),
+        (digit1, one_of('-'), digit1, one_of('-'), digit1)
+            .recognize()
+            .map_res(|s| NaiveDate::parse_from_str(s, "%F")),
+    ))
+    .parse_next(input)
 }
 
 #[cfg(test)]

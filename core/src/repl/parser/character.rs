@@ -5,9 +5,9 @@ use parser::combinator::{cond_else, has_peek};
 
 use winnow::{
     branch::alt,
-    bytes::complete::{is_not, take_while},
-    character::complete::{char, line_ending},
-    combinator::{eof, recognize},
+    bytes::{one_of, take_till1, take_while0},
+    character::line_ending,
+    combinator::eof,
     error::ParseError,
     sequence::delimited,
     IResult, Parser,
@@ -15,15 +15,15 @@ use winnow::{
 
 /// Semicolon or line ending.
 pub fn line_ending_or_semi<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
-    let (input, is_semi) = has_peek(char(';'))(input)?;
-    cond_else(is_semi, recognize(char(';')), line_ending)(input)
+    let (input, is_semi) = has_peek(one_of(';')).parse_next(input)?;
+    cond_else(is_semi, one_of(';').recognize(), line_ending).parse_next(input)
 }
 
 /// Parses non-zero string until line_ending or comma appears.
 pub fn not_line_ending_or_semi<'a, E: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&str, &str, E> {
-    is_not(";\r\n")(input)
+    take_till1(";\r\n")(input)
 }
 
 /// Line ending or EOF.
@@ -33,17 +33,17 @@ pub fn line_ending_or_eof<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult
 
 /// Parses unnested string in paren.
 pub fn paren_str<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
-    paren(take_while(|c| c != ')'))(input)
+    paren(take_while0(|c| c != ')')).parse_next(input)
 }
 
 /// Parses given parser within the paren.
-pub fn paren<I, O, E: ParseError<I>, F>(inner: F) -> impl FnMut(I) -> IResult<I, O, E>
+pub fn paren<I, O, E: ParseError<I>, F>(inner: F) -> impl Parser<I, O, E>
 where
     F: Parser<I, O, E>,
-    I: winnow::stream::Stream,
-    <I as winnow::stream::Stream>::Token: winnow::stream::AsChar,
+    I: winnow::stream::Stream + winnow::stream::StreamIsPartial,
+    <I as winnow::stream::Stream>::Token: winnow::stream::AsChar + Copy,
 {
-    delimited(char('('), inner, char(')'))
+    delimited(one_of('('), inner, one_of(')'))
 }
 
 #[cfg(test)]
@@ -51,8 +51,8 @@ mod tests {
     use super::*;
     use crate::repl::parser::testing::expect_parse_ok;
 
-    use winnow::bytes::complete::is_a;
     use pretty_assertions::assert_eq;
+    use winnow::bytes::take_while1;
 
     #[test]
     fn line_ending_or_semi_accepts_valid_input() {
@@ -81,7 +81,7 @@ mod tests {
     #[test]
     fn paren_valid() {
         assert_eq!(
-            expect_parse_ok(paren(paren(is_a("abc"))), "((abcbca))"),
+            expect_parse_ok(paren(paren(take_while1("abc"))), "((abcbca))"),
             ("", "abcbca")
         )
     }

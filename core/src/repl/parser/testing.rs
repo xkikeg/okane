@@ -12,12 +12,14 @@ where
     I: std::ops::Deref<Target = str> + std::fmt::Display + Copy,
     F: Parser<I, O, VerboseError<I>>,
 {
-    match parser.parse(input) {
+    match parser.parse_next(input) {
         Ok(res) => res,
         Err(e) => match e {
-            winnow::Err::Incomplete(_) => panic!("failed with incomplete: input: {}", input),
-            winnow::Err::Backtrack(e) => panic!("error: {}", convert_error(input, e)),
-            winnow::Err::Cut(e) => panic!("failure: {}", convert_error(input, e)),
+            winnow::error::ErrMode::Incomplete(_) => {
+                panic!("failed with incomplete: input: {}", input)
+            }
+            winnow::error::ErrMode::Backtrack(e) => panic!("error: {}", convert_error(input, e)),
+            winnow::error::ErrMode::Cut(e) => panic!("failure: {}", convert_error(input, e)),
         },
     }
 }
