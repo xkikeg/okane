@@ -5,44 +5,50 @@ use repl::parser::{character, combinator::has_peek, metadata, posting, primitive
 
 use winnow::{
     ascii::{space0, space1},
-    bytes::one_of,
-    combinator::{cond, cut_err, opt, peek, repeat},
-    error::VerboseError,
-    sequence::{preceded, terminated},
-    IResult, Parser,
+    combinator::{alt, cond, cut_err, opt, peek, preceded, repeat, terminated, trace},
+    token::one_of,
+    PResult, Parser,
 };
 
 /// Parses a transaction from given string.
-pub fn transaction(input: &str) -> IResult<&str, repl::Transaction, VerboseError<&str>> {
-    let (input, date) = primitive::date(input)?;
-    let (input, effective_date) = opt(preceded(one_of('='), primitive::date)).parse_next(input)?;
-    let (input, is_shortest) = has_peek(character::line_ending_or_eof).parse_next(input)?;
-    // Date (and effective date) should be followed by space, unless followed by line_ending.
-    let (input, _) = cond(!is_shortest, space1).parse_next(input)?;
-    let (input, cs) = opt(terminated(one_of("*!"), space0)).parse_next(input)?;
-    let clear_state = match cs {
-        None => repl::ClearState::Uncleared,
-        Some('*') => repl::ClearState::Cleared,
-        Some('!') => repl::ClearState::Pending,
-        Some(unknown) => unreachable!("unacceptable ClearState {}", unknown),
-    };
-    let (input, code) = opt(terminated(character::paren_str, space0)).parse_next(input)?;
-    let (input, payee) =
-        opt(character::not_line_ending_or_semi.map(str::trim_end)).parse_next(input)?;
-    let (input, metadata) = metadata::block_metadata(input)?;
-    let (input, posts) =
-        repeat(0.., preceded(peek(one_of(' ')), cut_err(posting::posting))).parse_next(input)?;
-    Ok((
-        input,
-        repl::Transaction {
+pub fn transaction(input: &mut &str) -> PResult<repl::Transaction> {
+    trace("transaction::transaction", move |input: &mut &str| {
+        let date = trace("transaction::transaction@date", primitive::date).parse_next(input)?;
+        let effective_date = trace(
+            "transaction::transaction@effective_date",
+            opt(preceded(one_of('='), primitive::date)),
+        )
+        .parse_next(input)?;
+        let is_shortest = has_peek(character::line_ending_or_eof).parse_next(input)?;
+        // Date (and effective date) should be followed by space, unless followed by line_ending.
+        cond(!is_shortest, space1).void().parse_next(input)?;
+        let clear_state = trace(
+            "transaction::transaction@clear_state",
+            opt(terminated(
+                alt((
+                    one_of('*').value(repl::ClearState::Cleared),
+                    one_of('!').value(repl::ClearState::Pending),
+                )),
+                space0,
+            ))
+            .map(|x| x.unwrap_or_default()),
+        )
+        .parse_next(input)?;
+        let code = opt(terminated(character::paren_str, space0)).parse_next(input)?;
+        let payee = opt(character::not_line_ending_or_semi.map(str::trim_end)).parse_next(input)?;
+        let metadata = metadata::block_metadata(input)?;
+        let posts = repeat(0.., preceded(peek(one_of(' ')), cut_err(posting::posting)))
+            .parse_next(input)?;
+        Ok(repl::Transaction {
             effective_date,
             clear_state,
             code: code.map(str::to_string),
             posts,
             metadata,
             ..repl::Transaction::new(date, payee.unwrap_or("").to_string())
-        },
-    ))
+        })
+    })
+    .parse_next(input)
 }
 
 #[cfg(test)]

@@ -3,6 +3,7 @@
 use winnow::{
     combinator::{opt, peek},
     error::ParserError,
+    stream::Stream,
     Parser,
 };
 
@@ -13,10 +14,11 @@ pub fn cond_else<I, O, E: ParserError<I>, F, G>(
     mut second: G,
 ) -> impl Parser<I, O, E>
 where
+    I: Stream,
     F: Parser<I, O, E>,
     G: Parser<I, O, E>,
 {
-    move |input: I| {
+    move |input: &mut I| {
         if b {
             first.parse_next(input)
         } else {
@@ -26,10 +28,11 @@ where
 }
 
 /// Returns true if given parser would succeed, without consuming the input.
-pub fn has_peek<I, O, E: ParserError<I>, F>(f: F) -> impl Parser<I, bool, E>
+pub fn has_peek<I, O, E, F>(f: F) -> impl Parser<I, bool, E>
 where
     F: Parser<I, O, E>,
-    I: winnow::stream::Stream + Clone,
+    I: winnow::stream::Stream,
+    E: ParserError<I>,
 {
     peek(opt(f)).map(|x| x.is_some())
 }
@@ -40,7 +43,7 @@ mod tests {
     use crate::repl::parser::testing::expect_parse_ok;
 
     use pretty_assertions::assert_eq;
-    use winnow::{bytes::tag, token::take_while};
+    use winnow::{token::tag, token::take_while};
 
     #[test]
     fn cond_else_takes_first_given_true() {
@@ -61,11 +64,11 @@ mod tests {
     #[test]
     fn has_peek_succeeds() {
         assert_eq!(
-            expect_parse_ok(has_peek(take_while(1.., "abc")), "abcde"),
+            expect_parse_ok(has_peek(take_while(1.., 'a'..='c')), "abcde"),
             ("abcde", true)
         );
         assert_eq!(
-            expect_parse_ok(has_peek(take_while(1.., "0123")), "abcde"),
+            expect_parse_ok(has_peek(take_while(1.., '0'..='3')), "abcde"),
             ("abcde", false)
         );
     }

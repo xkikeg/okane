@@ -16,7 +16,7 @@ rust_decimal.workspace = true
 strum = { version = "0.26", features = ["derive"] }
 thiserror.workspace = true
 unicode-width = "0.1.11"
-winnow = "0.4"
+winnow = "0.5"
 
 [dev-dependencies]
 indoc.workspace = true
