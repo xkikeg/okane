@@ -16,14 +16,13 @@ use crate::repl;
 
 use winnow::{
     ascii::line_ending,
-    branch::alt,
-    token::{one_of, tag},
-    combinator::{cut_err, eof, fail, peek, repeat, repeat_till0},
-    error::{convert_error, ErrMode, VerboseError},
-    sequence::{preceded, terminated},
-    token::take_while,
-    IResult, Parser,
+    combinator::{alt, cut_err, fail, peek, preceded, repeat, terminated},
+    error::StrContext,
+    token::{one_of, tag, take_while},
+    PResult, Parser,
 };
+
+use self::directive::COMMENT_PREFIX;
 
 #[derive(thiserror::Error, Debug)]
 #[error("failed to parse the input: \n{0}")]
@@ -31,31 +30,25 @@ pub struct ParseLedgerError(String);
 
 /// Parses the whole ledger file.
 pub fn parse_ledger(input: &str) -> Result<Vec<repl::LedgerEntry>, ParseLedgerError> {
-    let r = preceded(
+    preceded(
         repeat::<_, _, (), _, _>(0.., line_ending::<&str, _>),
-        repeat_till0(
+        repeat(
+            0..,
             terminated(
                 parse_ledger_entry,
                 repeat::<_, _, (), _, _>(0.., line_ending),
             ),
-            eof,
         ),
     )
-    .parse_next(input);
-    match r {
-        Ok((_, (ret, _))) => Ok(ret),
-        Err(ErrMode::Backtrack(e)) | Err(ErrMode::Cut(e)) => {
-            Err(ParseLedgerError(convert_error(input, e)))
-        }
-        _ => unreachable!("no streaming API"),
-    }
+    .parse(input)
+    .map_err(|e| ParseLedgerError(format!("{}", e)))
 }
 
-fn parse_ledger_entry(input: &str) -> IResult<&str, repl::LedgerEntry, VerboseError<&str>> {
+fn parse_ledger_entry(input: &mut &str) -> PResult<repl::LedgerEntry> {
     // TODO: Consider using dispatch
     alt((
         preceded(
-            peek(one_of(";#%|*")),
+            peek(one_of(COMMENT_PREFIX)),
             cut_err(directive::top_comment.map(repl::LedgerEntry::Comment)),
         ),
         preceded(
@@ -82,7 +75,7 @@ fn parse_ledger_entry(input: &str) -> IResult<&str, repl::LedgerEntry, VerboseEr
             peek(take_while(1..=1, |c: char| c.is_ascii_digit())),
             cut_err(transaction::transaction.map(repl::LedgerEntry::Txn)),
         ),
-        fail.context("no matching syntax"),
+        fail.context(StrContext::Label("no matching syntax")),
     ))
     .parse_next(input)
 }

@@ -5,34 +5,39 @@ use parser::combinator::{cond_else, has_peek};
 
 use winnow::{
     ascii::line_ending,
-    branch::alt,
-    bytes::{one_of, take_till1, take_while},
-    combinator::eof,
+    combinator::{alt, delimited, eof},
     error::ParserError,
-    sequence::delimited,
-    IResult, Parser,
+    stream::{AsChar, Compare, Stream, StreamIsPartial},
+    token::{one_of, take_till1, take_while},
+    PResult, Parser,
 };
 
 /// Semicolon or line ending.
-pub fn line_ending_or_semi<'a, E: ParserError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
-    let (input, is_semi) = has_peek(one_of(';')).parse_next(input)?;
+pub fn line_ending_or_semi<I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
+where
+    I: StreamIsPartial + Stream,
+    I: Compare<&'static str>,
+    <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I>,
+{
+    let is_semi = has_peek(one_of(';')).parse_next(input)?;
     cond_else(is_semi, one_of(';').recognize(), line_ending).parse_next(input)
 }
 
 /// Parses non-zero string until line_ending or comma appears.
 pub fn not_line_ending_or_semi<'a, E: ParserError<&'a str>>(
-    input: &'a str,
-) -> IResult<&str, &str, E> {
-    take_till1(";\r\n").parse_next(input)
+    input: &mut &'a str,
+) -> PResult<&'a str, E> {
+    take_till1([';', '\r', '\n']).parse_next(input)
 }
 
 /// Line ending or EOF.
-pub fn line_ending_or_eof<'a, E: ParserError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
+pub fn line_ending_or_eof<'a, E: ParserError<&'a str>>(input: &mut &'a str) -> PResult<&'a str, E> {
     alt((eof, line_ending)).parse_next(input)
 }
 
 /// Parses unnested string in paren.
-pub fn paren_str<'a, E: ParserError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
+pub fn paren_str<'a, E: ParserError<&'a str>>(input: &mut &'a str) -> PResult<&'a str, E> {
     paren(take_while(0.., |c| c != ')')).parse_next(input)
 }
 
@@ -41,7 +46,7 @@ pub fn paren<I, O, E: ParserError<I>, F>(inner: F) -> impl Parser<I, O, E>
 where
     F: Parser<I, O, E>,
     I: winnow::stream::Stream + winnow::stream::StreamIsPartial,
-    <I as winnow::stream::Stream>::Token: winnow::stream::AsChar + Copy,
+    <I as winnow::stream::Stream>::Token: winnow::stream::AsChar + Clone,
 {
     delimited(one_of('('), inner, one_of(')'))
 }
@@ -80,7 +85,7 @@ mod tests {
     #[test]
     fn paren_valid() {
         assert_eq!(
-            expect_parse_ok(paren(paren(take_while(1.., "abc"))), "((abcbca))"),
+            expect_parse_ok(paren(paren(take_while(1.., 'a'..='c'))), "((abcbca))"),
             ("", "abcbca")
         )
     }

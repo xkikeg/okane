@@ -1,22 +1,17 @@
-use crate::repl::{self, pretty_decimal};
+use crate::repl::{self};
 
 use super::{character::line_ending_or_eof, expr, metadata};
 
 use winnow::{
     ascii::{not_line_ending, space0, space1},
-    branch::alt,
-    bytes::{tag, take_while},
-    combinator::{fold_repeat, opt, repeat},
-    error::{AddContext, FromExternalError, ParserError},
-    sequence::{delimited, preceded, terminated},
-    IResult, Parser,
+    combinator::{alt, delimited, fold_repeat, opt, preceded, repeat, terminated, trace},
+    error::ParserError,
+    token::{tag, take_while},
+    PResult, Parser,
 };
 
 /// Parses "account" directive.
-pub fn account_declaration<'a, E>(input: &'a str) -> IResult<&'a str, repl::AccountDeclaration, E>
-where
-    E: ParserError<&'a str> + AddContext<&'a str>,
-{
+pub fn account_declaration<'a>(input: &mut &'a str) -> PResult<repl::AccountDeclaration> {
     (
         delimited(
             (tag("account"), space1),
@@ -50,14 +45,7 @@ where
 }
 
 /// Parses "commodity" directive.
-pub fn commodity_declaration<'a, E>(
-    input: &'a str,
-) -> IResult<&'a str, repl::CommodityDeclaration, E>
-where
-    E: ParserError<&'a str>
-        + FromExternalError<&'a str, pretty_decimal::Error>
-        + AddContext<&'a str>,
-{
+pub fn commodity_declaration<'a>(input: &mut &'a str) -> PResult<repl::CommodityDeclaration> {
     (
         delimited(
             (tag("commodity"), space1),
@@ -96,23 +84,23 @@ where
 }
 
 /// Parses "apply tag" directive.
-pub fn apply_tag<'a, E>(input: &'a str) -> IResult<&'a str, repl::ApplyTag, E>
-where
-    E: ParserError<&'a str> + AddContext<&'a str>,
-{
+pub fn apply_tag<'a>(input: &mut &'a str) -> PResult<repl::ApplyTag> {
     // TODO: value needs to be supported.
-    (
-        preceded(
-            (tag("apply"), space1, tag("tag"), space1),
-            metadata::tag_key,
-        ),
-        delimited(space0, opt(metadata::metadata_value), line_ending_or_eof),
+    trace(
+        "directive::apply_tag",
+        (
+            preceded(
+                (tag("apply"), space1, tag("tag"), space1),
+                metadata::tag_key,
+            ),
+            delimited(space0, opt(metadata::metadata_value), line_ending_or_eof),
+        )
+            .map(|(key, value)| repl::ApplyTag {
+                key: key.to_string(),
+                value,
+            }),
     )
-        .map(|(key, value)| repl::ApplyTag {
-            key: key.to_string(),
-            value,
-        })
-        .parse_next(input)
+    .parse_next(input)
 }
 
 /// Parses "end apply tag" directive.
@@ -122,47 +110,53 @@ where
 /// Also comment requires "end" directive.
 /// In the meantime, only "end apply tag" is supported, however,
 /// pretty sure it'd be needed to rename and extend this function.
-pub fn end_apply_tag<'a, E>(input: &'a str) -> IResult<&'a str, &'a str, E>
+pub fn end_apply_tag<'a, E>(input: &mut &'a str) -> PResult<&'a str, E>
 where
-    E: ParserError<&'a str> + AddContext<&'a str>,
+    E: ParserError<&'a str>,
 {
-    terminated(
-        (tag("end"), space1, tag("apply"), space1, tag("tag")).recognize(),
-        (space0, line_ending_or_eof),
+    trace(
+        "directive::end_apply_tag",
+        terminated(
+            (tag("end"), space1, tag("apply"), space1, tag("tag")).recognize(),
+            (space0, line_ending_or_eof),
+        ),
     )
-    .context("end apply tag")
     .parse_next(input)
 }
 
 /// Parses include directive.
 /// Note given we'll always have UTF-8 input,
 /// we're not using PathBuf but String for the path.
-pub fn include<'a, E>(input: &'a str) -> IResult<&'a str, repl::IncludeFile, E>
+pub fn include<'a, E>(input: &mut &'a str) -> PResult<repl::IncludeFile, E>
 where
-    E: ParserError<&'a str> + AddContext<&'a str>,
+    E: ParserError<&'a str>,
 {
-    delimited(
-        (tag("include"), space1),
-        not_line_ending,
-        line_ending_or_eof,
+    trace(
+        "directive::include",
+        delimited(
+            (tag("include"), space1),
+            not_line_ending,
+            line_ending_or_eof,
+        )
+        .map(|x| repl::IncludeFile(x.trim_end().to_string())),
     )
-    .map(|x| repl::IncludeFile(x.trim_end().to_string()))
-    .context("include directive")
     .parse_next(input)
 }
 
-static COMMENT_PREFIX: &str = ";#%|*";
+/// Prefix of comments.
+pub const COMMENT_PREFIX: [char; 5] = [';', '#', '%', '|', '*'];
 
 /// Parses top level comment in the Ledger file format.
 /// Notable difference with block_metadata is, this accepts multiple prefix.
-pub fn top_comment<'a, E>(input: &'a str) -> IResult<&'a str, repl::TopLevelComment, E>
+pub fn top_comment<'a, E>(input: &mut &'a str) -> PResult<repl::TopLevelComment, E>
 where
-    E: ParserError<&'a str> + AddContext<&'a str>,
+    E: ParserError<&'a str>,
 {
-    multiline_text(take_while(1.., COMMENT_PREFIX))
-        .map(repl::TopLevelComment)
-        .context("top level comment")
-        .parse_next(input)
+    trace(
+        "directive::top_comment",
+        multiline_text(take_while(1.., COMMENT_PREFIX)).map(repl::TopLevelComment),
+    )
+    .parse_next(input)
 }
 
 /// Parses multi-line text with preceding prefix.
@@ -190,6 +184,7 @@ mod tests {
 
     use indoc::indoc;
     use pretty_assertions::assert_eq;
+    use winnow::error::{ErrMode, ErrorKind, InputError};
 
     #[test]
     fn account_declaration_without_details() {
@@ -328,16 +323,29 @@ mod tests {
 
     #[test]
     fn end_apply_tag_rejects_unexpected() {
-        let end_apply_tag = end_apply_tag::<winnow::error::InputError<_>>;
-
         let input: &str = "end apply tag   following";
-        end_apply_tag(input).expect_err("should fail");
+        assert_eq!(
+            end_apply_tag.parse_peek(input),
+            Err(ErrMode::Backtrack(InputError::new(
+                "following",
+                ErrorKind::Tag
+            )))
+        );
 
         let input: &str = "end applytag";
-        end_apply_tag(input).expect_err("should fail");
+        assert_eq!(
+            end_apply_tag.parse_peek(input),
+            Err(ErrMode::Backtrack(InputError::new("tag", ErrorKind::Slice)))
+        );
 
         let input: &str = "endapply tag";
-        end_apply_tag(input).expect_err("should fail");
+        assert_eq!(
+            end_apply_tag.parse_peek(input),
+            Err(ErrMode::Backtrack(InputError::new(
+                "apply tag",
+                ErrorKind::Slice
+            )))
+        );
     }
 
     #[test]

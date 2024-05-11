@@ -5,51 +5,51 @@ use repl::parser::{character, combinator::has_peek};
 
 use winnow::{
     ascii::{line_ending, not_line_ending, space0, space1},
-    branch::alt,
-    bytes::{one_of, tag, take_till1},
-    combinator::{cond, cut_err, repeat},
-    error::{AddContext, ParserError},
-    multi::separated0,
-    sequence::{delimited, preceded, terminated},
-    IResult, Parser,
+    combinator::{alt, cond, cut_err, delimited, preceded, repeat, separated0, terminated, trace},
+    error::ParserError,
+    token::{one_of, tag, take_till1},
+    PResult, Parser,
 };
 
 /// Parses block of metadata including the last line_end.
 /// Note this consumes one line_ending regardless of Metadata existence.
-pub fn block_metadata<'a, E: ParserError<&'a str> + AddContext<&'a str>>(
-    input: &'a str,
-) -> IResult<&str, Vec<repl::Metadata>, E> {
+pub fn block_metadata<'a, E>(input: &mut &'a str) -> PResult<Vec<repl::Metadata>, E>
+where
+    E: ParserError<&'a str>,
+{
     // TODO: Clean this up
-    let (input, is_metadata) = has_peek(one_of(';')).parse_next(input)?;
-    let (input, _) = cond(!is_metadata, line_ending).parse_next(input)?;
+    let is_metadata = has_peek(one_of(';')).parse_next(input)?;
+    cond(!is_metadata, line_ending).void().parse_next(input)?;
     separated0(preceded(space0, line_metadata), space1).parse_next(input)
 }
 
-fn line_metadata<'a, E>(input: &'a str) -> IResult<&'a str, repl::Metadata, E>
+fn line_metadata<'a, E>(input: &mut &'a str) -> PResult<repl::Metadata, E>
 where
-    E: ParserError<&'a str> + AddContext<&'a str>,
+    E: ParserError<&'a str>,
 {
-    delimited(
-        (one_of(';'), space0),
-        alt((
-            metadata_tags,
-            metadata_kv,
-            not_line_ending.map(|s: &str| {
-                if s.contains(':') {
-                    log::warn!("metadata containing `:` not parsed as tags: {}", s);
-                }
-                repl::Metadata::Comment(s.trim_end().to_string())
-            }),
-        )),
-        character::line_ending_or_eof,
+    trace(
+        "metadata::line_metadata",
+        delimited(
+            (one_of(';'), space0),
+            alt((
+                metadata_tags,
+                metadata_kv,
+                not_line_ending.map(|s: &str| {
+                    if s.contains(':') {
+                        log::warn!("metadata containing `:` not parsed as tags: {}", s);
+                    }
+                    repl::Metadata::Comment(s.trim_end().to_string())
+                }),
+            )),
+            character::line_ending_or_eof,
+        ),
     )
-    .context("parsing a line for Metadata")
     .parse_next(input)
 }
 
-fn metadata_tags<'a, E>(input: &'a str) -> IResult<&'a str, repl::Metadata, E>
+fn metadata_tags<'a, E>(input: &mut &'a str) -> PResult<repl::Metadata, E>
 where
-    E: ParserError<&'a str> + AddContext<&'a str>,
+    E: ParserError<&'a str>,
 {
     delimited(
         one_of(':'),
@@ -60,9 +60,9 @@ where
     .parse_next(input)
 }
 
-fn metadata_kv<'a, E>(input: &'a str) -> IResult<&'a str, repl::Metadata, E>
+fn metadata_kv<'a, E>(input: &mut &'a str) -> PResult<repl::Metadata, E>
 where
-    E: ParserError<&'a str> + AddContext<&'a str>,
+    E: ParserError<&'a str>,
 {
     (terminated(tag_key, space0), metadata_value)
         .map(|(key, value)| repl::Metadata::KeyValueTag {
@@ -73,9 +73,9 @@ where
 }
 
 /// Parses metadata value with `:` or `::` prefix.
-pub fn metadata_value<'a, E>(input: &'a str) -> IResult<&'a str, repl::MetadataValue, E>
+pub fn metadata_value<'a, E>(input: &mut &'a str) -> PResult<repl::MetadataValue, E>
 where
-    E: ParserError<&'a str> + AddContext<&'a str>,
+    E: ParserError<&'a str>,
 {
     let expr = preceded(tag("::"), cut_err(not_line_ending))
         .map(|x: &'a str| repl::MetadataValue::Expr(x.trim().to_string()));
@@ -85,13 +85,15 @@ where
 }
 
 /// Parses metadata tag.
-pub fn tag_key<'a, E>(input: &'a str) -> IResult<&'a str, &'a str, E>
+pub fn tag_key<'a, E>(input: &mut &'a str) -> PResult<&'a str, E>
 where
-    E: ParserError<&'a str> + AddContext<&'a str>,
+    E: ParserError<&'a str>,
 {
-    take_till1(|c: char| c.is_whitespace() || c == ':')
-        .context("metadata tag")
-        .parse_next(input)
+    trace(
+        "metadata::tag_key",
+        take_till1(|c: char| c.is_whitespace() || c == ':'),
+    )
+    .parse_next(input)
 }
 
 #[cfg(test)]

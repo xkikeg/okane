@@ -5,40 +5,45 @@ use crate::repl::pretty_decimal::{self, PrettyDecimal};
 use chrono::NaiveDate;
 use winnow::{
     ascii::digit1,
-    branch::alt,
-    bytes::{one_of, take_till1, take_while},
-    combinator::opt,
-    error::{AddContext, FromExternalError, ParserError},
-    IResult, Parser,
+    combinator::{alt, trace},
+    error::{FromExternalError, ParserError},
+    token::{one_of, take_till, take_while},
+    PResult, Parser,
 };
 
 /// Parses comma separated decimal.
-pub fn comma_decimal<'a, E>(input: &'a str) -> IResult<&str, PrettyDecimal, E>
+pub fn comma_decimal<'a, E>(input: &mut &'a str) -> PResult<PrettyDecimal, E>
 where
-    E: FromExternalError<&'a str, pretty_decimal::Error>
-        + AddContext<&'a str>
-        + ParserError<&'a str>,
+    E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
 {
-    take_while(1.., "-0123456789,.")
-        .try_map(str::parse)
-        .context("decimal")
-        .parse_next(input)
+    trace(
+        "comma_decimal",
+        take_while(1.., |c: char| {
+            c.is_ascii_digit() || c == '-' || c == ',' || c == '.'
+        })
+        .try_map(str::parse),
+    )
+    .parse_next(input)
 }
+
+const NON_COMMODITY_CHARS: [char; 37] = [
+    ' ', '\t', '\r', '\n', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', ',', ';', ':',
+    '?', '!', '-', '+', '*', '/', '^', '&', '|', '=', '<', '>', '[', ']', '(', ')', '{', '}', '@',
+];
 
 /// Parses commodity in greedy manner.
 /// Returns empty string if the upcoming characters are not valid as commodity to support empty commodity.
-pub fn commodity<'a, E: ParserError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
+pub fn commodity<'a, E: ParserError<&'a str>>(input: &mut &'a str) -> PResult<&'a str, E> {
     // Quoted commodity not supported.
 
-    opt(take_till1(" \t\r\n0123456789.,;:?!-+*/^&|=<>[](){}@"))
-        .map(|x| x.unwrap_or_default())
-        .parse_next(input)
+    take_till(0.., NON_COMMODITY_CHARS).parse_next(input)
 }
 
 /// Parses date in yyyy/mm/dd format.
-pub fn date<'a, E: ParserError<&'a str> + FromExternalError<&'a str, chrono::ParseError>>(
-    input: &'a str,
-) -> IResult<&str, NaiveDate, E> {
+pub fn date<'a, E>(input: &mut &'a str) -> PResult<NaiveDate, E>
+where
+    E: ParserError<&'a str> + FromExternalError<&'a str, chrono::ParseError>,
+{
     alt((
         (digit1, one_of('/'), digit1, one_of('/'), digit1)
             .recognize()
@@ -57,6 +62,7 @@ mod tests {
 
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
+    use winnow::error::{ErrMode, ErrorKind, InputError};
 
     #[test]
     fn comma_decimal_parses_valid_inputs() {
@@ -76,9 +82,17 @@ mod tests {
 
     #[test]
     fn comma_decimal_fails_on_invalid_inputs() {
-        let cd = comma_decimal::<winnow::error::InputError<&'static str>>;
-        cd("不可能").unwrap_err();
-        cd("!").unwrap_err();
+        assert_eq!(
+            comma_decimal.parse_peek("不可能"),
+            Err(ErrMode::Backtrack(InputError::new(
+                "不可能",
+                ErrorKind::Slice
+            )))
+        );
+        assert_eq!(
+            comma_decimal.parse_peek("!"),
+            Err(ErrMode::Backtrack(InputError::new("!", ErrorKind::Slice)))
+        );
     }
 
     #[test]
@@ -109,9 +123,26 @@ mod tests {
 
     #[test]
     fn date_fails_on_invalid_inputs() {
-        let pd = date::<winnow::error::InputError<&'static str>>;
-        pd("not a date").unwrap_err();
-        pd("2022/01").unwrap_err();
-        pd("2022/13/21").unwrap_err();
+        assert_eq!(
+            date.parse_peek("not a date"),
+            Err(ErrMode::Backtrack(InputError::new(
+                "not a date",
+                ErrorKind::Slice
+            )))
+        );
+        assert_eq!(
+            date.parse_peek("2022/01"),
+            Err(ErrMode::Backtrack(InputError::new(
+                "/01",
+                ErrorKind::Verify
+            )))
+        );
+        assert_eq!(
+            date.parse_peek("2022/13/21"),
+            Err(ErrMode::Backtrack(InputError::new(
+                "/13/21",
+                ErrorKind::Verify
+            )))
+        );
     }
 }
