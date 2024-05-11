@@ -13,7 +13,7 @@ use winnow::{
     ascii::{space0, space1},
     combinator::{cond, delimited, fail, opt, peek, preceded, terminated, trace},
     error::StrContext,
-    token::{one_of, tag, take, take_till},
+    token::{one_of, literal, take, take_till},
     PResult, Parser,
 };
 
@@ -67,7 +67,7 @@ fn posting_amount(input: &mut &str) -> PResult<repl::PostingAmount> {
     let amount = terminated(expr::value_expr, space0).parse_next(input)?;
     let lot = lot(input)?;
     let is_at = has_peek(one_of('@')).parse_next(input)?;
-    let is_double_at = has_peek(tag("@@")).parse_next(input)?;
+    let is_double_at = has_peek(literal("@@")).parse_next(input)?;
     let cost = cond(
         is_at,
         trace(
@@ -88,15 +88,15 @@ fn lot(input: &mut &str) -> PResult<repl::Lot> {
         match open {
             None => return Ok(lot),
             Some('{') if lot.price.is_none() => {
-                let is_total = has_peek(tag("{{")).parse_next(input)?;
+                let is_total = has_peek(literal("{{")).parse_next(input)?;
                 if is_total {
                     let amount =
-                        delimited((tag("{{"), space0), expr::value_expr, (space0, tag("}}")))
+                        delimited((literal("{{"), space0), expr::value_expr, (space0, literal("}}")))
                             .parse_next(input)?;
                     lot.price = Some(repl::Exchange::Total(amount));
                 } else {
                     let amount =
-                        delimited((tag("{"), space0), expr::value_expr, (space0, tag("}")))
+                        delimited((literal("{"), space0), expr::value_expr, (space0, literal("}")))
                             .parse_next(input)?;
                     lot.price = Some(repl::Exchange::Rate(amount));
                 }
@@ -136,13 +136,13 @@ fn lot(input: &mut &str) -> PResult<repl::Lot> {
 }
 
 fn total_cost(input: &mut &str) -> PResult<repl::Exchange> {
-    preceded((tag("@@"), space0), expr::value_expr)
+    preceded((literal("@@"), space0), expr::value_expr)
         .map(repl::Exchange::Total)
         .parse_next(input)
 }
 
 fn rate_cost(input: &mut &str) -> PResult<repl::Exchange> {
-    preceded((tag("@"), space0), expr::value_expr)
+    preceded((literal("@"), space0), expr::value_expr)
         .map(repl::Exchange::Rate)
         .parse_next(input)
 }
