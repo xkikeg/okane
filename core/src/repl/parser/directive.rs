@@ -7,7 +7,7 @@ use winnow::{
     branch::alt,
     bytes::{tag, take_while},
     combinator::{fold_repeat, opt, repeat},
-    error::{ContextError, FromExternalError, ParseError},
+    error::{AddContext, FromExternalError, ParserError},
     sequence::{delimited, preceded, terminated},
     IResult, Parser,
 };
@@ -15,7 +15,7 @@ use winnow::{
 /// Parses "account" directive.
 pub fn account_declaration<'a, E>(input: &'a str) -> IResult<&'a str, repl::AccountDeclaration, E>
 where
-    E: ParseError<&'a str> + ContextError<&'a str>,
+    E: ParserError<&'a str> + AddContext<&'a str>,
 {
     (
         delimited(
@@ -54,9 +54,9 @@ pub fn commodity_declaration<'a, E>(
     input: &'a str,
 ) -> IResult<&'a str, repl::CommodityDeclaration, E>
 where
-    E: ParseError<&'a str>
+    E: ParserError<&'a str>
         + FromExternalError<&'a str, pretty_decimal::Error>
-        + ContextError<&'a str>,
+        + AddContext<&'a str>,
 {
     (
         delimited(
@@ -98,7 +98,7 @@ where
 /// Parses "apply tag" directive.
 pub fn apply_tag<'a, E>(input: &'a str) -> IResult<&'a str, repl::ApplyTag, E>
 where
-    E: ParseError<&'a str> + ContextError<&'a str>,
+    E: ParserError<&'a str> + AddContext<&'a str>,
 {
     // TODO: value needs to be supported.
     (
@@ -124,7 +124,7 @@ where
 /// pretty sure it'd be needed to rename and extend this function.
 pub fn end_apply_tag<'a, E>(input: &'a str) -> IResult<&'a str, &'a str, E>
 where
-    E: ParseError<&'a str> + ContextError<&'a str>,
+    E: ParserError<&'a str> + AddContext<&'a str>,
 {
     terminated(
         (tag("end"), space1, tag("apply"), space1, tag("tag")).recognize(),
@@ -139,7 +139,7 @@ where
 /// we're not using PathBuf but String for the path.
 pub fn include<'a, E>(input: &'a str) -> IResult<&'a str, repl::IncludeFile, E>
 where
-    E: ParseError<&'a str> + ContextError<&'a str>,
+    E: ParserError<&'a str> + AddContext<&'a str>,
 {
     delimited(
         (tag("include"), space1),
@@ -157,7 +157,7 @@ static COMMENT_PREFIX: &str = ";#%|*";
 /// Notable difference with block_metadata is, this accepts multiple prefix.
 pub fn top_comment<'a, E>(input: &'a str) -> IResult<&'a str, repl::TopLevelComment, E>
 where
-    E: ParseError<&'a str> + ContextError<&'a str>,
+    E: ParserError<&'a str> + AddContext<&'a str>,
 {
     multiline_text(take_while(1.., COMMENT_PREFIX))
         .map(repl::TopLevelComment)
@@ -168,7 +168,7 @@ where
 /// Parses multi-line text with preceding prefix.
 fn multiline_text<'a, E, F, O1>(prefix: F) -> impl Parser<&'a str, String, E>
 where
-    E: ParseError<&'a str>,
+    E: ParserError<&'a str>,
     F: Parser<&'a str, O1, E>,
 {
     fold_repeat(
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn end_apply_tag_rejects_unexpected() {
-        let end_apply_tag = end_apply_tag::<winnow::error::Error<_>>;
+        let end_apply_tag = end_apply_tag::<winnow::error::InputError<_>>;
 
         let input: &str = "end apply tag   following";
         end_apply_tag(input).expect_err("should fail");

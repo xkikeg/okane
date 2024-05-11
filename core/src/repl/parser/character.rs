@@ -8,36 +8,36 @@ use winnow::{
     branch::alt,
     bytes::{one_of, take_till1, take_while},
     combinator::eof,
-    error::ParseError,
+    error::ParserError,
     sequence::delimited,
     IResult, Parser,
 };
 
 /// Semicolon or line ending.
-pub fn line_ending_or_semi<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
+pub fn line_ending_or_semi<'a, E: ParserError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
     let (input, is_semi) = has_peek(one_of(';')).parse_next(input)?;
     cond_else(is_semi, one_of(';').recognize(), line_ending).parse_next(input)
 }
 
 /// Parses non-zero string until line_ending or comma appears.
-pub fn not_line_ending_or_semi<'a, E: ParseError<&'a str>>(
+pub fn not_line_ending_or_semi<'a, E: ParserError<&'a str>>(
     input: &'a str,
 ) -> IResult<&str, &str, E> {
     take_till1(";\r\n").parse_next(input)
 }
 
 /// Line ending or EOF.
-pub fn line_ending_or_eof<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
+pub fn line_ending_or_eof<'a, E: ParserError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
     alt((eof, line_ending)).parse_next(input)
 }
 
 /// Parses unnested string in paren.
-pub fn paren_str<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
+pub fn paren_str<'a, E: ParserError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
     paren(take_while(0.., |c| c != ')')).parse_next(input)
 }
 
 /// Parses given parser within the paren.
-pub fn paren<I, O, E: ParseError<I>, F>(inner: F) -> impl Parser<I, O, E>
+pub fn paren<I, O, E: ParserError<I>, F>(inner: F) -> impl Parser<I, O, E>
 where
     F: Parser<I, O, E>,
     I: winnow::stream::Stream + winnow::stream::StreamIsPartial,

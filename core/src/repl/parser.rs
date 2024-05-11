@@ -17,7 +17,7 @@ use crate::repl;
 use winnow::{
     ascii::line_ending,
     branch::alt,
-    bytes::{one_of, tag},
+    token::{one_of, tag},
     combinator::{cut_err, eof, fail, peek, repeat, repeat_till0},
     error::{convert_error, ErrMode, VerboseError},
     sequence::{preceded, terminated},
@@ -31,7 +31,7 @@ pub struct ParseLedgerError(String);
 
 /// Parses the whole ledger file.
 pub fn parse_ledger(input: &str) -> Result<Vec<repl::LedgerEntry>, ParseLedgerError> {
-    let r: Result<(&str, (Vec<repl::LedgerEntry>, &str)), ErrMode<VerboseError<&str>>> = preceded(
+    let r = preceded(
         repeat::<_, _, (), _, _>(0.., line_ending::<&str, _>),
         repeat_till0(
             terminated(

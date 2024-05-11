@@ -13,7 +13,7 @@ use winnow::{
     ascii::space0,
     bytes::one_of,
     combinator::{fail, opt},
-    error::{ContextError, FromExternalError, ParseError},
+    error::{AddContext, FromExternalError, ParserError},
     sequence::{delimited, terminated},
     IResult, Parser,
 };
@@ -21,8 +21,8 @@ use winnow::{
 /// Parses value expression.
 pub fn value_expr<'a, E>(input: &'a str) -> IResult<&'a str, expr::ValueExpr, E>
 where
-    E: ParseError<&'a str>
-        + ContextError<&'a str>
+    E: ParserError<&'a str>
+        + AddContext<&'a str>
         + FromExternalError<&'a str, pretty_decimal::Error>,
 {
     let (input, is_paren) = has_peek(one_of('(')).parse_next(input)?;
@@ -35,8 +35,8 @@ where
 
 fn paren_expr<'a, E>(input: &'a str) -> IResult<&'a str, expr::ValueExpr, E>
 where
-    E: ParseError<&'a str>
-        + ContextError<&'a str>
+    E: ParserError<&'a str>
+        + AddContext<&'a str>
         + FromExternalError<&'a str, pretty_decimal::Error>,
 {
     delimited((one_of('('), space0), add_expr, (space0, one_of(')')))
@@ -46,8 +46,8 @@ where
 
 fn add_expr<'a, E>(input: &'a str) -> IResult<&'a str, expr::Expr, E>
 where
-    E: ParseError<&'a str>
-        + ContextError<&'a str>
+    E: ParserError<&'a str>
+        + AddContext<&'a str>
         + FromExternalError<&'a str, pretty_decimal::Error>,
 {
     infixl(add_op, mul_expr).parse_next(input)
@@ -55,7 +55,7 @@ where
 
 fn add_op<'a, E>(input: &'a str) -> IResult<&'a str, expr::BinaryOp, E>
 where
-    E: ParseError<&'a str>,
+    E: ParserError<&'a str>,
 {
     delimited(space0, one_of("+-"), space0)
         .map(|c| match c {
@@ -68,16 +68,16 @@ where
 
 fn mul_expr<'a, E>(input: &'a str) -> IResult<&'a str, expr::Expr, E>
 where
-    E: ParseError<&'a str>
+    E: ParserError<&'a str>
         + FromExternalError<&'a str, pretty_decimal::Error>
-        + ContextError<&'a str>,
+        + AddContext<&'a str>,
 {
     infixl(mul_op, unary_expr).parse_next(input)
 }
 
 fn mul_op<'a, E>(input: &'a str) -> IResult<&'a str, expr::BinaryOp, E>
 where
-    E: ParseError<&'a str>,
+    E: ParserError<&'a str>,
 {
     delimited(space0, one_of("*/"), space0)
         .map(|c| match c {
@@ -90,9 +90,9 @@ where
 
 fn unary_expr<'a, E>(input: &'a str) -> IResult<&'a str, expr::Expr, E>
 where
-    E: ParseError<&'a str>
+    E: ParserError<&'a str>
         + FromExternalError<&'a str, pretty_decimal::Error>
-        + ContextError<&'a str>,
+        + AddContext<&'a str>,
 {
     let (input, negate) = opt(one_of('-')).parse_next(input)?;
     let (input, value) = value_expr(input)?;
@@ -111,9 +111,9 @@ where
 /// Parses amount expression.
 pub fn amount<'a, E>(input: &'a str) -> IResult<&'a str, expr::Amount, E>
 where
-    E: ParseError<&'a str>
+    E: ParserError<&'a str>
         + FromExternalError<&'a str, pretty_decimal::Error>
-        + ContextError<&'a str>,
+        + AddContext<&'a str>,
 {
     // Currently it only supports suffix commodity.
     // It should support prefix like $, € or ¥ prefix.
@@ -133,7 +133,7 @@ where
 /// operand parser needs to be Copy so that it can be used twice.
 fn infixl<I, E, F, G>(mut operator: F, mut operand: G) -> impl Parser<I, expr::Expr, E>
 where
-    E: ParseError<I> + ContextError<I>,
+    E: ParserError<I> + AddContext<I>,
     F: Parser<I, expr::BinaryOp, E>,
     G: Parser<I, expr::Expr, E>,
     I: winnow::stream::Stream,
