@@ -35,7 +35,8 @@ pub fn transaction(input: &mut &str) -> PResult<repl::Transaction> {
         )
         .parse_next(input)?;
         let code = opt(terminated(character::paren_str, space0)).parse_next(input)?;
-        let payee = opt(character::not_line_ending_or_semi.map(str::trim_end)).parse_next(input)?;
+        let payee =
+            opt(character::till_line_ending_or_semi.map(str::trim_end)).parse_next(input)?;
         let metadata = metadata::block_metadata(input)?;
         let posts = repeat(0.., preceded(peek(one_of(' ')), cut_err(posting::posting)))
             .parse_next(input)?;

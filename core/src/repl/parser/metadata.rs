@@ -4,10 +4,10 @@ use crate::repl;
 use repl::parser::{character, combinator::has_peek};
 
 use winnow::{
-    ascii::{line_ending, not_line_ending, space0, space1},
-    combinator::{alt, cond, cut_err, delimited, preceded, repeat, separated0, terminated, trace},
+    ascii::{line_ending, space0, space1, till_line_ending},
+    combinator::{alt, cond, cut_err, delimited, preceded, repeat, separated, terminated, trace},
     error::ParserError,
-    token::{one_of, tag, take_till1},
+    token::{one_of, tag, take_till},
     PResult, Parser,
 };
 
@@ -20,7 +20,7 @@ where
     // TODO: Clean this up
     let is_metadata = has_peek(one_of(';')).parse_next(input)?;
     cond(!is_metadata, line_ending).void().parse_next(input)?;
-    separated0(preceded(space0, line_metadata), space1).parse_next(input)
+    separated(0.., preceded(space0, line_metadata), space1).parse_next(input)
 }
 
 fn line_metadata<'a, E>(input: &mut &'a str) -> PResult<repl::Metadata, E>
@@ -34,7 +34,7 @@ where
             alt((
                 metadata_tags,
                 metadata_kv,
-                not_line_ending.map(|s: &str| {
+                till_line_ending.map(|s: &str| {
                     if s.contains(':') {
                         log::warn!("metadata containing `:` not parsed as tags: {}", s);
                     }
@@ -77,9 +77,9 @@ pub fn metadata_value<'a, E>(input: &mut &'a str) -> PResult<repl::MetadataValue
 where
     E: ParserError<&'a str>,
 {
-    let expr = preceded(tag("::"), cut_err(not_line_ending))
+    let expr = preceded(tag("::"), cut_err(till_line_ending))
         .map(|x: &'a str| repl::MetadataValue::Expr(x.trim().to_string()));
-    let text = preceded(one_of(':'), cut_err(not_line_ending))
+    let text = preceded(one_of(':'), cut_err(till_line_ending))
         .map(|x: &'a str| repl::MetadataValue::Text(x.trim().to_string()));
     alt((expr, text)).parse_next(input)
 }
@@ -91,7 +91,7 @@ where
 {
     trace(
         "metadata::tag_key",
-        take_till1(|c: char| c.is_whitespace() || c == ':'),
+        take_till(1.., |c: char| c.is_whitespace() || c == ':'),
     )
     .parse_next(input)
 }

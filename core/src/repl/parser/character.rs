@@ -8,7 +8,7 @@ use winnow::{
     combinator::{alt, delimited, eof},
     error::ParserError,
     stream::{AsChar, Compare, Stream, StreamIsPartial},
-    token::{one_of, take_till1, take_while},
+    token::{one_of, take_till, take_while},
     PResult, Parser,
 };
 
@@ -25,10 +25,10 @@ where
 }
 
 /// Parses non-zero string until line_ending or comma appears.
-pub fn not_line_ending_or_semi<'a, E: ParserError<&'a str>>(
+pub fn till_line_ending_or_semi<'a, E: ParserError<&'a str>>(
     input: &mut &'a str,
 ) -> PResult<&'a str, E> {
-    take_till1([';', '\r', '\n']).parse_next(input)
+    take_till(1.., [';', '\r', '\n']).parse_next(input)
 }
 
 /// Line ending or EOF.

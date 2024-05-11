@@ -2,7 +2,7 @@
 
 use crate::repl;
 use repl::parser::{
-    character::{line_ending_or_semi, not_line_ending_or_semi, paren},
+    character::{line_ending_or_semi, paren, till_line_ending_or_semi},
     combinator::{cond_else, has_peek},
     expr, metadata, primitive,
 };
@@ -13,7 +13,7 @@ use winnow::{
     ascii::{space0, space1},
     combinator::{cond, delimited, fail, opt, peek, preceded, terminated, trace},
     error::StrContext,
-    token::{one_of, tag, take, take_till1},
+    token::{one_of, tag, take, take_till},
     PResult, Parser,
 };
 
@@ -50,7 +50,7 @@ pub fn posting(input: &mut &str) -> PResult<repl::Posting> {
 
 /// Parses the posting account name, and consumes the trailing spaces and tabs.
 fn posting_account<'a>(input: &mut &'a str) -> PResult<&'a str> {
-    let (_, line) = not_line_ending_or_semi.parse_peek(input)?;
+    let (_, line) = till_line_ending_or_semi.parse_peek(input)?;
     let space = line.find("  ");
     let tab = line.find('\t');
     let length = match (space, tab) {
@@ -121,7 +121,7 @@ fn lot(input: &mut &str) -> PResult<repl::Lot> {
                     .parse_next(input)
             }
             Some('(') if lot.note.is_none() => {
-                let note = paren(take_till1(['(', ')', '@'])).parse_next(input)?;
+                let note = paren(take_till(1.., ['(', ')', '@'])).parse_next(input)?;
                 lot.note = Some(note.to_string());
             }
             Some('(') => {
