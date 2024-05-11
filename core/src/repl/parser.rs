@@ -15,13 +15,13 @@ pub mod testing;
 use crate::repl;
 
 use winnow::{
+    ascii::line_ending,
     branch::alt,
-    bytes::{one_of, tag, take_while_m_n},
-    character::line_ending,
-    combinator::{cut_err, eof, fail, peek},
+    bytes::{one_of, tag},
+    combinator::{cut_err, eof, fail, peek, repeat, repeat_till0},
     error::{convert_error, ErrMode, VerboseError},
-    multi::{many0, many_till0},
     sequence::{preceded, terminated},
+    token::take_while,
     IResult, Parser,
 };
 
@@ -31,14 +31,17 @@ pub struct ParseLedgerError(String);
 
 /// Parses the whole ledger file.
 pub fn parse_ledger(input: &str) -> Result<Vec<repl::LedgerEntry>, ParseLedgerError> {
-    let r: Result<(&str, (Vec<repl::LedgerEntry>, &str)), ErrMode<VerboseError<&str>>> =
-        preceded(
-            many0::<_, _, (), _, _>(line_ending::<&str, _>),
-            many_till0(
-                terminated(parse_ledger_entry, many0::<_, _, (), _, _>(line_ending)),
-                eof,
+    let r: Result<(&str, (Vec<repl::LedgerEntry>, &str)), ErrMode<VerboseError<&str>>> = preceded(
+        repeat::<_, _, (), _, _>(0.., line_ending::<&str, _>),
+        repeat_till0(
+            terminated(
+                parse_ledger_entry,
+                repeat::<_, _, (), _, _>(0.., line_ending),
             ),
-        )(input);
+            eof,
+        ),
+    )
+    .parse_next(input);
     match r {
         Ok((_, (ret, _))) => Ok(ret),
         Err(ErrMode::Backtrack(e)) | Err(ErrMode::Cut(e)) => {
@@ -76,11 +79,12 @@ fn parse_ledger_entry(input: &str) -> IResult<&str, repl::LedgerEntry, VerboseEr
             cut_err(directive::include.map(repl::LedgerEntry::Include)),
         ),
         preceded(
-            peek(take_while_m_n(1, 1, |c: char| c.is_ascii_digit())),
+            peek(take_while(1..=1, |c: char| c.is_ascii_digit())),
             cut_err(transaction::transaction.map(repl::LedgerEntry::Txn)),
         ),
         fail.context("no matching syntax"),
-    ))(input)
+    ))
+    .parse_next(input)
 }
 
 #[cfg(test)]

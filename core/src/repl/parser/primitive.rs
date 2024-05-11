@@ -4,9 +4,9 @@ use crate::repl::pretty_decimal::{self, PrettyDecimal};
 
 use chrono::NaiveDate;
 use winnow::{
+    ascii::digit1,
     branch::alt,
-    bytes::{one_of, take_till1, take_while1},
-    character::digit1,
+    bytes::{one_of, take_till1, take_while},
     combinator::opt,
     error::{ContextError, FromExternalError, ParseError},
     IResult, Parser,
@@ -19,8 +19,8 @@ where
         + ContextError<&'a str>
         + ParseError<&'a str>,
 {
-    take_while1("-0123456789,.")
-        .map_res(str::parse)
+    take_while(1.., "-0123456789,.")
+        .try_map(str::parse)
         .context("decimal")
         .parse_next(input)
 }
@@ -42,10 +42,10 @@ pub fn date<'a, E: ParseError<&'a str> + FromExternalError<&'a str, chrono::Pars
     alt((
         (digit1, one_of('/'), digit1, one_of('/'), digit1)
             .recognize()
-            .map_res(|s| NaiveDate::parse_from_str(s, "%Y/%m/%d")),
+            .try_map(|s| NaiveDate::parse_from_str(s, "%Y/%m/%d")),
         (digit1, one_of('-'), digit1, one_of('-'), digit1)
             .recognize()
-            .map_res(|s| NaiveDate::parse_from_str(s, "%F")),
+            .try_map(|s| NaiveDate::parse_from_str(s, "%F")),
     ))
     .parse_next(input)
 }

@@ -4,12 +4,12 @@ use crate::repl;
 use repl::parser::{character, combinator::has_peek};
 
 use winnow::{
+    ascii::{line_ending, not_line_ending, space0, space1},
     branch::alt,
     bytes::{one_of, tag, take_till1},
-    character::{line_ending, not_line_ending, space0, space1},
-    combinator::{cond, cut_err},
+    combinator::{cond, cut_err, repeat},
     error::{ContextError, ParseError},
-    multi::{many1, separated0},
+    multi::separated0,
     sequence::{delimited, preceded, terminated},
     IResult, Parser,
 };
@@ -19,9 +19,10 @@ use winnow::{
 pub fn block_metadata<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     input: &'a str,
 ) -> IResult<&str, Vec<repl::Metadata>, E> {
+    // TODO: Clean this up
     let (input, is_metadata) = has_peek(one_of(';')).parse_next(input)?;
-    let (input, _) = cond(!is_metadata, line_ending)(input)?;
-    separated0(preceded(space0, line_metadata), space1)(input)
+    let (input, _) = cond(!is_metadata, line_ending).parse_next(input)?;
+    separated0(preceded(space0, line_metadata), space1).parse_next(input)
 }
 
 fn line_metadata<'a, E>(input: &'a str) -> IResult<&'a str, repl::Metadata, E>
@@ -50,12 +51,13 @@ fn metadata_tags<'a, E>(input: &'a str) -> IResult<&'a str, repl::Metadata, E>
 where
     E: ParseError<&'a str> + ContextError<&'a str>,
 {
-    let (input, tags): (_, Vec<&str>) =
-        delimited(one_of(':'), many1(terminated(tag_key, one_of(':'))), space0)(input)?;
-    Ok((
-        input,
-        repl::Metadata::WordTags(tags.into_iter().map(String::from).collect()),
-    ))
+    delimited(
+        one_of(':'),
+        repeat(1.., terminated(tag_key, one_of(':'))),
+        space0,
+    )
+    .map(|tags: Vec<&str>| repl::Metadata::WordTags(tags.into_iter().map(String::from).collect()))
+    .parse_next(input)
 }
 
 fn metadata_kv<'a, E>(input: &'a str) -> IResult<&'a str, repl::Metadata, E>
@@ -79,7 +81,7 @@ where
         .map(|x: &'a str| repl::MetadataValue::Expr(x.trim().to_string()));
     let text = preceded(one_of(':'), cut_err(not_line_ending))
         .map(|x: &'a str| repl::MetadataValue::Text(x.trim().to_string()));
-    alt((expr, text))(input)
+    alt((expr, text)).parse_next(input)
 }
 
 /// Parses metadata tag.
