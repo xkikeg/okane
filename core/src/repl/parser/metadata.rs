@@ -7,7 +7,7 @@ use winnow::{
     ascii::{line_ending, space0, space1, till_line_ending},
     combinator::{alt, cond, cut_err, delimited, preceded, repeat, separated, terminated, trace},
     error::ParserError,
-    token::{one_of, tag, take_till},
+    token::{one_of, literal, take_till},
     PResult, Parser,
 };
 
@@ -77,7 +77,7 @@ pub fn metadata_value<'a, E>(input: &mut &'a str) -> PResult<repl::MetadataValue
 where
     E: ParserError<&'a str>,
 {
-    let expr = preceded(tag("::"), cut_err(till_line_ending))
+    let expr = preceded(literal("::"), cut_err(till_line_ending))
         .map(|x: &'a str| repl::MetadataValue::Expr(x.trim().to_string()));
     let text = preceded(one_of(':'), cut_err(till_line_ending))
         .map(|x: &'a str| repl::MetadataValue::Text(x.trim().to_string()));

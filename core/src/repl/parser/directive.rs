@@ -6,7 +6,7 @@ use winnow::{
     ascii::{space0, space1, till_line_ending},
     combinator::{alt, delimited, opt, preceded, repeat, terminated, trace},
     error::ParserError,
-    token::{tag, take_while},
+    token::{literal, take_while},
     PResult, Parser,
 };
 
@@ -14,7 +14,7 @@ use winnow::{
 pub fn account_declaration(input: &mut &str) -> PResult<repl::AccountDeclaration> {
     (
         delimited(
-            (tag("account"), space1),
+            (literal("account"), space1),
             till_line_ending,
             line_ending_or_eof,
         ),
@@ -27,9 +27,9 @@ pub fn account_declaration(input: &mut &str) -> PResult<repl::AccountDeclaration
             alt((
                 multiline_text((space1, take_while(1.., COMMENT_PREFIX)))
                     .map(repl::AccountDetail::Comment),
-                multiline_text((space1, tag("note"), space1)).map(repl::AccountDetail::Note),
+                multiline_text((space1, literal("note"), space1)).map(repl::AccountDetail::Note),
                 delimited(
-                    (space1, tag("alias"), space1),
+                    (space1, literal("alias"), space1),
                     till_line_ending,
                     line_ending_or_eof,
                 )
@@ -48,7 +48,7 @@ pub fn account_declaration(input: &mut &str) -> PResult<repl::AccountDeclaration
 pub fn commodity_declaration(input: &mut &str) -> PResult<repl::CommodityDeclaration> {
     (
         delimited(
-            (tag("commodity"), space1),
+            (literal("commodity"), space1),
             till_line_ending,
             line_ending_or_eof,
         ),
@@ -60,15 +60,15 @@ pub fn commodity_declaration(input: &mut &str) -> PResult<repl::CommodityDeclara
             alt((
                 multiline_text((space1, take_while(1.., COMMENT_PREFIX)))
                     .map(repl::CommodityDetail::Comment),
-                multiline_text((space1, tag("note"), space1)).map(repl::CommodityDetail::Note),
+                multiline_text((space1, literal("note"), space1)).map(repl::CommodityDetail::Note),
                 delimited(
-                    (space1, tag("alias"), space1),
+                    (space1, literal("alias"), space1),
                     till_line_ending,
                     line_ending_or_eof,
                 )
                 .map(|a| repl::CommodityDetail::Alias(a.trim_end().to_string())),
                 delimited(
-                    (space1, tag("format"), space1),
+                    (space1, literal("format"), space1),
                     expr::amount,
                     line_ending_or_eof,
                 )
@@ -90,7 +90,7 @@ pub fn apply_tag(input: &mut &str) -> PResult<repl::ApplyTag> {
         "directive::apply_tag",
         (
             preceded(
-                (tag("apply"), space1, tag("tag"), space1),
+                (literal("apply"), space1, literal("tag"), space1),
                 metadata::tag_key,
             ),
             delimited(space0, opt(metadata::metadata_value), line_ending_or_eof),
@@ -117,7 +117,7 @@ where
     trace(
         "directive::end_apply_tag",
         terminated(
-            (tag("end"), space1, tag("apply"), space1, tag("tag")).recognize(),
+            (literal("end"), space1, literal("apply"), space1, literal("tag")).recognize(),
             (space0, line_ending_or_eof),
         ),
     )
@@ -134,7 +134,7 @@ where
     trace(
         "directive::include",
         delimited(
-            (tag("include"), space1),
+            (literal("include"), space1),
             till_line_ending,
             line_ending_or_eof,
         )

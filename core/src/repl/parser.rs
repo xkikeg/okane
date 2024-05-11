@@ -18,7 +18,7 @@ use winnow::{
     ascii::line_ending,
     combinator::{alt, cut_err, fail, peek, preceded, repeat, terminated},
     error::StrContext,
-    token::{one_of, tag, take_while},
+    token::{one_of, literal, take_while},
     PResult, Parser,
 };
 
@@ -52,23 +52,23 @@ fn parse_ledger_entry(input: &mut &str) -> PResult<repl::LedgerEntry> {
             cut_err(directive::top_comment.map(repl::LedgerEntry::Comment)),
         ),
         preceded(
-            peek(tag("account")),
+            peek(literal("account")),
             cut_err(directive::account_declaration.map(repl::LedgerEntry::Account)),
         ),
         preceded(
-            peek(tag("apply")),
+            peek(literal("apply")),
             cut_err(directive::apply_tag.map(repl::LedgerEntry::ApplyTag)),
         ),
         preceded(
-            peek(tag("commodity")),
+            peek(literal("commodity")),
             cut_err(directive::commodity_declaration.map(repl::LedgerEntry::Commodity)),
         ),
         preceded(
-            peek(tag("end")),
+            peek(literal("end")),
             cut_err(directive::end_apply_tag.map(|_| repl::LedgerEntry::EndApplyTag)),
         ),
         preceded(
-            peek(tag("include")),
+            peek(literal("include")),
             cut_err(directive::include.map(repl::LedgerEntry::Include)),
         ),
         preceded(

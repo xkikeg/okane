@@ -43,12 +43,12 @@ mod tests {
     use crate::repl::parser::testing::expect_parse_ok;
 
     use pretty_assertions::assert_eq;
-    use winnow::{token::tag, token::take_while};
+    use winnow::{token::literal, token::take_while};
 
     #[test]
     fn cond_else_takes_first_given_true() {
         assert_eq!(
-            expect_parse_ok(cond_else(true, tag("true"), tag("false")), "true"),
+            expect_parse_ok(cond_else(true, literal("true"), literal("false")), "true"),
             ("", "true")
         );
     }
@@ -56,7 +56,7 @@ mod tests {
     #[test]
     fn cond_else_takes_second_given_false() {
         assert_eq!(
-            expect_parse_ok(cond_else(false, tag("true"), tag("false")), "false"),
+            expect_parse_ok(cond_else(false, literal("true"), literal("false")), "false"),
             ("", "false")
         );
     }
