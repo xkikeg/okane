@@ -31,7 +31,7 @@ pub fn posting(input: &mut &str) -> PResult<repl::Posting> {
             });
         }
         let amount = opt(terminated(posting_amount, space0))
-            .context(winnow::error::StrContext::Label("amount of the posting"))
+            .context(StrContext::Label("amount of the posting"))
             .parse_next(input)?;
         let balance = opt(delimited((one_of('='), space0), expr::value_expr, space0))
             .context(StrContext::Label("balance of the posting"))
