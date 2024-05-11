@@ -10,8 +10,8 @@ use crate::repl::{
 };
 
 use winnow::{
+    ascii::space0,
     bytes::one_of,
-    character::space0,
     combinator::{fail, opt},
     error::{ContextError, FromExternalError, ParseError},
     sequence::{delimited, terminated},
@@ -94,7 +94,7 @@ where
         + FromExternalError<&'a str, pretty_decimal::Error>
         + ContextError<&'a str>,
 {
-    let (input, negate) = opt(one_of('-'))(input)?;
+    let (input, negate) = opt(one_of('-')).parse_next(input)?;
     let (input, value) = value_expr(input)?;
     let value = expr::Expr::Value(Box::new(value));
     let expr = if negate.is_some() {
@@ -117,7 +117,7 @@ where
 {
     // Currently it only supports suffix commodity.
     // It should support prefix like $, € or ¥ prefix.
-    let (input, value) = terminated(primitive::comma_decimal, space0)(input)?;
+    let (input, value) = terminated(primitive::comma_decimal, space0).parse_next(input)?;
     let (input, c) = primitive::commodity(input)?;
     Ok((
         input,

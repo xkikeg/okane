@@ -4,11 +4,10 @@ use crate::repl;
 use repl::parser::{character, combinator::has_peek, metadata, posting, primitive};
 
 use winnow::{
+    ascii::{space0, space1},
     bytes::one_of,
-    character::{space0, space1},
-    combinator::{cond, cut_err, opt, peek},
+    combinator::{cond, cut_err, opt, peek, repeat},
     error::VerboseError,
-    multi::many0,
     sequence::{preceded, terminated},
     IResult, Parser,
 };
@@ -16,21 +15,23 @@ use winnow::{
 /// Parses a transaction from given string.
 pub fn transaction(input: &str) -> IResult<&str, repl::Transaction, VerboseError<&str>> {
     let (input, date) = primitive::date(input)?;
-    let (input, effective_date) = opt(preceded(one_of('='), primitive::date))(input)?;
+    let (input, effective_date) = opt(preceded(one_of('='), primitive::date)).parse_next(input)?;
     let (input, is_shortest) = has_peek(character::line_ending_or_eof).parse_next(input)?;
     // Date (and effective date) should be followed by space, unless followed by line_ending.
-    let (input, _) = cond(!is_shortest, space1)(input)?;
-    let (input, cs) = opt(terminated(one_of("*!"), space0))(input)?;
+    let (input, _) = cond(!is_shortest, space1).parse_next(input)?;
+    let (input, cs) = opt(terminated(one_of("*!"), space0)).parse_next(input)?;
     let clear_state = match cs {
         None => repl::ClearState::Uncleared,
         Some('*') => repl::ClearState::Cleared,
         Some('!') => repl::ClearState::Pending,
         Some(unknown) => unreachable!("unacceptable ClearState {}", unknown),
     };
-    let (input, code) = opt(terminated(character::paren_str, space0))(input)?;
-    let (input, payee) = opt(character::not_line_ending_or_semi.map(str::trim_end))(input)?;
+    let (input, code) = opt(terminated(character::paren_str, space0)).parse_next(input)?;
+    let (input, payee) =
+        opt(character::not_line_ending_or_semi.map(str::trim_end)).parse_next(input)?;
     let (input, metadata) = metadata::block_metadata(input)?;
-    let (input, posts) = many0(preceded(peek(one_of(' ')), cut_err(posting::posting)))(input)?;
+    let (input, posts) =
+        repeat(0.., preceded(peek(one_of(' ')), cut_err(posting::posting))).parse_next(input)?;
     Ok((
         input,
         repl::Transaction {

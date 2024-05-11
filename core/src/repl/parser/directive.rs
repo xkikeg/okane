@@ -3,12 +3,11 @@ use crate::repl::{self, pretty_decimal};
 use super::{character::line_ending_or_eof, expr, metadata};
 
 use winnow::{
+    ascii::{not_line_ending, space0, space1},
     branch::alt,
-    bytes::{tag, take_while1},
-    character::{not_line_ending, space0, space1},
-    combinator::opt,
+    bytes::{tag, take_while},
+    combinator::{fold_repeat, opt, repeat},
     error::{ContextError, FromExternalError, ParseError},
-    multi::{fold_many1, many0},
     sequence::{delimited, preceded, terminated},
     IResult, Parser,
 };
@@ -28,16 +27,20 @@ where
         // Note nesting many0 would cause parse failure at nom 7,
         // as many0 would fail if the sub-parser consumes empty input.
         // So make sure no branches in alt would emit zero input as success.
-        many0(alt((
-            multiline_text((space1, take_while1(COMMENT_PREFIX))).map(repl::AccountDetail::Comment),
-            multiline_text((space1, tag("note"), space1)).map(repl::AccountDetail::Note),
-            delimited(
-                (space1, tag("alias"), space1),
-                not_line_ending,
-                line_ending_or_eof,
-            )
-            .map(|a| repl::AccountDetail::Alias(a.trim_end().to_string())),
-        ))),
+        repeat(
+            0..,
+            alt((
+                multiline_text((space1, take_while(1.., COMMENT_PREFIX)))
+                    .map(repl::AccountDetail::Comment),
+                multiline_text((space1, tag("note"), space1)).map(repl::AccountDetail::Note),
+                delimited(
+                    (space1, tag("alias"), space1),
+                    not_line_ending,
+                    line_ending_or_eof,
+                )
+                .map(|a| repl::AccountDetail::Alias(a.trim_end().to_string())),
+            )),
+        ),
     )
         .map(|(name, details)| repl::AccountDeclaration {
             name: name.trim_end().to_string(),
@@ -64,23 +67,26 @@ where
         // Note nesting many0 would cause parse failure at nom 7,
         // as many0 would fail if the sub-parser consumes empty input.
         // So make sure no branches in alt would success for empty input.
-        many0(alt((
-            multiline_text((space1, take_while1(COMMENT_PREFIX)))
-                .map(repl::CommodityDetail::Comment),
-            multiline_text((space1, tag("note"), space1)).map(repl::CommodityDetail::Note),
-            delimited(
-                (space1, tag("alias"), space1),
-                not_line_ending,
-                line_ending_or_eof,
-            )
-            .map(|a| repl::CommodityDetail::Alias(a.trim_end().to_string())),
-            delimited(
-                (space1, tag("format"), space1),
-                expr::amount,
-                line_ending_or_eof,
-            )
-            .map(repl::CommodityDetail::Format),
-        ))),
+        repeat(
+            0..,
+            alt((
+                multiline_text((space1, take_while(1.., COMMENT_PREFIX)))
+                    .map(repl::CommodityDetail::Comment),
+                multiline_text((space1, tag("note"), space1)).map(repl::CommodityDetail::Note),
+                delimited(
+                    (space1, tag("alias"), space1),
+                    not_line_ending,
+                    line_ending_or_eof,
+                )
+                .map(|a| repl::CommodityDetail::Alias(a.trim_end().to_string())),
+                delimited(
+                    (space1, tag("format"), space1),
+                    expr::amount,
+                    line_ending_or_eof,
+                )
+                .map(repl::CommodityDetail::Format),
+            )),
+        ),
     )
         .map(|(name, details)| repl::CommodityDeclaration {
             name: name.trim_end().to_string(),
@@ -95,19 +101,18 @@ where
     E: ParseError<&'a str> + ContextError<&'a str>,
 {
     // TODO: value needs to be supported.
-    let (input, key) = preceded(
-        (tag("apply"), space1, tag("tag"), space1),
-        metadata::tag_key,
-    )(input)?;
-    let (input, value) =
-        delimited(space0, opt(metadata::metadata_value), line_ending_or_eof)(input)?;
-    Ok((
-        input,
-        repl::ApplyTag {
+    (
+        preceded(
+            (tag("apply"), space1, tag("tag"), space1),
+            metadata::tag_key,
+        ),
+        delimited(space0, opt(metadata::metadata_value), line_ending_or_eof),
+    )
+        .map(|(key, value)| repl::ApplyTag {
             key: key.to_string(),
             value,
-        },
-    ))
+        })
+        .parse_next(input)
 }
 
 /// Parses "end apply tag" directive.
@@ -154,7 +159,7 @@ pub fn top_comment<'a, E>(input: &'a str) -> IResult<&'a str, repl::TopLevelComm
 where
     E: ParseError<&'a str> + ContextError<&'a str>,
 {
-    multiline_text(take_while1(COMMENT_PREFIX))
+    multiline_text(take_while(1.., COMMENT_PREFIX))
         .map(repl::TopLevelComment)
         .context("top level comment")
         .parse_next(input)
@@ -166,7 +171,8 @@ where
     E: ParseError<&'a str>,
     F: Parser<&'a str, O1, E>,
 {
-    fold_many1(
+    fold_repeat(
+        1..,
         delimited(prefix, not_line_ending, line_ending_or_eof),
         String::new,
         |mut ret, l| {

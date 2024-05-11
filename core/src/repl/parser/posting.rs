@@ -10,8 +10,8 @@ use repl::parser::{
 use std::cmp::min;
 
 use winnow::{
+    ascii::{space0, space1},
     bytes::{one_of, tag, take, take_till1},
-    character::{space0, space1},
     combinator::{cond, fail, opt, peek},
     error::{ParseError, VerboseError},
     sequence::{delimited, preceded, terminated},
@@ -57,7 +57,7 @@ pub fn posting(input: &str) -> IResult<&str, repl::Posting, VerboseError<&str>> 
 
 /// Parses the posting account name, and consumes the trailing spaces and tabs.
 fn posting_account<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, &'a str, E> {
-    let (input, line) = peek(not_line_ending_or_semi)(input)?;
+    let (input, line) = peek(not_line_ending_or_semi).parse_next(input)?;
     let space = line.find("  ");
     let tab = line.find('\t');
     let length = match (space, tab) {
@@ -67,18 +67,19 @@ fn posting_account<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a st
         _ => line.len(),
     };
     // Note space may be zero for the case amount / balance is omitted.
-    terminated(take(length), space0)(input)
+    terminated(take(length), space0).parse_next(input)
 }
 
 fn posting_amount(input: &str) -> IResult<&str, repl::PostingAmount, VerboseError<&str>> {
-    let (input, amount) = terminated(expr::value_expr, space0)(input)?;
+    let (input, amount) = terminated(expr::value_expr, space0).parse_next(input)?;
     let (input, lot) = lot(input)?;
     let (input, is_at) = has_peek(one_of('@')).parse_next(input)?;
     let (input, is_double_at) = has_peek(tag("@@")).parse_next(input)?;
     let (input, cost) = cond(
         is_at,
         cond_else(is_double_at, total_cost, rate_cost).context("posting cost exchange"),
-    )(input)?;
+    )
+    .parse_next(input)?;
     Ok((input, repl::PostingAmount { amount, cost, lot }))
 }
 
@@ -86,7 +87,7 @@ fn lot(input: &str) -> IResult<&str, repl::Lot, VerboseError<&str>> {
     let (mut input, _) = space0(input)?;
     let mut lot = repl::Lot::default();
     loop {
-        let (_, open) = peek(opt(one_of("([{")))(input)?;
+        let (_, open) = peek(opt(one_of("([{"))).parse_next(input)?;
         // TODO Consider if we can implement this with cut_err and permutation.
         match open {
             None => return Ok((input, lot)),
@@ -94,14 +95,14 @@ fn lot(input: &str) -> IResult<&str, repl::Lot, VerboseError<&str>> {
                 let (_, is_total) = has_peek(tag("{{")).parse_next(input)?;
                 if is_total {
                     let (i1, amount) =
-                        delimited((tag("{{"), space0), expr::value_expr, (space0, tag("}}")))(
-                            input,
-                        )?;
+                        delimited((tag("{{"), space0), expr::value_expr, (space0, tag("}}")))
+                            .parse_next(input)?;
                     lot.price = Some(repl::Exchange::Total(amount));
                     input = i1;
                 } else {
                     let (i1, amount) =
-                        delimited((tag("{"), space0), expr::value_expr, (space0, tag("}")))(input)?;
+                        delimited((tag("{"), space0), expr::value_expr, (space0, tag("}")))
+                            .parse_next(input)?;
                     lot.price = Some(repl::Exchange::Rate(amount));
                     input = i1;
                 }
@@ -112,7 +113,8 @@ fn lot(input: &str) -> IResult<&str, repl::Lot, VerboseError<&str>> {
                     (one_of('['), space0),
                     primitive::date,
                     (space0, one_of(']')),
-                )(input)?;
+                )
+                .parse_next(input)?;
                 lot.date = Some(date);
                 input = i1;
             }
@@ -265,7 +267,9 @@ mod tests {
                     let want_fail = i == j || j == k || i == k;
                     let input = format!("{}{}{}", segment[i], segment[j], segment[k]);
                     if want_fail {
-                        preceded(space0, lot)(&input).expect_err("should fail");
+                        preceded(space0, lot)
+                            .parse_next(&input)
+                            .expect_err("should fail");
                     } else {
                         assert_eq!(
                             expect_parse_ok(preceded(space0, lot), &input),

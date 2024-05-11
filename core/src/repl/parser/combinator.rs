@@ -40,7 +40,7 @@ mod tests {
     use crate::repl::parser::testing::expect_parse_ok;
 
     use pretty_assertions::assert_eq;
-    use winnow::bytes::{tag, take_while1};
+    use winnow::{bytes::tag, token::take_while};
 
     #[test]
     fn cond_else_takes_first_given_true() {
@@ -61,11 +61,11 @@ mod tests {
     #[test]
     fn has_peek_succeeds() {
         assert_eq!(
-            expect_parse_ok(has_peek(take_while1("abc")), "abcde"),
+            expect_parse_ok(has_peek(take_while(1.., "abc")), "abcde"),
             ("abcde", true)
         );
         assert_eq!(
-            expect_parse_ok(has_peek(take_while1("0123")), "abcde"),
+            expect_parse_ok(has_peek(take_while(1.., "0123")), "abcde"),
             ("abcde", false)
         );
     }

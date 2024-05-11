@@ -4,9 +4,9 @@ use crate::repl::parser;
 use parser::combinator::{cond_else, has_peek};
 
 use winnow::{
+    ascii::line_ending,
     branch::alt,
-    bytes::{one_of, take_till1, take_while0},
-    character::line_ending,
+    bytes::{one_of, take_till1, take_while},
     combinator::eof,
     error::ParseError,
     sequence::delimited,
@@ -23,17 +23,17 @@ pub fn line_ending_or_semi<'a, E: ParseError<&'a str>>(input: &'a str) -> IResul
 pub fn not_line_ending_or_semi<'a, E: ParseError<&'a str>>(
     input: &'a str,
 ) -> IResult<&str, &str, E> {
-    take_till1(";\r\n")(input)
+    take_till1(";\r\n").parse_next(input)
 }
 
 /// Line ending or EOF.
 pub fn line_ending_or_eof<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
-    alt((eof, line_ending))(input)
+    alt((eof, line_ending)).parse_next(input)
 }
 
 /// Parses unnested string in paren.
 pub fn paren_str<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
-    paren(take_while0(|c| c != ')')).parse_next(input)
+    paren(take_while(0.., |c| c != ')')).parse_next(input)
 }
 
 /// Parses given parser within the paren.
@@ -52,7 +52,6 @@ mod tests {
     use crate::repl::parser::testing::expect_parse_ok;
 
     use pretty_assertions::assert_eq;
-    use winnow::bytes::take_while1;
 
     #[test]
     fn line_ending_or_semi_accepts_valid_input() {
@@ -81,7 +80,7 @@ mod tests {
     #[test]
     fn paren_valid() {
         assert_eq!(
-            expect_parse_ok(paren(paren(take_while1("abc"))), "((abcbca))"),
+            expect_parse_ok(paren(paren(take_while(1.., "abc"))), "((abcbca))"),
             ("", "abcbca")
         )
     }
