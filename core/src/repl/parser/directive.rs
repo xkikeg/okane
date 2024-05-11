@@ -3,19 +3,19 @@ use crate::repl::{self};
 use super::{character::line_ending_or_eof, expr, metadata};
 
 use winnow::{
-    ascii::{not_line_ending, space0, space1},
-    combinator::{alt, delimited, fold_repeat, opt, preceded, repeat, terminated, trace},
+    ascii::{space0, space1, till_line_ending},
+    combinator::{alt, delimited, opt, preceded, repeat, terminated, trace},
     error::ParserError,
     token::{tag, take_while},
     PResult, Parser,
 };
 
 /// Parses "account" directive.
-pub fn account_declaration<'a>(input: &mut &'a str) -> PResult<repl::AccountDeclaration> {
+pub fn account_declaration(input: &mut &str) -> PResult<repl::AccountDeclaration> {
     (
         delimited(
             (tag("account"), space1),
-            not_line_ending,
+            till_line_ending,
             line_ending_or_eof,
         ),
         // TODO: Consider using dispatch
@@ -30,7 +30,7 @@ pub fn account_declaration<'a>(input: &mut &'a str) -> PResult<repl::AccountDecl
                 multiline_text((space1, tag("note"), space1)).map(repl::AccountDetail::Note),
                 delimited(
                     (space1, tag("alias"), space1),
-                    not_line_ending,
+                    till_line_ending,
                     line_ending_or_eof,
                 )
                 .map(|a| repl::AccountDetail::Alias(a.trim_end().to_string())),
@@ -45,11 +45,11 @@ pub fn account_declaration<'a>(input: &mut &'a str) -> PResult<repl::AccountDecl
 }
 
 /// Parses "commodity" directive.
-pub fn commodity_declaration<'a>(input: &mut &'a str) -> PResult<repl::CommodityDeclaration> {
+pub fn commodity_declaration(input: &mut &str) -> PResult<repl::CommodityDeclaration> {
     (
         delimited(
             (tag("commodity"), space1),
-            not_line_ending,
+            till_line_ending,
             line_ending_or_eof,
         ),
         // Note nesting many0 would cause parse failure at nom 7,
@@ -63,7 +63,7 @@ pub fn commodity_declaration<'a>(input: &mut &'a str) -> PResult<repl::Commodity
                 multiline_text((space1, tag("note"), space1)).map(repl::CommodityDetail::Note),
                 delimited(
                     (space1, tag("alias"), space1),
-                    not_line_ending,
+                    till_line_ending,
                     line_ending_or_eof,
                 )
                 .map(|a| repl::CommodityDetail::Alias(a.trim_end().to_string())),
@@ -84,7 +84,7 @@ pub fn commodity_declaration<'a>(input: &mut &'a str) -> PResult<repl::Commodity
 }
 
 /// Parses "apply tag" directive.
-pub fn apply_tag<'a>(input: &mut &'a str) -> PResult<repl::ApplyTag> {
+pub fn apply_tag(input: &mut &str) -> PResult<repl::ApplyTag> {
     // TODO: value needs to be supported.
     trace(
         "directive::apply_tag",
@@ -135,7 +135,7 @@ where
         "directive::include",
         delimited(
             (tag("include"), space1),
-            not_line_ending,
+            till_line_ending,
             line_ending_or_eof,
         )
         .map(|x| repl::IncludeFile(x.trim_end().to_string())),
@@ -165,9 +165,7 @@ where
     E: ParserError<&'a str>,
     F: Parser<&'a str, O1, E>,
 {
-    fold_repeat(
-        1..,
-        delimited(prefix, not_line_ending, line_ending_or_eof),
+    repeat(1.., delimited(prefix, till_line_ending, line_ending_or_eof)).fold(
         String::new,
         |mut ret, l| {
             ret.push_str(l);
