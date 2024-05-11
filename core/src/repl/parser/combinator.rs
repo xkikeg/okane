@@ -2,12 +2,12 @@
 
 use winnow::{
     combinator::{opt, peek},
-    error::ParseError,
+    error::ParserError,
     Parser,
 };
 
 /// Calls first parser if the condition is met, otherwise the second parser.
-pub fn cond_else<I, O, E: ParseError<I>, F, G>(
+pub fn cond_else<I, O, E: ParserError<I>, F, G>(
     b: bool,
     mut first: F,
     mut second: G,
@@ -26,7 +26,7 @@ where
 }
 
 /// Returns true if given parser would succeed, without consuming the input.
-pub fn has_peek<I, O, E: ParseError<I>, F>(f: F) -> impl Parser<I, bool, E>
+pub fn has_peek<I, O, E: ParserError<I>, F>(f: F) -> impl Parser<I, bool, E>
 where
     F: Parser<I, O, E>,
     I: winnow::stream::Stream + Clone,

@@ -8,7 +8,7 @@ use winnow::{
     branch::alt,
     bytes::{one_of, tag, take_till1},
     combinator::{cond, cut_err, repeat},
-    error::{ContextError, ParseError},
+    error::{AddContext, ParserError},
     multi::separated0,
     sequence::{delimited, preceded, terminated},
     IResult, Parser,
@@ -16,7 +16,7 @@ use winnow::{
 
 /// Parses block of metadata including the last line_end.
 /// Note this consumes one line_ending regardless of Metadata existence.
-pub fn block_metadata<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
+pub fn block_metadata<'a, E: ParserError<&'a str> + AddContext<&'a str>>(
     input: &'a str,
 ) -> IResult<&str, Vec<repl::Metadata>, E> {
     // TODO: Clean this up
@@ -27,7 +27,7 @@ pub fn block_metadata<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
 
 fn line_metadata<'a, E>(input: &'a str) -> IResult<&'a str, repl::Metadata, E>
 where
-    E: ParseError<&'a str> + ContextError<&'a str>,
+    E: ParserError<&'a str> + AddContext<&'a str>,
 {
     delimited(
         (one_of(';'), space0),
@@ -49,7 +49,7 @@ where
 
 fn metadata_tags<'a, E>(input: &'a str) -> IResult<&'a str, repl::Metadata, E>
 where
-    E: ParseError<&'a str> + ContextError<&'a str>,
+    E: ParserError<&'a str> + AddContext<&'a str>,
 {
     delimited(
         one_of(':'),
@@ -62,7 +62,7 @@ where
 
 fn metadata_kv<'a, E>(input: &'a str) -> IResult<&'a str, repl::Metadata, E>
 where
-    E: ParseError<&'a str> + ContextError<&'a str>,
+    E: ParserError<&'a str> + AddContext<&'a str>,
 {
     (terminated(tag_key, space0), metadata_value)
         .map(|(key, value)| repl::Metadata::KeyValueTag {
@@ -75,7 +75,7 @@ where
 /// Parses metadata value with `:` or `::` prefix.
 pub fn metadata_value<'a, E>(input: &'a str) -> IResult<&'a str, repl::MetadataValue, E>
 where
-    E: ParseError<&'a str> + ContextError<&'a str>,
+    E: ParserError<&'a str> + AddContext<&'a str>,
 {
     let expr = preceded(tag("::"), cut_err(not_line_ending))
         .map(|x: &'a str| repl::MetadataValue::Expr(x.trim().to_string()));
@@ -87,7 +87,7 @@ where
 /// Parses metadata tag.
 pub fn tag_key<'a, E>(input: &'a str) -> IResult<&'a str, &'a str, E>
 where
-    E: ParseError<&'a str> + ContextError<&'a str>,
+    E: ParserError<&'a str> + AddContext<&'a str>,
 {
     take_till1(|c: char| c.is_whitespace() || c == ':')
         .context("metadata tag")

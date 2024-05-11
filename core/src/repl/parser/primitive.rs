@@ -8,7 +8,7 @@ use winnow::{
     branch::alt,
     bytes::{one_of, take_till1, take_while},
     combinator::opt,
-    error::{ContextError, FromExternalError, ParseError},
+    error::{AddContext, FromExternalError, ParserError},
     IResult, Parser,
 };
 
@@ -16,8 +16,8 @@ use winnow::{
 pub fn comma_decimal<'a, E>(input: &'a str) -> IResult<&str, PrettyDecimal, E>
 where
     E: FromExternalError<&'a str, pretty_decimal::Error>
-        + ContextError<&'a str>
-        + ParseError<&'a str>,
+        + AddContext<&'a str>
+        + ParserError<&'a str>,
 {
     take_while(1.., "-0123456789,.")
         .try_map(str::parse)
@@ -27,7 +27,7 @@ where
 
 /// Parses commodity in greedy manner.
 /// Returns empty string if the upcoming characters are not valid as commodity to support empty commodity.
-pub fn commodity<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
+pub fn commodity<'a, E: ParserError<&'a str>>(input: &'a str) -> IResult<&str, &str, E> {
     // Quoted commodity not supported.
 
     opt(take_till1(" \t\r\n0123456789.,;:?!-+*/^&|=<>[](){}@"))
@@ -36,7 +36,7 @@ pub fn commodity<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&str, &s
 }
 
 /// Parses date in yyyy/mm/dd format.
-pub fn date<'a, E: ParseError<&'a str> + FromExternalError<&'a str, chrono::ParseError>>(
+pub fn date<'a, E: ParserError<&'a str> + FromExternalError<&'a str, chrono::ParseError>>(
     input: &'a str,
 ) -> IResult<&str, NaiveDate, E> {
     alt((
@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn comma_decimal_fails_on_invalid_inputs() {
-        let cd = comma_decimal::<winnow::error::Error<&'static str>>;
+        let cd = comma_decimal::<winnow::error::InputError<&'static str>>;
         cd("不可能").unwrap_err();
         cd("!").unwrap_err();
     }
@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn date_fails_on_invalid_inputs() {
-        let pd = date::<winnow::error::Error<&'static str>>;
+        let pd = date::<winnow::error::InputError<&'static str>>;
         pd("not a date").unwrap_err();
         pd("2022/01").unwrap_err();
         pd("2022/13/21").unwrap_err();

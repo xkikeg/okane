@@ -13,7 +13,7 @@ use winnow::{
     ascii::{space0, space1},
     bytes::{one_of, tag, take, take_till1},
     combinator::{cond, fail, opt, peek},
-    error::{ParseError, VerboseError},
+    error::{ParserError, VerboseError},
     sequence::{delimited, preceded, terminated},
     IResult, Parser,
 };
@@ -56,7 +56,7 @@ pub fn posting(input: &str) -> IResult<&str, repl::Posting, VerboseError<&str>> 
 }
 
 /// Parses the posting account name, and consumes the trailing spaces and tabs.
-fn posting_account<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, &'a str, E> {
+fn posting_account<'a, E: ParserError<&'a str>>(input: &'a str) -> IResult<&'a str, &'a str, E> {
     let (input, line) = peek(not_line_ending_or_semi).parse_next(input)?;
     let space = line.find("  ");
     let tab = line.find('\t');
