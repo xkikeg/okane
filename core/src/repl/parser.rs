@@ -18,7 +18,7 @@ use winnow::{
     ascii::line_ending,
     combinator::{alt, cut_err, fail, peek, preceded, repeat, terminated},
     error::StrContext,
-    token::{one_of, literal, take_while},
+    token::{literal, one_of, take_while},
     PResult, Parser,
 };
 
