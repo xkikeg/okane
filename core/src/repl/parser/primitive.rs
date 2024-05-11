@@ -17,7 +17,7 @@ where
     E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
 {
     trace(
-        "comma_decimal",
+        "primitive::comma_decimal",
         take_while(1.., |c: char| {
             c.is_ascii_digit() || c == '-' || c == ',' || c == '.'
         })
@@ -35,8 +35,22 @@ const NON_COMMODITY_CHARS: [char; 37] = [
 /// Returns empty string if the upcoming characters are not valid as commodity to support empty commodity.
 pub fn commodity<'a, E: ParserError<&'a str>>(input: &mut &'a str) -> PResult<&'a str, E> {
     // Quoted commodity not supported.
+    trace("primitive::commodity", take_till(0.., NON_COMMODITY_CHARS)).parse_next(input)
+}
 
-    take_till(0.., NON_COMMODITY_CHARS).parse_next(input)
+#[derive(Copy, Clone)]
+enum DateType {
+    Slash,
+    Hyphen,
+}
+
+impl DateType {
+    fn pattern(self) -> &'static str {
+        match self {
+            DateType::Slash => "%Y/%m/%d",
+            DateType::Hyphen => "%F",
+        }
+    }
 }
 
 /// Parses date in yyyy/mm/dd format.
@@ -44,14 +58,14 @@ pub fn date<'a, E>(input: &mut &'a str) -> PResult<NaiveDate, E>
 where
     E: ParserError<&'a str> + FromExternalError<&'a str, chrono::ParseError>,
 {
-    alt((
-        (digit1, one_of('/'), digit1, one_of('/'), digit1)
-            .recognize()
-            .try_map(|s| NaiveDate::parse_from_str(s, "%Y/%m/%d")),
-        (digit1, one_of('-'), digit1, one_of('-'), digit1)
-            .recognize()
-            .try_map(|s| NaiveDate::parse_from_str(s, "%F")),
-    ))
+    let slash = (digit1, one_of('/'), digit1, one_of('/'), digit1);
+    let hyphen = (digit1, one_of('-'), digit1, one_of('-'), digit1);
+    trace(
+        "primitive::date",
+        alt((slash.value(DateType::Slash), hyphen.value(DateType::Hyphen)))
+            .with_recognized()
+            .try_map(|(date_type, s)| NaiveDate::parse_from_str(s, date_type.pattern())),
+    )
     .parse_next(input)
 }
 
@@ -140,7 +154,7 @@ mod tests {
         assert_eq!(
             date.parse_peek("2022/13/21"),
             Err(ErrMode::Backtrack(InputError::new(
-                "/13/21",
+                "2022/13/21",
                 ErrorKind::Verify
             )))
         );
