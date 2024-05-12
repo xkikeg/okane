@@ -2,164 +2,165 @@
 
 use crate::repl::{
     expr,
-    parser::{
-        combinator::{cond_else, has_peek},
-        primitive,
-    },
+    parser::{character::paren, primitive},
     pretty_decimal,
 };
 
 use winnow::{
     ascii::space0,
-    combinator::{alt, delimited, fail, opt, terminated, trace},
-    error::{AddContext, FromExternalError, ParserError},
-    token::one_of,
+    combinator::{
+        alt, delimited, dispatch, peek, preceded, separated_foldl1, terminated, trace,
+    },
+    error::{FromExternalError, ParserError},
+    stream::{AsChar, Stream, StreamIsPartial},
+    token::{any, one_of},
     PResult, Parser,
 };
 
 /// Parses value expression.
-pub fn value_expr<'a, E, C>(input: &mut &'a str) -> PResult<expr::ValueExpr, E>
+pub fn value_expr<'a, E>(input: &mut &'a str) -> PResult<expr::ValueExpr, E>
 where
-    E: ParserError<&'a str>
-        + AddContext<&'a str, C>
-        + FromExternalError<&'a str, pretty_decimal::Error>,
+    E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
 {
-    let is_paren = has_peek(one_of('(')).parse_next(input)?;
-    // TODO: Try to remove cond_else / has_peek because it can be removed with backtrack + cut_err.
     trace(
-        "value_expr",
-        cond_else(is_paren, paren_expr, amount.map(expr::ValueExpr::Amount)),
+        "expr::value_expr",
+        dispatch! {peek(any);
+            '(' => paren_expr,
+            _ => amount.map(expr::ValueExpr::Amount),
+        },
     )
     .parse_next(input)
 }
 
-fn paren_expr<'a, E, C>(input: &mut &'a str) -> PResult<expr::ValueExpr, E>
+fn paren_expr<'a, E>(input: &mut &'a str) -> PResult<expr::ValueExpr, E>
 where
-    E: ParserError<&'a str>
-        + AddContext<&'a str, C>
-        + FromExternalError<&'a str, pretty_decimal::Error>,
+    E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
 {
-    delimited((one_of('('), space0), add_expr, (space0, one_of(')')))
-        .map(expr::ValueExpr::Paren)
-        .parse_next(input)
+    trace(
+        "expr::paren_expr",
+        paren(delimited(space0, add_expr, space0)).map(expr::ValueExpr::Paren),
+    )
+    .parse_next(input)
 }
 
-fn add_expr<'a, E, C>(input: &mut &'a str) -> PResult<expr::Expr, E>
+fn add_expr<'a, E>(input: &mut &'a str) -> PResult<expr::Expr, E>
 where
-    E: ParserError<&'a str>
-        + AddContext<&'a str, C>
-        + FromExternalError<&'a str, pretty_decimal::Error>,
+    E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
 {
-    infixl(add_op, mul_expr).parse_next(input)
+    trace("expr::add_expr", infixl(add_op, mul_expr)).parse_next(input)
 }
 
 fn add_op<'a, E>(input: &mut &'a str) -> PResult<expr::BinaryOp, E>
 where
     E: ParserError<&'a str>,
 {
-    delimited(
-        space0,
+    trace(
+        "expr::add_op",
         alt((
             one_of('+').value(expr::BinaryOp::Add),
             one_of('-').value(expr::BinaryOp::Sub),
         )),
-        space0,
     )
     .parse_next(input)
 }
 
-fn mul_expr<'a, E, C>(input: &mut &'a str) -> PResult<expr::Expr, E>
+fn mul_expr<'a, E>(input: &mut &'a str) -> PResult<expr::Expr, E>
 where
-    E: ParserError<&'a str>
-        + FromExternalError<&'a str, pretty_decimal::Error>
-        + AddContext<&'a str, C>,
+    E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
 {
-    infixl(mul_op, unary_expr).parse_next(input)
+    trace("expr::mul_expr", infixl(mul_op, unary_expr)).parse_next(input)
 }
 
 fn mul_op<'a, E>(input: &mut &'a str) -> PResult<expr::BinaryOp, E>
 where
     E: ParserError<&'a str>,
 {
-    delimited(
-        space0,
+    trace(
+        "expr::mul_op",
         alt((
             one_of('*').value(expr::BinaryOp::Mul),
             one_of('/').value(expr::BinaryOp::Div),
         )),
-        space0,
     )
     .parse_next(input)
 }
 
-fn unary_expr<'a, E, C>(input: &mut &'a str) -> PResult<expr::Expr, E>
+fn unary_expr<'a, E>(input: &mut &'a str) -> PResult<expr::Expr, E>
 where
-    E: ParserError<&'a str>
-        + FromExternalError<&'a str, pretty_decimal::Error>
-        + AddContext<&'a str, C>,
+    E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
 {
-    let negate = opt(one_of('-')).parse_next(input)?;
-    let value = value_expr(input)?;
-    let value = expr::Expr::Value(Box::new(value));
-    let expr = if negate.is_some() {
-        expr::Expr::Unary(expr::UnaryOpExpr {
-            op: expr::UnaryOp::Negate,
-            expr: Box::new(value),
-        })
-    } else {
-        value
-    };
-    Ok(expr)
+    trace(
+        "expr::unary_expr",
+        dispatch! {peek(any);
+            '-' => negate_expr,
+            _ => value_expr.map(|ve| expr::Expr::Value(Box::new(ve))),
+        },
+    )
+    .parse_next(input)
+}
+
+fn negate_expr<'a, E>(input: &mut &'a str) -> PResult<expr::Expr, E>
+where
+    E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
+{
+    trace(
+        "expr::negate_expr",
+        preceded(one_of('-'), value_expr).map(|ve| {
+            expr::Expr::Unary(expr::UnaryOpExpr {
+                op: expr::UnaryOp::Negate,
+                expr: Box::new(expr::Expr::Value(Box::new(ve))),
+            })
+        }),
+    )
+    .parse_next(input)
 }
 
 /// Parses amount expression.
-pub fn amount<'a, E, C>(input: &mut &'a str) -> PResult<expr::Amount, E>
+pub fn amount<'a, E>(input: &mut &'a str) -> PResult<expr::Amount, E>
 where
-    E: ParserError<&'a str>
-        + FromExternalError<&'a str, pretty_decimal::Error>
-        + AddContext<&'a str, C>,
+    E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
 {
-    // Currently it only supports suffix commodity.
-    // It should support prefix like $, € or ¥ prefix.
-    let value = terminated(primitive::comma_decimal, space0).parse_next(input)?;
-    let c = primitive::commodity(input)?;
-    Ok(expr::Amount {
-        value,
-        commodity: c.to_string(),
-    })
+    // Currently it only supports suffix commodity,
+    // and there is no plan to support prefix commodities.
+    trace(
+        "expr::amount",
+        (
+            terminated(primitive::comma_decimal, space0),
+            primitive::commodity,
+        )
+            .map(|(value, c)| expr::Amount {
+                value,
+                commodity: c.to_string(),
+            }),
+    )
+    .parse_next(input)
 }
 
 /// Parses `x (op x)*` format, and feed the list into the given function.
 /// This is similar to foldl, so it'll be evaluated as `f(f(...f(x, x), x), ... x)))`.
 /// operand parser needs to be Copy so that it can be used twice.
-fn infixl<I, E, F, G, C>(mut operator: F, mut operand: G) -> impl Parser<I, expr::Expr, E>
+fn infixl<I, E, F, G>(operator: F, operand: G) -> impl Parser<I, expr::Expr, E>
 where
-    E: ParserError<I> + AddContext<I, C>,
+    E: ParserError<I>,
     F: Parser<I, expr::BinaryOp, E>,
     G: Parser<I, expr::Expr, E>,
-    I: winnow::stream::Stream + Clone,
+    I: Stream + StreamIsPartial + Clone,
+    <I as Stream>::Token: AsChar,
 {
-    trace("infixl", move |i: &mut I| {
-        let mut ret = operand.parse_next(i)?;
-        loop {
-            match operator.parse_peek(i.clone()) {
-                Err(winnow::error::ErrMode::Backtrack(_)) => return Ok(ret),
-                Err(x) => return Err(x),
-                Ok((i1, op)) => {
-                    if i1.eof_offset() == i.eof_offset() {
-                        return fail.parse_next(i);
-                    }
-                    *i = i1;
-                    let rhs = operand.parse_next(i)?;
-                    ret = expr::Expr::Binary(expr::BinaryOpExpr {
-                        lhs: Box::new(ret),
-                        op,
-                        rhs: Box::new(rhs),
-                    });
-                }
-            }
-        }
-    })
+    trace(
+        "infixl",
+        separated_foldl1(
+            operand,
+            delimited(space0, operator, space0),
+            |lhs, op, rhs| {
+                expr::Expr::Binary(expr::BinaryOpExpr {
+                    lhs: Box::new(lhs),
+                    op,
+                    rhs: Box::new(rhs),
+                })
+            },
+        ),
+    )
 }
 
 #[cfg(test)]

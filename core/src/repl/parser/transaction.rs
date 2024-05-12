@@ -6,6 +6,7 @@ use repl::parser::{character, combinator::has_peek, metadata, posting, primitive
 use winnow::{
     ascii::{space0, space1},
     combinator::{alt, cond, cut_err, opt, peek, preceded, repeat, terminated, trace},
+    error::StrContext,
     token::one_of,
     PResult, Parser,
 };
@@ -13,7 +14,11 @@ use winnow::{
 /// Parses a transaction from given string.
 pub fn transaction(input: &mut &str) -> PResult<repl::Transaction> {
     trace("transaction::transaction", move |input: &mut &str| {
-        let date = trace("transaction::transaction@date", primitive::date).parse_next(input)?;
+        let date = trace(
+            "transaction::transaction@date",
+            primitive::date.context(StrContext::Label("transaction date")),
+        )
+        .parse_next(input)?;
         let effective_date = trace(
             "transaction::transaction@effective_date",
             opt(preceded(one_of('='), primitive::date)),

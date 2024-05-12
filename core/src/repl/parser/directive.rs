@@ -117,7 +117,14 @@ where
     trace(
         "directive::end_apply_tag",
         terminated(
-            (literal("end"), space1, literal("apply"), space1, literal("tag")).recognize(),
+            (
+                literal("end"),
+                space1,
+                literal("apply"),
+                space1,
+                literal("tag"),
+            )
+                .recognize(),
             (space0, line_ending_or_eof),
         ),
     )

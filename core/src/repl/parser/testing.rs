@@ -17,6 +17,6 @@ where
 {
     match (parser, take_while(0.., |_x| true)).parse(input) {
         Ok((ret, remaining)) => (remaining, ret),
-        Err(e) => panic!("failed to parse: {}", e),
+        Err(e) => panic!("failed to parse: \n{}", e),
     }
 }

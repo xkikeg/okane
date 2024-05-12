@@ -1,14 +1,11 @@
 //! Defines parser functions related to character input.
 
-use crate::repl::parser;
-use parser::combinator::{cond_else, has_peek};
-
 use winnow::{
     ascii::line_ending,
-    combinator::{alt, delimited, eof},
+    combinator::{alt, delimited, eof, trace},
     error::ParserError,
     stream::{AsChar, Compare, Stream, StreamIsPartial},
-    token::{one_of, take_till, take_while},
+    token::{one_of, take_till},
     PResult, Parser,
 };
 
@@ -20,25 +17,34 @@ where
     <I as Stream>::Token: AsChar + Clone,
     E: ParserError<I>,
 {
-    let is_semi = has_peek(one_of(';')).parse_next(input)?;
-    cond_else(is_semi, one_of(';').recognize(), line_ending).parse_next(input)
+    trace(
+        "character::line_ending_or_semi",
+        alt((one_of(';').recognize(), line_ending)),
+    )
+    .parse_next(input)
 }
 
 /// Parses non-zero string until line_ending or comma appears.
 pub fn till_line_ending_or_semi<'a, E: ParserError<&'a str>>(
     input: &mut &'a str,
 ) -> PResult<&'a str, E> {
-    take_till(1.., [';', '\r', '\n']).parse_next(input)
+    trace(
+        "character::till_line_ending_or_semi",
+        take_till(1.., [';', '\r', '\n']),
+    )
+    .parse_next(input)
 }
 
 /// Line ending or EOF.
-pub fn line_ending_or_eof<'a, E: ParserError<&'a str>>(input: &mut &'a str) -> PResult<&'a str, E> {
-    alt((eof, line_ending)).parse_next(input)
+pub fn line_ending_or_eof<'a, E: ParserError<&'a str>>(input: &mut &'a str) -> PResult<(), E> {
+    trace("character::line_ending_or_eof", alt((eof, line_ending)))
+        .void()
+        .parse_next(input)
 }
 
 /// Parses unnested string in paren.
 pub fn paren_str<'a, E: ParserError<&'a str>>(input: &mut &'a str) -> PResult<&'a str, E> {
-    paren(take_while(0.., |c| c != ')')).parse_next(input)
+    paren(take_till(0.., ')')).parse_next(input)
 }
 
 /// Parses given parser within the paren.
@@ -48,7 +54,10 @@ where
     I: winnow::stream::Stream + winnow::stream::StreamIsPartial,
     <I as winnow::stream::Stream>::Token: winnow::stream::AsChar + Clone,
 {
-    delimited(one_of('('), inner, one_of(')'))
+    trace(
+        "character::paren",
+        delimited(one_of('('), inner, one_of(')')),
+    )
 }
 
 #[cfg(test)]
@@ -57,6 +66,7 @@ mod tests {
     use crate::repl::parser::testing::expect_parse_ok;
 
     use pretty_assertions::assert_eq;
+    use winnow::token::take_while;
 
     #[test]
     fn line_ending_or_semi_accepts_valid_input() {

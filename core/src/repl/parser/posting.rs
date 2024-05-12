@@ -13,7 +13,7 @@ use winnow::{
     ascii::{space0, space1},
     combinator::{cond, delimited, fail, opt, peek, preceded, terminated, trace},
     error::StrContext,
-    token::{one_of, literal, take, take_till},
+    token::{literal, one_of, take, take_till},
     PResult, Parser,
 };
 
@@ -31,12 +31,14 @@ pub fn posting(input: &mut &str) -> PResult<repl::Posting> {
             });
         }
         let amount = opt(terminated(posting_amount, space0))
-            .context(winnow::error::StrContext::Label("amount of the posting"))
+            .context(StrContext::Label("amount of the posting"))
             .parse_next(input)?;
         let balance = opt(delimited((one_of('='), space0), expr::value_expr, space0))
             .context(StrContext::Label("balance of the posting"))
             .parse_next(input)?;
-        let metadata = metadata::block_metadata.parse_next(input)?;
+        let metadata = metadata::block_metadata
+            .context(StrContext::Label("metadata section of the posting"))
+            .parse_next(input)?;
         Ok(repl::Posting {
             amount,
             balance,
@@ -90,14 +92,20 @@ fn lot(input: &mut &str) -> PResult<repl::Lot> {
             Some('{') if lot.price.is_none() => {
                 let is_total = has_peek(literal("{{")).parse_next(input)?;
                 if is_total {
-                    let amount =
-                        delimited((literal("{{"), space0), expr::value_expr, (space0, literal("}}")))
-                            .parse_next(input)?;
+                    let amount = delimited(
+                        (literal("{{"), space0),
+                        expr::value_expr,
+                        (space0, literal("}}")),
+                    )
+                    .parse_next(input)?;
                     lot.price = Some(repl::Exchange::Total(amount));
                 } else {
-                    let amount =
-                        delimited((literal("{"), space0), expr::value_expr, (space0, literal("}")))
-                            .parse_next(input)?;
+                    let amount = delimited(
+                        (literal("{"), space0),
+                        expr::value_expr,
+                        (space0, literal("}")),
+                    )
+                    .parse_next(input)?;
                     lot.price = Some(repl::Exchange::Rate(amount));
                 }
             }

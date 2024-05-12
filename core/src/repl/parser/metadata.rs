@@ -1,26 +1,34 @@
 //! Parsers related to metadata aka comments.
 
 use crate::repl;
-use repl::parser::{character, combinator::has_peek};
+use repl::parser::character;
 
 use winnow::{
     ascii::{line_ending, space0, space1, till_line_ending},
-    combinator::{alt, cond, cut_err, delimited, preceded, repeat, separated, terminated, trace},
+    combinator::{
+        alt, backtrack_err, cut_err, delimited, dispatch, peek, preceded, repeat, separated,
+        terminated, trace,
+    },
     error::ParserError,
-    token::{one_of, literal, take_till},
+    token::{any, literal, one_of, take_till},
     PResult, Parser,
 };
 
 /// Parses block of metadata including the last line_end.
-/// Note this consumes one line_ending regardless of Metadata existence.
+/// Note this consumes at least one line_ending regardless of Metadata existence.
 pub fn block_metadata<'a, E>(input: &mut &'a str) -> PResult<Vec<repl::Metadata>, E>
 where
     E: ParserError<&'a str>,
 {
-    // TODO: Clean this up
-    let is_metadata = has_peek(one_of(';')).parse_next(input)?;
-    cond(!is_metadata, line_ending).void().parse_next(input)?;
-    separated(0.., preceded(space0, line_metadata), space1).parse_next(input)
+    // For now, we can't go with regular repeat because it's hard to have a initial value in Accumulate.
+    trace(
+        "metadata::block_metadata",
+        dispatch! {peek(any);
+            ';' => separated(1.., line_metadata, space1),
+            _ => preceded(line_ending, repeat(0.., preceded(space1, line_metadata))),
+        },
+    )
+    .parse_next(input)
 }
 
 fn line_metadata<'a, E>(input: &mut &'a str) -> PResult<repl::Metadata, E>
@@ -51,12 +59,17 @@ fn metadata_tags<'a, E>(input: &mut &'a str) -> PResult<repl::Metadata, E>
 where
     E: ParserError<&'a str>,
 {
-    delimited(
-        one_of(':'),
-        repeat(1.., terminated(tag_key, one_of(':'))),
-        space0,
+    trace(
+        "metadata::metadata_tags",
+        delimited(
+            one_of(':'),
+            repeat(1.., terminated(tag_key, one_of(':'))),
+            space0,
+        )
+        .map(|tags: Vec<&str>| {
+            repl::Metadata::WordTags(tags.into_iter().map(String::from).collect())
+        }),
     )
-    .map(|tags: Vec<&str>| repl::Metadata::WordTags(tags.into_iter().map(String::from).collect()))
     .parse_next(input)
 }
 
@@ -64,12 +77,16 @@ fn metadata_kv<'a, E>(input: &mut &'a str) -> PResult<repl::Metadata, E>
 where
     E: ParserError<&'a str>,
 {
-    (terminated(tag_key, space0), metadata_value)
-        .map(|(key, value)| repl::Metadata::KeyValueTag {
-            key: key.to_string(),
-            value,
-        })
-        .parse_next(input)
+    trace(
+        "metadata::metadata_kv",
+        (terminated(tag_key, space0), metadata_value).map(|(key, value)| {
+            repl::Metadata::KeyValueTag {
+                key: key.to_string(),
+                value,
+            }
+        }),
+    )
+    .parse_next(input)
 }
 
 /// Parses metadata value with `:` or `::` prefix.
@@ -81,7 +98,7 @@ where
         .map(|x: &'a str| repl::MetadataValue::Expr(x.trim().to_string()));
     let text = preceded(one_of(':'), cut_err(till_line_ending))
         .map(|x: &'a str| repl::MetadataValue::Text(x.trim().to_string()));
-    alt((expr, text)).parse_next(input)
+    trace("metadata::metadata_value", backtrack_err(alt((expr, text)))).parse_next(input)
 }
 
 /// Parses metadata tag.
@@ -102,6 +119,49 @@ mod tests {
     use crate::repl::parser::testing::expect_parse_ok;
 
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn block_metadata_empty() {
+        let input = "\r\n ";
+        assert_eq!(expect_parse_ok(block_metadata, input), (" ", vec![]))
+    }
+
+    #[test]
+    fn block_metadata_consumes_first_comment_inline() {
+        let input = "; foo\n ; bar\n; baz\n";
+        assert_eq!(
+            expect_parse_ok(block_metadata, input),
+            (
+                // This line isn't a block_metadata because it doesn't have preceding spaces.
+                "; baz\n",
+                vec![
+                    repl::Metadata::Comment("foo".to_string()),
+                    repl::Metadata::Comment("bar".to_string()),
+                ]
+            )
+        )
+    }
+
+    #[test]
+    fn block_metadata_consumes_newline_immediately() {
+        let input = "\n ; foo\n ; bar\n";
+        assert_eq!(
+            expect_parse_ok(block_metadata, input),
+            (
+                "",
+                vec![
+                    repl::Metadata::Comment("foo".to_string()),
+                    repl::Metadata::Comment("bar".to_string()),
+                ]
+            )
+        )
+    }
+
+    #[test]
+    fn block_metadata_stops_at_top_level_comment() {
+        let input = "\n; foo\n";
+        assert_eq!(expect_parse_ok(block_metadata, input), ("; foo\n", vec![]))
+    }
 
     #[test]
     fn parse_line_metadata_valid_tags() {
