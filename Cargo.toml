@@ -17,7 +17,7 @@ repository = "https://github.com/xkikeg/okane"
 
 [workspace.dependencies]
 # dependencies
-chrono = "0.4.37"
+chrono = "0.4.38"
 log = "0.4"
 rust_decimal = "1.35"
 thiserror = "1.0"
