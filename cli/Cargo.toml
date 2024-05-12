@@ -25,7 +25,7 @@ quick-xml = { version = "0.31", features = [ "serialize" ] }
 regex = "1"
 rust_decimal.workspace = true
 serde = { version = "1.0", features = [ "derive" ] }
-serde_with = { version = "3.7", features = [ "chrono" ] }
+serde_with = { version = "3.8", features = [ "chrono" ] }
 serde_yaml = "0.9.34"
 strum = { version = "0.26", features = ["derive"] }
 thiserror.workspace = true
@@ -33,7 +33,7 @@ thiserror.workspace = true
 [dev-dependencies]
 assert_cmd = "2.0"
 # assert_fs = "1.0"
-ctor = "0.2.7"
+ctor = "0.2.8"
 indoc.workspace = true
 maplit.workspace = true
 pretty_assertions.workspace = true

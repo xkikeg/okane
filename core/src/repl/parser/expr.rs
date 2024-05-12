@@ -8,9 +8,7 @@ use crate::repl::{
 
 use winnow::{
     ascii::space0,
-    combinator::{
-        alt, delimited, dispatch, peek, preceded, separated_foldl1, terminated, trace,
-    },
+    combinator::{alt, delimited, dispatch, peek, preceded, separated_foldl1, terminated, trace},
     error::{FromExternalError, ParserError},
     stream::{AsChar, Stream, StreamIsPartial},
     token::{any, one_of},

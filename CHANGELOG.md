@@ -6,6 +6,21 @@
 
 ### Changed
 
+## [0.9.0] - 2024-05-12
+
+### Added
+
+* Supported ISO Camt053 DAJT (Debit Adjustment) code (https://github.com/xkikeg/okane/pull/117).
+
+### Changed
+
+* Renamed `equivalent_amount` to `secondary_amount`, with `secondary_commodity` (https://github.com/xkikeg/okane/pull/111).
+
+### Fixed
+
+* Fixed the issue that amount is presented in a negative value by mistake (https://github.com/xkikeg/okane/pull/112).
+* Fixed the `format` command to properly accept contiguous transactions (https://github.com/xkikeg/okane/pull/116).
+
 ## [0.8.0] - 2024-02-03
 
 ### Changed
