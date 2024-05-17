@@ -48,7 +48,7 @@ pub struct ApplyTag {
 /// "include" directive, taking a path as an argument.
 /// Path can be a relative path or an absolute path.
 #[derive(Debug, PartialEq, Eq)]
-pub struct IncludeFile(String);
+pub struct IncludeFile(pub String);
 
 /// "account" directive to declare account information.
 #[derive(Debug, PartialEq, Eq)]
