@@ -19,7 +19,14 @@ unicode-width = "0.1.12"
 winnow = "0.6"
 
 [dev-dependencies]
+ctor.workspace = true
+env_logger.workspace = true
 indoc.workspace = true
 maplit.workspace = true
 pretty_assertions.workspace = true
 rust_decimal_macros.workspace = true
+criterion = {version = "0.5", features = ["html_reports"]}
+
+[[bench]]
+name = "eval_bench"
+harness = false
