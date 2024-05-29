@@ -1,0 +1,5 @@
+include child2.ledger
+
+2024/5/1 * Migros
+    Expenses:Grocery        -10.00 CHF
+    Assets:Bank:ZKB          10.00 CHF

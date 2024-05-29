@@ -1,6 +1,7 @@
 use crate::format;
 use crate::import::{self, Format, ImportError};
-use okane_core::repl;
+use okane_core::repl::display::DisplayContext;
+use okane_core::{eval, repl};
 
 use std::ffi::OsStr;
 use std::fs::File;
@@ -17,6 +18,8 @@ pub enum Error {
     Import(#[from] import::ImportError),
     #[error("failed to format")]
     Format(#[from] format::FormatError),
+    #[error("failed to load")]
+    Load(#[from] eval::LoadError),
 }
 
 #[derive(Subcommand, Debug)]
@@ -120,12 +123,35 @@ impl Primitives {
 enum PrimitiveCmd {
     /// Format the given one ledger file, to stdout.
     Format(FormatCmd),
+    /// Read the given one ledger file, recursively resolves include directives and print to stdout.
+    Flatten(FlattenCmd),
 }
 
 impl PrimitiveCmd {
     fn run(self) -> Result<(), Error> {
         match self {
             PrimitiveCmd::Format(cmd) => cmd.run(&mut std::io::stdout().lock()),
+            PrimitiveCmd::Flatten(cmd) => cmd.run(&mut std::io::stdout().lock()),
         }
+    }
+}
+
+#[derive(Args, Debug)]
+struct FlattenCmd {
+    pub source: std::path::PathBuf,
+}
+
+impl FlattenCmd {
+    pub fn run<W>(&self, w: &mut W) -> Result<(), Error>
+    where
+        W: std::io::Write,
+    {
+        let entries = eval::load(&self.source)?;
+        // TODO: Pick DisplayContext from load results.
+        let ctx = DisplayContext::default();
+        for entry in entries.iter() {
+            writeln!(w, "{}", ctx.as_display(entry))?;
+        }
+        Ok(())
     }
 }

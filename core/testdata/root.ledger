@@ -1,0 +1,10 @@
+account Expenses:Grocery
+    note スーパーマーケットで買ったやつ全部
+    ; comment
+    alias Expenses:CVS
+
+2024/1/1 Initial Balance
+    Equity:Opening Balance       -1000.00 CHF
+    Assets:Bank:ZKB               1000.00 CHF
+
+include child1.ledger
