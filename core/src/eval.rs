@@ -1,5 +1,7 @@
 //! eval module contains functions for Ledger file evaluation.
 
+mod context;
+
 use std::path::PathBuf;
 
 use crate::repl::{

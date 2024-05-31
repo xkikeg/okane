@@ -796,6 +796,7 @@ dependencies = [
 name = "okane-core"
 version = "0.10.0-dev"
 dependencies = [
+ "bumpalo",
  "chrono",
  "criterion",
  "ctor",
