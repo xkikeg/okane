@@ -21,8 +21,28 @@ impl<'arena> Account<'arena> {
     }
 }
 
+/// `&str` for commodity, interned by `Interner`.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Commodity<'arena>(InternedStr<'arena>);
+
+impl<'arena> FromInterned<'arena> for Commodity<'arena> {
+    fn from_interned(v: InternedStr<'arena>) -> Self {
+        Self(v)
+    }
+}
+
+impl<'arena> Commodity<'arena> {
+    /// Returns the `&str`.
+    pub fn as_str(&self) -> &'arena str {
+        self.0.as_str()
+    }
+}
+
 /// `Interner` for `Account`.
 pub type AccountStore<'arena> = Interner<'arena, Account<'arena>>;
+
+/// `Interner` for `Commodity`.
+pub type CommodityStore<'arena> = Interner<'arena, Commodity<'arena>>;
 
 /// Internal type to wrap `&str` to be clear about interning.
 /// Equality is compared over it's pointer, not the content.
