@@ -10,6 +10,7 @@ readme.workspace = true
 repository.workspace = true
 
 [dependencies]
+bumpalo.workspace = true
 chrono.workspace = true
 log.workspace = true
 rust_decimal.workspace = true

@@ -7,6 +7,7 @@ use std::ffi::OsStr;
 use std::fs::File;
 use std::io::BufReader;
 
+use bumpalo::Bump;
 use clap::{Args, Subcommand};
 use encoding_rs_io::DecodeReaderBytesBuilder;
 
@@ -28,6 +29,8 @@ pub enum Command {
     Import(ImportCmd),
     /// Format the given file (in future it'll work without file arg)
     Format(FormatCmd),
+    /// List all accounts in the file.
+    Accounts(AccountsCmd),
     /// Primitive is a set of commands which are primitive and suitable for debugging.
     Primitive(Primitives),
 }
@@ -37,6 +40,7 @@ impl Command {
         match self {
             Command::Import(cmd) => cmd.run(&mut std::io::stdout().lock()),
             Command::Format(cmd) => cmd.run(&mut std::io::stdout().lock()),
+            Command::Accounts(cmd) => cmd.run(&mut std::io::stdout().lock()),
             Command::Primitive(cmd) => cmd.run(),
         }
     }
@@ -151,6 +155,27 @@ impl FlattenCmd {
         let ctx = DisplayContext::default();
         for entry in entries.iter() {
             writeln!(w, "{}", ctx.as_display(entry))?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Args, Debug)]
+pub struct AccountsCmd {
+    pub source: std::path::PathBuf,
+}
+
+impl AccountsCmd {
+    pub fn run<W>(&self, w: &mut W) -> Result<(), Error>
+    where
+        W: std::io::Write,
+    {
+        let entries = eval::load(&self.source)?;
+        let arena = Bump::new();
+        let mut ctx = eval::context::EvalContext::new(&arena);
+        let accounts = eval::accounts(&mut ctx, &entries);
+        for acc in accounts.iter() {
+            writeln!(w, "{}", acc.as_str())?;
         }
         Ok(())
     }
