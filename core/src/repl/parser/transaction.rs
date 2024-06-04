@@ -5,7 +5,7 @@ use repl::parser::{character, combinator::has_peek, metadata, posting, primitive
 
 use winnow::{
     ascii::{space0, space1},
-    combinator::{alt, cond, cut_err, opt, peek, preceded, repeat, terminated, trace},
+    combinator::{cond, cut_err, opt, peek, preceded, repeat, terminated, trace},
     error::StrContext,
     token::one_of,
     PResult, Parser,
@@ -27,18 +27,7 @@ pub fn transaction(input: &mut &str) -> PResult<repl::Transaction> {
         let is_shortest = has_peek(character::line_ending_or_eof).parse_next(input)?;
         // Date (and effective date) should be followed by space, unless followed by line_ending.
         cond(!is_shortest, space1).void().parse_next(input)?;
-        let clear_state = trace(
-            "transaction::transaction@clear_state",
-            opt(terminated(
-                alt((
-                    one_of('*').value(repl::ClearState::Cleared),
-                    one_of('!').value(repl::ClearState::Pending),
-                )),
-                space0,
-            ))
-            .map(|x| x.unwrap_or_default()),
-        )
-        .parse_next(input)?;
+        let clear_state = metadata::clear_state(input)?;
         let code = opt(terminated(character::paren_str, space0)).parse_next(input)?;
         let payee =
             opt(character::till_line_ending_or_semi.map(str::trim_end)).parse_next(input)?;
