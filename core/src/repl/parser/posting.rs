@@ -19,13 +19,15 @@ use winnow::{
 
 pub fn posting(input: &mut &str) -> PResult<repl::Posting> {
     trace("posting::posting", move |input: &mut &str| {
-        let account = preceded(space1, posting_account)
+        let clear_state = preceded(space1, metadata::clear_state).parse_next(input)?;
+        let account = posting_account
             .context(StrContext::Label("account of the posting"))
             .parse_next(input)?;
         let shortcut_amount = has_peek(line_ending_or_semi).parse_next(input)?;
         if shortcut_amount {
             let metadata = metadata::block_metadata.parse_next(input)?;
             return Ok(repl::Posting {
+                clear_state,
                 metadata,
                 ..repl::Posting::new(account.to_string())
             });
@@ -40,6 +42,7 @@ pub fn posting(input: &mut &str) -> PResult<repl::Posting> {
             .context(StrContext::Label("metadata section of the posting"))
             .parse_next(input)?;
         Ok(repl::Posting {
+            clear_state,
             amount,
             balance,
             metadata,
@@ -73,7 +76,7 @@ fn posting_amount(input: &mut &str) -> PResult<repl::PostingAmount> {
     let cost = cond(
         is_at,
         trace(
-            "posting::posting_amount::cost",
+            "posting::posting_amount@cost",
             cond_else(is_double_at, total_cost, rate_cost),
         ),
     )
@@ -86,7 +89,7 @@ fn lot(input: &mut &str) -> PResult<repl::Lot> {
     let mut lot = repl::Lot::default();
     loop {
         let open = peek(opt(one_of(['(', '[', '{']))).parse_next(input)?;
-        // TODO Consider if we can implement this with cut_err and permutation.
+        // TODO: Consider if we can implement this with cut_err and permutation.
         match open {
             None => return Ok(lot),
             Some('{') if lot.price.is_none() => {
@@ -240,6 +243,44 @@ mod tests {
                 }
             )
         )
+    }
+
+    #[test]
+    fn posting_clear_state_pending() {
+        let input = " !Expenses\n";
+        assert_eq!(
+            expect_parse_ok(posting, input),
+            (
+                "",
+                repl::Posting {
+                    clear_state: repl::ClearState::Pending,
+                    ..repl::Posting::new("Expenses".to_string())
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn posting_clear_state_cleared() {
+        let input = " *  Expenses   100 JPY\n";
+        assert_eq!(
+            expect_parse_ok(posting, input),
+            (
+                "",
+                repl::Posting {
+                    clear_state: repl::ClearState::Cleared,
+                    amount: Some(repl::PostingAmount {
+                        amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
+                            value: PrettyDecimal::unformatted(dec!(100)),
+                            commodity: "JPY".to_string()
+                        }),
+                        cost: None,
+                        lot: repl::Lot::default()
+                    }),
+                    ..repl::Posting::new("Expenses".to_string())
+                }
+            )
+        );
     }
 
     #[test]

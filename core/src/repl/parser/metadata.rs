@@ -6,13 +6,32 @@ use repl::parser::character;
 use winnow::{
     ascii::{line_ending, space0, space1, till_line_ending},
     combinator::{
-        alt, backtrack_err, cut_err, delimited, dispatch, peek, preceded, repeat, separated,
+        alt, backtrack_err, cut_err, delimited, dispatch, opt, peek, preceded, repeat, separated,
         terminated, trace,
     },
     error::ParserError,
     token::{any, literal, one_of, take_till},
     PResult, Parser,
 };
+
+/// Parses a ClearState.
+pub fn clear_state<'a, E>(input: &mut &'a str) -> PResult<repl::ClearState, E>
+where
+    E: ParserError<&'a str>,
+{
+    trace(
+        "metadata::clear_state",
+        opt(terminated(
+            alt((
+                one_of('*').value(repl::ClearState::Cleared),
+                one_of('!').value(repl::ClearState::Pending),
+            )),
+            space0,
+        ))
+        .map(|x| x.unwrap_or_default()),
+    )
+    .parse_next(input)
+}
 
 /// Parses block of metadata including the last line_end.
 /// Note this consumes at least one line_ending regardless of Metadata existence.
