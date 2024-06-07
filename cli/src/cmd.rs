@@ -21,6 +21,8 @@ pub enum Error {
     Format(#[from] format::FormatError),
     #[error("failed to load")]
     Load(#[from] load::LoadError),
+    #[error("failed to evaluate")]
+    Eval(#[from] eval::EvalError),
 }
 
 #[derive(Subcommand, Debug)]
@@ -31,6 +33,8 @@ pub enum Command {
     Format(FormatCmd),
     /// List all accounts in the file.
     Accounts(AccountsCmd),
+    /// Gives balance report.
+    Balance(BalanceCmd),
     /// Primitive is a set of commands which are primitive and suitable for debugging.
     Primitive(Primitives),
 }
@@ -41,6 +45,7 @@ impl Command {
             Command::Import(cmd) => cmd.run(&mut std::io::stdout().lock()),
             Command::Format(cmd) => cmd.run(&mut std::io::stdout().lock()),
             Command::Accounts(cmd) => cmd.run(&mut std::io::stdout().lock()),
+            Command::Balance(cmd) => cmd.run(&mut std::io::stdout().lock()),
             Command::Primitive(cmd) => cmd.run(),
         }
     }
@@ -176,6 +181,30 @@ impl AccountsCmd {
         let accounts = eval::accounts(&mut ctx, &entries);
         for acc in accounts.iter() {
             writeln!(w, "{}", acc.as_str())?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Args, Debug)]
+pub struct BalanceCmd {
+    pub source: std::path::PathBuf,
+}
+
+impl BalanceCmd {
+    pub fn run<W>(&self, w: &mut W) -> Result<(), Error>
+    where
+        W: std::io::Write,
+    {
+        let entries = eval::load(&self.source)?;
+        let arena = Bump::new();
+        let mut ctx = eval::context::EvalContext::new(&arena);
+        let balance = eval::total_balance(&mut ctx, &entries)?;
+        let mut accounts: Vec<eval::types::Account> = balance.accounts.keys().copied().collect();
+        accounts.sort_by_key(|x| x.as_str());
+        for account in &accounts {
+            let amount = balance.accounts.get(account).unwrap();
+            writeln!(w, "{}: {}", account.as_str(), amount.as_inline())?;
         }
         Ok(())
     }

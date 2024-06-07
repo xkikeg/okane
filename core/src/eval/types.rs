@@ -1,11 +1,11 @@
 //! Module `types` defines eval specific types.
 
-use std::{collections::HashSet, marker::PhantomData};
+use std::{collections::HashSet, hash::Hash, marker::PhantomData};
 
 use bumpalo::Bump;
 
 /// `&str` for accounts, interned by `Interner`.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct Account<'arena>(InternedStr<'arena>);
 
 impl<'arena> FromInterned<'arena> for Account<'arena> {
@@ -22,7 +22,7 @@ impl<'arena> Account<'arena> {
 }
 
 /// `&str` for commodity, interned by `Interner`.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct Commodity<'arena>(InternedStr<'arena>);
 
 impl<'arena> FromInterned<'arena> for Commodity<'arena> {
@@ -58,6 +58,12 @@ impl<'arena> InternedStr<'arena> {
 impl<'arena> PartialEq for InternedStr<'arena> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.0, other.0)
+    }
+}
+
+impl<'arena> Hash for InternedStr<'arena> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::ptr::hash(self.0, state)
     }
 }
 
