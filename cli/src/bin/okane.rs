@@ -4,6 +4,7 @@ use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[clap(about, version, author)]
+#[command(infer_subcommands = true)]
 struct Cli {
     #[clap(subcommand)]
     command: cmd::Command,
@@ -25,5 +26,16 @@ fn main() {
             cur = src;
         }
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verify_command() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
     }
 }
