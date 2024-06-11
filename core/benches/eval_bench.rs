@@ -6,7 +6,7 @@ use std::{
 };
 
 use chrono::NaiveDate;
-use okane_core::eval::load;
+use okane_core::load::load_repl;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
@@ -136,7 +136,7 @@ fn load_benchmark(c: &mut Criterion) {
     let duration = after_input - before_input;
     log::info!("input creation took {:.3} seconds", duration.as_secs_f64());
     c.bench_function("load simple", |b| {
-        b.iter(|| black_box(load(&input.rootfile)))
+        b.iter(|| black_box(load_repl(&input.rootfile)))
     });
 }
 

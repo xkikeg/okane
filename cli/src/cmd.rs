@@ -1,7 +1,7 @@
 use crate::format;
 use crate::import::{self, Format, ImportError};
 use okane_core::repl::display::DisplayContext;
-use okane_core::{eval, repl};
+use okane_core::{eval, load, repl};
 
 use std::ffi::OsStr;
 use std::fs::File;
@@ -20,7 +20,7 @@ pub enum Error {
     #[error("failed to format")]
     Format(#[from] format::FormatError),
     #[error("failed to load")]
-    Load(#[from] eval::LoadError),
+    Load(#[from] load::LoadError),
 }
 
 #[derive(Subcommand, Debug)]
@@ -150,7 +150,7 @@ impl FlattenCmd {
     where
         W: std::io::Write,
     {
-        let entries = eval::load(&self.source)?;
+        let entries = load::load_repl(&self.source)?;
         // TODO: Pick DisplayContext from load results.
         let ctx = DisplayContext::default();
         for entry in entries.iter() {
@@ -170,7 +170,7 @@ impl AccountsCmd {
     where
         W: std::io::Write,
     {
-        let entries = eval::load(&self.source)?;
+        let entries = load::load_repl(&self.source)?;
         let arena = Bump::new();
         let mut ctx = eval::context::EvalContext::new(&arena);
         let accounts = eval::accounts(&mut ctx, &entries);
