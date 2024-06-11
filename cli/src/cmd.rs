@@ -6,6 +6,7 @@ use okane_core::{eval, load, repl};
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::BufReader;
+use std::path::PathBuf;
 
 use bumpalo::Bump;
 use clap::{Args, Subcommand};
@@ -21,8 +22,11 @@ pub enum Error {
     Format(#[from] format::FormatError),
     #[error("failed to load")]
     Load(#[from] load::LoadError),
-    #[error("failed to evaluate")]
-    Eval(#[from] eval::EvalError),
+    #[error("failed to evaluate the postings")]
+    BalanceError(#[from] eval::error::BalanceError),
+    // TODO: Move this into other module.
+    #[error("register failed to find accounts {0}")]
+    RegisterError(String),
 }
 
 #[derive(Subcommand, Debug)]
@@ -35,6 +39,8 @@ pub enum Command {
     Accounts(AccountsCmd),
     /// Gives balance report.
     Balance(BalanceCmd),
+    /// Gives register report.
+    Register(RegisterCmd),
     /// Primitive is a set of commands which are primitive and suitable for debugging.
     Primitive(Primitives),
 }
@@ -46,6 +52,7 @@ impl Command {
             Command::Format(cmd) => cmd.run(&mut std::io::stdout().lock()),
             Command::Accounts(cmd) => cmd.run(&mut std::io::stdout().lock()),
             Command::Balance(cmd) => cmd.run(&mut std::io::stdout().lock()),
+            Command::Register(cmd) => cmd.run(&mut std::io::stdout().lock()),
             Command::Primitive(cmd) => cmd.run(),
         }
     }
@@ -54,8 +61,8 @@ impl Command {
 #[derive(Args, Debug)]
 pub struct ImportCmd {
     #[arg(short, long, value_name = "FILE")]
-    pub config: std::path::PathBuf,
-    pub source: std::path::PathBuf,
+    pub config: PathBuf,
+    pub source: PathBuf,
 }
 
 impl ImportCmd {
@@ -102,7 +109,7 @@ impl ImportCmd {
 
 #[derive(Args, Debug)]
 pub struct FormatCmd {
-    pub source: std::path::PathBuf,
+    pub source: PathBuf,
 }
 
 impl FormatCmd {
@@ -147,7 +154,7 @@ impl PrimitiveCmd {
 
 #[derive(Args, Debug)]
 struct FlattenCmd {
-    pub source: std::path::PathBuf,
+    pub source: PathBuf,
 }
 
 impl FlattenCmd {
@@ -167,7 +174,7 @@ impl FlattenCmd {
 
 #[derive(Args, Debug)]
 pub struct AccountsCmd {
-    pub source: std::path::PathBuf,
+    pub source: PathBuf,
 }
 
 impl AccountsCmd {
@@ -188,7 +195,7 @@ impl AccountsCmd {
 
 #[derive(Args, Debug)]
 pub struct BalanceCmd {
-    pub source: std::path::PathBuf,
+    pub source: PathBuf,
 }
 
 impl BalanceCmd {
@@ -199,12 +206,83 @@ impl BalanceCmd {
         let entries = eval::load(&self.source)?;
         let arena = Bump::new();
         let mut ctx = eval::context::EvalContext::new(&arena);
-        let balance = eval::total_balance(&mut ctx, &entries)?;
+        let mut balance = eval::amounts::Balance::default();
+        let txns: Result<Vec<eval::load::Transaction>, eval::error::BalanceError> = entries
+            .iter()
+            .filter_map(|x| {
+                if let repl::LedgerEntry::Txn(txn) = x {
+                    Some(txn)
+                } else {
+                    None
+                }
+            })
+            .map(|txn| eval::load::balanced_txn(&mut ctx, &mut balance, txn))
+            .collect();
+        let _ = txns?;
+
         let mut accounts: Vec<eval::types::Account> = balance.accounts.keys().copied().collect();
         accounts.sort_by_key(|x| x.as_str());
         for account in &accounts {
             let amount = balance.accounts.get(account).unwrap();
             writeln!(w, "{}: {}", account.as_str(), amount.as_inline())?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Args, Debug)]
+pub struct RegisterCmd {
+    pub source: PathBuf,
+    pub account: Option<String>,
+}
+
+impl RegisterCmd {
+    pub fn run<W>(&self, w: &mut W) -> Result<(), Error>
+    where
+        W: std::io::Write,
+    {
+        let entries = eval::load(&self.source)?;
+        let arena = Bump::new();
+        let mut ctx = eval::context::EvalContext::new(&arena);
+        let mut balance = eval::amounts::Balance::default();
+        let txns: Result<Vec<eval::load::Transaction>, eval::error::BalanceError> = entries
+            .iter()
+            .filter_map(|x| {
+                if let repl::LedgerEntry::Txn(txn) = x {
+                    Some(txn)
+                } else {
+                    None
+                }
+            })
+            .map(|txn| eval::load::balanced_txn(&mut ctx, &mut balance, txn))
+            .collect();
+        let txns = txns?;
+        let account = self
+            .account
+            .as_ref()
+            .map(|account| {
+                ctx.accounts
+                    .get(account)
+                    .ok_or_else(|| Error::RegisterError(account.clone()))
+            })
+            .transpose()?;
+        let mut balance = eval::amounts::Balance::default();
+        for txn in &txns {
+            if let Some(account) = &account {
+                if let Some(p) = txn.postings.iter().find(|p| p.account == *account) {
+                    let b = balance.accounts.entry(*account).or_default();
+                    *b += p.amount.clone();
+                    writeln!(
+                        w,
+                        "{} {} {}",
+                        account.as_str(),
+                        p.amount.as_inline(),
+                        b.as_inline()
+                    )?;
+                }
+                continue;
+            }
+            writeln!(w, "{:#?}", txn)?;
         }
         Ok(())
     }

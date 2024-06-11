@@ -37,6 +37,8 @@ impl<'arena> Commodity<'arena> {
 }
 
 /// `Interner` for `Account`.
+///
+/// TODO: Process alias.
 pub struct AccountStore<'arena> {
     accounts: str_intern::Interner<'arena, Account<'arena>>,
 }
@@ -50,6 +52,10 @@ impl<'arena> AccountStore<'arena> {
 
     pub fn intern(&mut self, value: &str) -> Account<'arena> {
         self.accounts.intern(value)
+    }
+
+    pub fn get(&self, value: &str) -> Option<Account<'arena>> {
+        self.accounts.get(value)
     }
 
     pub fn iter(&'arena self) -> str_intern::Iter<'arena, Account<'arena>> {

@@ -1,13 +1,16 @@
 //! eval module contains functions for Ledger file evaluation.
 
-mod amounts;
+pub mod amounts;
 pub mod context;
+pub mod error;
+pub mod load;
 pub mod types;
 
 use std::path::PathBuf;
 
-pub use amounts::EvalError;
 use amounts::Evaluable;
+use error::BalanceError;
+pub use error::{EvalError, LoadError};
 
 use crate::repl::{
     self,
@@ -31,12 +34,17 @@ pub fn accounts<'ctx>(
     ctx.all_accounts()
 }
 
+/// Converts repl LedgerEntry to processed data stream.
+///
+/// TODO: Consider if this approach is good enough,
+/// or we should change load to be more efficient.
+
 /// Returns total amount per accounts.
 /// Note this function will be removed by the next release.
 pub fn total_balance<'a, 'ctx, I>(
     ctx: &'ctx mut context::EvalContext,
     entries: I,
-) -> Result<amounts::Balance<'ctx>, amounts::EvalError>
+) -> Result<amounts::Balance<'ctx>, BalanceError>
 where
     I: IntoIterator<Item = &'a repl::LedgerEntry>,
 {
@@ -56,7 +64,7 @@ where
                                     x,
                                     repl::display::DisplayContext::default().as_display(txn)
                                 );
-                                return Err(amounts::EvalError::ComplexPostingAmount);
+                                return Err(BalanceError::ComplexPostingAmount);
                             }
                         }
                         amounts::PartialAmount::Commodities(x) => {

@@ -3,7 +3,7 @@
 use rust_decimal::Decimal;
 
 use crate::{
-    eval::{context, types},
+    eval::{context, error::EvalError, types},
     repl::{self, expr},
 };
 
@@ -13,19 +13,7 @@ use std::{
     ops::{AddAssign, Mul, MulAssign},
 };
 
-#[derive(Debug, thiserror::Error)]
-pub enum EvalError {
-    #[error("operator can't be applied to unmatched types")]
-    UnmatchingOperation,
-    #[error("cannot divide by zero")]
-    DivideByZero,
-    #[error("overflow happened")]
-    NumberOverflow,
-    #[error("posting amount must be resolved as a simple value with commodity or zero")]
-    ComplexPostingAmount,
-}
-
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct Amount<'ctx> {
     values: HashMap<types::Commodity<'ctx>, Decimal>,
 }
@@ -57,6 +45,7 @@ impl<'ctx> Amount<'ctx> {
     }
 }
 
+#[derive(Debug)]
 pub struct InlinePrintAmount<'a, 'ctx>(&'a Amount<'ctx>);
 
 impl<'a, 'ctx> Display for InlinePrintAmount<'a, 'ctx> {
@@ -199,7 +188,7 @@ pub struct Balance<'ctx> {
 }
 
 // TODO: Consider if this is ok to be private or needs to be pub.
-pub trait Evaluable {
+pub(crate) trait Evaluable {
     fn eval<'ctx>(
         &self,
         ctx: &mut context::EvalContext<'ctx>,

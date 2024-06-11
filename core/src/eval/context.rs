@@ -4,7 +4,8 @@ use bumpalo::Bump;
 
 /// EvalContext is a context object extensively used across Ledger evaluation.
 pub struct EvalContext<'ctx> {
-    pub(super) accounts: types::AccountStore<'ctx>,
+    pub(super) allocator: &'ctx Bump,
+    pub accounts: types::AccountStore<'ctx>,
     pub(super) commodities: types::CommodityStore<'ctx>,
 }
 
@@ -13,6 +14,7 @@ impl<'ctx> EvalContext<'ctx> {
         let accounts = types::AccountStore::new(allocator);
         let commodities = types::CommodityStore::new(allocator);
         Self {
+            allocator,
             accounts,
             commodities,
         }

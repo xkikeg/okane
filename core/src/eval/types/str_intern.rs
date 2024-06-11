@@ -47,9 +47,18 @@ impl<'arena, T: FromInterned<'arena>> Interner<'arena, T> {
         }
     }
 
+    /// Returns the corresponding interned str to the given str if found,
+    /// or returns None.
+    pub fn get(&self, value: &str) -> Option<T> {
+        self.idx
+            .get(value)
+            .map(|found| <T as FromInterned>::from_interned(InternedStr(found)))
+    }
+
+    /// Interns given `&str` and returns the interned str.
     pub fn intern(&mut self, value: &str) -> T {
-        if let Some(found) = self.idx.get(value) {
-            return <T as FromInterned>::from_interned(InternedStr(found));
+        if let Some(found) = self.get(value) {
+            return found;
         }
         let copied: &'arena str = self.allocator.alloc_str(value);
         self.idx.insert(copied);
