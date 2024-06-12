@@ -30,6 +30,20 @@ where
     .parse_next(input)
 }
 
+/// Parses value expression, without the requirements of having parens.
+/// Used only for lot value, where paren is not needed.
+pub fn value_expr_unparened<'a, E>(input: &mut &'a str) -> PResult<expr::ValueExpr, E>
+where
+    E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
+{
+    trace(
+        "expr::value_expr_unparened",
+        // TODO: Do not wrap in paren as Ledger would complain parened lot price.
+        add_expr.map(expr::ValueExpr::Paren),
+    )
+    .parse_next(input)
+}
+
 fn paren_expr<'a, E>(input: &mut &'a str) -> PResult<expr::ValueExpr, E>
 where
     E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,

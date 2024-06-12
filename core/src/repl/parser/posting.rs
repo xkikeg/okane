@@ -97,7 +97,7 @@ fn lot(input: &mut &str) -> PResult<repl::Lot> {
                 if is_total {
                     let amount = delimited(
                         (literal("{{"), space0),
-                        expr::value_expr,
+                        expr::value_expr_unparened,
                         (space0, literal("}}")),
                     )
                     .parse_next(input)?;
@@ -105,7 +105,7 @@ fn lot(input: &mut &str) -> PResult<repl::Lot> {
                 } else {
                     let amount = delimited(
                         (literal("{"), space0),
-                        expr::value_expr,
+                        expr::value_expr_unparened,
                         (space0, literal("}")),
                     )
                     .parse_next(input)?;

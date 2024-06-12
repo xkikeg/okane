@@ -3,7 +3,8 @@
 mod character;
 mod combinator;
 mod directive;
-mod expr;
+// TODO: Implement FromStr for testing if needed.
+pub(crate) mod expr;
 mod metadata;
 mod posting;
 mod primitive;
