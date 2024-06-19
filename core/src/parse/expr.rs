@@ -164,7 +164,7 @@ where
 mod tests {
     use super::*;
 
-    use crate::repl::parse::testing::expect_parse_ok;
+    use crate::parse::testing::expect_parse_ok;
     use crate::repl::pretty_decimal::PrettyDecimal;
 
     use pretty_assertions::assert_eq;

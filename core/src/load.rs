@@ -49,13 +49,13 @@ fn load_repl_impl(
 mod tests {
     use super::*;
 
-    use crate::repl::parse::parse_ledger;
+    use crate::parse::{self, parse_ledger};
 
     use indoc::indoc;
     use pretty_assertions::assert_eq;
     use std::path::Path;
 
-    type LoadReplResult = Result<Vec<repl::parse::ParsedLedgerEntry>, repl::parse::ParseError>;
+    type LoadReplResult = Result<Vec<parse::ParsedLedgerEntry>, parse::ParseError>;
 
     #[test]
     fn load_valid_input() {

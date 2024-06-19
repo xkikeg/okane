@@ -63,7 +63,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repl::parse::testing::expect_parse_ok;
+    use crate::parse::testing::expect_parse_ok;
 
     use pretty_assertions::assert_eq;
     use winnow::token::take_while;

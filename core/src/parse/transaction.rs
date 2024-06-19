@@ -51,7 +51,7 @@ pub fn transaction(input: &mut &str) -> PResult<repl::Transaction> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repl::{parse::testing::expect_parse_ok, pretty_decimal::PrettyDecimal};
+    use crate::{parse::testing::expect_parse_ok, repl::pretty_decimal::PrettyDecimal};
 
     use chrono::NaiveDate;
     use indoc::indoc;
