@@ -5,7 +5,6 @@
 
 pub mod display;
 pub mod expr;
-pub mod parser;
 pub mod pretty_decimal;
 
 use crate::datamodel;
@@ -36,7 +35,7 @@ pub enum LedgerEntry {
 
 /// Top-level comment. OK to have multi-line comment.
 #[derive(Debug, PartialEq, Eq)]
-pub struct TopLevelComment(String);
+pub struct TopLevelComment(pub String);
 
 /// "apply tag" directive content.
 #[derive(Debug, PartialEq, Eq)]

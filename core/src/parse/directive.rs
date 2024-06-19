@@ -1,4 +1,4 @@
-use crate::repl::{self};
+use crate::repl;
 
 use super::{character::line_ending_or_eof, expr, metadata};
 
@@ -185,7 +185,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repl::parser::testing::expect_parse_ok;
+    use crate::parse::testing::expect_parse_ok;
 
     use indoc::indoc;
     use pretty_assertions::assert_eq;

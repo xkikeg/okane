@@ -1,7 +1,7 @@
 //! Module `load` contains the functions useful for loading Ledger file,
 //! recursively resolving the `include` directives.
 
-use crate::repl;
+use crate::{parse, repl};
 
 use std::path::PathBuf;
 
@@ -11,7 +11,7 @@ pub enum LoadError {
     #[error("failed to perform IO")]
     IO(#[from] std::io::Error),
     #[error("failed to parse file {0}")]
-    Parse(#[from] repl::parser::ParseError),
+    Parse(#[from] parse::ParseError),
     #[error("unexpected include path {0}, maybe filesystem root is passed")]
     IncludePath(PathBuf),
 }
@@ -28,7 +28,7 @@ fn load_repl_impl(
     ret: &mut Vec<repl::LedgerEntry>,
 ) -> Result<(), LoadError> {
     let content = std::fs::read_to_string(path)?;
-    for elem in repl::parser::parse_ledger(&content) {
+    for elem in parse::parse_ledger(&content) {
         let elem = elem?;
         match elem {
             repl::LedgerEntry::Include(p) => {
@@ -49,13 +49,13 @@ fn load_repl_impl(
 mod tests {
     use super::*;
 
-    use crate::repl::parser::parse_ledger;
+    use crate::parse::{self, parse_ledger};
 
     use indoc::indoc;
     use pretty_assertions::assert_eq;
     use std::path::Path;
 
-    type LoadReplResult = Result<Vec<repl::parser::ParsedLedgerEntry>, repl::parser::ParseError>;
+    type LoadReplResult = Result<Vec<parse::ParsedLedgerEntry>, parse::ParseError>;
 
     #[test]
     fn load_valid_input() {

@@ -1,9 +1,8 @@
 //! Defines parsers related to value expression.
 
-use crate::repl::{
-    expr,
-    parser::{character::paren, primitive},
-    pretty_decimal,
+use crate::{
+    parse::{character::paren, primitive},
+    repl::{expr, pretty_decimal},
 };
 
 use winnow::{
@@ -165,7 +164,7 @@ where
 mod tests {
     use super::*;
 
-    use crate::repl::parser::testing::expect_parse_ok;
+    use crate::parse::testing::expect_parse_ok;
     use crate::repl::pretty_decimal::PrettyDecimal;
 
     use pretty_assertions::assert_eq;
