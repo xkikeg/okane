@@ -9,7 +9,7 @@ mod testing;
 fn load_benchmark(c: &mut Criterion) {
     let input = testing::ExampleInput::new(Path::new("load_bench")).unwrap();
     c.bench_function("load simple", |b| {
-        b.iter(|| black_box(load_repl(&input.rootpath())))
+        b.iter(|| black_box(load_repl(&input.rootpath()).unwrap()))
     });
 }
 
