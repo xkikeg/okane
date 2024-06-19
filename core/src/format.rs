@@ -1,8 +1,8 @@
 //! format functionalities of Ledger format files.
 
-use crate::repl::{
-    display::DisplayContext,
-    parser::{parse_ledger, ParseError},
+use crate::{
+    parse::{parse_ledger, ParseError},
+    repl::display::DisplayContext,
 };
 
 use std::io::{Read, Write};

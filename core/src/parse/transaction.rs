@@ -1,7 +1,9 @@
 //! Defines parser functions for transaction.
 
-use crate::repl;
-use repl::parser::{character, combinator::has_peek, metadata, posting, primitive};
+use crate::{
+    parse::{character, combinator::has_peek, metadata, posting, primitive},
+    repl,
+};
 
 use winnow::{
     ascii::{space0, space1},
@@ -49,7 +51,7 @@ pub fn transaction(input: &mut &str) -> PResult<repl::Transaction> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repl::{parser::testing::expect_parse_ok, pretty_decimal::PrettyDecimal};
+    use crate::repl::{parse::testing::expect_parse_ok, pretty_decimal::PrettyDecimal};
 
     use chrono::NaiveDate;
     use indoc::indoc;

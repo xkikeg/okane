@@ -40,7 +40,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repl::parser::testing::expect_parse_ok;
+    use crate::repl::parse::testing::expect_parse_ok;
 
     use pretty_assertions::assert_eq;
     use winnow::{token::literal, token::take_while};

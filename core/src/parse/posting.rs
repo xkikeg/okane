@@ -1,11 +1,11 @@
 //! Parser about ledger postings.
 
-use crate::repl;
-use repl::parser::{
+use crate::parse::{
     character::{line_ending_or_semi, paren, till_line_ending_or_semi},
     combinator::{cond_else, has_peek},
     expr, metadata, primitive,
 };
+use crate::repl;
 
 use std::cmp::min;
 
@@ -161,7 +161,7 @@ fn rate_cost(input: &mut &str) -> PResult<repl::Exchange> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repl::{parser::testing::expect_parse_ok, pretty_decimal::PrettyDecimal};
+    use crate::repl::{parse::testing::expect_parse_ok, pretty_decimal::PrettyDecimal};
 
     use chrono::NaiveDate;
     use indoc::indoc;
