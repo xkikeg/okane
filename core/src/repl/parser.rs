@@ -16,7 +16,7 @@ use crate::repl;
 
 use winnow::{
     ascii::line_ending,
-    combinator::{alt, cut_err, fail, peek, preceded, repeat, terminated},
+    combinator::{alt, cut_err, fail, peek, preceded, repeat},
     error::StrContext,
     token::{literal, one_of, take_while},
     PResult, Parser,
@@ -25,25 +25,41 @@ use winnow::{
 use self::directive::COMMENT_PREFIX;
 
 #[derive(thiserror::Error, Debug)]
-#[error("failed to parse the input: \n{0}")]
-pub struct ParseLedgerError(String);
-
-/// Parses the whole ledger file.
-pub fn parse_ledger(input: &str) -> Result<Vec<repl::LedgerEntry>, ParseLedgerError> {
-    preceded(
-        repeat::<_, _, (), _, _>(0.., line_ending::<&str, _>),
-        repeat(
-            0..,
-            terminated(
-                parse_ledger_entry,
-                repeat::<_, _, (), _, _>(0.., line_ending),
-            ),
-        ),
-    )
-    .parse(input)
-    .map_err(|e| ParseLedgerError(format!("{}", e)))
+pub enum ParseError {
+    // TODO: Use #[from] appropriately
+    #[error("failed to parse the input:\n{0}")]
+    ParseFailed(String),
 }
 
+/// Parses single ledger repl value with consuming whitespace.
+pub fn parse_ledger(input: &str) -> ParsedIter {
+    ParsedIter { input }
+}
+
+pub type ParsedLedgerEntry = repl::LedgerEntry;
+
+/// Iterator to return parsed ledger entry one-by-one.
+pub struct ParsedIter<'i> {
+    input: &'i str,
+}
+
+impl<'i> Iterator for ParsedIter<'i> {
+    type Item = Result<ParsedLedgerEntry, ParseError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        (|| {
+            repeat(0.., line_ending).parse_next(&mut self.input)?;
+            if self.input.is_empty() {
+                return Ok(None);
+            }
+            parse_ledger_entry.parse_next(&mut self.input).map(Some)
+        })()
+        .map_err(|e| ParseError::ParseFailed(format!("{}", e)))
+        .transpose()
+    }
+}
+
+/// Parses given `input` into `repl::LedgerEntry`.
 fn parse_ledger_entry(input: &mut &str) -> PResult<repl::LedgerEntry> {
     // TODO: Consider using dispatch
     alt((
@@ -88,12 +104,16 @@ mod tests {
     use indoc::indoc;
     use pretty_assertions::assert_eq;
 
+    fn parse_ledger_into(input: &str) -> Result<Vec<ParsedLedgerEntry>, ParseError> {
+        parse_ledger(input).collect()
+    }
+
     #[test]
     fn parse_ledger_skips_empty_lines() {
         let input = "\n\n2022/01/23\n";
         assert_eq!(input.chars().next(), Some('\n'));
         assert_eq!(
-            parse_ledger(input).unwrap(),
+            parse_ledger_into(input).unwrap(),
             vec![repl::LedgerEntry::Txn(repl::Transaction::new(
                 NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(),
                 "".to_string()
@@ -111,7 +131,7 @@ mod tests {
         "};
 
         assert_eq!(
-            parse_ledger(input).unwrap(),
+            parse_ledger_into(input).unwrap(),
             vec![
                 repl::LedgerEntry::Txn(repl::Transaction {
                     posts: vec![repl::Posting::new("Expenses:Grocery".to_string())],

@@ -11,7 +11,7 @@ pub enum LoadError {
     #[error("failed to perform IO")]
     IO(#[from] std::io::Error),
     #[error("failed to parse file {0}")]
-    Parse(#[from] repl::parser::ParseLedgerError),
+    Parse(#[from] repl::parser::ParseError),
     #[error("unexpected include path {0}, maybe filesystem root is passed")]
     IncludePath(PathBuf),
 }
@@ -28,8 +28,8 @@ fn load_repl_impl(
     ret: &mut Vec<repl::LedgerEntry>,
 ) -> Result<(), LoadError> {
     let content = std::fs::read_to_string(path)?;
-    let vs = repl::parser::parse_ledger(&content)?;
-    for elem in vs.into_iter() {
+    for elem in repl::parser::parse_ledger(&content) {
+        let elem = elem?;
         match elem {
             repl::LedgerEntry::Include(p) => {
                 let include_path: PathBuf = p.0.into();
@@ -55,11 +55,13 @@ mod tests {
     use pretty_assertions::assert_eq;
     use std::path::Path;
 
+    type LoadReplResult = Result<Vec<repl::parser::ParsedLedgerEntry>, repl::parser::ParseError>;
+
     #[test]
     fn load_valid_input() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/root.ledger");
         let got = load_repl(&root).unwrap();
-        let want = parse_ledger(indoc! {"
+        let want = LoadReplResult::from_iter(parse_ledger(indoc! {"
             account Expenses:Grocery
                 note スーパーマーケットで買ったやつ全部
                 ; comment
@@ -76,7 +78,7 @@ mod tests {
             2024/5/1 * Migros
                 Expenses:Grocery               -10.00 CHF
                 Assets:Bank:ZKB                 10.00 CHF
-        "})
+        "}))
         .unwrap();
         assert_eq!(got, want);
     }
