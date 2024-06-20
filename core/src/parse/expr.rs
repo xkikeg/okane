@@ -15,9 +15,9 @@ use winnow::{
 };
 
 /// Parses value expression.
-pub fn value_expr<'a, E>(input: &mut &'a str) -> PResult<expr::ValueExpr, E>
+pub fn value_expr<'i, E>(input: &mut &'i str) -> PResult<expr::ValueExpr<'i>, E>
 where
-    E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
+    E: ParserError<&'i str> + FromExternalError<&'i str, pretty_decimal::Error>,
 {
     trace(
         "expr::value_expr",
@@ -29,9 +29,9 @@ where
     .parse_next(input)
 }
 
-fn paren_expr<'a, E>(input: &mut &'a str) -> PResult<expr::ValueExpr, E>
+fn paren_expr<'i, E>(input: &mut &'i str) -> PResult<expr::ValueExpr<'i>, E>
 where
-    E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
+    E: ParserError<&'i str> + FromExternalError<&'i str, pretty_decimal::Error>,
 {
     trace(
         "expr::paren_expr",
@@ -40,16 +40,16 @@ where
     .parse_next(input)
 }
 
-fn add_expr<'a, E>(input: &mut &'a str) -> PResult<expr::Expr, E>
+fn add_expr<'i, E>(input: &mut &'i str) -> PResult<expr::Expr<'i>, E>
 where
-    E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
+    E: ParserError<&'i str> + FromExternalError<&'i str, pretty_decimal::Error>,
 {
     trace("expr::add_expr", infixl(add_op, mul_expr)).parse_next(input)
 }
 
-fn add_op<'a, E>(input: &mut &'a str) -> PResult<expr::BinaryOp, E>
+fn add_op<'i, E>(input: &mut &'i str) -> PResult<expr::BinaryOp, E>
 where
-    E: ParserError<&'a str>,
+    E: ParserError<&'i str>,
 {
     trace(
         "expr::add_op",
@@ -61,16 +61,16 @@ where
     .parse_next(input)
 }
 
-fn mul_expr<'a, E>(input: &mut &'a str) -> PResult<expr::Expr, E>
+fn mul_expr<'i, E>(input: &mut &'i str) -> PResult<expr::Expr<'i>, E>
 where
-    E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
+    E: ParserError<&'i str> + FromExternalError<&'i str, pretty_decimal::Error>,
 {
     trace("expr::mul_expr", infixl(mul_op, unary_expr)).parse_next(input)
 }
 
-fn mul_op<'a, E>(input: &mut &'a str) -> PResult<expr::BinaryOp, E>
+fn mul_op<'i, E>(input: &mut &'i str) -> PResult<expr::BinaryOp, E>
 where
-    E: ParserError<&'a str>,
+    E: ParserError<&'i str>,
 {
     trace(
         "expr::mul_op",
@@ -82,9 +82,9 @@ where
     .parse_next(input)
 }
 
-fn unary_expr<'a, E>(input: &mut &'a str) -> PResult<expr::Expr, E>
+fn unary_expr<'i, E>(input: &mut &'i str) -> PResult<expr::Expr<'i>, E>
 where
-    E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
+    E: ParserError<&'i str> + FromExternalError<&'i str, pretty_decimal::Error>,
 {
     trace(
         "expr::unary_expr",
@@ -96,9 +96,9 @@ where
     .parse_next(input)
 }
 
-fn negate_expr<'a, E>(input: &mut &'a str) -> PResult<expr::Expr, E>
+fn negate_expr<'i, E>(input: &mut &'i str) -> PResult<expr::Expr<'i>, E>
 where
-    E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
+    E: ParserError<&'i str> + FromExternalError<&'i str, pretty_decimal::Error>,
 {
     trace(
         "expr::negate_expr",
@@ -113,9 +113,9 @@ where
 }
 
 /// Parses amount expression.
-pub fn amount<'a, E>(input: &mut &'a str) -> PResult<expr::Amount, E>
+pub fn amount<'i, E>(input: &mut &'i str) -> PResult<expr::Amount<'i>, E>
 where
-    E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
+    E: ParserError<&'i str> + FromExternalError<&'i str, pretty_decimal::Error>,
 {
     // Currently it only supports suffix commodity,
     // and there is no plan to support prefix commodities.
@@ -127,7 +127,7 @@ where
         )
             .map(|(value, c)| expr::Amount {
                 value,
-                commodity: c.to_string(),
+                commodity: c.into(),
             }),
     )
     .parse_next(input)
@@ -136,11 +136,11 @@ where
 /// Parses `x (op x)*` format, and feed the list into the given function.
 /// This is similar to foldl, so it'll be evaluated as `f(f(...f(x, x), x), ... x)))`.
 /// operand parser needs to be Copy so that it can be used twice.
-fn infixl<I, E, F, G>(operator: F, operand: G) -> impl Parser<I, expr::Expr, E>
+fn infixl<'i, I, E, F, G>(operator: F, operand: G) -> impl Parser<I, expr::Expr<'i>, E>
 where
     E: ParserError<I>,
     F: Parser<I, expr::BinaryOp, E>,
-    G: Parser<I, expr::Expr, E>,
+    G: Parser<I, expr::Expr<'i>, E>,
     I: Stream + StreamIsPartial + Clone,
     <I as Stream>::Token: AsChar,
 {
@@ -179,7 +179,7 @@ mod tests {
                 "",
                 expr::ValueExpr::Amount(expr::Amount {
                     value: PrettyDecimal::plain(dec!(1000)),
-                    commodity: "JPY".to_string()
+                    commodity: "JPY".into()
                 }),
             )
         );
@@ -190,7 +190,7 @@ mod tests {
                 "",
                 expr::ValueExpr::Amount(expr::Amount {
                     value: PrettyDecimal::comma3dot(dec!(1234567.89)),
-                    commodity: "USD".to_string()
+                    commodity: "USD".into()
                 })
             )
         );
@@ -199,7 +199,7 @@ mod tests {
     fn amount_expr<T: Into<Decimal>>(value: T, commodity: &'static str) -> expr::Expr {
         let v: Decimal = value.into();
         expr::Expr::Value(Box::new(expr::ValueExpr::Amount(expr::Amount {
-            commodity: commodity.to_string(),
+            commodity: commodity.into(),
             value: PrettyDecimal::unformatted(v),
         })))
     }

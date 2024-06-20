@@ -1,12 +1,5 @@
 //! Parser about ledger postings.
 
-use crate::parse::{
-    character::{line_ending_or_semi, paren, till_line_ending_or_semi},
-    combinator::{cond_else, has_peek},
-    expr, metadata, primitive,
-};
-use crate::repl;
-
 use std::cmp::min;
 
 use winnow::{
@@ -17,8 +10,15 @@ use winnow::{
     PResult, Parser,
 };
 
-pub fn posting(input: &mut &str) -> PResult<repl::Posting> {
-    trace("posting::posting", move |input: &mut &str| {
+use crate::parse::{
+    character::{line_ending_or_semi, paren, till_line_ending_or_semi},
+    combinator::{cond_else, has_peek},
+    expr, metadata, primitive,
+};
+use crate::repl;
+
+pub fn posting<'i>(input: &mut &'i str) -> PResult<repl::Posting<'i>> {
+    trace("posting::posting", move |input: &mut &'i str| {
         let clear_state = preceded(space1, metadata::clear_state).parse_next(input)?;
         let account = posting_account
             .context(StrContext::Label("account of the posting"))
@@ -29,7 +29,7 @@ pub fn posting(input: &mut &str) -> PResult<repl::Posting> {
             return Ok(repl::Posting {
                 clear_state,
                 metadata,
-                ..repl::Posting::new(account.to_string())
+                ..repl::Posting::new(account)
             });
         }
         let amount = opt(terminated(posting_amount, space0))
@@ -46,7 +46,7 @@ pub fn posting(input: &mut &str) -> PResult<repl::Posting> {
             amount,
             balance,
             metadata,
-            ..repl::Posting::new(account.to_string())
+            ..repl::Posting::new(account)
         })
     })
     .context(StrContext::Label("posting of the transaction"))
@@ -54,7 +54,7 @@ pub fn posting(input: &mut &str) -> PResult<repl::Posting> {
 }
 
 /// Parses the posting account name, and consumes the trailing spaces and tabs.
-fn posting_account<'a>(input: &mut &'a str) -> PResult<&'a str> {
+fn posting_account<'i>(input: &mut &'i str) -> PResult<&'i str> {
     let (_, line) = till_line_ending_or_semi.parse_peek(input)?;
     let space = line.find("  ");
     let tab = line.find('\t');
@@ -68,7 +68,7 @@ fn posting_account<'a>(input: &mut &'a str) -> PResult<&'a str> {
     terminated(take(length), space0).parse_next(input)
 }
 
-fn posting_amount(input: &mut &str) -> PResult<repl::PostingAmount> {
+fn posting_amount<'i>(input: &mut &'i str) -> PResult<repl::PostingAmount<'i>> {
     let amount = terminated(expr::value_expr, space0).parse_next(input)?;
     let lot = lot(input)?;
     let is_at = has_peek(one_of('@')).parse_next(input)?;
@@ -84,7 +84,7 @@ fn posting_amount(input: &mut &str) -> PResult<repl::PostingAmount> {
     Ok(repl::PostingAmount { amount, cost, lot })
 }
 
-fn lot(input: &mut &str) -> PResult<repl::Lot> {
+fn lot<'i>(input: &mut &'i str) -> PResult<repl::Lot<'i>> {
     space0.void().parse_next(input)?;
     let mut lot = repl::Lot::default();
     loop {
@@ -133,7 +133,7 @@ fn lot(input: &mut &str) -> PResult<repl::Lot> {
             }
             Some('(') if lot.note.is_none() => {
                 let note = paren(take_till(1.., ['(', ')', '@'])).parse_next(input)?;
-                lot.note = Some(note.to_string());
+                lot.note = Some(note.into());
             }
             Some('(') => {
                 return fail
@@ -146,13 +146,13 @@ fn lot(input: &mut &str) -> PResult<repl::Lot> {
     }
 }
 
-fn total_cost(input: &mut &str) -> PResult<repl::Exchange> {
+fn total_cost<'i>(input: &mut &'i str) -> PResult<repl::Exchange<'i>> {
     preceded((literal("@@"), space0), expr::value_expr)
         .map(repl::Exchange::Total)
         .parse_next(input)
 }
 
-fn rate_cost(input: &mut &str) -> PResult<repl::Exchange> {
+fn rate_cost<'i>(input: &mut &'i str) -> PResult<repl::Exchange<'i>> {
     preceded((literal("@"), space0), expr::value_expr)
         .map(repl::Exchange::Rate)
         .parse_next(input)
@@ -177,12 +177,12 @@ mod tests {
                 repl::PostingAmount {
                     amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
                         value: PrettyDecimal::unformatted(dec!(100)),
-                        commodity: "EUR".to_string()
+                        commodity: "EUR".into()
                     }),
                     cost: Some(repl::Exchange::Rate(repl::expr::ValueExpr::Amount(
                         repl::expr::Amount {
                             value: PrettyDecimal::unformatted(dec!(1.2)),
-                            commodity: "CHF".to_string(),
+                            commodity: "CHF".into(),
                         }
                     ))),
                     lot: repl::Lot::default(),
@@ -196,12 +196,12 @@ mod tests {
                 repl::PostingAmount {
                     amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
                         value: PrettyDecimal::plain(dec!(1000)),
-                        commodity: "EUR".to_string()
+                        commodity: "EUR".into()
                     }),
                     cost: Some(repl::Exchange::Total(repl::expr::ValueExpr::Amount(
                         repl::expr::Amount {
                             value: PrettyDecimal::comma3dot(dec!(1020)),
-                            commodity: "CHF".to_string(),
+                            commodity: "CHF".into(),
                         }
                     ))),
                     lot: repl::Lot::default()
@@ -221,25 +221,23 @@ mod tests {
                     amount: Some(
                         repl::expr::ValueExpr::Amount(repl::expr::Amount {
                             value: PrettyDecimal::unformatted(dec!(1)),
-                            commodity: "USD".to_string(),
+                            commodity: "USD".into(),
                         })
                         .into()
                     ),
                     metadata: vec![
                         repl::Metadata::KeyValueTag {
-                            key: "Payee".to_string(),
-                            value: repl::MetadataValue::Text("My Card".to_string()),
+                            key: "Payee".into(),
+                            value: repl::MetadataValue::Text("My Card".into()),
                         },
                         repl::Metadata::KeyValueTag {
-                            key: "Date".to_string(),
-                            value: repl::MetadataValue::Expr("[2022-3-4]".to_string()),
+                            key: "Date".into(),
+                            value: repl::MetadataValue::Expr("[2022-3-4]".into()),
                         },
-                        repl::Metadata::Comment("My card took commission".to_string()),
-                        repl::Metadata::WordTags(
-                            vec!["financial".to_string(), "経済".to_string(),],
-                        ),
+                        repl::Metadata::Comment("My card took commission".into()),
+                        repl::Metadata::WordTags(vec!["financial".into(), "経済".into(),],),
                     ],
-                    ..repl::Posting::new("Expenses:Commissions".to_string())
+                    ..repl::Posting::new("Expenses:Commissions")
                 }
             )
         )
@@ -254,7 +252,7 @@ mod tests {
                 "",
                 repl::Posting {
                     clear_state: repl::ClearState::Pending,
-                    ..repl::Posting::new("Expenses".to_string())
+                    ..repl::Posting::new("Expenses")
                 }
             )
         );
@@ -272,12 +270,12 @@ mod tests {
                     amount: Some(repl::PostingAmount {
                         amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
                             value: PrettyDecimal::unformatted(dec!(100)),
-                            commodity: "JPY".to_string()
+                            commodity: "JPY".into()
                         }),
                         cost: None,
                         lot: repl::Lot::default()
                     }),
-                    ..repl::Posting::new("Expenses".to_string())
+                    ..repl::Posting::new("Expenses")
                 }
             )
         );
@@ -332,11 +330,11 @@ mod tests {
                                     price: Some(repl::Exchange::Rate(
                                         repl::expr::ValueExpr::Amount(repl::expr::Amount {
                                             value: PrettyDecimal::unformatted(dec!(200)),
-                                            commodity: "JPY".to_string()
+                                            commodity: "JPY".into()
                                         })
                                     )),
                                     date: Some(NaiveDate::from_ymd_opt(2022, 9, 1).unwrap()),
-                                    note: Some("note foobar".to_string()),
+                                    note: Some("note foobar".into()),
                                 }
                             )
                         )

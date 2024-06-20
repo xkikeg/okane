@@ -5,20 +5,21 @@ use super::pretty_decimal::PrettyDecimal;
 use crate::datamodel;
 
 use core::fmt;
+use std::borrow::Cow;
 
 /// Amount with presentation information.
 /// Similar to `datamodel::Amount` with extra formatting information.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Amount {
+pub struct Amount<'i> {
     pub value: PrettyDecimal,
-    pub commodity: String,
+    pub commodity: Cow<'i, str>,
 }
 
-impl From<datamodel::Amount> for Amount {
-    fn from(value: datamodel::Amount) -> Self {
+impl<'i> From<&'i datamodel::Amount> for Amount<'i> {
+    fn from(value: &'i datamodel::Amount) -> Self {
         Self {
             value: PrettyDecimal::unformatted(value.value),
-            commodity: value.commodity,
+            commodity: Cow::Borrowed(&value.commodity),
         }
     }
 }
@@ -27,29 +28,29 @@ impl From<datamodel::Amount> for Amount {
 /// Value expression is a valid expression when used in amount.
 /// It can be either amount literal or expression wrapped in `()`.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum ValueExpr {
-    Paren(Expr),
-    Amount(Amount),
+pub enum ValueExpr<'i> {
+    Paren(Expr<'i>),
+    Amount(Amount<'i>),
 }
 
-impl From<Amount> for ValueExpr {
-    fn from(v: Amount) -> Self {
+impl<'i> From<Amount<'i>> for ValueExpr<'i> {
+    fn from(v: Amount<'i>) -> Self {
         ValueExpr::Amount(v)
     }
 }
 
-impl From<datamodel::Amount> for ValueExpr {
-    fn from(value: datamodel::Amount) -> Self {
+impl<'i> From<&'i datamodel::Amount> for ValueExpr<'i> {
+    fn from(value: &'i datamodel::Amount) -> Self {
         ValueExpr::Amount(value.into())
     }
 }
 
 /// Generic expression.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Expr {
-    Unary(UnaryOpExpr),
-    Binary(BinaryOpExpr),
-    Value(Box<ValueExpr>),
+pub enum Expr<'i> {
+    Unary(UnaryOpExpr<'i>),
+    Binary(BinaryOpExpr<'i>),
+    Value(Box<ValueExpr<'i>>),
 }
 
 /// Represents unary operator.
@@ -70,9 +71,9 @@ impl fmt::Display for UnaryOp {
 
 /// Unary operator expression.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct UnaryOpExpr {
+pub struct UnaryOpExpr<'i> {
     pub op: UnaryOp,
-    pub expr: Box<Expr>,
+    pub expr: Box<Expr<'i>>,
 }
 
 /// Binary operator.
@@ -102,8 +103,8 @@ impl fmt::Display for BinaryOp {
 
 /// Represents binary operator expression.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct BinaryOpExpr {
+pub struct BinaryOpExpr<'i> {
     pub op: BinaryOp,
-    pub lhs: Box<Expr>,
-    pub rhs: Box<Expr>,
+    pub lhs: Box<Expr<'i>>,
+    pub rhs: Box<Expr<'i>>,
 }

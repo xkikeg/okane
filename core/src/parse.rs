@@ -32,19 +32,19 @@ pub enum ParseError {
 }
 
 /// Parses single ledger repl value with consuming whitespace.
-pub fn parse_ledger(input: &str) -> ParsedIter {
+pub fn parse_ledger(input: &str) -> impl Iterator<Item = Result<ParsedLedgerEntry, ParseError>> {
     ParsedIter { input }
 }
 
-pub type ParsedLedgerEntry = repl::LedgerEntry;
+pub type ParsedLedgerEntry<'i> = repl::LedgerEntry<'i>;
 
 /// Iterator to return parsed ledger entry one-by-one.
-pub struct ParsedIter<'i> {
+struct ParsedIter<'i> {
     input: &'i str,
 }
 
 impl<'i> Iterator for ParsedIter<'i> {
-    type Item = Result<ParsedLedgerEntry, ParseError>;
+    type Item = Result<ParsedLedgerEntry<'i>, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         (|| {
@@ -60,7 +60,7 @@ impl<'i> Iterator for ParsedIter<'i> {
 }
 
 /// Parses given `input` into `repl::LedgerEntry`.
-fn parse_ledger_entry(input: &mut &str) -> PResult<repl::LedgerEntry> {
+fn parse_ledger_entry<'i>(input: &mut &'i str) -> PResult<repl::LedgerEntry<'i>> {
     // TODO: Consider using dispatch
     alt((
         preceded(
@@ -116,7 +116,7 @@ mod tests {
             parse_ledger_into(input).unwrap(),
             vec![repl::LedgerEntry::Txn(repl::Transaction::new(
                 NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(),
-                "".to_string()
+                ""
             ))]
         );
     }
@@ -134,18 +134,15 @@ mod tests {
             parse_ledger_into(input).unwrap(),
             vec![
                 repl::LedgerEntry::Txn(repl::Transaction {
-                    posts: vec![repl::Posting::new("Expenses:Grocery".to_string())],
+                    posts: vec![repl::Posting::new("Expenses:Grocery")],
                     ..repl::Transaction::new(
                         NaiveDate::from_ymd_opt(2024, 4, 10).unwrap(),
-                        "Migros".to_string(),
+                        "Migros",
                     )
                 }),
                 repl::LedgerEntry::Txn(repl::Transaction {
-                    posts: vec![repl::Posting::new("Expenses:Grocery".to_string())],
-                    ..repl::Transaction::new(
-                        NaiveDate::from_ymd_opt(2024, 4, 20).unwrap(),
-                        "Coop".to_string(),
-                    )
+                    posts: vec![repl::Posting::new("Expenses:Grocery")],
+                    ..repl::Transaction::new(NaiveDate::from_ymd_opt(2024, 4, 20).unwrap(), "Coop")
                 })
             ]
         )

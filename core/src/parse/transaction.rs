@@ -1,9 +1,6 @@
 //! Defines parser functions for transaction.
 
-use crate::{
-    parse::{character, combinator::has_peek, metadata, posting, primitive},
-    repl,
-};
+use std::borrow::Cow;
 
 use winnow::{
     ascii::{space0, space1},
@@ -13,9 +10,14 @@ use winnow::{
     PResult, Parser,
 };
 
+use crate::{
+    parse::{character, combinator::has_peek, metadata, posting, primitive},
+    repl,
+};
+
 /// Parses a transaction from given string.
-pub fn transaction(input: &mut &str) -> PResult<repl::Transaction> {
-    trace("transaction::transaction", move |input: &mut &str| {
+pub fn transaction<'i>(input: &mut &'i str) -> PResult<repl::Transaction<'i>> {
+    trace("transaction::transaction", move |input: &mut &'i str| {
         let date = trace(
             "transaction::transaction@date",
             primitive::date.context(StrContext::Label("transaction date")),
@@ -39,10 +41,10 @@ pub fn transaction(input: &mut &str) -> PResult<repl::Transaction> {
         Ok(repl::Transaction {
             effective_date,
             clear_state,
-            code: code.map(str::to_string),
+            code: code.map(Cow::Borrowed),
             posts,
             metadata,
-            ..repl::Transaction::new(date, payee.unwrap_or("").to_string())
+            ..repl::Transaction::new(date, payee.unwrap_or(""))
         })
     })
     .parse_next(input)
@@ -65,10 +67,7 @@ mod tests {
             expect_parse_ok(transaction, input),
             (
                 "",
-                repl::Transaction::new(
-                    NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(),
-                    "".to_string()
-                )
+                repl::Transaction::new(NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(), "")
             )
         );
     }
@@ -87,26 +86,23 @@ mod tests {
                 repl::Transaction {
                     effective_date: Some(NaiveDate::from_ymd_opt(2022, 1, 28).unwrap()),
                     clear_state: repl::ClearState::Cleared,
-                    code: Some("code".to_string()),
-                    payee: "Foo".to_string(),
+                    code: Some(Cow::Borrowed("code")),
+                    payee: Cow::Borrowed("Foo"),
                     posts: vec![
                         repl::Posting {
                             amount: Some(repl::PostingAmount {
                                 amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
                                     value: PrettyDecimal::comma3dot(dec!(123456.78)),
-                                    commodity: "USD".to_string(),
+                                    commodity: Cow::Borrowed("USD"),
                                 }),
                                 cost: None,
                                 lot: repl::Lot::default(),
                             }),
-                            ..repl::Posting::new("Expense A".to_string())
+                            ..repl::Posting::new("Expense A")
                         },
-                        repl::Posting::new("Liabilities B".to_string())
+                        repl::Posting::new("Liabilities B")
                     ],
-                    ..repl::Transaction::new(
-                        NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(),
-                        "".to_string()
-                    )
+                    ..repl::Transaction::new(NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(), "")
                 }
             )
         );
@@ -131,67 +127,64 @@ mod tests {
                 repl::Transaction {
                     effective_date: Some(NaiveDate::from_ymd_opt(2022, 1, 28).unwrap()),
                     clear_state: repl::ClearState::Pending,
-                    code: Some("code".to_string()),
-                    payee: "Foo".to_string(),
+                    code: Some(Cow::Borrowed("code")),
+                    payee: Cow::Borrowed("Foo"),
                     metadata: vec![
-                        repl::Metadata::Comment("とりあえずのメモ".to_string()),
-                        repl::Metadata::WordTags(vec!["取引".to_string()]),
+                        repl::Metadata::Comment(Cow::Borrowed("とりあえずのメモ")),
+                        repl::Metadata::WordTags(vec![Cow::Borrowed("取引")]),
                     ],
                     posts: vec![
                         repl::Posting {
                             amount: Some(repl::PostingAmount {
                                 amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
                                     value: PrettyDecimal::comma3dot(dec!(-123456.78)),
-                                    commodity: "USD".to_string(),
+                                    commodity: Cow::Borrowed("USD"),
                                 }),
                                 cost: None,
                                 lot: repl::Lot::default(),
                             }),
                             metadata: vec![
-                                repl::Metadata::Comment("Note expense A".to_string()),
+                                repl::Metadata::Comment(Cow::Borrowed("Note expense A")),
                                 repl::Metadata::KeyValueTag {
-                                    key: "Payee".to_string(),
-                                    value: repl::MetadataValue::Text("Bar".to_string())
+                                    key: Cow::Borrowed("Payee"),
+                                    value: repl::MetadataValue::Text(Cow::Borrowed("Bar"))
                                 },
                             ],
-                            ..repl::Posting::new("Expense A".to_string())
+                            ..repl::Posting::new("Expense A")
                         },
                         repl::Posting {
                             amount: Some(repl::PostingAmount {
                                 amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
                                     value: PrettyDecimal::unformatted(dec!(12)),
-                                    commodity: "JPY".to_string(),
+                                    commodity: Cow::Borrowed("JPY"),
                                 }),
                                 cost: None,
                                 lot: repl::Lot::default(),
                             }),
                             balance: Some(repl::expr::ValueExpr::Amount(repl::expr::Amount {
                                 value: PrettyDecimal::plain(dec!(-1000)),
-                                commodity: "CHF".to_string(),
+                                commodity: Cow::Borrowed("CHF"),
                             })),
                             metadata: vec![repl::Metadata::WordTags(vec![
-                                "tag1".to_string(),
-                                "他のタグ".to_string()
+                                Cow::Borrowed("tag1"),
+                                Cow::Borrowed("他のタグ")
                             ]),],
-                            ..repl::Posting::new("Liabilities B".to_string())
+                            ..repl::Posting::new("Liabilities B")
                         },
                         repl::Posting {
                             balance: Some(repl::expr::ValueExpr::Amount(repl::expr::Amount {
                                 value: PrettyDecimal::unformatted(dec!(0)),
-                                commodity: "".to_string(),
+                                commodity: Cow::Borrowed(""),
                             })),
                             metadata: vec![
-                                repl::Metadata::Comment("Cのノート".to_string()),
-                                repl::Metadata::Comment("これなんだっけ".to_string()),
+                                repl::Metadata::Comment(Cow::Borrowed("Cのノート")),
+                                repl::Metadata::Comment(Cow::Borrowed("これなんだっけ")),
                             ],
 
-                            ..repl::Posting::new("Assets C".to_string())
+                            ..repl::Posting::new("Assets C")
                         }
                     ],
-                    ..repl::Transaction::new(
-                        NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(),
-                        "".to_string()
-                    )
+                    ..repl::Transaction::new(NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(), "")
                 }
             )
         );

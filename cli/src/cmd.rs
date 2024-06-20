@@ -88,7 +88,7 @@ impl ImportCmd {
                 .collect(),
         };
         for xact in xacts {
-            let xact: repl::Transaction = xact.into();
+            let xact: repl::Transaction = (&xact).into();
             writeln!(w, "{}", ctx.as_display(&xact))?;
         }
         Ok(())
@@ -150,12 +150,12 @@ impl FlattenCmd {
     where
         W: std::io::Write,
     {
-        let entries = load::load_repl(&self.source)?;
         // TODO: Pick DisplayContext from load results.
         let ctx = DisplayContext::default();
-        for entry in entries.iter() {
+        load::load_repl(&self.source, |_, entry| -> Result<(), Error> {
             writeln!(w, "{}", ctx.as_display(entry))?;
-        }
+            Ok(())
+        })?;
         Ok(())
     }
 }
@@ -170,10 +170,9 @@ impl AccountsCmd {
     where
         W: std::io::Write,
     {
-        let entries = load::load_repl(&self.source)?;
         let arena = Bump::new();
         let mut ctx = eval::context::EvalContext::new(&arena);
-        let accounts = eval::accounts(&mut ctx, &entries);
+        let accounts = eval::accounts(&mut ctx, &self.source)?;
         for acc in accounts.iter() {
             writeln!(w, "{}", acc.as_str())?;
         }
