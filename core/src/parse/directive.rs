@@ -2,6 +2,8 @@ use crate::repl;
 
 use super::{character::line_ending_or_eof, expr, metadata};
 
+use std::borrow::Cow;
+
 use winnow::{
     ascii::{space0, space1, till_line_ending},
     combinator::{alt, delimited, opt, preceded, repeat, terminated, trace},
@@ -11,7 +13,7 @@ use winnow::{
 };
 
 /// Parses "account" directive.
-pub fn account_declaration(input: &mut &str) -> PResult<repl::AccountDeclaration> {
+pub fn account_declaration<'i>(input: &mut &'i str) -> PResult<repl::AccountDeclaration<'i>> {
     (
         delimited(
             (literal("account"), space1),
@@ -19,7 +21,7 @@ pub fn account_declaration(input: &mut &str) -> PResult<repl::AccountDeclaration
             line_ending_or_eof,
         ),
         // TODO: Consider using dispatch
-        // Note nesting many0 would cause parse failure at nom 7,
+        // Note nesting many0 would cause parse failure,
         // as many0 would fail if the sub-parser consumes empty input.
         // So make sure no branches in alt would emit zero input as success.
         repeat(
@@ -33,19 +35,19 @@ pub fn account_declaration(input: &mut &str) -> PResult<repl::AccountDeclaration
                     till_line_ending,
                     line_ending_or_eof,
                 )
-                .map(|a| repl::AccountDetail::Alias(a.trim_end().to_string())),
+                .map(|a| repl::AccountDetail::Alias(a.trim_end().into())),
             )),
         ),
     )
         .map(|(name, details)| repl::AccountDeclaration {
-            name: name.trim_end().to_string(),
+            name: name.trim_end().into(),
             details,
         })
         .parse_next(input)
 }
 
 /// Parses "commodity" directive.
-pub fn commodity_declaration(input: &mut &str) -> PResult<repl::CommodityDeclaration> {
+pub fn commodity_declaration<'i>(input: &mut &'i str) -> PResult<repl::CommodityDeclaration<'i>> {
     (
         delimited(
             (literal("commodity"), space1),
@@ -66,7 +68,7 @@ pub fn commodity_declaration(input: &mut &str) -> PResult<repl::CommodityDeclara
                     till_line_ending,
                     line_ending_or_eof,
                 )
-                .map(|a| repl::CommodityDetail::Alias(a.trim_end().to_string())),
+                .map(|a| repl::CommodityDetail::Alias(a.trim_end().into())),
                 delimited(
                     (space1, literal("format"), space1),
                     expr::amount,
@@ -77,14 +79,14 @@ pub fn commodity_declaration(input: &mut &str) -> PResult<repl::CommodityDeclara
         ),
     )
         .map(|(name, details)| repl::CommodityDeclaration {
-            name: name.trim_end().to_string(),
+            name: name.trim_end().into(),
             details,
         })
         .parse_next(input)
 }
 
 /// Parses "apply tag" directive.
-pub fn apply_tag(input: &mut &str) -> PResult<repl::ApplyTag> {
+pub fn apply_tag<'i>(input: &mut &'i str) -> PResult<repl::ApplyTag<'i>> {
     // TODO: value needs to be supported.
     trace(
         "directive::apply_tag",
@@ -96,7 +98,7 @@ pub fn apply_tag(input: &mut &str) -> PResult<repl::ApplyTag> {
             delimited(space0, opt(metadata::metadata_value), line_ending_or_eof),
         )
             .map(|(key, value)| repl::ApplyTag {
-                key: key.to_string(),
+                key: key.into(),
                 value,
             }),
     )
@@ -110,9 +112,9 @@ pub fn apply_tag(input: &mut &str) -> PResult<repl::ApplyTag> {
 /// Also comment requires "end" directive.
 /// In the meantime, only "end apply tag" is supported, however,
 /// pretty sure it'd be needed to rename and extend this function.
-pub fn end_apply_tag<'a, E>(input: &mut &'a str) -> PResult<&'a str, E>
+pub fn end_apply_tag<'i, E>(input: &mut &'i str) -> PResult<&'i str, E>
 where
-    E: ParserError<&'a str>,
+    E: ParserError<&'i str>,
 {
     trace(
         "directive::end_apply_tag",
@@ -134,9 +136,9 @@ where
 /// Parses include directive.
 /// Note given we'll always have UTF-8 input,
 /// we're not using PathBuf but String for the path.
-pub fn include<'a, E>(input: &mut &'a str) -> PResult<repl::IncludeFile, E>
+pub fn include<'i, E>(input: &mut &'i str) -> PResult<repl::IncludeFile<'i>, E>
 where
-    E: ParserError<&'a str>,
+    E: ParserError<&'i str>,
 {
     trace(
         "directive::include",
@@ -145,7 +147,7 @@ where
             till_line_ending,
             line_ending_or_eof,
         )
-        .map(|x| repl::IncludeFile(x.trim_end().to_string())),
+        .map(|x| repl::IncludeFile(x.trim_end().into())),
     )
     .parse_next(input)
 }
@@ -155,9 +157,9 @@ pub const COMMENT_PREFIX: [char; 5] = [';', '#', '%', '|', '*'];
 
 /// Parses top level comment in the Ledger file format.
 /// Notable difference with block_metadata is, this accepts multiple prefix.
-pub fn top_comment<'a, E>(input: &mut &'a str) -> PResult<repl::TopLevelComment, E>
+pub fn top_comment<'i, E>(input: &mut &'i str) -> PResult<repl::TopLevelComment<'i>, E>
 where
-    E: ParserError<&'a str>,
+    E: ParserError<&'i str>,
 {
     trace(
         "directive::top_comment",
@@ -167,18 +169,20 @@ where
 }
 
 /// Parses multi-line text with preceding prefix.
-fn multiline_text<'a, E, F, O1>(prefix: F) -> impl Parser<&'a str, String, E>
+fn multiline_text<'a, E, F, O1>(prefix: F) -> impl Parser<&'a str, Cow<'a, str>, E>
 where
     E: ParserError<&'a str>,
     F: Parser<&'a str, O1, E>,
 {
-    repeat(1.., delimited(prefix, till_line_ending, line_ending_or_eof)).fold(
-        String::new,
-        |mut ret, l| {
-            ret.push_str(l);
-            ret.push('\n');
-            ret
-        },
+    trace(
+        "directive::multiline_text",
+        repeat(1.., delimited(prefix, till_line_ending, line_ending_or_eof))
+            .fold(String::new, |mut ret, l| {
+                ret.push_str(l);
+                ret.push('\n');
+                ret
+            })
+            .map(Cow::Owned),
     )
 }
 
@@ -199,7 +203,7 @@ mod tests {
             (
                 "",
                 repl::AccountDeclaration {
-                    name: "Foo:Bar Baz".to_string(),
+                    name: "Foo:Bar Baz".into(),
                     details: vec![]
                 }
             )
@@ -211,7 +215,7 @@ mod tests {
             (
                 "2022",
                 repl::AccountDeclaration {
-                    name: "Foo:Bar Baz".to_string(),
+                    name: "Foo:Bar Baz".into(),
                     details: vec![]
                 }
             )
@@ -236,13 +240,13 @@ mod tests {
             (
                 "\n2020",
                 repl::AccountDeclaration {
-                    name: "Foo:Bar".to_string(),
+                    name: "Foo:Bar".into(),
                     details: vec![
-                        repl::AccountDetail::Comment(" comment1\n comment1-cont\n".to_string()),
-                        repl::AccountDetail::Note("note1\n".to_string()),
-                        repl::AccountDetail::Alias("alias1".to_string()),
-                        repl::AccountDetail::Alias("Alias 2:".to_string()),
-                        repl::AccountDetail::Note("note2\nnote2-cont\n".to_string()),
+                        repl::AccountDetail::Comment(" comment1\n comment1-cont\n".into()),
+                        repl::AccountDetail::Note("note1\n".into()),
+                        repl::AccountDetail::Alias("alias1".into()),
+                        repl::AccountDetail::Alias("Alias 2:".into()),
+                        repl::AccountDetail::Note("note2\nnote2-cont\n".into()),
                     ],
                 }
             )
@@ -257,7 +261,7 @@ mod tests {
             (
                 "",
                 repl::ApplyTag {
-                    key: "foo".to_string(),
+                    key: "foo".into(),
                     value: None,
                 }
             )
@@ -269,7 +273,7 @@ mod tests {
             (
                 "",
                 repl::ApplyTag {
-                    key: "test@1-2!#[]".to_string(),
+                    key: "test@1-2!#[]".into(),
                     value: None,
                 }
             )
@@ -283,8 +287,8 @@ mod tests {
             (
                 "",
                 repl::ApplyTag {
-                    key: "foo".to_string(),
-                    value: Some(repl::MetadataValue::Text("bar".to_string())),
+                    key: "foo".into(),
+                    value: Some(repl::MetadataValue::Text("bar".into())),
                 }
             )
         );
@@ -295,8 +299,8 @@ mod tests {
             (
                 "",
                 repl::ApplyTag {
-                    key: "foo".to_string(),
-                    value: Some(repl::MetadataValue::Text("bar".to_string())),
+                    key: "foo".into(),
+                    value: Some(repl::MetadataValue::Text("bar".into())),
                 }
             )
         );
@@ -307,8 +311,8 @@ mod tests {
             (
                 "",
                 repl::ApplyTag {
-                    key: "test@1-2!#[]".to_string(),
-                    value: Some(repl::MetadataValue::Expr("[2022-3-4]".to_string())),
+                    key: "test@1-2!#[]".into(),
+                    value: Some(repl::MetadataValue::Expr("[2022-3-4]".into())),
                 }
             )
         );
@@ -357,7 +361,7 @@ mod tests {
     fn include_parses_normal_file() {
         assert_eq!(
             expect_parse_ok(include, "include foobar.ledger\n"),
-            ("", repl::IncludeFile("foobar.ledger".to_string()))
+            ("", repl::IncludeFile("foobar.ledger".into()))
         );
     }
 
@@ -365,7 +369,7 @@ mod tests {
     fn include_trims_space_in_end() {
         assert_eq!(
             expect_parse_ok(include, "include foobar.ledger  \n"),
-            ("", repl::IncludeFile("foobar.ledger".to_string()))
+            ("", repl::IncludeFile("foobar.ledger".into()))
         );
     }
 
@@ -373,7 +377,7 @@ mod tests {
     fn include_keeps_spaces_in_the_middle() {
         assert_eq!(
             expect_parse_ok(include, "include\t\t /path/to/foo bar.ledger  \n"),
-            ("", repl::IncludeFile("/path/to/foo bar.ledger".to_string()))
+            ("", repl::IncludeFile("/path/to/foo bar.ledger".into()))
         );
     }
 
@@ -381,11 +385,11 @@ mod tests {
     fn top_comment_single_line() {
         assert_eq!(
             expect_parse_ok(top_comment, ";foo"),
-            ("", repl::TopLevelComment("foo\n".to_string()))
+            ("", repl::TopLevelComment("foo\n".into()))
         );
         assert_eq!(
             expect_parse_ok(top_comment, ";foo\nbaz"),
-            ("baz", repl::TopLevelComment("foo\n".to_string()))
+            ("baz", repl::TopLevelComment("foo\n".into()))
         );
     }
 
@@ -393,11 +397,11 @@ mod tests {
     fn top_comment_multi_lines() {
         assert_eq!(
             expect_parse_ok(top_comment, ";foo\n;bar"),
-            ("", repl::TopLevelComment("foo\nbar\n".to_string()))
+            ("", repl::TopLevelComment("foo\nbar\n".into()))
         );
         assert_eq!(
             expect_parse_ok(top_comment, ";foo\n#bar\nbaz"),
-            ("baz", repl::TopLevelComment("foo\nbar\n".to_string()))
+            ("baz", repl::TopLevelComment("foo\nbar\n".into()))
         );
     }
 }

@@ -10,93 +10,93 @@ pub mod pretty_decimal;
 use crate::datamodel;
 pub use crate::datamodel::ClearState;
 
-use std::fmt;
+use std::{borrow::Cow, fmt};
 
 use chrono::NaiveDate;
 
 /// Top-level entry of the LedgerFile.
 #[derive(Debug, PartialEq, Eq)]
-pub enum LedgerEntry {
+pub enum LedgerEntry<'i> {
     /// Transaction
-    Txn(Transaction),
+    Txn(Transaction<'i>),
     /// Comment, not limited to one-line oppose to `Metadata`.
-    Comment(TopLevelComment),
+    Comment(TopLevelComment<'i>),
     /// Apply tag directive.
-    ApplyTag(ApplyTag),
+    ApplyTag(ApplyTag<'i>),
     /// "end apply tag" directive.
     EndApplyTag,
     /// "include" directive.
-    Include(IncludeFile),
+    Include(IncludeFile<'i>),
     /// "account" directive.
-    Account(AccountDeclaration),
+    Account(AccountDeclaration<'i>),
     /// "commodity" directive.
-    Commodity(CommodityDeclaration),
+    Commodity(CommodityDeclaration<'i>),
 }
 
 /// Top-level comment. OK to have multi-line comment.
 #[derive(Debug, PartialEq, Eq)]
-pub struct TopLevelComment(pub String);
+pub struct TopLevelComment<'i>(pub Cow<'i, str>);
 
 /// "apply tag" directive content.
 #[derive(Debug, PartialEq, Eq)]
-pub struct ApplyTag {
-    pub key: String,
-    pub value: Option<MetadataValue>,
+pub struct ApplyTag<'i> {
+    pub key: Cow<'i, str>,
+    pub value: Option<MetadataValue<'i>>,
 }
 
 /// "include" directive, taking a path as an argument.
 /// Path can be a relative path or an absolute path.
 #[derive(Debug, PartialEq, Eq)]
-pub struct IncludeFile(pub String);
+pub struct IncludeFile<'i>(pub Cow<'i, str>);
 
 /// "account" directive to declare account information.
 #[derive(Debug, PartialEq, Eq)]
-pub struct AccountDeclaration {
+pub struct AccountDeclaration<'i> {
     /// Canonical name of the account.
-    pub name: String,
+    pub name: Cow<'i, str>,
     /// sub-directives for the account.
-    pub details: Vec<AccountDetail>,
+    pub details: Vec<AccountDetail<'i>>,
 }
 
 /// Sub directives for "account" directive.
 #[derive(Debug, PartialEq, Eq)]
-pub enum AccountDetail {
+pub enum AccountDetail<'i> {
     /// Comment is a pure comment without any semantics, similar to `TopLevelComment`.
-    Comment(String),
+    Comment(Cow<'i, str>),
     /// Note is a "note" sub-directive.
     /// Usually it would be one-line.
-    Note(String),
+    Note(Cow<'i, str>),
     /// Declare the given string is an alias for the declared account.
-    Alias(String),
+    Alias(Cow<'i, str>),
 }
 
 /// "commodity" directive to declare commodity information.
 #[derive(Debug, PartialEq, Eq)]
-pub struct CommodityDeclaration {
+pub struct CommodityDeclaration<'i> {
     /// Canonical name of the commodity.
-    pub name: String,
+    pub name: Cow<'i, str>,
     /// sub-directives for the commodity.
-    pub details: Vec<CommodityDetail>,
+    pub details: Vec<CommodityDetail<'i>>,
 }
 
 /// Sub directives for "commodity" directive.
 #[derive(Debug, PartialEq, Eq)]
-pub enum CommodityDetail {
+pub enum CommodityDetail<'i> {
     /// Comment is a pure comment without any semantics, similar to `TopLevelComment`.
-    Comment(String),
+    Comment(Cow<'i, str>),
     /// Note is a "note" sub-directive to note the commodity.
     /// Usually it would be one-line.
-    Note(String),
+    Note(Cow<'i, str>),
     /// Declare the given string is an alias for the declared account.
     /// Multiple declaration should work.
-    Alias(String),
+    Alias(Cow<'i, str>),
     /// Format describes how the comodity should be printed.
-    Format(expr::Amount),
+    Format(expr::Amount<'i>),
 }
 
 /// Represents a transaction where the money transfered across the accounts.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Transaction {
+pub struct Transaction<'i> {
     /// Date when the transaction issued.
     pub date: NaiveDate,
     /// Date when the transaction got effective, optional.
@@ -104,63 +104,66 @@ pub struct Transaction {
     /// Indiacates clearing state of the entire transaction.
     pub clear_state: ClearState,
     /// Transaction code (not necessarily unique).
-    pub code: Option<String>,
+    pub code: Option<Cow<'i, str>>,
     /// Label of the transaction, often the opposite party of the transaction.
-    pub payee: String,
+    pub payee: Cow<'i, str>,
     /// Postings of the transaction, could be empty.
-    pub posts: Vec<Posting>,
+    pub posts: Vec<Posting<'i>>,
     /// Transaction level metadata.
-    pub metadata: Vec<Metadata>,
+    pub metadata: Vec<Metadata<'i>>,
 }
 
-impl Transaction {
+impl<'i> Transaction<'i> {
     /// Constructs minimal transaction.
-    pub fn new(date: NaiveDate, payee: String) -> Transaction {
+    pub fn new<T>(date: NaiveDate, payee: T) -> Self
+    where
+        T: Into<Cow<'i, str>>,
+    {
         Transaction {
             date,
             effective_date: None,
             clear_state: ClearState::Uncleared,
             code: None,
-            payee,
+            payee: payee.into(),
             metadata: Vec::new(),
             posts: Vec::new(),
         }
     }
 }
 
-impl From<datamodel::Transaction> for Transaction {
-    fn from(orig: datamodel::Transaction) -> Transaction {
+impl<'i> From<&'i datamodel::Transaction> for Transaction<'i> {
+    fn from(orig: &'i datamodel::Transaction) -> Self {
         Transaction {
             date: orig.date,
             effective_date: orig.effective_date,
             clear_state: orig.clear_state,
-            code: orig.code,
-            payee: orig.payee,
+            code: orig.code.as_ref().map(|x| Cow::Borrowed(x.as_str())),
+            payee: (&orig.payee).into(),
             metadata: Vec::new(),
-            posts: orig.posts.into_iter().map(Into::into).collect(),
+            posts: orig.posts.iter().map(Into::into).collect(),
         }
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 /// Posting in a transaction to represent a particular account amount increase / decrease.
-pub struct Posting {
+pub struct Posting<'i> {
     /// Account of the post target.
-    pub account: String,
+    pub account: Cow<'i, str>,
     /// Posting specific ClearState.
     pub clear_state: ClearState,
     /// Amount of the posting.
-    pub amount: Option<PostingAmount>,
+    pub amount: Option<PostingAmount<'i>>,
     /// Balance after the transaction of the specified account.
-    pub balance: Option<expr::ValueExpr>,
+    pub balance: Option<expr::ValueExpr<'i>>,
     /// Metadata information such as comment or tag.
-    pub metadata: Vec<Metadata>,
+    pub metadata: Vec<Metadata<'i>>,
 }
 
-impl Posting {
-    pub fn new(account: String) -> Posting {
+impl<'i> Posting<'i> {
+    pub fn new<T: Into<Cow<'i, str>>>(account: T) -> Self {
         Posting {
-            account,
+            account: account.into(),
             clear_state: ClearState::default(),
             amount: None,
             balance: None,
@@ -169,21 +172,21 @@ impl Posting {
     }
 }
 
-impl From<datamodel::Posting> for Posting {
-    fn from(orig: datamodel::Posting) -> Posting {
+impl<'i> From<&'i datamodel::Posting> for Posting<'i> {
+    fn from(orig: &'i datamodel::Posting) -> Self {
         let metadata = orig
             .payee
-            .into_iter()
+            .iter()
             .map(|v| Metadata::KeyValueTag {
-                key: "Payee".to_string(),
-                value: MetadataValue::Text(v),
+                key: Cow::Borrowed("Payee"),
+                value: MetadataValue::Text(Cow::Borrowed(v.as_str())),
             })
             .collect();
         Posting {
-            account: orig.account,
+            account: Cow::Borrowed(&orig.account),
             clear_state: orig.clear_state,
-            amount: orig.amount.map(Into::into),
-            balance: orig.balance.map(Into::into),
+            amount: orig.amount.as_ref().map(Into::into),
+            balance: orig.balance.as_ref().map(Into::into),
             metadata,
         }
     }
@@ -191,22 +194,26 @@ impl From<datamodel::Posting> for Posting {
 
 /// Metadata represents meta information associated with transactions / posts.
 #[derive(Debug, PartialEq, Eq)]
-pub enum Metadata {
+pub enum Metadata<'i> {
     /// Comment, which covers just one line (without the suceeding new line).
-    Comment(String),
+    Comment(Cow<'i, str>),
     /// Tags of word, in a format :tag1:tag2:tag3:, each tag can't contain white spaces.
-    WordTags(Vec<String>),
+    WordTags(Vec<Cow<'i, str>>),
     /// Key-value paired tag. Key can't contain white spaces.
-    KeyValueTag { key: String, value: MetadataValue },
+    KeyValueTag {
+        key: Cow<'i, str>,
+        value: MetadataValue<'i>,
+    },
 }
 
 /// MetadataValue represents the value in key-value pair used in `Metadata`.
 #[derive(Debug, PartialEq, Eq)]
-pub enum MetadataValue {
+pub enum MetadataValue<'i> {
     /// Regular string.
-    Text(String),
-    /// Expression parsed properly prefixed by `::` instead of `:`. Note it should be Expr not String.
-    Expr(String),
+    Text(Cow<'i, str>),
+    /// Expression parsed properly prefixed by `::` instead of `:`.
+    // TODO: Change htis type to Expr not Cow<'i, str>.
+    Expr(Cow<'i, str>),
 }
 
 /// This is an amout for each posting.
@@ -215,14 +222,14 @@ pub enum MetadataValue {
 /// - what was the cost in the other commodity.
 /// - lot information.
 #[derive(Debug, PartialEq, Eq)]
-pub struct PostingAmount {
-    pub amount: expr::ValueExpr,
-    pub cost: Option<Exchange>,
-    pub lot: Lot,
+pub struct PostingAmount<'i> {
+    pub amount: expr::ValueExpr<'i>,
+    pub cost: Option<Exchange<'i>>,
+    pub lot: Lot<'i>,
 }
 
-impl From<expr::ValueExpr> for PostingAmount {
-    fn from(v: expr::ValueExpr) -> Self {
+impl<'i> From<expr::ValueExpr<'i>> for PostingAmount<'i> {
+    fn from(v: expr::ValueExpr<'i>) -> Self {
         PostingAmount {
             amount: v,
             cost: None,
@@ -231,11 +238,11 @@ impl From<expr::ValueExpr> for PostingAmount {
     }
 }
 
-impl From<datamodel::ExchangedAmount> for PostingAmount {
-    fn from(v: datamodel::ExchangedAmount) -> Self {
+impl<'i> From<&'i datamodel::ExchangedAmount> for PostingAmount<'i> {
+    fn from(v: &'i datamodel::ExchangedAmount) -> Self {
         PostingAmount {
-            amount: v.amount.into(),
-            cost: v.exchange.map(Into::into),
+            amount: (&v.amount).into(),
+            cost: v.exchange.as_ref().map(Into::into),
             lot: Lot::default(),
         }
     }
@@ -243,29 +250,29 @@ impl From<datamodel::ExchangedAmount> for PostingAmount {
 
 /// Lot information is a set of metadata to record the original lot which the commodity is acquired with.
 #[derive(Debug, Default, PartialEq, Eq)]
-pub struct Lot {
-    pub price: Option<Exchange>,
+pub struct Lot<'i> {
+    pub price: Option<Exchange<'i>>,
     pub date: Option<NaiveDate>,
-    pub note: Option<String>,
+    pub note: Option<Cow<'i, str>>,
 }
 
 /// Exchange represents the amount expressed in the different commodity.
 #[derive(Debug, PartialEq, Eq)]
-pub enum Exchange {
+pub enum Exchange<'i> {
     /// Specified value equals to the total amount.
     /// For example,
     /// `200 JPY @@ 2 USD`
     /// means the amount was 200 JPY, which is equal to 2 USD.
-    Total(expr::ValueExpr),
+    Total(expr::ValueExpr<'i>),
     /// Specified value equals to the amount of one original commodity.
     /// For example,
     /// `200 JPY @ (1 / 100 USD)`
     /// means the amount was 200 JPY, where 1 JPY is equal to 1/100 USD.
-    Rate(expr::ValueExpr),
+    Rate(expr::ValueExpr<'i>),
 }
 
-impl From<datamodel::Exchange> for Exchange {
-    fn from(v: datamodel::Exchange) -> Self {
+impl<'i> From<&'i datamodel::Exchange> for Exchange<'i> {
+    fn from(v: &'i datamodel::Exchange) -> Self {
         match v {
             datamodel::Exchange::Total(total) => Exchange::Total(total.into()),
             datamodel::Exchange::Rate(rate) => Exchange::Rate(rate.into()),

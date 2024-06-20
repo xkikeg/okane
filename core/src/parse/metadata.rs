@@ -1,7 +1,6 @@
 //! Parsers related to metadata aka comments.
 
-use crate::parse::character;
-use crate::repl;
+use std::borrow::Cow;
 
 use winnow::{
     ascii::{line_ending, space0, space1, till_line_ending},
@@ -14,10 +13,13 @@ use winnow::{
     PResult, Parser,
 };
 
+use crate::parse::character;
+use crate::repl;
+
 /// Parses a ClearState.
-pub fn clear_state<'a, E>(input: &mut &'a str) -> PResult<repl::ClearState, E>
+pub fn clear_state<'i, E>(input: &mut &'i str) -> PResult<repl::ClearState, E>
 where
-    E: ParserError<&'a str>,
+    E: ParserError<&'i str>,
 {
     trace(
         "metadata::clear_state",
@@ -35,9 +37,9 @@ where
 
 /// Parses block of metadata including the last line_end.
 /// Note this consumes at least one line_ending regardless of Metadata existence.
-pub fn block_metadata<'a, E>(input: &mut &'a str) -> PResult<Vec<repl::Metadata>, E>
+pub fn block_metadata<'i, E>(input: &mut &'i str) -> PResult<Vec<repl::Metadata<'i>>, E>
 where
-    E: ParserError<&'a str>,
+    E: ParserError<&'i str>,
 {
     // For now, we can't go with regular repeat because it's hard to have a initial value in Accumulate.
     trace(
@@ -50,9 +52,9 @@ where
     .parse_next(input)
 }
 
-fn line_metadata<'a, E>(input: &mut &'a str) -> PResult<repl::Metadata, E>
+fn line_metadata<'i, E>(input: &mut &'i str) -> PResult<repl::Metadata<'i>, E>
 where
-    E: ParserError<&'a str>,
+    E: ParserError<&'i str>,
 {
     trace(
         "metadata::line_metadata",
@@ -65,7 +67,7 @@ where
                     if s.contains(':') {
                         log::warn!("metadata containing `:` not parsed as tags: {}", s);
                     }
-                    repl::Metadata::Comment(s.trim_end().to_string())
+                    repl::Metadata::Comment(s.trim_end().into())
                 }),
             )),
             character::line_ending_or_eof,
@@ -74,33 +76,31 @@ where
     .parse_next(input)
 }
 
-fn metadata_tags<'a, E>(input: &mut &'a str) -> PResult<repl::Metadata, E>
+fn metadata_tags<'i, E>(input: &mut &'i str) -> PResult<repl::Metadata<'i>, E>
 where
-    E: ParserError<&'a str>,
+    E: ParserError<&'i str>,
 {
     trace(
         "metadata::metadata_tags",
         delimited(
             one_of(':'),
-            repeat(1.., terminated(tag_key, one_of(':'))),
+            repeat(1.., terminated(tag_key.map(Cow::Borrowed), one_of(':'))),
             space0,
         )
-        .map(|tags: Vec<&str>| {
-            repl::Metadata::WordTags(tags.into_iter().map(String::from).collect())
-        }),
+        .map(repl::Metadata::WordTags),
     )
     .parse_next(input)
 }
 
-fn metadata_kv<'a, E>(input: &mut &'a str) -> PResult<repl::Metadata, E>
+fn metadata_kv<'i, E>(input: &mut &'i str) -> PResult<repl::Metadata<'i>, E>
 where
-    E: ParserError<&'a str>,
+    E: ParserError<&'i str>,
 {
     trace(
         "metadata::metadata_kv",
         (terminated(tag_key, space0), metadata_value).map(|(key, value)| {
             repl::Metadata::KeyValueTag {
-                key: key.to_string(),
+                key: key.into(),
                 value,
             }
         }),
@@ -109,21 +109,21 @@ where
 }
 
 /// Parses metadata value with `:` or `::` prefix.
-pub fn metadata_value<'a, E>(input: &mut &'a str) -> PResult<repl::MetadataValue, E>
+pub fn metadata_value<'i, E>(input: &mut &'i str) -> PResult<repl::MetadataValue<'i>, E>
 where
-    E: ParserError<&'a str>,
+    E: ParserError<&'i str>,
 {
     let expr = preceded(literal("::"), cut_err(till_line_ending))
-        .map(|x: &'a str| repl::MetadataValue::Expr(x.trim().to_string()));
+        .map(|x: &'i str| repl::MetadataValue::Expr(x.trim().into()));
     let text = preceded(one_of(':'), cut_err(till_line_ending))
-        .map(|x: &'a str| repl::MetadataValue::Text(x.trim().to_string()));
+        .map(|x: &'i str| repl::MetadataValue::Text(x.trim().into()));
     trace("metadata::metadata_value", backtrack_err(alt((expr, text)))).parse_next(input)
 }
 
 /// Parses metadata tag.
-pub fn tag_key<'a, E>(input: &mut &'a str) -> PResult<&'a str, E>
+pub fn tag_key<'i, E>(input: &mut &'i str) -> PResult<&'i str, E>
 where
-    E: ParserError<&'a str>,
+    E: ParserError<&'i str>,
 {
     trace(
         "metadata::tag_key",
@@ -154,8 +154,8 @@ mod tests {
                 // This line isn't a block_metadata because it doesn't have preceding spaces.
                 "; baz\n",
                 vec![
-                    repl::Metadata::Comment("foo".to_string()),
-                    repl::Metadata::Comment("bar".to_string()),
+                    repl::Metadata::Comment("foo".into()),
+                    repl::Metadata::Comment("bar".into()),
                 ]
             )
         )
@@ -169,8 +169,8 @@ mod tests {
             (
                 "",
                 vec![
-                    repl::Metadata::Comment("foo".to_string()),
-                    repl::Metadata::Comment("bar".to_string()),
+                    repl::Metadata::Comment("foo".into()),
+                    repl::Metadata::Comment("bar".into()),
                 ]
             )
         )
@@ -189,11 +189,7 @@ mod tests {
             expect_parse_ok(line_metadata, input),
             (
                 "",
-                repl::Metadata::WordTags(vec![
-                    "tag1".to_string(),
-                    "tag2".to_string(),
-                    "tag3".to_string()
-                ])
+                repl::Metadata::WordTags(vec!["tag1".into(), "tag2".into(), "tag3".into()])
             )
         )
     }
@@ -206,8 +202,8 @@ mod tests {
             (
                 "",
                 repl::Metadata::KeyValueTag {
-                    key: "場所".to_string(),
-                    value: repl::MetadataValue::Text("ドラッグストア".to_string()),
+                    key: "場所".into(),
+                    value: repl::MetadataValue::Text("ドラッグストア".into()),
                 }
             )
         );
@@ -218,8 +214,8 @@ mod tests {
             (
                 "",
                 repl::Metadata::KeyValueTag {
-                    key: "日付".to_string(),
-                    value: repl::MetadataValue::Expr("[2022-01-19]".to_string()),
+                    key: "日付".into(),
+                    value: repl::MetadataValue::Expr("[2022-01-19]".into()),
                 }
             )
         );
@@ -232,7 +228,7 @@ mod tests {
             expect_parse_ok(line_metadata, input),
             (
                 "",
-                repl::Metadata::Comment("A fox jumps over: この例文見飽きた".to_string())
+                repl::Metadata::Comment("A fox jumps over: この例文見飽きた".into())
             )
         )
     }

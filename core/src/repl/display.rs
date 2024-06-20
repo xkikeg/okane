@@ -40,7 +40,7 @@ impl<'a, T> WithContext<'a, T> {
     }
 }
 
-impl<'a> fmt::Display for WithContext<'a, LedgerEntry> {
+impl<'a> fmt::Display for WithContext<'a, LedgerEntry<'_>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.value {
             LedgerEntry::Txn(txn) => self.pass_context(txn).fmt(f),
@@ -75,13 +75,13 @@ impl<'a> fmt::Display for LineWrapStr<'a> {
     }
 }
 
-impl fmt::Display for TopLevelComment {
+impl fmt::Display for TopLevelComment<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         LineWrapStr::wrap(";", &self.0).fmt(f)
     }
 }
 
-impl fmt::Display for ApplyTag {
+impl fmt::Display for ApplyTag<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "apply tag {}", self.key)?;
         match &self.value {
@@ -91,13 +91,13 @@ impl fmt::Display for ApplyTag {
     }
 }
 
-impl fmt::Display for IncludeFile {
+impl fmt::Display for IncludeFile<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "include {}", self.0)
     }
 }
 
-impl fmt::Display for AccountDeclaration {
+impl fmt::Display for AccountDeclaration<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "account {}", self.name)?;
         for detail in &self.details {
@@ -106,7 +106,7 @@ impl fmt::Display for AccountDeclaration {
         Ok(())
     }
 }
-impl fmt::Display for AccountDetail {
+impl fmt::Display for AccountDetail<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AccountDetail::Comment(v) => LineWrapStr::wrap("    ; ", v).fmt(f),
@@ -116,7 +116,7 @@ impl fmt::Display for AccountDetail {
     }
 }
 
-impl<'a> fmt::Display for WithContext<'a, CommodityDeclaration> {
+impl<'a> fmt::Display for WithContext<'a, CommodityDeclaration<'_>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "commodity {}", self.value.name)?;
         for detail in &self.value.details {
@@ -125,7 +125,7 @@ impl<'a> fmt::Display for WithContext<'a, CommodityDeclaration> {
         Ok(())
     }
 }
-impl<'a> fmt::Display for WithContext<'a, CommodityDetail> {
+impl<'a> fmt::Display for WithContext<'a, CommodityDetail<'_>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.value {
             CommodityDetail::Comment(v) => LineWrapStr::wrap("    ; ", v).fmt(f),
@@ -135,7 +135,7 @@ impl<'a> fmt::Display for WithContext<'a, CommodityDetail> {
         }
     }
 }
-impl<'a> fmt::Display for WithContext<'a, Transaction> {
+impl<'a> fmt::Display for WithContext<'a, Transaction<'_>> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let xact = self.value;
         write!(f, "{}", xact.date.format("%Y/%m/%d"))?;
@@ -164,7 +164,7 @@ impl<'a> fmt::Display for WithContext<'a, Transaction> {
     }
 }
 
-impl fmt::Display for Metadata {
+impl fmt::Display for Metadata<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Metadata::WordTags(tags) => {
@@ -180,7 +180,7 @@ impl fmt::Display for Metadata {
     }
 }
 
-impl fmt::Display for MetadataValue {
+impl fmt::Display for MetadataValue<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MetadataValue::Expr(expr) => write!(f, ":: {}", expr),
@@ -189,13 +189,13 @@ impl fmt::Display for MetadataValue {
     }
 }
 
-impl<'a> fmt::Display for WithContext<'a, Posting> {
+impl<'a> fmt::Display for WithContext<'a, Posting<'_>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let post = self.value;
         let post_clear = print_clear_state(post.clear_state);
         write!(f, "    {}{}", post_clear, post.account)?;
         let account_width =
-            UnicodeWidthStr::width_cjk(post.account.as_str()) + UnicodeWidthStr::width(post_clear);
+            UnicodeWidthStr::width_cjk(post.account.as_ref()) + UnicodeWidthStr::width(post_clear);
         if let Some(amount) = &post.amount {
             let mut amount_str = String::new();
             let alignment = self
@@ -245,7 +245,7 @@ impl<'a> fmt::Display for WithContext<'a, Posting> {
     }
 }
 
-impl<'a> fmt::Display for WithContext<'a, Lot> {
+impl<'a> fmt::Display for WithContext<'a, Lot<'_>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(price) = &self.value.price {
             match price {
@@ -257,7 +257,7 @@ impl<'a> fmt::Display for WithContext<'a, Lot> {
             write!(f, " [{}]", date.format("%Y/%m/%d"))?;
         }
         if let Some(note) = &self.value.note {
-            write!(f, " ({})", note.as_str())?;
+            write!(f, " ({})", note)?;
         }
         Ok(())
     }
@@ -308,7 +308,7 @@ where
 /// - `2 USD` -> returns 1.
 /// - `(1 USD * 2)` -> returns 2.
 /// - `(2 * 1 USD)` -> returns 6.
-impl<'a> DisplayWithAlignment for WithContext<'a, expr::ValueExpr> {
+impl<'a> DisplayWithAlignment for WithContext<'a, expr::ValueExpr<'_>> {
     fn fmt_with_alignment<W: fmt::Write>(&self, f: &mut W) -> Result<Alignment, fmt::Error> {
         match self.value {
             expr::ValueExpr::Amount(a) => self.pass_context(a).fmt_with_alignment(f),
@@ -322,7 +322,7 @@ impl<'a> DisplayWithAlignment for WithContext<'a, expr::ValueExpr> {
     }
 }
 
-impl<'a> DisplayWithAlignment for WithContext<'a, expr::Expr> {
+impl<'a> DisplayWithAlignment for WithContext<'a, expr::Expr<'_>> {
     fn fmt_with_alignment<W: fmt::Write>(&self, f: &mut W) -> Result<Alignment, fmt::Error> {
         match self.value {
             expr::Expr::Unary(e) => {
@@ -345,7 +345,7 @@ impl<'a> DisplayWithAlignment for WithContext<'a, expr::Expr> {
     }
 }
 
-impl<'a> DisplayWithAlignment for WithContext<'a, expr::Amount> {
+impl<'a> DisplayWithAlignment for WithContext<'a, expr::Amount<'_>> {
     fn fmt_with_alignment<W: fmt::Write>(&self, f: &mut W) -> Result<Alignment, fmt::Error> {
         let amount_str = rescale(self.value, self.context).to_string();
         // TODO: Implement prefix-amount.
@@ -373,7 +373,11 @@ fn rescale(x: &expr::Amount, context: &DisplayContext) -> PrettyDecimal {
     let mut v = x.value.clone();
     v.rescale(std::cmp::max(
         v.scale(),
-        context.precisions.get(&x.commodity).cloned().unwrap_or(0) as u32,
+        context
+            .precisions
+            .get(x.commodity.as_ref())
+            .cloned()
+            .unwrap_or(0) as u32,
     ));
     v
 }
@@ -395,10 +399,14 @@ mod tests {
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
-    fn amount<T: Into<Decimal>>(value: T, commodity: &'static str) -> expr::ValueExpr {
+    fn amount<'a, T, U>(value: T, commodity: U) -> expr::ValueExpr<'a>
+    where
+        T: Into<Decimal>,
+        U: Into<Cow<'a, str>>,
+    {
         let value: Decimal = value.into();
         expr::ValueExpr::Amount(expr::Amount {
-            commodity: commodity.to_string(),
+            commodity: commodity.into(),
             value: PrettyDecimal::unformatted(value),
         })
     }
@@ -415,9 +423,9 @@ mod tests {
             concat!(";this\n", ";is\n", ";a pen pineapple apple pen.\n"),
             format!(
                 "{}",
-                ctx.as_display(&LedgerEntry::Comment(TopLevelComment(
-                    "this\nis\na pen pineapple apple pen.".to_string(),
-                )))
+                ctx.as_display(&LedgerEntry::Comment(TopLevelComment(Cow::Borrowed(
+                    "this\nis\na pen pineapple apple pen."
+                ),)))
             )
         );
         assert_eq!(
@@ -425,7 +433,7 @@ mod tests {
             format!(
                 "{}",
                 ctx.as_display(&LedgerEntry::ApplyTag(ApplyTag {
-                    key: "foo".to_string(),
+                    key: Cow::Borrowed("foo"),
                     value: None
                 })),
             )
@@ -435,8 +443,8 @@ mod tests {
             format!(
                 "{}",
                 ctx.as_display(&LedgerEntry::ApplyTag(ApplyTag {
-                    key: "foo".to_string(),
-                    value: Some(MetadataValue::Text("bar".to_string()))
+                    key: Cow::Borrowed("foo"),
+                    value: Some(MetadataValue::Text(Cow::Borrowed("bar")))
                 }))
             ),
         );
@@ -445,8 +453,8 @@ mod tests {
             format!(
                 "{}",
                 ctx.as_display(&LedgerEntry::ApplyTag(ApplyTag {
-                    key: "foo".to_string(),
-                    value: Some(MetadataValue::Expr("100".to_string()))
+                    key: Cow::Borrowed("foo"),
+                    value: Some(MetadataValue::Expr(Cow::Borrowed("100")))
                 }))
             ),
         );
@@ -465,9 +473,9 @@ mod tests {
                 effective_date: None,
                 clear_state: ClearState::Uncleared,
                 code: None,
-                payee: "Example Grocery".to_string(),
+                payee: Cow::Borrowed("Example Grocery"),
                 posts: vec![Posting {
-                    account: "Assets".to_string(),
+                    account: Cow::Borrowed("Assets"),
                     clear_state: ClearState::Uncleared,
                     amount: Some(PostingAmount {
                         amount: amount(dec!(123.45), "USD"),
@@ -496,11 +504,11 @@ mod tests {
                 lot: Lot {
                     price: Some(Exchange::Rate(amount(dec!(1.1), "USD"))),
                     date: Some(NaiveDate::from_ymd_opt(2022, 5, 20).unwrap()),
-                    note: Some("printable note".to_string()),
+                    note: Some(Cow::Borrowed("printable note")),
                 },
             }),
             balance: Some(amount(1, "USD")),
-            ..Posting::new("Account".to_string())
+            ..Posting::new("Account")
         };
         let costbalance = Posting {
             amount: Some(PostingAmount {
@@ -509,7 +517,7 @@ mod tests {
                 lot: Lot::default(),
             }),
             balance: Some(amount(1, "USD")),
-            ..Posting::new("Account".to_string())
+            ..Posting::new("Account")
         };
         let total = Posting {
             amount: Some(PostingAmount {
@@ -517,7 +525,7 @@ mod tests {
                 cost: Some(Exchange::Total(amount(100, "JPY"))),
                 lot: Lot::default(),
             }),
-            ..Posting::new("Account".to_string())
+            ..Posting::new("Account")
         };
         let nocost = Posting {
             amount: Some(PostingAmount {
@@ -526,17 +534,17 @@ mod tests {
                 lot: Lot::default(),
             }),
             balance: Some(amount(1, "USD")),
-            ..Posting::new("Account".to_string())
+            ..Posting::new("Account")
         };
         let noamount = Posting {
             amount: None,
             balance: Some(amount(1, "USD")),
-            ..Posting::new("Account".to_string())
+            ..Posting::new("Account")
         };
         let zerobalance = Posting {
             amount: None,
             balance: Some(amount(0, "")),
-            ..Posting::new("Account".to_string())
+            ..Posting::new("Account")
         };
 
         assert_eq!(
