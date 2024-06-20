@@ -1,10 +1,10 @@
-//! Module `types` defines eval specific types.
+//! `intern` gives the String intern library combined with Bump allocator.
 
 use std::{collections::HashSet, marker::PhantomData};
 
 use bumpalo::Bump;
 
-/// `&str` for accounts, interned by `Interner`.
+/// `&str` for accounts, interned within the `'arena` bounded allocator lifetime.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Account<'arena>(InternedStr<'arena>);
 
@@ -22,7 +22,7 @@ impl<'arena> Account<'arena> {
 }
 
 /// `Interner` for `Account`.
-pub type AccountStore<'arena> = Interner<'arena, Account<'arena>>;
+pub(super) type AccountStore<'arena> = Interner<'arena, Account<'arena>>;
 
 /// Internal type to wrap `&str` to be clear about interning.
 /// Equality is compared over it's pointer, not the content.
@@ -35,12 +35,19 @@ impl<'arena> InternedStr<'arena> {
     }
 }
 
+/// Eq is computed on the pointer, as it's interned and must have the same pointer
+/// as long as the content is the same.
+/// This assumes there's only one arena & `Interner` at a time and might be wrong.
+///
+/// For the safety, maybe we can let `InternedStr` to have arena itself,
+/// so that `PartialEq` won't accidentally compare the two different intern sets.
 impl<'arena> PartialEq for InternedStr<'arena> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.0, other.0)
     }
 }
 
+/// `FromInterned` is the trait that the actual Interned object must implements.
 trait FromInterned<'arena> {
     fn from_interned(v: InternedStr<'arena>) -> Self;
 }

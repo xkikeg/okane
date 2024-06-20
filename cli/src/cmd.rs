@@ -1,8 +1,3 @@
-use crate::format;
-use crate::import::{self, Format, ImportError};
-use okane_core::repl::display::DisplayContext;
-use okane_core::{eval, load, repl};
-
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::BufReader;
@@ -10,6 +5,12 @@ use std::io::BufReader;
 use bumpalo::Bump;
 use clap::{Args, Subcommand};
 use encoding_rs_io::DecodeReaderBytesBuilder;
+
+use okane_core::repl::display::DisplayContext;
+use okane_core::{load, repl, report};
+
+use crate::format;
+use crate::import::{self, Format, ImportError};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -171,8 +172,8 @@ impl AccountsCmd {
         W: std::io::Write,
     {
         let arena = Bump::new();
-        let mut ctx = eval::context::EvalContext::new(&arena);
-        let accounts = eval::accounts(&mut ctx, &self.source)?;
+        let mut ctx = report::ReportContext::new(&arena);
+        let accounts = report::accounts(&mut ctx, &self.source)?;
         for acc in accounts.iter() {
             writeln!(w, "{}", acc.as_str())?;
         }
