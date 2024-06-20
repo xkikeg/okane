@@ -12,17 +12,15 @@ mod transaction;
 #[cfg(test)]
 pub mod testing;
 
-use crate::repl;
-
 use winnow::{
     ascii::line_ending,
-    combinator::{alt, cut_err, fail, peek, preceded, repeat},
+    combinator::{alt, cut_err, dispatch, fail, peek, preceded, repeat, trace},
     error::StrContext,
-    token::{literal, one_of, take_while},
+    token::{any, literal},
     PResult, Parser,
 };
 
-use self::directive::COMMENT_PREFIX;
+use crate::repl;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ParseError {
@@ -61,38 +59,29 @@ impl<'i> Iterator for ParsedIter<'i> {
 
 /// Parses given `input` into `repl::LedgerEntry`.
 fn parse_ledger_entry<'i>(input: &mut &'i str) -> PResult<repl::LedgerEntry<'i>> {
-    // TODO: Consider using dispatch
-    alt((
-        preceded(
-            peek(one_of(COMMENT_PREFIX)),
-            cut_err(directive::top_comment.map(repl::LedgerEntry::Comment)),
-        ),
-        preceded(
-            peek(literal("account")),
-            cut_err(directive::account_declaration.map(repl::LedgerEntry::Account)),
-        ),
-        preceded(
-            peek(literal("apply")),
-            cut_err(directive::apply_tag.map(repl::LedgerEntry::ApplyTag)),
-        ),
-        preceded(
-            peek(literal("commodity")),
-            cut_err(directive::commodity_declaration.map(repl::LedgerEntry::Commodity)),
-        ),
-        preceded(
-            peek(literal("end")),
-            cut_err(directive::end_apply_tag.map(|_| repl::LedgerEntry::EndApplyTag)),
-        ),
-        preceded(
-            peek(literal("include")),
-            cut_err(directive::include.map(repl::LedgerEntry::Include)),
-        ),
-        preceded(
-            peek(take_while(1..=1, |c: char| c.is_ascii_digit())),
-            cut_err(transaction::transaction.map(repl::LedgerEntry::Txn)),
-        ),
-        fail.context(StrContext::Label("no matching syntax")),
-    ))
+    trace(
+        "parse_ledger_entry",
+        dispatch! {peek(any);
+            'a' => alt((
+                preceded(
+                    peek(literal("account")),
+                    cut_err(directive::account_declaration.map(repl::LedgerEntry::Account)),
+                ),
+                preceded(
+                    peek(literal("apply")),
+                    cut_err(directive::apply_tag.map(repl::LedgerEntry::ApplyTag)),
+                ),
+            )),
+            'c' => directive::commodity_declaration.map(repl::LedgerEntry::Commodity),
+            'e' => directive::end_apply_tag.map(|_| repl::LedgerEntry::EndApplyTag),
+            'i' => directive::include.map(repl::LedgerEntry::Include),
+            c if directive::is_comment_prefix(c) => {
+                directive::top_comment.map(repl::LedgerEntry::Comment)
+            },
+            c if c.is_ascii_digit() => transaction::transaction.map(repl::LedgerEntry::Txn),
+            _ => fail.context(StrContext::Label("no matching syntax")),
+        },
+    )
     .parse_next(input)
 }
 

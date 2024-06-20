@@ -8,9 +8,16 @@ use winnow::{
     ascii::{space0, space1, till_line_ending},
     combinator::{alt, delimited, opt, preceded, repeat, terminated, trace},
     error::ParserError,
+    stream::AsChar,
     token::{literal, take_while},
     PResult, Parser,
 };
+
+/// Returns true if the given character is comment prefix.
+#[inline(always)]
+pub(super) fn is_comment_prefix<C: AsChar>(c: C) -> bool {
+    matches!(c.as_char(), ';' | '#' | '%' | '|' | '*')
+}
 
 /// Parses "account" directive.
 pub fn account_declaration<'i>(input: &mut &'i str) -> PResult<repl::AccountDeclaration<'i>> {
@@ -27,7 +34,7 @@ pub fn account_declaration<'i>(input: &mut &'i str) -> PResult<repl::AccountDecl
         repeat(
             0..,
             alt((
-                multiline_text((space1, take_while(1.., COMMENT_PREFIX)))
+                multiline_text((space1, take_while(1.., is_comment_prefix)))
                     .map(repl::AccountDetail::Comment),
                 multiline_text((space1, literal("note"), space1)).map(repl::AccountDetail::Note),
                 delimited(
@@ -54,13 +61,14 @@ pub fn commodity_declaration<'i>(input: &mut &'i str) -> PResult<repl::Commodity
             till_line_ending,
             line_ending_or_eof,
         ),
+        // TODO: Consider using dispatch
         // Note nesting many0 would cause parse failure at nom 7,
         // as many0 would fail if the sub-parser consumes empty input.
         // So make sure no branches in alt would success for empty input.
         repeat(
             0..,
             alt((
-                multiline_text((space1, take_while(1.., COMMENT_PREFIX)))
+                multiline_text((space1, take_while(1.., is_comment_prefix)))
                     .map(repl::CommodityDetail::Comment),
                 multiline_text((space1, literal("note"), space1)).map(repl::CommodityDetail::Note),
                 delimited(
@@ -152,9 +160,6 @@ where
     .parse_next(input)
 }
 
-/// Prefix of comments.
-pub const COMMENT_PREFIX: [char; 5] = [';', '#', '%', '|', '*'];
-
 /// Parses top level comment in the Ledger file format.
 /// Notable difference with block_metadata is, this accepts multiple prefix.
 pub fn top_comment<'i, E>(input: &mut &'i str) -> PResult<repl::TopLevelComment<'i>, E>
@@ -163,7 +168,7 @@ where
 {
     trace(
         "directive::top_comment",
-        multiline_text(take_while(1.., COMMENT_PREFIX)).map(repl::TopLevelComment),
+        multiline_text(take_while(1.., is_comment_prefix)).map(repl::TopLevelComment),
     )
     .parse_next(input)
 }
