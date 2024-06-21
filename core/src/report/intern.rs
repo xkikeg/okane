@@ -1,11 +1,11 @@
 //! `intern` gives the String intern library combined with Bump allocator.
 
-use std::{collections::HashSet, marker::PhantomData};
+use std::{collections::HashSet, hash::Hash, marker::PhantomData};
 
 use bumpalo::Bump;
 
 /// `&str` for accounts, interned within the `'arena` bounded allocator lifetime.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct Account<'arena>(InternedStr<'arena>);
 
 impl<'arena> FromInterned<'arena> for Account<'arena> {
@@ -23,6 +23,26 @@ impl<'arena> Account<'arena> {
 
 /// `Interner` for `Account`.
 pub(super) type AccountStore<'arena> = Interner<'arena, Account<'arena>>;
+
+/// `&str` for commodities, interned within the `'arena` bounded allocator lifetime.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct Commodity<'arena>(InternedStr<'arena>);
+
+impl<'arena> FromInterned<'arena> for Commodity<'arena> {
+    fn from_interned(v: InternedStr<'arena>) -> Self {
+        Self(v)
+    }
+}
+
+impl<'arena> Commodity<'arena> {
+    /// Returns the `&str`.
+    pub fn as_str(&self) -> &'arena str {
+        self.0.as_str()
+    }
+}
+
+/// `Interner` for `Commodity`.
+pub(super) type CommodityStore<'arena> = Interner<'arena, Commodity<'arena>>;
 
 /// Internal type to wrap `&str` to be clear about interning.
 /// Equality is compared over it's pointer, not the content.
@@ -47,12 +67,19 @@ impl<'arena> PartialEq for InternedStr<'arena> {
     }
 }
 
+/// Hash is based on the pointer, as it's interned.
+impl<'arena> Hash for InternedStr<'arena> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::ptr::hash(self.0, state)
+    }
+}
+
 /// `FromInterned` is the trait that the actual Interned object must implements.
 trait FromInterned<'arena> {
     fn from_interned(v: InternedStr<'arena>) -> Self;
 }
 
-pub struct Interner<'arena, T> {
+pub(super) struct Interner<'arena, T> {
     idx: HashSet<&'arena str>,
     allocator: &'arena Bump,
     phantom: PhantomData<T>,
@@ -68,15 +95,24 @@ impl<'arena, T: FromInterned<'arena>> Interner<'arena, T> {
         }
     }
 
+    /// Interns the given str and returns the shared instance.
     pub fn intern(&mut self, value: &str) -> T {
-        if let Some(found) = self.idx.get(value) {
-            return <T as FromInterned>::from_interned(InternedStr(found));
+        if let Some(found) = self.get(value) {
+            return found;
         }
         let copied: &'arena str = self.allocator.alloc_str(value);
         self.idx.insert(copied);
         return <T as FromInterned>::from_interned(InternedStr(copied));
     }
 
+    /// Returns the specified value if found, otherwise None.
+    pub fn get(&self, value: &str) -> Option<T> {
+        self.idx
+            .get(value)
+            .map(|x| <T as FromInterned>::from_interned(InternedStr(x)))
+    }
+
+    /// Returns the Iterator for all elements.
     pub fn iter(&'arena self) -> Iter<'arena, T> {
         Iter {
             base: self.idx.iter(),
@@ -140,5 +176,21 @@ mod tests {
         assert!(std::ptr::eq(foo1.0 .0, foo2.0 .0));
         assert_eq!(foo1, foo2);
         assert_eq!(foo2.0.as_str(), "foo");
+    }
+
+    #[test]
+    fn interner_iter_all_elements() {
+        let bump = Bump::new();
+        let mut interner = Interner::new(&bump);
+        let v1: TestInterned = interner.intern("abc");
+        let v2: TestInterned = interner.intern("def");
+        interner.intern("def");
+        let v3: TestInterned = interner.intern("ghi");
+        let want = vec![v1, v2, v3];
+
+        let mut got: Vec<TestInterned> = interner.iter().collect();
+        got.sort_by_key(|x| x.0.as_str());
+
+        assert_eq!(want, got);
     }
 }

@@ -195,24 +195,60 @@ pub struct BalanceCmd {
 }
 
 impl BalanceCmd {
-    pub fn run<W>(&self, _w: &mut W) -> Result<(), Error>
+    pub fn run<W>(self, w: &mut W) -> Result<(), Error>
     where
         W: std::io::Write,
     {
-        todo!("not implemented");
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let (_, balance) = report::process(&mut ctx, load::Loader::new(self.source))?;
+        let accounts = ctx.all_accounts();
+        for account in &accounts {
+            if let Some(amount) = balance.get_balance(account) {
+                writeln!(w, "{}: {}", account.as_str(), amount.as_inline_display())?;
+            } else {
+                writeln!(w, "{}: not found, probably zero", account.as_str())?;
+            }
+        }
+        Ok(())
     }
 }
 
 #[derive(Args, Debug)]
 pub struct RegisterCmd {
     source: std::path::PathBuf,
+    account: Option<String>,
 }
 
 impl RegisterCmd {
-    pub fn run<W>(&self, _w: &mut W) -> Result<(), Error>
+    pub fn run<W>(self, w: &mut W) -> Result<(), Error>
     where
         W: std::io::Write,
     {
-        todo!("not implemented");
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let (txns, _) = report::process(&mut ctx, load::Loader::new(self.source))?;
+        let account = self
+            .account
+            .as_ref()
+            .map(|x| ctx.account(x).expect("TODO: Make this a proper error"));
+        let mut balance = report::Balance::default();
+        for txn in txns {
+            if let Some(account) = &account {
+                if let Some(p) = txn.postings.iter().find(|p| p.account == *account) {
+                    let b = balance.increment(*account, p.amount.clone());
+                    writeln!(
+                        w,
+                        "{} {} {}",
+                        account.as_str(),
+                        p.amount.as_inline_display(),
+                        b.as_inline_display()
+                    )?;
+                }
+                continue;
+            }
+            writeln!(w, "{:#?}", txn)?;
+        }
+        Ok(())
     }
 }
