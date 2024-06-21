@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use okane_core::load::{load_repl, LoadError};
+use okane_core::load::{self, LoadError};
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
@@ -12,11 +12,12 @@ fn load_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let mut count = 0;
             black_box(
-                load_repl(&input.rootpath(), |_, _| {
-                    count += 1;
-                    Ok::<(), LoadError>(())
-                })
-                .unwrap(),
+                load::Loader::new(input.rootpath().to_owned())
+                    .load_repl(|_, _| {
+                        count += 1;
+                        Ok::<(), LoadError>(())
+                    })
+                    .unwrap(),
             );
             black_box(count)
         })
