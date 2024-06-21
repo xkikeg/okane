@@ -1,18 +1,17 @@
 //! Defines parsers related to value expression.
 
-use crate::{
-    parse::{character::paren, primitive},
-    repl::{expr, pretty_decimal},
-};
-
 use winnow::{
     ascii::space0,
     combinator::{alt, delimited, dispatch, peek, preceded, separated_foldl1, terminated, trace},
-    error::{FromExternalError, ParserError},
+    error::{ContextError, FromExternalError, ParseError, ParserError},
     stream::{AsChar, Stream, StreamIsPartial},
     token::{any, one_of},
     PResult, Parser,
 };
+
+use crate::repl::{expr, pretty_decimal};
+
+use super::{character::paren, primitive};
 
 /// Parses value expression.
 pub fn value_expr<'i, I, E>(input: &mut I) -> PResult<expr::ValueExpr<'i>, E>
@@ -29,6 +28,14 @@ where
         },
     )
     .parse_next(input)
+}
+
+impl<'i> TryFrom<&'i str> for expr::ValueExpr<'i> {
+    type Error = ParseError<&'i str, ContextError>;
+
+    fn try_from(value: &'i str) -> Result<Self, Self::Error> {
+        value_expr.parse(value)
+    }
 }
 
 fn paren_expr<'i, I, E>(input: &mut I) -> PResult<expr::ValueExpr<'i>, E>

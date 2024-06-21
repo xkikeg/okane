@@ -14,8 +14,8 @@ use crate::{parse, repl};
 pub enum LoadError {
     #[error("failed to perform IO")]
     IO(#[from] std::io::Error),
-    #[error("failed to parse file")]
-    Parse(#[from] Box<parse::ParseError>),
+    #[error("failed to parse file {1}")]
+    Parse(#[source] Box<parse::ParseError>, PathBuf),
     #[error("unexpected include path {0}, maybe filesystem root is passed")]
     IncludePath(PathBuf),
 }
@@ -70,13 +70,13 @@ impl Loader {
         T: FnMut(&Path, &parse::ParsedLedgerEntry<'_>) -> Result<(), E>,
         E: std::error::Error + From<LoadError>,
     {
-        let path = self.filesystem.canonicalize_path(path);
+        let path: Cow<'_, Path> = self.filesystem.canonicalize_path(path);
         let content = self
             .filesystem
             .file_content_utf8(&path)
             .map_err(LoadError::IO)?;
         for entry in parse_options.parse_ledger(&content) {
-            match entry.map_err(|x| LoadError::Parse(Box::new(x)))? {
+            match entry.map_err(|e| LoadError::Parse(Box::new(e), path.clone().into_owned()))? {
                 repl::LedgerEntry::Include(p) => {
                     let include_path: PathBuf = p.0.as_ref().into();
                     let target = path

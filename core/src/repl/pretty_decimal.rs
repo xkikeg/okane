@@ -84,6 +84,7 @@ impl PrettyDecimal {
 }
 
 impl From<PrettyDecimal> for Decimal {
+    #[inline]
     fn from(value: PrettyDecimal) -> Self {
         value.value
     }
