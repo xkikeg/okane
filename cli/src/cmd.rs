@@ -22,6 +22,8 @@ pub enum Error {
     Format(#[from] format::FormatError),
     #[error("failed to load")]
     Load(#[from] load::LoadError),
+    #[error("failed to report")]
+    Report(#[from] report::ReportError),
 }
 
 #[derive(Subcommand, Debug)]
@@ -32,6 +34,10 @@ pub enum Command {
     Format(FormatCmd),
     /// List all accounts in the file.
     Accounts(AccountsCmd),
+    /// Gives balance report.
+    Balance(BalanceCmd),
+    /// Gives register report.
+    Register(RegisterCmd),
     /// Primitive is a set of commands which are primitive and suitable for debugging.
     Primitive(Primitives),
 }
@@ -42,6 +48,8 @@ impl Command {
             Command::Import(cmd) => cmd.run(&mut std::io::stdout().lock()),
             Command::Format(cmd) => cmd.run(&mut std::io::stdout().lock()),
             Command::Accounts(cmd) => cmd.run(&mut std::io::stdout().lock()),
+            Command::Balance(cmd) => cmd.run(&mut std::io::stdout().lock()),
+            Command::Register(cmd) => cmd.run(&mut std::io::stdout().lock()),
             Command::Primitive(cmd) => cmd.run(),
         }
     }
@@ -147,13 +155,13 @@ struct FlattenCmd {
 }
 
 impl FlattenCmd {
-    pub fn run<W>(&self, w: &mut W) -> Result<(), Error>
+    pub fn run<W>(self, w: &mut W) -> Result<(), Error>
     where
         W: std::io::Write,
     {
         // TODO: Pick DisplayContext from load results.
         let ctx = DisplayContext::default();
-        load::load_repl(&self.source, |_, entry| -> Result<(), Error> {
+        load::Loader::new(self.source).load_repl(|_, entry| -> Result<(), Error> {
             writeln!(w, "{}", ctx.as_display(entry))?;
             Ok(())
         })?;
@@ -167,16 +175,44 @@ pub struct AccountsCmd {
 }
 
 impl AccountsCmd {
-    pub fn run<W>(&self, w: &mut W) -> Result<(), Error>
+    pub fn run<W>(self, w: &mut W) -> Result<(), Error>
     where
         W: std::io::Write,
     {
         let arena = Bump::new();
         let mut ctx = report::ReportContext::new(&arena);
-        let accounts = report::accounts(&mut ctx, &self.source)?;
+        let accounts = report::accounts(&mut ctx, load::Loader::new(self.source))?;
         for acc in accounts.iter() {
             writeln!(w, "{}", acc.as_str())?;
         }
         Ok(())
+    }
+}
+
+#[derive(Args, Debug)]
+pub struct BalanceCmd {
+    source: std::path::PathBuf,
+}
+
+impl BalanceCmd {
+    pub fn run<W>(&self, _w: &mut W) -> Result<(), Error>
+    where
+        W: std::io::Write,
+    {
+        todo!("not implemented");
+    }
+}
+
+#[derive(Args, Debug)]
+pub struct RegisterCmd {
+    source: std::path::PathBuf,
+}
+
+impl RegisterCmd {
+    pub fn run<W>(&self, _w: &mut W) -> Result<(), Error>
+    where
+        W: std::io::Write,
+    {
+        todo!("not implemented");
     }
 }

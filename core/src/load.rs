@@ -1,7 +1,11 @@
 //! Module `load` contains the functions useful for loading Ledger file,
 //! recursively resolving the `include` directives.
 
-use std::path::{Path, PathBuf};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use crate::{parse, repl};
 
@@ -16,36 +20,105 @@ pub enum LoadError {
     IncludePath(PathBuf),
 }
 
-/// Loads `repl::LedgerEntry` and invoke callback on every entry,
-/// recursively resolving `include` directives.
-pub fn load_repl<T, E>(path: &Path, mut callback: T) -> Result<(), E>
-where
-    T: FnMut(&Path, &parse::ParsedLedgerEntry<'_>) -> Result<(), E>,
-    E: std::error::Error + From<LoadError>,
-{
-    load_repl_impl(path, &mut callback)
+/// Loader is an object to keep loading a given file and may recusrively load them as `repr::LedgerEntry`,
+/// with the metadata about filename or line/column to point the error in a user friendly manner.
+pub struct Loader {
+    source: PathBuf,
+    filesystem: FileSystem,
 }
 
-fn load_repl_impl<T, E>(path: &Path, callback: &mut T) -> Result<(), E>
-where
-    T: FnMut(&Path, &parse::ParsedLedgerEntry<'_>) -> Result<(), E>,
-    E: std::error::Error + From<LoadError>,
-{
-    let content = std::fs::read_to_string(path).map_err(LoadError::IO)?;
-    for entry in parse::parse_ledger(&content) {
-        match entry.map_err(LoadError::Parse)? {
-            repl::LedgerEntry::Include(p) => {
-                let include_path: PathBuf = p.0.as_ref().into();
-                let target = path
-                    .parent()
-                    .ok_or_else(|| LoadError::IncludePath(path.to_owned()))?
-                    .join(include_path);
-                load_repl_impl(&target, callback)
-            }
-            other => callback(path, &other),
-        }?;
+impl Loader {
+    /// Create a new instance of `Loader` to load the given path.
+    ///
+    /// It might look weird to have the source path as a `Loader` member,
+    /// but that would give future flexibility to support loading from stdio/network without include,
+    /// or completely static one.
+    pub fn new(source: PathBuf) -> Self {
+        Self {
+            source,
+            filesystem: FileSystem::Prod,
+        }
     }
-    Ok(())
+
+    /// Set `fake_files` which resolves Path -> its contents conversion.
+    pub fn with_fake_files(&mut self, fake_files: HashMap<PathBuf, Vec<u8>>) -> &mut Self {
+        self.filesystem = FileSystem::Fake(fake_files);
+        self
+    }
+
+    /// Loads `repl::LedgerEntry` and invoke callback on every entry,
+    /// recursively resolving `include` directives.
+    pub fn load_repl<T, E>(&self, mut callback: T) -> Result<(), E>
+    where
+        T: FnMut(&Path, &parse::ParsedLedgerEntry<'_>) -> Result<(), E>,
+        E: std::error::Error + From<LoadError>,
+    {
+        self.load_repl_impl(&self.source, &mut callback)
+    }
+
+    fn load_repl_impl<T, E>(&self, path: &Path, callback: &mut T) -> Result<(), E>
+    where
+        T: FnMut(&Path, &parse::ParsedLedgerEntry<'_>) -> Result<(), E>,
+        E: std::error::Error + From<LoadError>,
+    {
+        let path = self.filesystem.canonicalize_path(path);
+        let content = self
+            .filesystem
+            .file_content_utf8(&path)
+            .map_err(LoadError::IO)?;
+        for entry in parse::parse_ledger(&content) {
+            match entry.map_err(LoadError::Parse)? {
+                repl::LedgerEntry::Include(p) => {
+                    let include_path: PathBuf = p.0.as_ref().into();
+                    let target = path
+                        .as_ref()
+                        .parent()
+                        .ok_or_else(|| LoadError::IncludePath(path.as_ref().to_owned()))?
+                        .join(include_path);
+                    self.load_repl_impl(&target, callback)
+                }
+                other => callback(&path, &other),
+            }?;
+        }
+        Ok(())
+    }
+}
+
+enum FileSystem {
+    Prod,
+    Fake(HashMap<PathBuf, Vec<u8>>),
+}
+
+impl FileSystem {
+    fn canonicalize_path<'a>(&self, path: &'a Path) -> Cow<'a, Path> {
+        std::fs::canonicalize(path)
+            .map(Cow::Owned)
+            .unwrap_or_else(|x| {
+                log::warn!(
+                    "failed to canonicalize path {}, likeky to fail to load: {}",
+                    path.display(),
+                    x
+                );
+                path.into()
+            })
+    }
+
+    fn file_content_utf8<P: AsRef<Path>>(&self, path: P) -> Result<String, std::io::Error> {
+        let path = path.as_ref();
+        match self {
+            FileSystem::Prod => std::fs::read_to_string(path),
+            FileSystem::Fake(fake_fs) => fake_fs
+                .get(path)
+                .ok_or(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("fake file {} not found", path.display()),
+                ))
+                .and_then(|x| {
+                    String::from_utf8(x.clone())
+                        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
+                }),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -55,55 +128,123 @@ mod tests {
     use crate::parse::{self, parse_ledger};
 
     use indoc::indoc;
+    use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use std::{path::Path, vec::Vec};
 
-    fn parse_static_repl(
-        input: &'static str,
-    ) -> Result<Vec<parse::ParsedLedgerEntry<'static>>, parse::ParseError> {
-        parse_ledger(input).collect()
+    fn parse_static_repl<'a>(
+        input: &[(&'a Path, &'static str)],
+    ) -> Result<Vec<(&'a Path, parse::ParsedLedgerEntry<'static>)>, parse::ParseError> {
+        input
+            .iter()
+            .flat_map(|(p, content)| parse_ledger(content).map(|elem| elem.map(|x| (*p, x))))
+            .collect()
     }
 
     #[test]
-    fn load_valid_input() {
+    fn load_valid_input_real_file() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/root.ledger");
         let child1 = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/child1.ledger");
-        let child2 = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/child2.ledger");
+        let child2 = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/sub/child2.ledger");
+        let child3 = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/child3.ledger");
         let mut i: usize = 0;
-        let want = parse_static_repl(indoc! {"
+        let want = parse_static_repl(&[
+            (
+                &root,
+                indoc! {"
             account Expenses:Grocery
                 note スーパーマーケットで買ったやつ全部
                 ; comment
                 alias Expenses:CVS
 
-            2024/1/1 Initial Balance
-                Equity:Opening Balance       -1000.00 CHF
-                Assets:Bank:ZKB               1000.00 CHF
-
-            2024/1/1 * SBB CFF FFS
-                Assets:Bank:ZKB                 -5.60 CHF
-                Expenses:Travel:Train            5.60 CHF
-
-            2024/5/1 * Migros
-                Expenses:Grocery               -10.00 CHF
-                Assets:Bank:ZKB                 10.00 CHF
-        "})
+            2024/01/01 Initial Balance
+                Equity:Opening Balance                  -1000.00 CHF
+                Assets:Bank:ZKB                          1000.00 CHF
+            "},
+            ),
+            (
+                &child2,
+                indoc! {"
+            2024/01/01 * Complicated salary
+                Income:Salary                          -3,000.00 CHF
+                Assets:Bank:ZKB                         2,500.00 CHF
+                Expenses:Income Tax                       312.34 CHF
+                Expenses:Social Tax                        37.66 CHF
+                Assets:Fixed:年金                         150.00 CHF
+            "},
+            ),
+            (
+                &child3,
+                indoc! {"
+            2024/03/01 * SBB CFF FFS
+                Assets:Bank:ZKB                            -5.60 CHF
+                Expenses:Travel:Train                       5.60 CHF
+            "},
+            ),
+            (
+                &child2,
+                indoc! {"
+            2024/01/25 ! RSU
+                ; TODO: FMV not determined
+                Income:RSU                    (-50.0000 * 100.23 USD)
+                Expenses:Income Tax
+                Assets:Broker                            40.0000 OKANE @ 100.23 USD
+            "},
+            ),
+            (
+                &child1,
+                indoc! {"
+            2024/05/01 * Migros
+                Expenses:Grocery                          -10.00 CHF
+                Assets:Bank:ZKB                            10.00 CHF
+            "},
+            ),
+        ])
         .expect("test input parse must not fail");
-        load_repl(&root, |path, entry| {
-            if i < 2 {
-                assert_eq!(path, &root);
-            } else if i < 3 {
-                assert_eq!(path, &child2);
-            } else if i < 4 {
-                assert_eq!(path, &child1);
-            } else {
-                panic!("unxpected got index {}", i);
-            }
-            let want = want.get(i).expect("missing want anymore, too many got");
-            assert_eq!(want, entry);
-            i += 1;
-            Ok::<(), LoadError>(())
-        })
-        .expect("test_failed");
+        Loader::new(root.clone())
+            .load_repl(|path, entry| {
+                let (want_path, want_entry) =
+                    want.get(i).expect("missing want anymore, too many got");
+                assert_eq!((*want_path, want_entry), (path, entry));
+                i += 1;
+                Ok::<(), LoadError>(())
+            })
+            .expect("test_failed");
+    }
+
+    #[test]
+    fn load_valid_fake() {
+        let fake = hashmap! {
+            PathBuf::from("/path/to/root.ledger") => indoc! {"
+                include child1.ledger
+            "}.as_bytes().to_vec(),
+            PathBuf::from("/path/to/child1.ledger") => indoc! {"
+                include sub/child2.ledger
+            "}.as_bytes().to_vec(),
+            PathBuf::from("/path/to/sub/child2.ledger") => indoc! {"
+                include child3.ledger
+            "}.as_bytes().to_vec(),
+            PathBuf::from("/path/to/sub/child3.ledger") => indoc! {"
+                ; comment here
+            "}.as_bytes().to_vec(),
+        };
+        let mut i: usize = 0;
+        let want = parse_static_repl(&[(
+            Path::new("/path/to/sub/child3.ledger"),
+            indoc! {"
+            ; comment here
+            "},
+        )])
+        .expect("test input parse must not fail");
+        Loader::new(PathBuf::from("/path/to/root.ledger"))
+            .with_fake_files(fake)
+            .load_repl(|path, entry| {
+                let (want_path, want_entry) =
+                    want.get(i).expect("missing want anymore, too many got");
+                assert_eq!((*want_path, want_entry), (path, entry));
+                i += 1;
+                Ok::<(), LoadError>(())
+            })
+            .expect("test_failed");
     }
 }

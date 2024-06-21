@@ -1,0 +1,14 @@
+2024/1/1 * Complicated salary
+    Income:Salary                          -3,000.00 CHF
+    Assets:Bank:ZKB                         2,500.00 CHF
+    Expenses:Income Tax                       312.34 CHF
+    Expenses:Social Tax                        37.66 CHF
+    Assets:Fixed:年金                         150.00 CHF
+
+include ../child3.ledger
+
+2024/1/25 ! RSU
+    ; TODO: FMV not determined
+    Income:RSU                    (-50.0000 * 100.23 USD)
+    Expenses:Income Tax
+    Assets:Broker                            40.0000 OKANE @ 100.23 USD
