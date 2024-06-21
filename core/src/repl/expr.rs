@@ -1,15 +1,17 @@
 //! Defines value expression representation used in Ledger format.
 //! Note this is purely lexicographical and not always valid expression.
 
-use super::pretty_decimal::PrettyDecimal;
-use crate::datamodel;
-
 use core::fmt;
 use std::borrow::Cow;
 
+use bounded_static::ToStatic;
+
+use super::pretty_decimal::PrettyDecimal;
+use crate::datamodel;
+
 /// Amount with presentation information.
 /// Similar to `datamodel::Amount` with extra formatting information.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, ToStatic)]
 pub struct Amount<'i> {
     pub value: PrettyDecimal,
     pub commodity: Cow<'i, str>,
@@ -27,7 +29,7 @@ impl<'i> From<&'i datamodel::Amount> for Amount<'i> {
 /// Defines value expression.
 /// Value expression is a valid expression when used in amount.
 /// It can be either amount literal or expression wrapped in `()`.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, ToStatic)]
 pub enum ValueExpr<'i> {
     Paren(Expr<'i>),
     Amount(Amount<'i>),
@@ -46,7 +48,7 @@ impl<'i> From<&'i datamodel::Amount> for ValueExpr<'i> {
 }
 
 /// Generic expression.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, ToStatic)]
 pub enum Expr<'i> {
     Unary(UnaryOpExpr<'i>),
     Binary(BinaryOpExpr<'i>),
@@ -54,7 +56,7 @@ pub enum Expr<'i> {
 }
 
 /// Represents unary operator.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, ToStatic)]
 pub enum UnaryOp {
     /// `-x`
     Negate,
@@ -70,14 +72,14 @@ impl fmt::Display for UnaryOp {
 }
 
 /// Unary operator expression.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, ToStatic)]
 pub struct UnaryOpExpr<'i> {
     pub op: UnaryOp,
     pub expr: Box<Expr<'i>>,
 }
 
 /// Binary operator.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, strum::EnumIter)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, strum::EnumIter, ToStatic)]
 pub enum BinaryOp {
     /// `+`
     Add,
@@ -102,7 +104,7 @@ impl fmt::Display for BinaryOp {
 }
 
 /// Represents binary operator expression.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, ToStatic)]
 pub struct BinaryOpExpr<'i> {
     pub op: BinaryOp,
     pub lhs: Box<Expr<'i>>,
