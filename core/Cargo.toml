@@ -11,6 +11,7 @@ repository.workspace = true
 
 [dependencies]
 annotate-snippets.workspace = true
+bounded-static = { version = "0.8", default-features=false, features = ["derive", "alloc", "chrono"] }
 bumpalo.workspace = true
 chrono.workspace = true
 log.workspace = true

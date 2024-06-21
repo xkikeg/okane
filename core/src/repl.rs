@@ -7,15 +7,17 @@ pub mod display;
 pub mod expr;
 pub mod pretty_decimal;
 
-use crate::datamodel;
 pub use crate::datamodel::ClearState;
 
 use std::{borrow::Cow, fmt};
 
+use bounded_static::ToStatic;
 use chrono::NaiveDate;
 
+use crate::datamodel;
+
 /// Top-level entry of the LedgerFile.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, ToStatic)]
 pub enum LedgerEntry<'i> {
     /// Transaction
     Txn(Transaction<'i>),
@@ -34,11 +36,11 @@ pub enum LedgerEntry<'i> {
 }
 
 /// Top-level comment. OK to have multi-line comment.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, ToStatic)]
 pub struct TopLevelComment<'i>(pub Cow<'i, str>);
 
 /// "apply tag" directive content.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, ToStatic)]
 pub struct ApplyTag<'i> {
     pub key: Cow<'i, str>,
     pub value: Option<MetadataValue<'i>>,
@@ -46,11 +48,11 @@ pub struct ApplyTag<'i> {
 
 /// "include" directive, taking a path as an argument.
 /// Path can be a relative path or an absolute path.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, ToStatic)]
 pub struct IncludeFile<'i>(pub Cow<'i, str>);
 
 /// "account" directive to declare account information.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, ToStatic)]
 pub struct AccountDeclaration<'i> {
     /// Canonical name of the account.
     pub name: Cow<'i, str>,
@@ -59,7 +61,7 @@ pub struct AccountDeclaration<'i> {
 }
 
 /// Sub directives for "account" directive.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, ToStatic)]
 pub enum AccountDetail<'i> {
     /// Comment is a pure comment without any semantics, similar to `TopLevelComment`.
     Comment(Cow<'i, str>),
@@ -71,7 +73,7 @@ pub enum AccountDetail<'i> {
 }
 
 /// "commodity" directive to declare commodity information.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, ToStatic)]
 pub struct CommodityDeclaration<'i> {
     /// Canonical name of the commodity.
     pub name: Cow<'i, str>,
@@ -80,7 +82,7 @@ pub struct CommodityDeclaration<'i> {
 }
 
 /// Sub directives for "commodity" directive.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, ToStatic)]
 pub enum CommodityDetail<'i> {
     /// Comment is a pure comment without any semantics, similar to `TopLevelComment`.
     Comment(Cow<'i, str>),
@@ -95,7 +97,7 @@ pub enum CommodityDetail<'i> {
 }
 
 /// Represents a transaction where the money transfered across the accounts.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, ToStatic)]
 pub struct Transaction<'i> {
     /// Date when the transaction issued.
     pub date: NaiveDate,
@@ -145,7 +147,7 @@ impl<'i> From<&'i datamodel::Transaction> for Transaction<'i> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, ToStatic)]
 /// Posting in a transaction to represent a particular account amount increase / decrease.
 pub struct Posting<'i> {
     /// Account of the post target.
@@ -193,7 +195,7 @@ impl<'i> From<&'i datamodel::Posting> for Posting<'i> {
 }
 
 /// Metadata represents meta information associated with transactions / posts.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, ToStatic)]
 pub enum Metadata<'i> {
     /// Comment, which covers just one line (without the suceeding new line).
     Comment(Cow<'i, str>),
@@ -207,7 +209,7 @@ pub enum Metadata<'i> {
 }
 
 /// MetadataValue represents the value in key-value pair used in `Metadata`.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, ToStatic)]
 pub enum MetadataValue<'i> {
     /// Regular string.
     Text(Cow<'i, str>),
@@ -221,7 +223,7 @@ pub enum MetadataValue<'i> {
 /// - how much the asset is increased.
 /// - what was the cost in the other commodity.
 /// - lot information.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, ToStatic)]
 pub struct PostingAmount<'i> {
     pub amount: expr::ValueExpr<'i>,
     pub cost: Option<Exchange<'i>>,
@@ -249,7 +251,7 @@ impl<'i> From<&'i datamodel::ExchangedAmount> for PostingAmount<'i> {
 }
 
 /// Lot information is a set of metadata to record the original lot which the commodity is acquired with.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq, ToStatic)]
 pub struct Lot<'i> {
     pub price: Option<Exchange<'i>>,
     pub date: Option<NaiveDate>,
@@ -257,7 +259,7 @@ pub struct Lot<'i> {
 }
 
 /// Exchange represents the amount expressed in the different commodity.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, ToStatic)]
 pub enum Exchange<'i> {
     /// Specified value equals to the total amount.
     /// For example,

@@ -1,8 +1,10 @@
-use rust_decimal::Decimal;
 use std::{convert::TryInto, fmt::Display, str::FromStr};
 
+use bounded_static::{IntoBoundedStatic, ToBoundedStatic, ToStatic};
+use rust_decimal::Decimal;
+
 /// Decimal formatting type for pretty-printing.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, ToStatic)]
 enum Format {
     /// Decimal without no formatting, such as
     /// `1234` or `1234.5`.
@@ -17,6 +19,22 @@ pub struct PrettyDecimal {
     /// Format of the decimal, None means there's no associated information.
     format: Option<Format>,
     pub value: Decimal,
+}
+
+impl ToBoundedStatic for PrettyDecimal {
+    type Static = Self;
+
+    fn to_static(&self) -> <Self as ToBoundedStatic>::Static {
+        self.clone()
+    }
+}
+
+impl IntoBoundedStatic for PrettyDecimal {
+    type Static = Self;
+
+    fn into_static(self) -> <Self as IntoBoundedStatic>::Static {
+        self
+    }
 }
 
 #[derive(thiserror::Error, PartialEq, Debug)]

@@ -5,6 +5,7 @@
 
 use std::cmp::Ordering;
 
+use bounded_static::ToStatic;
 use rust_decimal::Decimal;
 
 /// Represents a transaction where the money transfered across the accounts.
@@ -39,7 +40,7 @@ impl Transaction {
 }
 
 /// Represents a clearing state, often combined with the ambiguity.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, ToStatic)]
 pub enum ClearState {
     /// No specific meaning.
     #[default]
