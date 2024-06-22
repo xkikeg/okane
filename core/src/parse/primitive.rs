@@ -7,18 +7,22 @@ use winnow::{
     ascii::digit1,
     combinator::{alt, trace},
     error::{FromExternalError, ParserError},
+    stream::{AsChar, Stream, StreamIsPartial},
     token::{one_of, take_till, take_while},
     PResult, Parser,
 };
 
 /// Parses comma separated decimal.
-pub fn comma_decimal<'a, E>(input: &mut &'a str) -> PResult<PrettyDecimal, E>
+pub fn comma_decimal<'a, I, E>(input: &mut I) -> PResult<PrettyDecimal, E>
 where
-    E: ParserError<&'a str> + FromExternalError<&'a str, pretty_decimal::Error>,
+    I: Stream<Slice = &'a str> + StreamIsPartial,
+    E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
+    <I as Stream>::Token: AsChar,
 {
     trace(
         "primitive::comma_decimal",
-        take_while(1.., |c: char| {
+        take_while(1.., |c: <I as Stream>::Token| {
+            let c = c.as_char();
             c.is_ascii_digit() || c == '-' || c == ',' || c == '.'
         })
         .try_map(str::parse),
@@ -33,7 +37,12 @@ const NON_COMMODITY_CHARS: [char; 37] = [
 
 /// Parses commodity in greedy manner.
 /// Returns empty string if the upcoming characters are not valid as commodity to support empty commodity.
-pub fn commodity<'a, E: ParserError<&'a str>>(input: &mut &'a str) -> PResult<&'a str, E> {
+pub fn commodity<'a, I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
+where
+    I: Stream + StreamIsPartial,
+    E: ParserError<I>,
+    <I as Stream>::Token: AsChar,
+{
     // Quoted commodity not supported.
     trace("primitive::commodity", take_till(0.., NON_COMMODITY_CHARS)).parse_next(input)
 }
@@ -54,9 +63,11 @@ impl DateType {
 }
 
 /// Parses date in yyyy/mm/dd format.
-pub fn date<'a, E>(input: &mut &'a str) -> PResult<NaiveDate, E>
+pub fn date<'a, I, E>(input: &mut I) -> PResult<NaiveDate, E>
 where
-    E: ParserError<&'a str> + FromExternalError<&'a str, chrono::ParseError>,
+    I: Stream<Slice = &'a str> + StreamIsPartial,
+    E: ParserError<I> + FromExternalError<I, chrono::ParseError>,
+    <I as Stream>::Token: AsChar + Clone,
 {
     let slash = (digit1, one_of('/'), digit1, one_of('/'), digit1);
     let hyphen = (digit1, one_of('-'), digit1, one_of('-'), digit1);

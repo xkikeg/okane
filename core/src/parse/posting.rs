@@ -6,6 +6,7 @@ use winnow::{
     ascii::{space0, space1},
     combinator::{cond, delimited, fail, opt, peek, preceded, terminated, trace},
     error::StrContext,
+    stream::{AsChar, Stream, StreamIsPartial},
     token::{literal, one_of, take, take_till},
     PResult, Parser,
 };
@@ -17,8 +18,16 @@ use crate::parse::{
 };
 use crate::repl;
 
-pub fn posting<'i>(input: &mut &'i str) -> PResult<repl::Posting<'i>> {
-    trace("posting::posting", move |input: &mut &'i str| {
+pub fn posting<'i, Input>(input: &mut Input) -> PResult<repl::Posting<'i>>
+where
+    Input: Stream<Token = char, Slice = &'i str>
+        + StreamIsPartial
+        + winnow::stream::Compare<&'static str>
+        + winnow::stream::FindSlice<(char, char)>
+        + Clone,
+    <Input as Stream>::Token: AsChar + Clone,
+{
+    trace("posting::posting", move |input: &mut Input| {
         let clear_state = preceded(space1, metadata::clear_state).parse_next(input)?;
         let account = posting_account
             .context(StrContext::Label("account of the posting"))
@@ -54,8 +63,12 @@ pub fn posting<'i>(input: &mut &'i str) -> PResult<repl::Posting<'i>> {
 }
 
 /// Parses the posting account name, and consumes the trailing spaces and tabs.
-fn posting_account<'i>(input: &mut &'i str) -> PResult<&'i str> {
-    let (_, line) = till_line_ending_or_semi.parse_peek(input)?;
+fn posting_account<'i, Input>(input: &mut Input) -> PResult<<Input as Stream>::Slice>
+where
+    Input: Stream<Slice = &'i str> + StreamIsPartial + Clone,
+    <Input as Stream>::Token: AsChar,
+{
+    let (_, line) = till_line_ending_or_semi.parse_peek(input.clone())?;
     let space = line.find("  ");
     let tab = line.find('\t');
     let length = match (space, tab) {
@@ -68,7 +81,14 @@ fn posting_account<'i>(input: &mut &'i str) -> PResult<&'i str> {
     terminated(take(length), space0).parse_next(input)
 }
 
-fn posting_amount<'i>(input: &mut &'i str) -> PResult<repl::PostingAmount<'i>> {
+fn posting_amount<'i, Input>(input: &mut Input) -> PResult<repl::PostingAmount<'i>>
+where
+    Input: Stream<Token = char, Slice = &'i str>
+        + StreamIsPartial
+        + winnow::stream::Compare<&'static str>
+        + std::clone::Clone,
+    <Input as Stream>::Token: AsChar + Clone,
+{
     let amount = terminated(expr::value_expr, space0).parse_next(input)?;
     let lot = lot(input)?;
     let is_at = has_peek(one_of('@')).parse_next(input)?;
@@ -84,7 +104,14 @@ fn posting_amount<'i>(input: &mut &'i str) -> PResult<repl::PostingAmount<'i>> {
     Ok(repl::PostingAmount { amount, cost, lot })
 }
 
-fn lot<'i>(input: &mut &'i str) -> PResult<repl::Lot<'i>> {
+fn lot<'i, Input>(input: &mut Input) -> PResult<repl::Lot<'i>>
+where
+    Input: Stream<Token = char, Slice = &'i str>
+        + StreamIsPartial
+        + winnow::stream::Compare<&'static str>
+        + Clone,
+    <Input as Stream>::Token: AsChar + Clone,
+{
     space0.void().parse_next(input)?;
     let mut lot = repl::Lot::default();
     loop {
@@ -146,13 +173,27 @@ fn lot<'i>(input: &mut &'i str) -> PResult<repl::Lot<'i>> {
     }
 }
 
-fn total_cost<'i>(input: &mut &'i str) -> PResult<repl::Exchange<'i>> {
+fn total_cost<'i, Input>(input: &mut Input) -> PResult<repl::Exchange<'i>>
+where
+    Input: Stream<Token = char, Slice = &'i str>
+        + StreamIsPartial
+        + winnow::stream::Compare<&'static str>
+        + Clone,
+    <Input as Stream>::Token: AsChar + Clone,
+{
     preceded((literal("@@"), space0), expr::value_expr)
         .map(repl::Exchange::Total)
         .parse_next(input)
 }
 
-fn rate_cost<'i>(input: &mut &'i str) -> PResult<repl::Exchange<'i>> {
+fn rate_cost<'i, Input>(input: &mut Input) -> PResult<repl::Exchange<'i>>
+where
+    Input: Stream<Token = char, Slice = &'i str>
+        + StreamIsPartial
+        + winnow::stream::Compare<&'static str>
+        + Clone,
+    <Input as Stream>::Token: AsChar + Clone,
+{
     preceded((literal("@"), space0), expr::value_expr)
         .map(repl::Exchange::Rate)
         .parse_next(input)
@@ -319,11 +360,11 @@ mod tests {
                     let input = format!("{}{}{}", segment[i], segment[j], segment[k]);
                     if want_fail {
                         preceded(space0, lot)
-                            .parse_peek(&input)
+                            .parse_peek(input.as_str())
                             .expect_err("should fail");
                     } else {
                         assert_eq!(
-                            expect_parse_ok(preceded(space0, lot), &input),
+                            expect_parse_ok(preceded(space0, lot), input.as_str()),
                             (
                                 "",
                                 repl::Lot {
