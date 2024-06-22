@@ -6,6 +6,7 @@ use winnow::{
     ascii::{space0, space1},
     combinator::{cond, cut_err, opt, peek, preceded, repeat, terminated, trace},
     error::StrContext,
+    stream::{AsChar, Stream, StreamIsPartial},
     token::one_of,
     PResult, Parser,
 };
@@ -16,8 +17,16 @@ use crate::{
 };
 
 /// Parses a transaction from given string.
-pub fn transaction<'i>(input: &mut &'i str) -> PResult<repl::Transaction<'i>> {
-    trace("transaction::transaction", move |input: &mut &'i str| {
+pub fn transaction<'i, I>(input: &mut I) -> PResult<repl::Transaction<'i>>
+where
+    I: Stream<Token = char, Slice = &'i str>
+        + StreamIsPartial
+        + winnow::stream::Compare<&'static str>
+        + winnow::stream::FindSlice<(char, char)>
+        + Clone,
+    <I as Stream>::Token: AsChar + Clone,
+{
+    trace("transaction::transaction", move |input: &mut I| {
         let date = trace(
             "transaction::transaction@date",
             primitive::date.context(StrContext::Label("transaction date")),

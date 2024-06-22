@@ -1,7 +1,7 @@
-use std::{fmt::Display, ops::Range};
+use std::{fmt::Display, ops::{Deref, Range}};
 
 use annotate_snippets::{Level, Renderer, Snippet};
-use winnow::{error::{ContextError, ErrMode, StrContext}, stream::{Offset, Stream}};
+use winnow::{error::{ContextError, ErrMode, StrContext}, stream::{Offset, Stream}, Located};
 
 #[derive(Debug)]
 pub struct ParseError {
@@ -13,14 +13,13 @@ pub struct ParseError {
 
 impl ParseError {
     /// Create a new instance of ParseError.
-    pub(super) fn new(
+    pub(super) fn new<'i>(
         renderer: Renderer,
-        input: &str,
-        start: <&str as Stream>::Checkpoint,
+        mut input: Located<&'i str>,
+        start: <Located<&'i str> as Stream>::Checkpoint,
         error: ErrMode<ContextError<StrContext>>,
     ) -> Self {
 
-        let mut input: &str = input;
         let offset = input.offset_from(&start);
         input.reset(&start);
         let error = error.into_inner().expect("partial input can't be used");
@@ -32,7 +31,7 @@ impl ParseError {
         Self {
             renderer,
             error_span: offset..end,
-            input: input.to_owned(),
+            input: input.deref().to_string(),
             winnow_error: error,
         }
     }

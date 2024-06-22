@@ -8,7 +8,7 @@ use winnow::{
     ascii::{space0, space1, till_line_ending},
     combinator::{alt, delimited, opt, preceded, repeat, terminated, trace},
     error::ParserError,
-    stream::AsChar,
+    stream::{AsChar, Stream, StreamIsPartial},
     token::{literal, take_while},
     PResult, Parser,
 };
@@ -20,7 +20,16 @@ pub(super) fn is_comment_prefix<C: AsChar>(c: C) -> bool {
 }
 
 /// Parses "account" directive.
-pub fn account_declaration<'i>(input: &mut &'i str) -> PResult<repl::AccountDeclaration<'i>> {
+pub fn account_declaration<'i, I>(input: &mut I) -> PResult<repl::AccountDeclaration<'i>>
+where
+    I: Stream<Slice = &'i str>
+        + StreamIsPartial
+        + StreamIsPartial
+        + winnow::stream::Compare<&'static str>
+        + winnow::stream::FindSlice<(char, char)>
+        ,
+    <I as Stream>::Token: AsChar + Clone,
+{
     (
         delimited(
             (literal("account"), space1),
@@ -42,11 +51,11 @@ pub fn account_declaration<'i>(input: &mut &'i str) -> PResult<repl::AccountDecl
                     till_line_ending,
                     line_ending_or_eof,
                 )
-                .map(|a| repl::AccountDetail::Alias(a.trim_end().into())),
+                .map(|a: &str| repl::AccountDetail::Alias(a.trim_end().into())),
             )),
         ),
     )
-        .map(|(name, details)| repl::AccountDeclaration {
+        .map(|(name, details): (&str, _)| repl::AccountDeclaration {
             name: name.trim_end().into(),
             details,
         })
@@ -54,7 +63,15 @@ pub fn account_declaration<'i>(input: &mut &'i str) -> PResult<repl::AccountDecl
 }
 
 /// Parses "commodity" directive.
-pub fn commodity_declaration<'i>(input: &mut &'i str) -> PResult<repl::CommodityDeclaration<'i>> {
+pub fn commodity_declaration<'i, I>(input: &mut I) -> PResult<repl::CommodityDeclaration<'i>>
+where
+    I: Stream<Slice = &'i str>
+        + StreamIsPartial
+        + winnow::stream::Compare<&'static str>
+        + winnow::stream::FindSlice<(char, char)>
+        ,
+    <I as Stream>::Token: AsChar + Clone,
+{
     (
         delimited(
             (literal("commodity"), space1),
@@ -76,7 +93,7 @@ pub fn commodity_declaration<'i>(input: &mut &'i str) -> PResult<repl::Commodity
                     till_line_ending,
                     line_ending_or_eof,
                 )
-                .map(|a| repl::CommodityDetail::Alias(a.trim_end().into())),
+                .map(|a: &str| repl::CommodityDetail::Alias(a.trim_end().into())),
                 delimited(
                     (space1, literal("format"), space1),
                     expr::amount,
@@ -86,7 +103,7 @@ pub fn commodity_declaration<'i>(input: &mut &'i str) -> PResult<repl::Commodity
             )),
         ),
     )
-        .map(|(name, details)| repl::CommodityDeclaration {
+        .map(|(name, details): (&'i str, _)| repl::CommodityDeclaration {
             name: name.trim_end().into(),
             details,
         })
@@ -94,7 +111,14 @@ pub fn commodity_declaration<'i>(input: &mut &'i str) -> PResult<repl::Commodity
 }
 
 /// Parses "apply tag" directive.
-pub fn apply_tag<'i>(input: &mut &'i str) -> PResult<repl::ApplyTag<'i>> {
+pub fn apply_tag<'i, I>(input: &mut I) -> PResult<repl::ApplyTag<'i>>
+where
+    I: Stream<Slice = &'i str>
+        + StreamIsPartial
+        + winnow::stream::Compare<&'static str>
+        + winnow::stream::FindSlice<(char, char)>,
+    <I as Stream>::Token: AsChar + Clone,
+{
     // TODO: value needs to be supported.
     trace(
         "directive::apply_tag",
@@ -105,7 +129,7 @@ pub fn apply_tag<'i>(input: &mut &'i str) -> PResult<repl::ApplyTag<'i>> {
             ),
             delimited(space0, opt(metadata::metadata_value), line_ending_or_eof),
         )
-            .map(|(key, value)| repl::ApplyTag {
+            .map(|(key, value): (&str, _)| repl::ApplyTag {
                 key: key.into(),
                 value,
             }),
@@ -120,9 +144,11 @@ pub fn apply_tag<'i>(input: &mut &'i str) -> PResult<repl::ApplyTag<'i>> {
 /// Also comment requires "end" directive.
 /// In the meantime, only "end apply tag" is supported, however,
 /// pretty sure it'd be needed to rename and extend this function.
-pub fn end_apply_tag<'i, E>(input: &mut &'i str) -> PResult<&'i str, E>
+pub fn end_apply_tag<'i, I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
 where
-    E: ParserError<&'i str>,
+    I: Stream + StreamIsPartial + winnow::stream::Compare<&'static str> ,
+    E: ParserError<I>,
+    <I as Stream>::Token: AsChar,
 {
     trace(
         "directive::end_apply_tag",
@@ -144,9 +170,14 @@ where
 /// Parses include directive.
 /// Note given we'll always have UTF-8 input,
 /// we're not using PathBuf but String for the path.
-pub fn include<'i, E>(input: &mut &'i str) -> PResult<repl::IncludeFile<'i>, E>
+pub fn include<'i, I, E>(input: &mut I) -> PResult<repl::IncludeFile<'i>, E>
 where
-    E: ParserError<&'i str>,
+    I: Stream<Slice = &'i str>
+        + StreamIsPartial
+        + winnow::stream::FindSlice<(char, char)>
+        + winnow::stream::Compare<&'static str>,
+    E: ParserError<I>,
+    <I as Stream>::Token: AsChar + Clone,
 {
     trace(
         "directive::include",
@@ -155,16 +186,22 @@ where
             till_line_ending,
             line_ending_or_eof,
         )
-        .map(|x| repl::IncludeFile(x.trim_end().into())),
+        .map(|x: &str| repl::IncludeFile(x.trim_end().into())),
     )
     .parse_next(input)
 }
 
 /// Parses top level comment in the Ledger file format.
 /// Notable difference with block_metadata is, this accepts multiple prefix.
-pub fn top_comment<'i, E>(input: &mut &'i str) -> PResult<repl::TopLevelComment<'i>, E>
+pub fn top_comment<'i, I, E>(input: &mut I) -> PResult<repl::TopLevelComment<'i>, E>
 where
-    E: ParserError<&'i str>,
+    I: Stream<Slice = &'i str>
+        + StreamIsPartial
+        + winnow::stream::Compare<&'static str>
+        + winnow::stream::FindSlice<(char, char)>
+        ,
+    E: ParserError<I>,
+    <I as Stream>::Token: AsChar + Clone,
 {
     trace(
         "directive::top_comment",
@@ -174,10 +211,16 @@ where
 }
 
 /// Parses multi-line text with preceding prefix.
-fn multiline_text<'a, E, F, O1>(prefix: F) -> impl Parser<&'a str, Cow<'a, str>, E>
+fn multiline_text<'a, I, E, F, O1>(prefix: F) -> impl Parser<I, Cow<'a, str>, E>
 where
-    E: ParserError<&'a str>,
-    F: Parser<&'a str, O1, E>,
+    I: Stream<Slice = &'a str>
+        + StreamIsPartial
+        + winnow::stream::Compare<&'static str>
+        + winnow::stream::FindSlice<(char, char)>
+        ,
+    E: ParserError<I>,
+    F: Parser<I, O1, E>,
+    <I as Stream>::Token: AsChar + Clone,
 {
     trace(
         "directive::multiline_text",
@@ -272,11 +315,11 @@ mod tests {
             )
         );
 
-        let input = "apply  tag  test@1-2!#[]   \n";
+        let input = "apply  tag  test@1-2!#[]   \napply";
         assert_eq!(
             expect_parse_ok(apply_tag, input),
             (
-                "",
+                "apply",
                 repl::ApplyTag {
                     key: "test@1-2!#[]".into(),
                     value: None,
@@ -286,11 +329,11 @@ mod tests {
     }
     #[test]
     fn apply_tag_with_value() {
-        let input = "apply tag foo:bar\n";
+        let input = "apply tag foo:bar\napply tag key";
         assert_eq!(
             expect_parse_ok(apply_tag, input),
             (
-                "",
+                "apply tag key",
                 repl::ApplyTag {
                     key: "foo".into(),
                     value: Some(repl::MetadataValue::Text("bar".into())),

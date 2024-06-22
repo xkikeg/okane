@@ -17,9 +17,9 @@ pub use error::ParseError;
 use winnow::{
     combinator::{alt, cut_err, dispatch, fail, peek, preceded, trace},
     error::StrContext,
-    stream::Stream,
+    stream::{Stream, StreamIsPartial},
     token::{any, literal, take_while},
-    PResult, Parser,
+    Located, PResult, Parser,
 };
 
 use crate::repl;
@@ -55,7 +55,8 @@ impl ParseOptions {
         input: &'i str,
     ) -> impl Iterator<Item = Result<ParsedLedgerEntry<'i>, ParseError>> + 'i {
         ParsedIter {
-            input: input,
+            initial: input,
+            input: Located::new(input),
             // TODO: Make line_numbers working.
             renderer: self.error_style.clone().anonymized_line_numbers(true),
         }
@@ -66,7 +67,8 @@ pub type ParsedLedgerEntry<'i> = repl::LedgerEntry<'i>;
 
 /// Iterator to return parsed ledger entry one-by-one.
 struct ParsedIter<'i> {
-    input: &'i str,
+    initial: &'i str,
+    input: Located<&'i str>,
     renderer: annotate_snippets::Renderer,
 }
 
@@ -88,7 +90,14 @@ impl<'i> Iterator for ParsedIter<'i> {
 }
 
 /// Parses given `input` into `repl::LedgerEntry`.
-fn parse_ledger_entry<'i>(input: &mut &'i str) -> PResult<repl::LedgerEntry<'i>> {
+fn parse_ledger_entry<'i, I>(input: &mut I) -> PResult<repl::LedgerEntry<'i>>
+where
+    I: Stream<Token = char, Slice = &'i str>
+        + StreamIsPartial
+        + winnow::stream::FindSlice<(char, char)>
+        + winnow::stream::Compare<&'static str>
+        + Clone,
+{
     trace(
         "parse_ledger_entry",
         dispatch! {peek(any);

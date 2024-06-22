@@ -9,6 +9,7 @@ use winnow::{
         terminated, trace,
     },
     error::ParserError,
+    stream::{AsChar, Stream, StreamIsPartial},
     token::{any, literal, one_of, take_till},
     PResult, Parser,
 };
@@ -17,9 +18,11 @@ use crate::parse::character;
 use crate::repl;
 
 /// Parses a ClearState.
-pub fn clear_state<'i, E>(input: &mut &'i str) -> PResult<repl::ClearState, E>
+pub fn clear_state<'i, I, E>(input: &mut I) -> PResult<repl::ClearState, E>
 where
-    E: ParserError<&'i str>,
+    I: Stream + StreamIsPartial,
+    E: ParserError<I>,
+    <I as Stream>::Token: AsChar + Clone,
 {
     trace(
         "metadata::clear_state",
@@ -37,9 +40,14 @@ where
 
 /// Parses block of metadata including the last line_end.
 /// Note this consumes at least one line_ending regardless of Metadata existence.
-pub fn block_metadata<'i, E>(input: &mut &'i str) -> PResult<Vec<repl::Metadata<'i>>, E>
+pub fn block_metadata<'i, I, E>(input: &mut I) -> PResult<Vec<repl::Metadata<'i>>, E>
 where
-    E: ParserError<&'i str>,
+    I: Stream<Token = char, Slice = &'i str>
+        + StreamIsPartial
+        + winnow::stream::Compare<&'static str>
+        + winnow::stream::FindSlice<(char, char)>,
+    E: ParserError<I>,
+    <I as Stream>::Token: AsChar + Clone,
 {
     // For now, we can't go with regular repeat because it's hard to have a initial value in Accumulate.
     trace(
@@ -52,9 +60,14 @@ where
     .parse_next(input)
 }
 
-fn line_metadata<'i, E>(input: &mut &'i str) -> PResult<repl::Metadata<'i>, E>
+fn line_metadata<'i, I, E>(input: &mut I) -> PResult<repl::Metadata<'i>, E>
 where
-    E: ParserError<&'i str>,
+    I: Stream<Slice = &'i str>
+        + StreamIsPartial
+        + winnow::stream::FindSlice<(char, char)>
+        + winnow::stream::Compare<&'static str>,
+    E: ParserError<I>,
+    <I as Stream>::Token: AsChar + Clone,
 {
     trace(
         "metadata::line_metadata",
@@ -76,9 +89,11 @@ where
     .parse_next(input)
 }
 
-fn metadata_tags<'i, E>(input: &mut &'i str) -> PResult<repl::Metadata<'i>, E>
+fn metadata_tags<'i, I, E>(input: &mut I) -> PResult<repl::Metadata<'i>, E>
 where
-    E: ParserError<&'i str>,
+    I: Stream<Slice = &'i str> + StreamIsPartial,
+    E: ParserError<I>,
+    <I as Stream>::Token: AsChar + Clone,
 {
     trace(
         "metadata::metadata_tags",
@@ -92,13 +107,18 @@ where
     .parse_next(input)
 }
 
-fn metadata_kv<'i, E>(input: &mut &'i str) -> PResult<repl::Metadata<'i>, E>
+fn metadata_kv<'i, I, E>(input: &mut I) -> PResult<repl::Metadata<'i>, E>
 where
-    E: ParserError<&'i str>,
+    I: Stream<Slice = &'i str>
+        + StreamIsPartial
+        + winnow::stream::Compare<&'static str>
+        + winnow::stream::FindSlice<(char, char)>,
+    E: ParserError<I>,
+    <I as Stream>::Token: AsChar + Clone,
 {
     trace(
         "metadata::metadata_kv",
-        (terminated(tag_key, space0), metadata_value).map(|(key, value)| {
+        (terminated(tag_key, space0), metadata_value).map(|(key, value): (&str, _)| {
             repl::Metadata::KeyValueTag {
                 key: key.into(),
                 value,
@@ -109,25 +129,35 @@ where
 }
 
 /// Parses metadata value with `:` or `::` prefix.
-pub fn metadata_value<'i, E>(input: &mut &'i str) -> PResult<repl::MetadataValue<'i>, E>
+pub fn metadata_value<'i, I, E>(input: &mut I) -> PResult<repl::MetadataValue<'i>, E>
 where
-    E: ParserError<&'i str>,
+    I: Stream<Slice = &'i str>
+        + StreamIsPartial
+        + winnow::stream::Compare<&'static str>
+        + winnow::stream::FindSlice<(char, char)>,
+    E: ParserError<I>,
+    <I as Stream>::Token: AsChar + Clone,
 {
     let expr = preceded(literal("::"), cut_err(till_line_ending))
-        .map(|x: &'i str| repl::MetadataValue::Expr(x.trim().into()));
+        .map(|x: &str| repl::MetadataValue::Expr(x.trim().into()));
     let text = preceded(one_of(':'), cut_err(till_line_ending))
-        .map(|x: &'i str| repl::MetadataValue::Text(x.trim().into()));
+        .map(|x: &str| repl::MetadataValue::Text(x.trim().into()));
     trace("metadata::metadata_value", backtrack_err(alt((expr, text)))).parse_next(input)
 }
 
 /// Parses metadata tag.
-pub fn tag_key<'i, E>(input: &mut &'i str) -> PResult<&'i str, E>
+pub fn tag_key<'i, I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
 where
-    E: ParserError<&'i str>,
+    I: Stream + StreamIsPartial,
+    E: ParserError<I>,
+    <I as Stream>::Token: AsChar + Clone,
 {
     trace(
         "metadata::tag_key",
-        take_till(1.., |c: char| c.is_whitespace() || c == ':'),
+        take_till(1.., |c: <I as Stream>::Token| {
+            let c = c.as_char();
+            c.is_ascii_whitespace() || c == ':'
+        }),
     )
     .parse_next(input)
 }
