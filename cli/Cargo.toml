@@ -11,6 +11,9 @@ repository.workspace = true
 
 [dependencies]
 okane-core = { version = "0.10.0-dev", path = "../core" }
+
+annotate-snippets.workspace = true
+anstream.workspace = true
 bumpalo.workspace = true
 chrono.workspace = true
 clap = { version = "4.5", features = ["derive", "unicode"] }
