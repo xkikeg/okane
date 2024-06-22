@@ -14,7 +14,7 @@ use crate::{parse, repl};
 pub enum LoadError {
     #[error("failed to perform IO")]
     IO(#[from] std::io::Error),
-    #[error("failed to parse file {0}")]
+    #[error("failed to parse file")]
     Parse(#[from] parse::ParseError),
     #[error("unexpected include path {0}, maybe filesystem root is passed")]
     IncludePath(PathBuf),
@@ -24,6 +24,7 @@ pub enum LoadError {
 /// with the metadata about filename or line/column to point the error in a user friendly manner.
 pub struct Loader {
     source: PathBuf,
+    error_style: annotate_snippets::Renderer,
     filesystem: FileSystem,
 }
 
@@ -36,6 +37,8 @@ impl Loader {
     pub fn new(source: PathBuf) -> Self {
         Self {
             source,
+            // TODO: use plain by default.
+            error_style: annotate_snippets::Renderer::styled(),
             filesystem: FileSystem::Prod,
         }
     }
@@ -53,10 +56,16 @@ impl Loader {
         T: FnMut(&Path, &parse::ParsedLedgerEntry<'_>) -> Result<(), E>,
         E: std::error::Error + From<LoadError>,
     {
-        self.load_repl_impl(&self.source, &mut callback)
+        let popts = parse::ParseOptions::default().with_error_style(self.error_style.clone());
+        self.load_repl_impl(&popts, &self.source, &mut callback)
     }
 
-    fn load_repl_impl<T, E>(&self, path: &Path, callback: &mut T) -> Result<(), E>
+    fn load_repl_impl<T, E>(
+        &self,
+        parse_options: &parse::ParseOptions,
+        path: &Path,
+        callback: &mut T,
+    ) -> Result<(), E>
     where
         T: FnMut(&Path, &parse::ParsedLedgerEntry<'_>) -> Result<(), E>,
         E: std::error::Error + From<LoadError>,
@@ -66,7 +75,7 @@ impl Loader {
             .filesystem
             .file_content_utf8(&path)
             .map_err(LoadError::IO)?;
-        for entry in parse::parse_ledger(&content) {
+        for entry in parse_options.parse_ledger(&content) {
             match entry.map_err(LoadError::Parse)? {
                 repl::LedgerEntry::Include(p) => {
                     let include_path: PathBuf = p.0.as_ref().into();
@@ -75,7 +84,7 @@ impl Loader {
                         .parent()
                         .ok_or_else(|| LoadError::IncludePath(path.as_ref().to_owned()))?
                         .join(include_path);
-                    self.load_repl_impl(&target, callback)
+                    self.load_repl_impl(&parse_options, &target, callback)
                 }
                 other => callback(&path, &other),
             }?;
@@ -125,7 +134,7 @@ impl FileSystem {
 mod tests {
     use super::*;
 
-    use crate::parse::{self, parse_ledger};
+    use crate::parse::{self, ParseOptions};
 
     use indoc::indoc;
     use maplit::hashmap;
@@ -135,9 +144,10 @@ mod tests {
     fn parse_static_repl<'a>(
         input: &[(&'a Path, &'static str)],
     ) -> Result<Vec<(&'a Path, parse::ParsedLedgerEntry<'static>)>, parse::ParseError> {
+        let opts = ParseOptions::default();
         input
             .iter()
-            .flat_map(|(p, content)| parse_ledger(content).map(|elem| elem.map(|x| (*p, x))))
+            .flat_map(|(p, content)| opts.parse_ledger(content).map(|elem| elem.map(|x| (*p, x))))
             .collect()
     }
 
