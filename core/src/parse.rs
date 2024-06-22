@@ -3,6 +3,7 @@
 mod character;
 mod combinator;
 mod directive;
+mod error;
 mod expr;
 mod metadata;
 mod posting;
@@ -10,28 +11,55 @@ mod primitive;
 mod transaction;
 
 #[cfg(test)]
-pub mod testing;
+pub(crate) mod testing;
+pub use error::ParseError;
 
 use winnow::{
-    ascii::line_ending,
-    combinator::{alt, cut_err, dispatch, fail, peek, preceded, repeat, trace},
+    combinator::{alt, cut_err, dispatch, fail, peek, preceded, trace},
     error::StrContext,
-    token::{any, literal},
+    stream::Stream,
+    token::{any, literal, take_while},
     PResult, Parser,
 };
 
 use crate::repl;
 
-#[derive(thiserror::Error, Debug)]
-pub enum ParseError {
-    // TODO: Use #[from] appropriately
-    #[error("failed to parse the input:\n{0}")]
-    ParseFailed(String),
+/// Parses single ledger repl value with consuming whitespace.
+/// To control the behavior precisely, use [ParseOptions::parse_ledger].
+pub fn parse_ledger(input: &str) -> impl Iterator<Item = Result<ParsedLedgerEntry, ParseError>> {
+    ParseOptions::default().parse_ledger(input)
 }
 
-/// Parses single ledger repl value with consuming whitespace.
-pub fn parse_ledger(input: &str) -> impl Iterator<Item = Result<ParsedLedgerEntry, ParseError>> {
-    ParsedIter { input }
+/// Options to control parse behavior.
+pub struct ParseOptions {
+    error_style: annotate_snippets::Renderer,
+}
+
+impl Default for ParseOptions {
+    fn default() -> Self {
+        Self {
+            error_style: annotate_snippets::Renderer::plain(),
+        }
+    }
+}
+
+impl ParseOptions {
+    /// Sets the given [annotate_snippets::Renderer].
+    pub fn with_error_style(mut self, error_style: annotate_snippets::Renderer) -> Self {
+        self.error_style = error_style;
+        self
+    }
+
+    pub fn parse_ledger<'i>(
+        &self,
+        input: &'i str,
+    ) -> impl Iterator<Item = Result<ParsedLedgerEntry<'i>, ParseError>> + 'i {
+        ParsedIter {
+            input: input,
+            // TODO: Make line_numbers working.
+            renderer: self.error_style.clone().anonymized_line_numbers(true),
+        }
+    }
 }
 
 pub type ParsedLedgerEntry<'i> = repl::LedgerEntry<'i>;
@@ -39,20 +67,22 @@ pub type ParsedLedgerEntry<'i> = repl::LedgerEntry<'i>;
 /// Iterator to return parsed ledger entry one-by-one.
 struct ParsedIter<'i> {
     input: &'i str,
+    renderer: annotate_snippets::Renderer,
 }
 
 impl<'i> Iterator for ParsedIter<'i> {
     type Item = Result<ParsedLedgerEntry<'i>, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        let start = self.input.checkpoint();
         (|| {
-            repeat(0.., line_ending).parse_next(&mut self.input)?;
+            take_while(0.., b"\r\n").parse_next(&mut self.input)?;
             if self.input.is_empty() {
                 return Ok(None);
             }
             parse_ledger_entry.parse_next(&mut self.input).map(Some)
         })()
-        .map_err(|e| ParseError::ParseFailed(format!("{}", e)))
+        .map_err(|e| ParseError::new(self.renderer.clone(), self.input, start, e))
         .transpose()
     }
 }
@@ -93,8 +123,13 @@ mod tests {
     use indoc::indoc;
     use pretty_assertions::assert_eq;
 
-    fn parse_ledger_into(input: &str) -> Result<Vec<ParsedLedgerEntry>, ParseError> {
-        parse_ledger(input).collect()
+    fn parse_ledger_into(input: &str) -> Vec<ParsedLedgerEntry> {
+        let r: Result<Vec<ParsedLedgerEntry>, ParseError> =
+            ParseOptions::default().parse_ledger(input).collect();
+        match r {
+            Ok(x) => x,
+            Err(e) => panic!("failed to parse:\n{}", e),
+        }
     }
 
     #[test]
@@ -102,7 +137,7 @@ mod tests {
         let input = "\n\n2022/01/23\n";
         assert_eq!(input.chars().next(), Some('\n'));
         assert_eq!(
-            parse_ledger_into(input).unwrap(),
+            parse_ledger_into(input),
             vec![repl::LedgerEntry::Txn(repl::Transaction::new(
                 NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(),
                 ""
@@ -120,7 +155,7 @@ mod tests {
         "};
 
         assert_eq!(
-            parse_ledger_into(input).unwrap(),
+            parse_ledger_into(input),
             vec![
                 repl::LedgerEntry::Txn(repl::Transaction {
                     posts: vec![repl::Posting::new("Expenses:Grocery")],

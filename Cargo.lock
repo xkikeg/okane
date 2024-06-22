@@ -44,6 +44,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
+name = "annotate-snippets"
+version = "0.11.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24e35ed54e5ea7997c14ed4c70ba043478db1112e98263b3b035907aa197d991"
+dependencies = [
+ "anstyle",
+ "unicode-width",
+]
+
+[[package]]
 name = "anstream"
 version = "0.6.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -765,6 +775,8 @@ dependencies = [
 name = "okane"
 version = "0.10.0-dev"
 dependencies = [
+ "annotate-snippets",
+ "anstream",
  "assert_cmd",
  "bumpalo",
  "chrono",
@@ -797,6 +809,7 @@ dependencies = [
 name = "okane-core"
 version = "0.10.0-dev"
 dependencies = [
+ "annotate-snippets",
  "bumpalo",
  "chrono",
  "criterion",

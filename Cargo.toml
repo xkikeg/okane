@@ -17,6 +17,8 @@ repository = "https://github.com/xkikeg/okane"
 
 [workspace.dependencies]
 # dependencies
+annotate-snippets = "0.11"
+anstream = "0.6"
 bumpalo = {version = "3.16", features = ["collections"]}
 chrono = "0.4.38"
 log = "0.4"
