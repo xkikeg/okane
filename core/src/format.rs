@@ -13,7 +13,7 @@ pub enum FormatError {
     #[error("failed to perform IO")]
     IO(#[from] std::io::Error),
     #[error("failed to parse the file")]
-    Parse(#[from] ParseError),
+    Parse(#[from] Box<ParseError>),
     // TODO: Remove this once supported.
     #[error("recursive format isn't supported yet")]
     UnsupportedRecursiveFormat,
@@ -53,7 +53,7 @@ impl FormatOptions {
         // TODO: Grab DisplayContext externally, or from LedgerEntry.
         let ctx = DisplayContext::default();
         for txn in parse_ledger(&buf) {
-            let txn = txn?;
+            let txn = txn.map_err(Box::new)?;
             writeln!(w, "{}", ctx.as_display(&txn))?;
         }
         Ok(())

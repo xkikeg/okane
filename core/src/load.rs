@@ -15,7 +15,7 @@ pub enum LoadError {
     #[error("failed to perform IO")]
     IO(#[from] std::io::Error),
     #[error("failed to parse file")]
-    Parse(#[from] parse::ParseError),
+    Parse(#[from] Box<parse::ParseError>),
     #[error("unexpected include path {0}, maybe filesystem root is passed")]
     IncludePath(PathBuf),
 }
@@ -76,7 +76,7 @@ impl Loader {
             .file_content_utf8(&path)
             .map_err(LoadError::IO)?;
         for entry in parse_options.parse_ledger(&content) {
-            match entry.map_err(LoadError::Parse)? {
+            match entry.map_err(|x| LoadError::Parse(Box::new(x)))? {
                 repl::LedgerEntry::Include(p) => {
                     let include_path: PathBuf = p.0.as_ref().into();
                     let target = path
