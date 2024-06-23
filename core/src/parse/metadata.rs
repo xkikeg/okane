@@ -18,7 +18,7 @@ use crate::parse::character;
 use crate::repl;
 
 /// Parses a ClearState.
-pub fn clear_state<'i, I, E>(input: &mut I) -> PResult<repl::ClearState, E>
+pub fn clear_state<I, E>(input: &mut I) -> PResult<repl::ClearState, E>
 where
     I: Stream + StreamIsPartial,
     E: ParserError<I>,
@@ -146,7 +146,7 @@ where
 }
 
 /// Parses metadata tag.
-pub fn tag_key<'i, I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
+pub fn tag_key< I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
 where
     I: Stream + StreamIsPartial,
     E: ParserError<I>,

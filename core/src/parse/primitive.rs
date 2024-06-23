@@ -37,7 +37,7 @@ const NON_COMMODITY_CHARS: [char; 37] = [
 
 /// Parses commodity in greedy manner.
 /// Returns empty string if the upcoming characters are not valid as commodity to support empty commodity.
-pub fn commodity<'a, I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
+pub fn commodity<I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
 where
     I: Stream + StreamIsPartial,
     E: ParserError<I>,

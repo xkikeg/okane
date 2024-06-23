@@ -84,7 +84,7 @@ impl Loader {
                         .parent()
                         .ok_or_else(|| LoadError::IncludePath(path.as_ref().to_owned()))?
                         .join(include_path);
-                    self.load_repl_impl(&parse_options, &target, callback)
+                    self.load_repl_impl(parse_options, &target, callback)
                 }
                 other => callback(&path, &other),
             }?;

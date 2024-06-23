@@ -144,7 +144,7 @@ where
 /// Also comment requires "end" directive.
 /// In the meantime, only "end apply tag" is supported, however,
 /// pretty sure it'd be needed to rename and extend this function.
-pub fn end_apply_tag<'i, I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
+pub fn end_apply_tag<I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
 where
     I: Stream + StreamIsPartial + winnow::stream::Compare<&'static str> ,
     E: ParserError<I>,
