@@ -55,7 +55,6 @@ impl ParseOptions {
         input: &'i str,
     ) -> impl Iterator<Item = Result<ParsedLedgerEntry<'i>, ParseError>> + 'i {
         ParsedIter {
-            initial: input,
             input: Located::new(input),
             // TODO: Make line_numbers working.
             renderer: self.error_style.clone().anonymized_line_numbers(true),
@@ -67,7 +66,6 @@ pub type ParsedLedgerEntry<'i> = repl::LedgerEntry<'i>;
 
 /// Iterator to return parsed ledger entry one-by-one.
 struct ParsedIter<'i> {
-    initial: &'i str,
     input: Located<&'i str>,
     renderer: annotate_snippets::Renderer,
 }

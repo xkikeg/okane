@@ -352,7 +352,7 @@ mod tests {
 
     #[test]
     fn lot_random_input() {
-        let segment = vec![" {  200 JPY }", " [ 2022/09/01 ]", "  (note foobar)"];
+        let segment = [" {  200 JPY }", " [ 2022/09/01 ]", "  (note foobar)"];
         for i in 0..=2 {
             for j in 0..=2 {
                 for k in 0..=2 {

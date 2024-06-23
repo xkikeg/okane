@@ -53,7 +53,7 @@ where
     trace("expr::add_expr", infixl(add_op, mul_expr)).parse_next(input)
 }
 
-fn add_op<'i, I, E>(input: &mut I) -> PResult<expr::BinaryOp, E>
+fn add_op<I, E>(input: &mut I) -> PResult<expr::BinaryOp, E>
 where
     I: Stream + StreamIsPartial + Clone,
     E: ParserError<I>,
@@ -78,7 +78,7 @@ where
     trace("expr::mul_expr", infixl(mul_op, unary_expr)).parse_next(input)
 }
 
-fn mul_op<'i, I, E>(input: &mut I) -> PResult<expr::BinaryOp, E>
+fn mul_op<I, E>(input: &mut I) -> PResult<expr::BinaryOp, E>
 where
     I: Stream + StreamIsPartial + Clone,
     E: ParserError<I>,

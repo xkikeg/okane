@@ -25,7 +25,7 @@ where
 }
 
 /// Parses non-zero string until line_ending or comma appears.
-pub fn till_line_ending_or_semi<'a, I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
+pub fn till_line_ending_or_semi<I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
 where
     I: Stream + StreamIsPartial,
     E: ParserError<I>,
@@ -39,7 +39,7 @@ where
 }
 
 /// Line ending or EOF.
-pub fn line_ending_or_eof<'a, I, E>(input: &mut I) -> PResult<(), E>
+pub fn line_ending_or_eof<I, E>(input: &mut I) -> PResult<(), E>
 where
     I: Stream + StreamIsPartial + winnow::stream::Compare<&'static str>,
     <I as Stream>::Token: AsChar,
@@ -51,7 +51,7 @@ where
 }
 
 /// Parses unnested string in paren.
-pub fn paren_str<'a, I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
+pub fn paren_str<I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
 where
     I: Stream + StreamIsPartial,
     E: ParserError<I>,
