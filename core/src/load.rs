@@ -132,23 +132,42 @@ impl FileSystem {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::{borrow::Borrow, path::Path, vec::Vec};
 
-    use crate::parse::{self, ParseOptions};
-
+    use bounded_static::ToBoundedStatic;
     use indoc::indoc;
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
-    use std::{path::Path, vec::Vec};
+
+    use crate::parse::{self, ParseOptions};
+
+    use super::*;
 
     fn parse_static_repl<'a>(
-        input: &[(&'a Path, &'static str)],
-    ) -> Result<Vec<(&'a Path, parse::ParsedLedgerEntry<'static>)>, parse::ParseError> {
+        input: &[(&Path, &'static str)],
+    ) -> Result<Vec<(PathBuf, parse::ParsedLedgerEntry<'static>)>, parse::ParseError> {
         let opts = ParseOptions::default();
         input
             .iter()
-            .flat_map(|(p, content)| opts.parse_ledger(content).map(|elem| elem.map(|x| (*p, x))))
+            .flat_map(|(p, content)| {
+                opts.parse_ledger(content)
+                    .map(|elem| elem.map(|x| (p.to_path_buf(), x)))
+            })
             .collect()
+    }
+
+    fn parse_into_vec<L>(
+        loader: L,
+    ) -> Result<Vec<(PathBuf, parse::ParsedLedgerEntry<'static>)>, LoadError>
+    where
+        L: Borrow<Loader>,
+    {
+        let mut ret: Vec<(PathBuf, parse::ParsedLedgerEntry<'static>)> = Vec::new();
+        loader.borrow().load_repl(|path, entry| {
+            ret.push((path.to_owned(), entry.to_static()));
+            Ok::<(), LoadError>(())
+        })?;
+        Ok(ret)
     }
 
     #[test]
@@ -157,7 +176,6 @@ mod tests {
         let child1 = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/child1.ledger");
         let child2 = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/sub/child2.ledger");
         let child3 = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/child3.ledger");
-        let mut i: usize = 0;
         let want = parse_static_repl(&[
             (
                 &root,
@@ -211,15 +229,8 @@ mod tests {
             ),
         ])
         .expect("test input parse must not fail");
-        Loader::new(root.clone())
-            .load_repl(|path, entry| {
-                let (want_path, want_entry) =
-                    want.get(i).expect("missing want anymore, too many got");
-                assert_eq!((*want_path, want_entry), (path, entry));
-                i += 1;
-                Ok::<(), LoadError>(())
-            })
-            .expect("test_failed");
+        let got = parse_into_vec(Loader::new(root.clone())).expect("failed to parse the test data");
+        assert_eq!(want, got);
     }
 
     #[test]
@@ -238,7 +249,6 @@ mod tests {
                 ; comment here
             "}.as_bytes().to_vec(),
         };
-        let mut i: usize = 0;
         let want = parse_static_repl(&[(
             Path::new("/path/to/sub/child3.ledger"),
             indoc! {"
@@ -246,15 +256,10 @@ mod tests {
             "},
         )])
         .expect("test input parse must not fail");
-        Loader::new(PathBuf::from("/path/to/root.ledger"))
-            .with_fake_files(fake)
-            .load_repl(|path, entry| {
-                let (want_path, want_entry) =
-                    want.get(i).expect("missing want anymore, too many got");
-                assert_eq!((*want_path, want_entry), (path, entry));
-                i += 1;
-                Ok::<(), LoadError>(())
-            })
-            .expect("test_failed");
+        let got = parse_into_vec(
+            Loader::new(PathBuf::from("/path/to/root.ledger")).with_fake_files(fake),
+        )
+        .expect("parse failed");
+        assert_eq!(want, got);
     }
 }
