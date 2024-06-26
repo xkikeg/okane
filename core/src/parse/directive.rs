@@ -26,8 +26,7 @@ where
         + StreamIsPartial
         + StreamIsPartial
         + winnow::stream::Compare<&'static str>
-        + winnow::stream::FindSlice<(char, char)>
-        ,
+        + winnow::stream::FindSlice<(char, char)>,
     <I as Stream>::Token: AsChar + Clone,
 {
     (
@@ -68,8 +67,7 @@ where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
         + winnow::stream::Compare<&'static str>
-        + winnow::stream::FindSlice<(char, char)>
-        ,
+        + winnow::stream::FindSlice<(char, char)>,
     <I as Stream>::Token: AsChar + Clone,
 {
     (
@@ -146,7 +144,7 @@ where
 /// pretty sure it'd be needed to rename and extend this function.
 pub fn end_apply_tag<I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
 where
-    I: Stream + StreamIsPartial + winnow::stream::Compare<&'static str> ,
+    I: Stream + StreamIsPartial + winnow::stream::Compare<&'static str>,
     E: ParserError<I>,
     <I as Stream>::Token: AsChar,
 {
@@ -198,8 +196,7 @@ where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
         + winnow::stream::Compare<&'static str>
-        + winnow::stream::FindSlice<(char, char)>
-        ,
+        + winnow::stream::FindSlice<(char, char)>,
     E: ParserError<I>,
     <I as Stream>::Token: AsChar + Clone,
 {
@@ -216,8 +213,7 @@ where
     I: Stream<Slice = &'a str>
         + StreamIsPartial
         + winnow::stream::Compare<&'static str>
-        + winnow::stream::FindSlice<(char, char)>
-        ,
+        + winnow::stream::FindSlice<(char, char)>,
     E: ParserError<I>,
     F: Parser<I, O1, E>,
     <I as Stream>::Token: AsChar + Clone,

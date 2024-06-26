@@ -146,7 +146,7 @@ where
 }
 
 /// Parses metadata tag.
-pub fn tag_key< I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
+pub fn tag_key<I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
 where
     I: Stream + StreamIsPartial,
     E: ParserError<I>,
