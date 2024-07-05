@@ -5,15 +5,15 @@ authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description.workspace = true
-readme.workspace = true
+description = "CLI tool to support Ledger (https://www.ledger-cli.org/) equivalent syntax files."
+readme = "../README.md"
 repository.workspace = true
 
 [dependencies]
 okane-core = { version = "0.10.0-dev", path = "../core" }
 
 annotate-snippets.workspace = true
-anstream.workspace = true
+# anstream = "0.6"
 bumpalo.workspace = true
 chrono.workspace = true
 clap = { version = "4.5", features = ["derive", "unicode"] }
