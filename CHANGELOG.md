@@ -4,6 +4,14 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.10.0] - 2024-07-05
+
+### Added
+
 * Added `balance` and `register` CLI command with limited functionality (https://github.com/xkikeg/okane/pull/147).
 * Added `accounts` CLI command to list all accounts (https://github.com/xkikeg/okane/pull/128).
 * Added `primitve flatten` CLI command to resolve include statement (https://github.com/xkikeg/okane/pull/127).
@@ -18,7 +26,6 @@
 
 * Fixed ClearState parse at posting (https://github.com/xkikeg/okane/pull/129).
 * Fixed benchmark input (https://github.com/xkikeg/okane/pull/133).
-
 
 ## [0.9.0] - 2024-05-12
 
