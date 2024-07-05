@@ -1,13 +1,13 @@
 # Accepted ledger syntax
 
-okane accepts files in Ledger format. Unfortunately it's not obvious on the [ledger-cli 3.0 official document](https://www.ledger-cli.org/3.0/doc/ledger3.html)what is the exact syntax of Ledger format. This document explains the syntax that okane can handle.
+okane accepts files in Ledger format. Unfortunately it's not obvious on the [ledger-cli 3.0 official document][ledger doc] what is the exact syntax of Ledger format. This document explains the syntax that okane can handle.
 
 ## directives
 
 Ledger format consists of a list of directives.
 
 ```ebnf
-ledger-file ::= (directive vertical-space*)*
+ledger-file ::= vertical-space* (directive vertical-space*)*
 
 directive ::= transaction
             | top-comment
@@ -15,7 +15,7 @@ directive ::= transaction
             | commodity-declaration
             | apply-tag
             | end-apply-tag
-            ; TODO: more directives must be supported
+            | include
 ```
 
 ### Transaction
@@ -41,7 +41,7 @@ payee ::= [^\r\n;]*
 
 posting ::= posting-line metadata? new-line (metadata new-line)*
 
-posting-line ::= sp+ account posting-value?
+posting-line ::= sp+ (clear-state sp*)? account posting-value?
 
 ; account can't contain \t or two spaces
 account ::= no-sp (no-sp | " " no-sp)*
@@ -54,6 +54,8 @@ posting-lot ::= (lot-price sp*)? (lot-date sp*)? (lot-note sp*)?
               | (lot-price sp*)? (lot-note sp*)? (lot-date sp*)?
               | ... ; permutations
 
+; Note lot-price only supports amount-expr, not value-expr.
+; This is weird but ledger-cli only supports amount-expr.
 lot-price ::= "{{" sp* amount-expr sp* "}}" ; total
             | "{"  sp* amount-expr sp* "}"  ; rate
 
@@ -135,6 +137,26 @@ commodity-comment ::= sp+ comment-prefix no-new-line* new-line
 
 ### apply directives
 
+```ebnf
+apply-tag ::= apply-tag-prefix (apply-tag-key | apply-tag-key-value) new-line
+
+apply-tag-prefix ::= "apply" sp+ "tag" sp+
+
+apply-tag-key ::= tag sp*
+
+apply-tag-key-value ::= metadata-key-value
+
+end-apply-tag ::= "end" sp+ "apply" sp+ "tag" sp* new-line
+```
+
+### include directive
+
+```ebnf
+include ::= "include" sp+ path new-line
+
+path ::= no-new-line+
+```
+
 ## Expressions
 
 Ledger allows to use expression in various places, including basic arithmetic operations.
@@ -144,14 +166,14 @@ value-expr ::= amount-expr | paren-expr
 
 paren-expr ::= "(" sp* add-expr sp* ")"
 
-add-expr ::= mul-expr (sp* [+-] sp* add-expr)*
+add-expr ::= mul-expr (sp* [+-] sp* mul-expr)*
 
 mul-expr ::= unary-expr (sp* [*/] sp* unary-expr)*
 
 unary-expr ::= "-"? value-expr
 
 ; Not supporting a prefix commodity like $100.
-amount-expr ::= comma-decimal commodity?
+amount-expr ::= comma-decimal sp* commodity?
 ```
 
 ## primitives
@@ -167,7 +189,7 @@ number ::= [0-9]
 
 commodity ::= [^- \t\r\n0123456789.,;:?!+*/^&|=<>[](){}@]
 
-date ::= <yyyy-mm-dd> | <yyyy-mm-dd>
+date ::= <yyyy/mm/dd> | <yyyy-mm-dd>
 ```
 
 ## characters
@@ -177,11 +199,13 @@ Here some basic character classes are defined.
 ```ebnf
 vertical-space ::=  sp* new-line
 
-sp ::= " " | "\t"
+sp ::= [ \t]
 
-no-sp ::= ; any char except Unicode white space https://doc.rust-lang.org/std/primitive.char.html#method.is_whitespace
+no-sp ::= [^ \t\r\n]
 
 new-line ::= "\r"? "\n" | <EOF>
 
 no-new-line ::= [^\r\n]
 ```
+
+[ledger doc]: https://www.ledger-cli.org/3.0/doc/ledger3.html

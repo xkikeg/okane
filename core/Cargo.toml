@@ -5,8 +5,8 @@ authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description.workspace = true
-readme.workspace = true
+description = "Library to support parsing, emitting and processing Ledger (https://www.ledger-cli.org/) format files."
+readme = "README.md"
 repository.workspace = true
 
 [dependencies]

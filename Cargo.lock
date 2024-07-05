@@ -797,7 +797,6 @@ name = "okane"
 version = "0.10.0-dev"
 dependencies = [
  "annotate-snippets",
- "anstream",
  "assert_cmd",
  "bumpalo",
  "chrono",
