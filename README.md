@@ -19,6 +19,8 @@ Note `balance`, `register` are still work-in-progress, and the UX would change d
 
 Disclaimer: This software is still in early phase, subject to any kind of change.
 
+Follows [syntax](doc/syntax) page for the supported syntax.
+
 ### Install
 
 Up until now no binary release is provided, so you need to run `cargo install` to install the tool.
@@ -64,6 +66,10 @@ $ RUST_LOG=info okane import --config ~/ledger/import.yml ~/ledger/input_file.cs
 ```
 
 Tips: You probably don't want to handle all the entries, rather should aim to cover 80-90% of entries initially.
+
+## License
+
+This tool is licensed under [MIT lisence](LICENSE).
 
 [ledger official]: https://github.com/ledger/ledger/
 [ledger document]: https://ledger-cli.org/doc/ledger3.html

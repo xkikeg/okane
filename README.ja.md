@@ -17,8 +17,7 @@ okane （オカネ）は [ledger-cli][ledger official]フォーマットに準�
 
 注意: まだ開発中なので突然引数などが変わることがあります。
 
-またサポートされている文法は[syntax][doc/syntax]のとおりです。
-
+またサポートされている文法は[syntax](doc/syntax)のとおりです。
 
 ### インストール
 
@@ -69,6 +68,11 @@ $ RUST_LOG=info okane import --config ~/ledger/import.yml ~/ledger/input_file.cs
 ```
 
 Tips: 100%の自動化を目指すと無理が出るので、80~90%程度自動化できるといいやくらいに思ってると楽です。
+
+## ライセンス
+
+このツールは [MIT lisence](LICENSE) でライセンスされています。
+作者はこのソフトウェアの使用上生じた問題については責任を負いかねます。
 
 [ledger official]: https://github.com/ledger/ledger/
 [ledger document]: https://ledger-cli.org/doc/ledger3.html
