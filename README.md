@@ -19,7 +19,7 @@ Note `balance`, `register` are still work-in-progress, and the UX would change d
 
 Disclaimer: This software is still in early phase, subject to any kind of change.
 
-Follows [syntax](doc/syntax) page for the supported syntax.
+Follows [syntax](doc/syntax.md) page for the supported syntax.
 
 ### Install
 

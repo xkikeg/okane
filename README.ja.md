@@ -17,7 +17,7 @@ okane （オカネ）は [ledger-cli][ledger official]フォーマットに準�
 
 注意: まだ開発中なので突然引数などが変わることがあります。
 
-またサポートされている文法は[syntax](doc/syntax)のとおりです。
+またサポートされている文法は[syntax](doc/syntax.md)のとおりです。
 
 ### インストール
 
