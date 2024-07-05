@@ -788,7 +788,7 @@ dependencies = [
 
 [[package]]
 name = "okane"
-version = "0.10.0-dev"
+version = "0.10.0"
 dependencies = [
  "annotate-snippets",
  "assert_cmd",
@@ -821,7 +821,7 @@ dependencies = [
 
 [[package]]
 name = "okane-core"
-version = "0.10.0-dev"
+version = "0.10.0"
 dependencies = [
  "annotate-snippets",
  "bounded-static",
