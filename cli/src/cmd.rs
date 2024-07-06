@@ -161,7 +161,7 @@ impl FlattenCmd {
     {
         // TODO: Pick DisplayContext from load results.
         let ctx = DisplayContext::default();
-        load::Loader::new(self.source).load_repl(|_, entry| -> Result<(), Error> {
+        load::new_loader(self.source).load_repl(|_, entry| -> Result<(), Error> {
             writeln!(w, "{}", ctx.as_display(entry))?;
             Ok(())
         })?;
@@ -181,7 +181,7 @@ impl AccountsCmd {
     {
         let arena = Bump::new();
         let mut ctx = report::ReportContext::new(&arena);
-        let accounts = report::accounts(&mut ctx, load::Loader::new(self.source))?;
+        let accounts = report::accounts(&mut ctx, load::new_loader(self.source))?;
         for acc in accounts.iter() {
             writeln!(w, "{}", acc.as_str())?;
         }
@@ -201,7 +201,7 @@ impl BalanceCmd {
     {
         let arena = Bump::new();
         let mut ctx = report::ReportContext::new(&arena);
-        let (_, balance) = report::process(&mut ctx, load::Loader::new(self.source))?;
+        let (_, balance) = report::process(&mut ctx, load::new_loader(self.source))?;
         let accounts = ctx.all_accounts();
         for account in &accounts {
             if let Some(amount) = balance.get_balance(account) {
@@ -227,7 +227,7 @@ impl RegisterCmd {
     {
         let arena = Bump::new();
         let mut ctx = report::ReportContext::new(&arena);
-        let (txns, _) = report::process(&mut ctx, load::Loader::new(self.source))?;
+        let (txns, _) = report::process(&mut ctx, load::new_loader(self.source))?;
         let account = self
             .account
             .as_ref()
