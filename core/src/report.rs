@@ -17,12 +17,13 @@ use crate::{load, repl::LedgerEntry};
 
 /// Returns all accounts for the given LedgerEntry.
 /// WARNING: interface are subject to change.
-pub fn accounts<'ctx, L>(
+pub fn accounts<'ctx, L, F>(
     ctx: &'ctx mut context::ReportContext,
     loader: L,
 ) -> Result<Vec<intern::Account<'ctx>>, load::LoadError>
 where
-    L: Borrow<load::Loader>,
+    L: Borrow<load::Loader<F>>,
+    F: load::FileSystem,
 {
     loader.borrow().load_repl(|_path, entry| {
         if let LedgerEntry::Txn(txn) = entry {

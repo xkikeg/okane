@@ -32,12 +32,13 @@ pub enum BookKeepError {
 /// Takes the loader, and gives back the all read transactions.
 /// Also returns the computed balance, as a side-artifact.
 /// Usually this needs to be reordered, so just returning a `Vec`.
-pub fn process<'ctx, L>(
+pub fn process<'ctx, L, F>(
     ctx: &mut ReportContext<'ctx>,
     loader: L,
 ) -> Result<(Vec<Transaction<'ctx>>, Balance<'ctx>), ReportError>
 where
-    L: Borrow<load::Loader>,
+    L: Borrow<load::Loader<F>>,
+    F: load::FileSystem
 {
     let mut balance = Balance::default();
     let mut txns: Vec<Transaction<'ctx>> = Vec::new();

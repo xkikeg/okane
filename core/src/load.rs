@@ -4,7 +4,7 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
-    path::{Path, PathBuf},
+    path::{self, Path, PathBuf},
 };
 
 use crate::{parse, repl};
@@ -22,31 +22,30 @@ pub enum LoadError {
 
 /// Loader is an object to keep loading a given file and may recusrively load them as `repr::LedgerEntry`,
 /// with the metadata about filename or line/column to point the error in a user friendly manner.
-pub struct Loader {
+pub struct Loader<F: FileSystem> {
     source: PathBuf,
     error_style: annotate_snippets::Renderer,
-    filesystem: FileSystem,
+    filesystem: F,
 }
 
-impl Loader {
+/// Creates a new [`Loader`] instance with [`ProdFileSystem`].
+pub fn new_loader(source: PathBuf) -> Loader<ProdFileSystem> {
+    Loader::new(source, ProdFileSystem)
+}
+
+impl<F: FileSystem> Loader<F> {
     /// Create a new instance of `Loader` to load the given path.
     ///
     /// It might look weird to have the source path as a `Loader` member,
     /// but that would give future flexibility to support loading from stdio/network without include,
     /// or completely static one.
-    pub fn new(source: PathBuf) -> Self {
+    pub fn new(source: PathBuf, filesystem: F) -> Self {
         Self {
             source,
             // TODO: use plain by default.
             error_style: annotate_snippets::Renderer::styled(),
-            filesystem: FileSystem::Prod,
+            filesystem,
         }
-    }
-
-    /// Set `fake_files` which resolves Path -> its contents conversion.
-    pub fn with_fake_files(&mut self, fake_files: HashMap<PathBuf, Vec<u8>>) -> &mut Self {
-        self.filesystem = FileSystem::Fake(fake_files);
-        self
     }
 
     /// Loads `repl::LedgerEntry` and invoke callback on every entry,
@@ -93,15 +92,26 @@ impl Loader {
     }
 }
 
-enum FileSystem {
-    Prod,
-    Fake(HashMap<PathBuf, Vec<u8>>),
+pub trait FileSystem {
+    /// canonicalize the given path.
+    fn canonicalize_path<'a>(&self, path: &'a Path) -> Cow<'a, Path>;
+
+    /// Load the given path and returns it as UTF-8 String.
+    fn file_content_utf8<P: AsRef<Path>>(&self, path: P) -> Result<String, std::io::Error>;
 }
 
-impl FileSystem {
+pub struct ProdFileSystem;
+
+impl FileSystem for ProdFileSystem {
     fn canonicalize_path<'a>(&self, path: &'a Path) -> Cow<'a, Path> {
         std::fs::canonicalize(path)
-            .map(Cow::Owned)
+            .map(|x| {
+                if x == path {
+                    Cow::Borrowed(path)
+                } else {
+                    Cow::Owned(x)
+                }
+            })
             .unwrap_or_else(|x| {
                 log::warn!(
                     "failed to canonicalize path {}, likeky to fail to load: {}",
@@ -113,20 +123,50 @@ impl FileSystem {
     }
 
     fn file_content_utf8<P: AsRef<Path>>(&self, path: P) -> Result<String, std::io::Error> {
-        let path = path.as_ref();
-        match self {
-            FileSystem::Prod => std::fs::read_to_string(path),
-            FileSystem::Fake(fake_fs) => fake_fs
-                .get(path)
-                .ok_or(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("fake file {} not found", path.display()),
-                ))
-                .and_then(|x| {
-                    String::from_utf8(x.clone())
-                        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
-                }),
+        std::fs::read_to_string(path)
+    }
+}
+
+pub struct FakeFileSystem(HashMap<PathBuf, Vec<u8>>);
+
+impl From<HashMap<PathBuf, Vec<u8>>> for FakeFileSystem {
+    fn from(value: HashMap<PathBuf, Vec<u8>>) -> Self {
+        Self(value)
+    }
+}
+
+impl FileSystem for FakeFileSystem {
+    fn canonicalize_path<'a>(&self, path: &'a Path) -> Cow<'a, Path> {
+        let mut ret = PathBuf::new();
+        for pc in path.components() {
+            match pc {
+                path::Component::CurDir => (),
+                path::Component::ParentDir => {
+                    if !ret.pop() {
+                        log::warn!(
+                            "failed to pop parent, maybe wrong path given: {}",
+                            path.display()
+                        );
+                    }
+                }
+                _ => ret.push(pc),
+            }
         }
+        Cow::Owned(ret)
+    }
+
+    fn file_content_utf8<P: AsRef<Path>>(&self, path: P) -> Result<String, std::io::Error> {
+        let path = path.as_ref();
+        self.0
+            .get(path)
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("fake file {} not found", path.display()),
+            ))
+            .and_then(|x| {
+                String::from_utf8(x.clone())
+                    .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
+            })
     }
 }
 
@@ -156,11 +196,12 @@ mod tests {
             .collect()
     }
 
-    fn parse_into_vec<L>(
+    fn parse_into_vec<L, F>(
         loader: L,
     ) -> Result<Vec<(PathBuf, parse::ParsedLedgerEntry<'static>)>, LoadError>
     where
-        L: Borrow<Loader>,
+        L: Borrow<Loader<F>>,
+        F: FileSystem,
     {
         let mut ret: Vec<(PathBuf, parse::ParsedLedgerEntry<'static>)> = Vec::new();
         loader.borrow().load_repl(|path, entry| {
@@ -172,10 +213,10 @@ mod tests {
 
     #[test]
     fn load_valid_input_real_file() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/root.ledger");
-        let child1 = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/child1.ledger");
-        let child2 = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/sub/child2.ledger");
-        let child3 = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/child3.ledger");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/root.ledger").canonicalize().unwrap();
+        let child1 = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/child1.ledger").canonicalize().unwrap();
+        let child2 = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/sub/child2.ledger").canonicalize().unwrap();
+        let child3 = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/child3.ledger").canonicalize().unwrap();
         let want = parse_static_repl(&[
             (
                 &root,
@@ -229,7 +270,7 @@ mod tests {
             ),
         ])
         .expect("test input parse must not fail");
-        let got = parse_into_vec(Loader::new(root.clone())).expect("failed to parse the test data");
+        let got = parse_into_vec(new_loader(root.clone())).expect("failed to parse the test data");
         assert_eq!(want, got);
     }
 
@@ -256,9 +297,10 @@ mod tests {
             "},
         )])
         .expect("test input parse must not fail");
-        let got = parse_into_vec(
-            Loader::new(PathBuf::from("/path/to/root.ledger")).with_fake_files(fake),
-        )
+        let got = parse_into_vec(Loader::new(
+            PathBuf::from("/path/to/root.ledger"),
+            FakeFileSystem::from(fake),
+        ))
         .expect("parse failed");
         assert_eq!(want, got);
     }

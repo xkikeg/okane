@@ -11,7 +11,7 @@ fn load_benchmark(c: &mut Criterion) {
     c.bench_function("load simple", |b| {
         b.iter(|| {
             let mut count = 0;
-            load::Loader::new(input.rootpath().to_owned())
+            load::new_loader(input.rootpath().to_owned())
                 .load_repl(|_, _| {
                     count += 1;
                     Ok::<(), LoadError>(())
