@@ -213,10 +213,22 @@ mod tests {
 
     #[test]
     fn load_valid_input_real_file() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/root.ledger").canonicalize().unwrap();
-        let child1 = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/child1.ledger").canonicalize().unwrap();
-        let child2 = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/sub/child2.ledger").canonicalize().unwrap();
-        let child3 = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/child3.ledger").canonicalize().unwrap();
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("testdata/root.ledger")
+            .canonicalize()
+            .unwrap();
+        let child1 = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("testdata/child1.ledger")
+            .canonicalize()
+            .unwrap();
+        let child2 = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("testdata/sub/child2.ledger")
+            .canonicalize()
+            .unwrap();
+        let child3 = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("testdata/child3.ledger")
+            .canonicalize()
+            .unwrap();
         let want = parse_static_repl(&[
             (
                 &root,

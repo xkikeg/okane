@@ -38,7 +38,7 @@ pub fn process<'ctx, L, F>(
 ) -> Result<(Vec<Transaction<'ctx>>, Balance<'ctx>), ReportError>
 where
     L: Borrow<load::Loader<F>>,
-    F: load::FileSystem
+    F: load::FileSystem,
 {
     let mut balance = Balance::default();
     let mut txns: Vec<Transaction<'ctx>> = Vec::new();
