@@ -55,9 +55,9 @@ impl ParseOptions {
         input: &'i str,
     ) -> impl Iterator<Item = Result<ParsedLedgerEntry<'i>, ParseError>> + 'i {
         ParsedIter {
+            initial: input,
             input: Located::new(input),
-            // TODO: Make line_numbers working.
-            renderer: self.error_style.clone().anonymized_line_numbers(true),
+            renderer: self.error_style.clone(),
         }
     }
 }
@@ -66,6 +66,7 @@ pub type ParsedLedgerEntry<'i> = repl::LedgerEntry<'i>;
 
 /// Iterator to return parsed ledger entry one-by-one.
 struct ParsedIter<'i> {
+    initial: &'i str,
     input: Located<&'i str>,
     renderer: annotate_snippets::Renderer,
 }
@@ -82,7 +83,7 @@ impl<'i> Iterator for ParsedIter<'i> {
             }
             parse_ledger_entry.parse_next(&mut self.input).map(Some)
         })()
-        .map_err(|e| ParseError::new(self.renderer.clone(), self.input, start, e))
+        .map_err(|e| ParseError::new(self.renderer.clone(), self.initial, self.input, start, e))
         .transpose()
     }
 }
