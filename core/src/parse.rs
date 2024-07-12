@@ -106,18 +106,14 @@ impl<'i> Iterator for ParsedIter<'i> {
             if self.input.is_empty() {
                 return Ok(None);
             }
-            parse_ledger_entry
-                .with_span()
-                .parse_next(&mut self.input)
-                .map(|(entry, span)| {
-                    Some((
-                        ParsedContext {
-                            initial: self.initial,
-                            span,
-                        },
-                        entry,
-                    ))
-                })
+            let (entry, span) = parse_ledger_entry.with_span().parse_next(&mut self.input)?;
+            Ok(Some((
+                ParsedContext {
+                    initial: self.initial,
+                    span,
+                },
+                entry,
+            )))
         })()
         .map_err(|e| ParseError::new(self.renderer.clone(), self.initial, self.input, start, e))
         .transpose()
