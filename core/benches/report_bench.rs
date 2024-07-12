@@ -12,7 +12,7 @@ fn load_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let mut count = 0;
             load::new_loader(input.rootpath().to_owned())
-                .load_repl(|_, _| {
+                .load_repl(|_, _, _| {
                     count += 1;
                     Ok::<(), LoadError>(())
                 })

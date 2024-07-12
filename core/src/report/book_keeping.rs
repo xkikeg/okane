@@ -42,7 +42,7 @@ where
 {
     let mut balance = Balance::default();
     let mut txns: Vec<Transaction<'ctx>> = Vec::new();
-    loader.borrow().load_repl(|_path, entry| {
+    loader.borrow().load_repl(|_path, _ctx, entry| {
         match entry {
             repl::LedgerEntry::Txn(txn) => txns.push(add_transaction(ctx, &mut balance, txn)?),
             repl::LedgerEntry::Account(account) => {

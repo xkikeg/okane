@@ -52,7 +52,7 @@ impl<F: FileSystem> Loader<F> {
     /// recursively resolving `include` directives.
     pub fn load_repl<T, E>(&self, mut callback: T) -> Result<(), E>
     where
-        T: FnMut(&Path, &parse::ParsedLedgerEntry<'_>) -> Result<(), E>,
+        T: FnMut(&Path, &parse::ParsedContext<'_>, &repl::LedgerEntry<'_>) -> Result<(), E>,
         E: std::error::Error + From<LoadError>,
     {
         let popts = parse::ParseOptions::default().with_error_style(self.error_style.clone());
@@ -66,7 +66,7 @@ impl<F: FileSystem> Loader<F> {
         callback: &mut T,
     ) -> Result<(), E>
     where
-        T: FnMut(&Path, &parse::ParsedLedgerEntry<'_>) -> Result<(), E>,
+        T: FnMut(&Path, &parse::ParsedContext<'_>, &repl::LedgerEntry<'_>) -> Result<(), E>,
         E: std::error::Error + From<LoadError>,
     {
         let path: Cow<'_, Path> = self.filesystem.canonicalize_path(path);
@@ -74,8 +74,10 @@ impl<F: FileSystem> Loader<F> {
             .filesystem
             .file_content_utf8(&path)
             .map_err(LoadError::IO)?;
-        for entry in parse_options.parse_ledger(&content) {
-            match entry.map_err(|e| LoadError::Parse(Box::new(e), path.clone().into_owned()))? {
+        for parsed in parse_options.parse_ledger(&content) {
+            let (ctx, entry) =
+                parsed.map_err(|e| LoadError::Parse(Box::new(e), path.clone().into_owned()))?;
+            match entry {
                 repl::LedgerEntry::Include(p) => {
                     let include_path: PathBuf = p.0.as_ref().into();
                     let target = path
@@ -85,7 +87,7 @@ impl<F: FileSystem> Loader<F> {
                         .join(include_path);
                     self.load_repl_impl(parse_options, &target, callback)
                 }
-                other => callback(&path, &other),
+                _ => callback(&path, &ctx, &entry),
             }?;
         }
         Ok(())
@@ -185,26 +187,26 @@ mod tests {
 
     fn parse_static_repl<'a>(
         input: &[(&Path, &'static str)],
-    ) -> Result<Vec<(PathBuf, parse::ParsedLedgerEntry<'static>)>, parse::ParseError> {
+    ) -> Result<Vec<(PathBuf, repl::LedgerEntry<'static>)>, parse::ParseError> {
         let opts = ParseOptions::default();
         input
             .iter()
             .flat_map(|(p, content)| {
                 opts.parse_ledger(content)
-                    .map(|elem| elem.map(|x| (p.to_path_buf(), x)))
+                    .map(|elem| elem.map(|(_ctx, entry)| (p.to_path_buf(), entry)))
             })
             .collect()
     }
 
     fn parse_into_vec<L, F>(
         loader: L,
-    ) -> Result<Vec<(PathBuf, parse::ParsedLedgerEntry<'static>)>, LoadError>
+    ) -> Result<Vec<(PathBuf, repl::LedgerEntry<'static>)>, LoadError>
     where
         L: Borrow<Loader<F>>,
         F: FileSystem,
     {
-        let mut ret: Vec<(PathBuf, parse::ParsedLedgerEntry<'static>)> = Vec::new();
-        loader.borrow().load_repl(|path, entry| {
+        let mut ret: Vec<(PathBuf, repl::LedgerEntry<'static>)> = Vec::new();
+        loader.borrow().load_repl(|path, _ctx, entry| {
             ret.push((path.to_owned(), entry.to_static()));
             Ok::<(), LoadError>(())
         })?;
