@@ -74,6 +74,21 @@ pub struct ParsedContext<'i> {
     span: Range<usize>,
 }
 
+impl<'i> ParsedContext<'i> {
+    /// Computes the starting line number from this context.
+    /// Note this function is O(N), not a cheap function.
+    pub fn compute_line_start(&self) -> usize {
+        error::compute_line_number(self.initial, self.span.start)
+    }
+
+    /// Returns the [`str`] slice corresponding to this context.
+    pub fn as_str(&self) -> &str {
+        self.initial
+            .get(self.span.clone())
+            .expect("ParsedContext::span must be a valid UTF-8 boundary")
+    }
+}
+
 /// Iterator to return parsed ledger entry one-by-one.
 struct ParsedIter<'i> {
     initial: &'i str,

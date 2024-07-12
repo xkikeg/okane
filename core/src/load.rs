@@ -48,6 +48,11 @@ impl<F: FileSystem> Loader<F> {
         }
     }
 
+    /// Returns a [`annotate_snippets::Renderer`] instance.
+    pub(crate) fn error_style(&self) -> &annotate_snippets::Renderer {
+        &self.error_style
+    }
+
     /// Loads `repl::LedgerEntry` and invoke callback on every entry,
     /// recursively resolving `include` directives.
     pub fn load_repl<T, E>(&self, mut callback: T) -> Result<(), E>
