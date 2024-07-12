@@ -40,7 +40,7 @@ impl IntoBoundedStatic for PrettyDecimal {
 #[derive(thiserror::Error, PartialEq, Debug)]
 pub enum Error {
     #[error("unexpected char {0} at {0}")]
-    UnexpectedChar(char, usize),
+    UnexpectedChar(u8, usize),
     #[error("comma required at {0}")]
     CommaRequired(usize),
     #[error("unexpressible decimal {0}")]
@@ -94,6 +94,7 @@ impl FromStr for PrettyDecimal {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Only ASCII chars supported, use bytes.
         let mut comma_pos = None;
         let mut format = None;
         let mut mantissa: i128 = 0;
@@ -105,17 +106,17 @@ impl FromStr for PrettyDecimal {
             _ if cp == Some(pos) => true,
             _ => false,
         };
-        for (i, c) in s.chars().enumerate() {
+        for (i, c) in s.bytes().enumerate() {
             match (comma_pos, i, c) {
-                (_, 0, '-') => {
+                (_, 0, b'-') => {
                     prefix_len = 1;
                     sign = -1;
                 }
-                (_, _, ',') if aligned_comma(prefix_len, comma_pos, i) => {
+                (_, _, b',') if aligned_comma(prefix_len, comma_pos, i) => {
                     format = Some(Format::Comma3Dot);
                     comma_pos = Some(i + 4);
                 }
-                (_, _, '.') if comma_pos.is_none() || comma_pos == Some(i) => {
+                (_, _, b'.') if comma_pos.is_none() || comma_pos == Some(i) => {
                     scale = Some(0);
                     comma_pos = None;
                 }
