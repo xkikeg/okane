@@ -10,9 +10,9 @@ use crate::{load, repl};
 
 use super::{
     context::ReportContext,
+    error::{self, ReportError},
     eval::{Amount, EvalError, Evaluable},
     intern::Account,
-    ReportError,
 };
 
 /// Error related to transaction understanding.
@@ -42,9 +42,20 @@ where
 {
     let mut balance = Balance::default();
     let mut txns: Vec<Transaction<'ctx>> = Vec::new();
-    loader.borrow().load_repl(|_path, _ctx, entry| {
+    loader.borrow().load_repl(|path, pctx, entry| {
         match entry {
-            repl::LedgerEntry::Txn(txn) => txns.push(add_transaction(ctx, &mut balance, txn)?),
+            repl::LedgerEntry::Txn(txn) => {
+                txns.push(add_transaction(ctx, &mut balance, txn).map_err(|berr| {
+                    ReportError::BookKeep(
+                        berr,
+                        error::ErrorContext::new(
+                            loader.borrow().error_style().clone(),
+                            path.to_owned(),
+                            pctx,
+                        ),
+                    )
+                })?)
+            }
             repl::LedgerEntry::Account(account) => {
                 for ad in &account.details {
                     if let repl::AccountDetail::Alias(alias) = ad {
@@ -164,7 +175,10 @@ fn add_transaction<'ctx>(
         // TODO: restore balance checks here.
         // let's ignore this for now, as we're not checking balance properly.
         // This should account for lot price and cost.
-        // return Err(BalanceError::UnbalancedPostings(format!("{}", balance.as_inline())));
+        // return Err(BookKeepError::UnbalancedPostings(format!(
+        //     "{}",
+        //     balance.as_inline_display()
+        // )));
     }
     Ok(Transaction {
         date: txn.date,

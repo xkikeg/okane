@@ -6,7 +6,7 @@ use std::{
 use annotate_snippets::{Level, Renderer, Snippet};
 use winnow::{
     error::{ContextError, ErrMode, StrContext},
-    stream::{Offset, Stream},
+    stream::{Location, Offset, Stream},
     Located,
 };
 
@@ -30,7 +30,7 @@ impl ParseError {
     ) -> Self {
         let offset = input.offset_from(&start);
         input.reset(&start);
-        let line_start = compute_line_number(initial, input.as_ref());
+        let line_start = compute_line_number(initial, input.location());
         let error = error.into_inner().expect("partial input can't be used");
         // Assume the error span is only for the first `char`.
         // When we'll implement
@@ -69,13 +69,39 @@ impl std::error::Error for ParseError {
     }
 }
 
-fn compute_line_number(initial: &str, current: &str) -> usize {
-    let current = current.as_ptr() as usize;
-    1 + initial
-        .lines()
-        .take_while(|x| {
-            let linehead = x.as_ptr();
-            (linehead as usize) < current
-        })
-        .count()
+/// Computes the line number at the `pos` position of `s`.
+/// If `pos` is outside of `s` or not a UTF-8 boundary, it panics.
+pub(super) fn compute_line_number(s: &str, pos: usize) -> usize {
+    assert!(
+        pos <= s.len(),
+        "cannot compute line_number for out-of-range position"
+    );
+    let (s, _) = s.as_bytes().split_at(pos);
+    1 + s.iter().filter(|x| **x == b'\n').count()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compute_line_number_valid_inputs() {
+        assert_eq!(compute_line_number("This\nis\npen", 0), 1);
+        assert_eq!(compute_line_number("This\nis\npen", 1), 1);
+        assert_eq!(compute_line_number("This\nis\npen", 4), 1);
+        assert_eq!(compute_line_number("This\nis\npen", 5), 2);
+        assert_eq!(compute_line_number("This\nis\npen", 7), 2);
+        assert_eq!(compute_line_number("This\nis\npen", 8), 3);
+    }
+
+    #[test]
+    fn compute_line_number_works_on_invalid_utf8_boundary() {
+        assert_eq!(compute_line_number("日本語だよ", 1), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot compute line_number for")]
+    fn compute_line_number_panics_on_out_of_range_pos() {
+        compute_line_number("hello world", 12);
+    }
 }
