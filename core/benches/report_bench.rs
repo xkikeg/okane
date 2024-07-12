@@ -4,7 +4,7 @@ use okane_core::load::{self, LoadError};
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-mod testing;
+pub mod testing;
 
 fn load_benchmark(c: &mut Criterion) {
     let input = testing::ExampleInput::new(Path::new("load_bench")).unwrap();

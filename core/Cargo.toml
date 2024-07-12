@@ -33,3 +33,7 @@ criterion = {version = "0.5", features = ["html_reports"]}
 [[bench]]
 name = "report_bench"
 harness = false
+
+[[bench]]
+name = "decimal_bench"
+harness = false
