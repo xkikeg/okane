@@ -45,6 +45,7 @@ impl FormatOptions {
         R: Read,
         W: Write,
     {
+        // TODO: Implement recursive formatting.
         if self.recursive {
             return Err(FormatError::UnsupportedRecursiveFormat);
         }
@@ -52,9 +53,9 @@ impl FormatOptions {
         r.read_to_string(&mut buf)?;
         // TODO: Grab DisplayContext externally, or from LedgerEntry.
         let ctx = DisplayContext::default();
-        for txn in parse_ledger(&buf) {
-            let txn = txn.map_err(Box::new)?;
-            writeln!(w, "{}", ctx.as_display(&txn))?;
+        for parsed in parse_ledger(&buf) {
+            let (_, entry) = parsed.map_err(Box::new)?;
+            writeln!(w, "{}", ctx.as_display(&entry))?;
         }
         Ok(())
     }

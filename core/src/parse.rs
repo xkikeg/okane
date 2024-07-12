@@ -12,6 +12,8 @@ mod transaction;
 
 #[cfg(test)]
 pub(crate) mod testing;
+use std::ops::Range;
+
 pub use error::ParseError;
 
 use winnow::{
@@ -26,7 +28,9 @@ use crate::repl;
 
 /// Parses single ledger repl value with consuming whitespace.
 /// To control the behavior precisely, use [ParseOptions::parse_ledger].
-pub fn parse_ledger(input: &str) -> impl Iterator<Item = Result<ParsedLedgerEntry, ParseError>> {
+pub fn parse_ledger(
+    input: &str,
+) -> impl Iterator<Item = Result<(ParsedContext, repl::LedgerEntry), ParseError>> {
     ParseOptions::default().parse_ledger(input)
 }
 
@@ -53,7 +57,8 @@ impl ParseOptions {
     pub fn parse_ledger<'i>(
         &self,
         input: &'i str,
-    ) -> impl Iterator<Item = Result<ParsedLedgerEntry<'i>, ParseError>> + 'i {
+    ) -> impl Iterator<Item = Result<(ParsedContext<'i>, repl::LedgerEntry<'i>), ParseError>> + 'i
+    {
         ParsedIter {
             initial: input,
             input: Located::new(input),
@@ -62,7 +67,12 @@ impl ParseOptions {
     }
 }
 
-pub type ParsedLedgerEntry<'i> = repl::LedgerEntry<'i>;
+/// Context information carrying the metadata of the entry.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParsedContext<'i> {
+    initial: &'i str,
+    span: Range<usize>,
+}
 
 /// Iterator to return parsed ledger entry one-by-one.
 struct ParsedIter<'i> {
@@ -72,7 +82,7 @@ struct ParsedIter<'i> {
 }
 
 impl<'i> Iterator for ParsedIter<'i> {
-    type Item = Result<ParsedLedgerEntry<'i>, ParseError>;
+    type Item = Result<(ParsedContext<'i>, repl::LedgerEntry<'i>), ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let start = self.input.checkpoint();
@@ -81,7 +91,18 @@ impl<'i> Iterator for ParsedIter<'i> {
             if self.input.is_empty() {
                 return Ok(None);
             }
-            parse_ledger_entry.parse_next(&mut self.input).map(Some)
+            parse_ledger_entry
+                .with_span()
+                .parse_next(&mut self.input)
+                .map(|(entry, span)| {
+                    Some((
+                        ParsedContext {
+                            initial: self.initial,
+                            span,
+                        },
+                        entry,
+                    ))
+                })
         })()
         .map_err(|e| ParseError::new(self.renderer.clone(), self.initial, self.input, start, e))
         .transpose()
@@ -131,8 +152,10 @@ mod tests {
     use indoc::indoc;
     use pretty_assertions::assert_eq;
 
-    fn parse_ledger_into(input: &str) -> Vec<ParsedLedgerEntry> {
-        let r: Result<Vec<ParsedLedgerEntry>, ParseError> =
+    use repl::LedgerEntry;
+
+    fn parse_ledger_into(input: &str) -> Vec<(ParsedContext, LedgerEntry)> {
+        let r: Result<Vec<(ParsedContext, LedgerEntry)>, ParseError> =
             ParseOptions::default().parse_ledger(input).collect();
         match r {
             Ok(x) => x,
@@ -146,10 +169,16 @@ mod tests {
         assert_eq!(input.chars().next(), Some('\n'));
         assert_eq!(
             parse_ledger_into(input),
-            vec![repl::LedgerEntry::Txn(repl::Transaction::new(
-                NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(),
-                ""
-            ))]
+            vec![(
+                ParsedContext {
+                    initial: input,
+                    span: 2..13
+                },
+                repl::LedgerEntry::Txn(repl::Transaction::new(
+                    NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(),
+                    ""
+                ))
+            )]
         );
     }
 
@@ -165,17 +194,32 @@ mod tests {
         assert_eq!(
             parse_ledger_into(input),
             vec![
-                repl::LedgerEntry::Txn(repl::Transaction {
-                    posts: vec![repl::Posting::new("Expenses:Grocery")],
-                    ..repl::Transaction::new(
-                        NaiveDate::from_ymd_opt(2024, 4, 10).unwrap(),
-                        "Migros",
-                    )
-                }),
-                repl::LedgerEntry::Txn(repl::Transaction {
-                    posts: vec![repl::Posting::new("Expenses:Grocery")],
-                    ..repl::Transaction::new(NaiveDate::from_ymd_opt(2024, 4, 20).unwrap(), "Coop")
-                })
+                (
+                    ParsedContext {
+                        initial: input,
+                        span: 0..38
+                    },
+                    repl::LedgerEntry::Txn(repl::Transaction {
+                        posts: vec![repl::Posting::new("Expenses:Grocery")],
+                        ..repl::Transaction::new(
+                            NaiveDate::from_ymd_opt(2024, 4, 10).unwrap(),
+                            "Migros",
+                        )
+                    })
+                ),
+                (
+                    ParsedContext {
+                        initial: input,
+                        span: 38..74
+                    },
+                    repl::LedgerEntry::Txn(repl::Transaction {
+                        posts: vec![repl::Posting::new("Expenses:Grocery")],
+                        ..repl::Transaction::new(
+                            NaiveDate::from_ymd_opt(2024, 4, 20).unwrap(),
+                            "Coop"
+                        )
+                    })
+                )
             ]
         )
     }
