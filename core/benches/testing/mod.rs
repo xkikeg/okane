@@ -7,6 +7,7 @@ use std::{
 
 use chrono::NaiveDate;
 
+/// Metadata containing the reference to the generated input.
 pub struct ExampleInput {
     rootdir: PathBuf,
     rootfile: PathBuf,
@@ -29,6 +30,7 @@ impl Drop for ExampleInput {
     }
 }
 
+/// Error when creating [ExampleInput].
 #[derive(Debug, thiserror::Error)]
 pub enum ExampleInputError {
     #[error("failed to perform IO")]
@@ -46,7 +48,7 @@ const NUM_THREADS: usize = 2;
 const NUM_TRANSACTIONS_PER_FILE: usize = 500;
 
 impl ExampleInput {
-    /// Create an example used for benchmarks.
+    /// Creates an example used for benchmarks.
     /// Created example is left as-is, unless `OKANE_BENCH_CLEANUP` is set.
     /// If `OKANE_BENCH_CLEANUP` is set,
     /// * Always recreate the input.
