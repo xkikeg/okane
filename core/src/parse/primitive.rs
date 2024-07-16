@@ -30,7 +30,7 @@ where
     .parse_next(input)
 }
 
-const NON_COMMODITY_CHARS: &'static [u8] = b" \t\r\n0123456789.,;:?!-+*/^&|=<>[](){}@";
+const NON_COMMODITY_CHARS: &[u8] = b" \t\r\n0123456789.,;:?!-+*/^&|=<>[](){}@";
 
 /// Parses commodity in greedy manner.
 /// Returns empty string if the upcoming characters are not valid as commodity to support empty commodity.
