@@ -12,7 +12,7 @@ use super::book_keeping;
 #[derive(thiserror::Error, Debug)]
 pub enum ReportError {
     Load(#[from] load::LoadError),
-    BookKeep(book_keeping::BookKeepError, ErrorContext),
+    BookKeep(book_keeping::BookKeepError, Box<ErrorContext>),
 }
 
 impl Display for ReportError {
@@ -56,12 +56,12 @@ impl ErrorContext {
         renderer: annotate_snippets::Renderer,
         path: PathBuf,
         pctx: &parse::ParsedContext,
-    ) -> Self {
-        Self {
+    ) -> Box<Self> {
+        Box::new(Self {
             renderer,
             path,
             line_start: pctx.compute_line_start(),
             text: pctx.as_str().to_owned(),
-        }
+        })
     }
 }
