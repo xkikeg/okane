@@ -5,7 +5,8 @@ use rust_decimal::Decimal;
 
 /// Decimal formatting type for pretty-printing.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, ToStatic)]
-enum Format {
+#[non_exhaustive]
+pub enum Format {
     /// Decimal without no formatting, such as
     /// `1234` or `1234.5`.
     Plain,
@@ -15,9 +16,10 @@ enum Format {
 
 /// Decimal with the original format information encoded.
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
+#[non_exhaustive] // Don't want to construct directly.
 pub struct PrettyDecimal {
     /// Format of the decimal, None means there's no associated information.
-    format: Option<Format>,
+    pub format: Option<Format>,
     pub value: Decimal,
 }
 
@@ -48,28 +50,27 @@ pub enum Error {
 }
 
 impl PrettyDecimal {
+    /// Constructs a new instance with [Format].
+    pub fn with_format(value: Decimal, format: Option<Format>) -> Self {
+        Self { format, value }
+    }
+
     /// Constructs unformatted PrettyDecimal.
+    #[inline]
     pub fn unformatted(value: Decimal) -> Self {
-        Self {
-            value,
-            format: None,
-        }
+        Self::with_format(value, None)
     }
 
     /// Constructs plain PrettyDecimal.
+    #[inline]
     pub fn plain(value: Decimal) -> Self {
-        Self {
-            format: Some(Format::Plain),
-            value,
-        }
+        Self::with_format(value, Some(Format::Plain))
     }
 
     /// Constructs comma3 PrettyDecimal.
+    #[inline]
     pub fn comma3dot(value: Decimal) -> Self {
-        Self {
-            format: Some(Format::Comma3Dot),
-            value,
-        }
+        Self::with_format(value, Some(Format::Comma3Dot))
     }
 
     /// Returns the current scale.
@@ -290,5 +291,11 @@ mod tests {
             "1,234,567.890120",
             PrettyDecimal::comma3dot(dec!(1234567.890120)).to_string()
         );
+    }
+
+    #[test]
+    fn scale_returns_correct_number() {
+        assert_eq!(0, PrettyDecimal::comma3dot(dec!(1230)).scale());
+        assert_eq!(1, PrettyDecimal::comma3dot(dec!(1230.4)).scale());
     }
 }
