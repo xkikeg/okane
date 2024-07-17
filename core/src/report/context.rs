@@ -1,19 +1,59 @@
 use bumpalo::Bump;
 
-use super::intern;
+use super::intern::{FromInterned, InternedStr, Interner};
+
+/// `&str` for accounts, interned within the `'arena` bounded allocator lifetime.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct Account<'arena>(InternedStr<'arena>);
+
+impl<'arena> FromInterned<'arena> for Account<'arena> {
+    fn from_interned(v: InternedStr<'arena>) -> Self {
+        Self(v)
+    }
+}
+
+impl<'arena> Account<'arena> {
+    /// Returns the `&str`.
+    pub fn as_str(&self) -> &'arena str {
+        self.0.as_str()
+    }
+}
+
+/// `Interner` for `Account`.
+pub(super) type AccountStore<'arena> = Interner<'arena, Account<'arena>>;
+
+/// `&str` for commodities, interned within the `'arena` bounded allocator lifetime.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct Commodity<'arena>(InternedStr<'arena>);
+
+impl<'arena> FromInterned<'arena> for Commodity<'arena> {
+    fn from_interned(v: InternedStr<'arena>) -> Self {
+        Self(v)
+    }
+}
+
+impl<'arena> Commodity<'arena> {
+    /// Returns the `&str`.
+    pub fn as_str(&self) -> &'arena str {
+        self.0.as_str()
+    }
+}
+
+/// `Interner` for `Commodity`.
+pub(super) type CommodityStore<'arena> = Interner<'arena, Commodity<'arena>>;
 
 /// Context object extensively used across Ledger file evaluation.
 pub struct ReportContext<'ctx> {
     pub(super) arena: &'ctx Bump,
-    pub(super) accounts: intern::AccountStore<'ctx>,
-    pub(super) commodities: intern::CommodityStore<'ctx>,
+    pub(super) accounts: AccountStore<'ctx>,
+    pub(super) commodities: CommodityStore<'ctx>,
 }
 
 impl<'ctx> ReportContext<'ctx> {
     /// Create a new instance of `ReportContext`.
     pub fn new(arena: &'ctx Bump) -> Self {
-        let accounts = intern::AccountStore::new(arena);
-        let commodities = intern::CommodityStore::new(arena);
+        let accounts = AccountStore::new(arena);
+        let commodities = CommodityStore::new(arena);
         Self {
             arena,
             accounts,
@@ -22,14 +62,14 @@ impl<'ctx> ReportContext<'ctx> {
     }
 
     /// Returns all accounts, sorted as string order.
-    pub fn all_accounts(&'ctx self) -> Vec<intern::Account<'ctx>> {
-        let mut r: Vec<intern::Account<'ctx>> = self.accounts.iter().collect();
+    pub fn all_accounts(&'ctx self) -> Vec<Account<'ctx>> {
+        let mut r: Vec<Account<'ctx>> = self.accounts.iter().collect();
         r.sort_unstable_by_key(|x| x.as_str());
         r
     }
 
     /// Returns the given account, or `None` if not found.
-    pub fn account(&'ctx self, value: &str) -> Option<intern::Account<'ctx>> {
+    pub fn account(&'ctx self, value: &str) -> Option<Account<'ctx>> {
         self.accounts.get(value)
     }
 }

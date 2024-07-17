@@ -4,53 +4,13 @@ use std::{collections::HashSet, hash::Hash, marker::PhantomData};
 
 use bumpalo::Bump;
 
-/// `&str` for accounts, interned within the `'arena` bounded allocator lifetime.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-pub struct Account<'arena>(InternedStr<'arena>);
-
-impl<'arena> FromInterned<'arena> for Account<'arena> {
-    fn from_interned(v: InternedStr<'arena>) -> Self {
-        Self(v)
-    }
-}
-
-impl<'arena> Account<'arena> {
-    /// Returns the `&str`.
-    pub fn as_str(&self) -> &'arena str {
-        self.0.as_str()
-    }
-}
-
-/// `Interner` for `Account`.
-pub(super) type AccountStore<'arena> = Interner<'arena, Account<'arena>>;
-
-/// `&str` for commodities, interned within the `'arena` bounded allocator lifetime.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-pub struct Commodity<'arena>(InternedStr<'arena>);
-
-impl<'arena> FromInterned<'arena> for Commodity<'arena> {
-    fn from_interned(v: InternedStr<'arena>) -> Self {
-        Self(v)
-    }
-}
-
-impl<'arena> Commodity<'arena> {
-    /// Returns the `&str`.
-    pub fn as_str(&self) -> &'arena str {
-        self.0.as_str()
-    }
-}
-
-/// `Interner` for `Commodity`.
-pub(super) type CommodityStore<'arena> = Interner<'arena, Commodity<'arena>>;
-
 /// Internal type to wrap `&str` to be clear about interning.
 /// Equality is compared over it's pointer, not the content.
 #[derive(Debug, Eq, Clone, Copy)]
-struct InternedStr<'arena>(&'arena str);
+pub(super) struct InternedStr<'arena>(&'arena str);
 
 impl<'arena> InternedStr<'arena> {
-    fn as_str(&self) -> &'arena str {
+    pub fn as_str(&self) -> &'arena str {
         self.0
     }
 }
@@ -75,7 +35,7 @@ impl<'arena> Hash for InternedStr<'arena> {
 }
 
 /// `FromInterned` is the trait that the actual Interned object must implements.
-trait FromInterned<'arena> {
+pub(super) trait FromInterned<'arena> {
     fn from_interned(v: InternedStr<'arena>) -> Self;
 }
 

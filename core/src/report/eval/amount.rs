@@ -6,7 +6,7 @@ use std::{
 
 use rust_decimal::Decimal;
 
-use crate::report::intern::Commodity;
+use crate::report::context::Commodity;
 
 use super::error::EvalError;
 
