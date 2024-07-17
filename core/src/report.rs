@@ -9,9 +9,8 @@ mod intern;
 use std::borrow::Borrow;
 
 pub use book_keeping::{process, Balance, Posting, Transaction};
-pub use context::ReportContext;
+pub use context::{Account, ReportContext};
 pub use error::ReportError;
-pub use intern::Account;
 
 use crate::{load, repl::LedgerEntry};
 
@@ -20,7 +19,7 @@ use crate::{load, repl::LedgerEntry};
 pub fn accounts<'ctx, L, F>(
     ctx: &'ctx mut context::ReportContext,
     loader: L,
-) -> Result<Vec<intern::Account<'ctx>>, load::LoadError>
+) -> Result<Vec<Account<'ctx>>, load::LoadError>
 where
     L: Borrow<load::Loader<F>>,
     F: load::FileSystem,

@@ -9,10 +9,9 @@ use chrono::NaiveDate;
 use crate::{load, repl};
 
 use super::{
-    context::ReportContext,
+    context::{Account, ReportContext},
     error::{self, ReportError},
     eval::{Amount, EvalError, Evaluable},
-    intern::Account,
 };
 
 /// Error related to transaction understanding.
