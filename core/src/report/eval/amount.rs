@@ -202,7 +202,7 @@ mod tests {
     fn test_from_value() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
-        let jpy = ctx.commodities.intern("JPY");
+        let jpy = ctx.commodities.ensure("JPY");
         let amount = Amount::from_value(dec!(123.45), jpy);
         assert_eq!(format!("{}", amount.as_inline_display()), "123.45 JPY")
     }
@@ -211,8 +211,8 @@ mod tests {
     fn test_is_absolute_zero() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
-        let jpy = ctx.commodities.intern("JPY");
-        let usd = ctx.commodities.intern("USD");
+        let jpy = ctx.commodities.ensure("JPY");
+        let usd = ctx.commodities.ensure("USD");
 
         assert!(Amount::default().is_absolute_zero());
         assert!(!Amount::from_value(dec!(0), jpy).is_absolute_zero());
@@ -223,8 +223,8 @@ mod tests {
     fn test_is_zero() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
-        let jpy = ctx.commodities.intern("JPY");
-        let usd = ctx.commodities.intern("USD");
+        let jpy = ctx.commodities.ensure("JPY");
+        let usd = ctx.commodities.ensure("USD");
 
         assert!(Amount::default().is_zero());
         assert!(Amount::from_value(dec!(0), jpy).is_zero());
@@ -238,8 +238,8 @@ mod tests {
     fn test_neg() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
-        let jpy = ctx.commodities.intern("JPY");
-        let usd = ctx.commodities.intern("USD");
+        let jpy = ctx.commodities.ensure("JPY");
+        let usd = ctx.commodities.ensure("USD");
 
         assert_eq!(-Amount::zero(), Amount::zero());
         assert_eq!(
@@ -256,10 +256,10 @@ mod tests {
     fn test_add() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
-        let jpy = ctx.commodities.intern("JPY");
-        let usd = ctx.commodities.intern("USD");
-        let eur = ctx.commodities.intern("EUR");
-        let chf = ctx.commodities.intern("CHF");
+        let jpy = ctx.commodities.ensure("JPY");
+        let usd = ctx.commodities.ensure("USD");
+        let eur = ctx.commodities.ensure("EUR");
+        let chf = ctx.commodities.ensure("CHF");
 
         let zero_plus_zero = Amount::zero() + Amount::zero();
         assert_eq!(zero_plus_zero, Amount::zero());
@@ -288,10 +288,10 @@ mod tests {
     fn test_sub() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
-        let jpy = ctx.commodities.intern("JPY");
-        let usd = ctx.commodities.intern("USD");
-        let eur = ctx.commodities.intern("EUR");
-        let chf = ctx.commodities.intern("CHF");
+        let jpy = ctx.commodities.ensure("JPY");
+        let usd = ctx.commodities.ensure("USD");
+        let eur = ctx.commodities.ensure("EUR");
+        let chf = ctx.commodities.ensure("CHF");
 
         let zero_minus_zero = Amount::zero() - Amount::zero();
         assert_eq!(zero_minus_zero, Amount::zero());
@@ -315,9 +315,9 @@ mod tests {
     fn test_mul() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
-        let jpy = ctx.commodities.intern("JPY");
-        let eur = ctx.commodities.intern("EUR");
-        let chf = ctx.commodities.intern("CHF");
+        let jpy = ctx.commodities.ensure("JPY");
+        let eur = ctx.commodities.ensure("EUR");
+        let chf = ctx.commodities.ensure("CHF");
 
         assert_eq!(Amount::zero() * dec!(5), Amount::zero());
         assert_eq!(
@@ -339,9 +339,9 @@ mod tests {
     fn test_check_div() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
-        let jpy = ctx.commodities.intern("JPY");
-        let eur = ctx.commodities.intern("EUR");
-        let chf = ctx.commodities.intern("CHF");
+        let jpy = ctx.commodities.ensure("JPY");
+        let eur = ctx.commodities.ensure("EUR");
+        let chf = ctx.commodities.ensure("CHF");
 
         assert_eq!(Amount::zero().check_div(dec!(5)).unwrap(), Amount::zero());
         assert_eq!(

@@ -12,6 +12,7 @@ use super::{
     context::{Account, ReportContext},
     error::{self, ReportError},
     eval::{Amount, EvalError, Evaluable},
+    intern::InternError,
 };
 
 /// Error related to transaction understanding.
@@ -26,6 +27,10 @@ pub enum BookKeepError {
     UndeduciblePostingAmount(usize, usize),
     #[error("transaction cannot have unbalanced postings: {0}")]
     UnbalancedPostings(String),
+    #[error("failed to register account: {0}")]
+    InvalidAccount(#[source] InternError),
+    #[error("failed to register commodity: {0}")]
+    InvalidCommodity(#[source] InternError),
 }
 
 /// Takes the loader, and gives back the all read transactions.
@@ -39,50 +44,76 @@ where
     L: Borrow<load::Loader<F>>,
     F: load::FileSystem,
 {
-    let mut balance = Balance::default();
-    let mut txns: Vec<Transaction<'ctx>> = Vec::new();
+    let mut accum = ProcessAccumulator::new();
     loader.borrow().load_repl(|path, pctx, entry| {
+        accum.process(ctx, entry).map_err(|berr| {
+            ReportError::BookKeep(
+                berr,
+                error::ErrorContext::new(
+                    loader.borrow().error_style().clone(),
+                    path.to_owned(),
+                    pctx,
+                ),
+            )
+        })
+    })?;
+    Ok((accum.txns, accum.balance))
+}
+
+struct ProcessAccumulator<'ctx> {
+    balance: Balance<'ctx>,
+    txns: Vec<Transaction<'ctx>>,
+}
+
+impl<'ctx> ProcessAccumulator<'ctx> {
+    fn new() -> Self {
+        let balance = Balance::default();
+        let txns: Vec<Transaction<'ctx>> = Vec::new();
+        Self { balance, txns }
+    }
+
+    fn process(
+        &mut self,
+        ctx: &mut ReportContext<'ctx>,
+        entry: &repl::LedgerEntry,
+    ) -> Result<(), BookKeepError> {
         match entry {
             repl::LedgerEntry::Txn(txn) => {
-                txns.push(add_transaction(ctx, &mut balance, txn).map_err(|berr| {
-                    ReportError::BookKeep(
-                        berr,
-                        error::ErrorContext::new(
-                            loader.borrow().error_style().clone(),
-                            path.to_owned(),
-                            pctx,
-                        ),
-                    )
-                })?)
+                self.txns
+                    .push(add_transaction(ctx, &mut self.balance, txn)?);
+                Ok(())
             }
             repl::LedgerEntry::Account(account) => {
+                let canonical = ctx
+                    .accounts
+                    .insert_canonical(&account.name)
+                    .map_err(BookKeepError::InvalidAccount)?;
                 for ad in &account.details {
                     if let repl::AccountDetail::Alias(alias) = ad {
-                        log::warn!(
-                            "account {} has alias {}, which is not supported yet",
-                            account.name,
-                            alias
-                        );
+                        ctx.accounts
+                            .insert_alias(alias, canonical)
+                            .map_err(BookKeepError::InvalidAccount)?;
                     }
                 }
+                Ok(())
             }
             repl::LedgerEntry::Commodity(commodity) => {
+                let canonical = ctx
+                    .commodities
+                    .insert_canonical(&commodity.name)
+                    .map_err(BookKeepError::InvalidCommodity)?;
                 for cd in &commodity.details {
                     if let repl::CommodityDetail::Alias(alias) = cd {
-                        log::warn!(
-                            "commodity {} has alias {}, which is not supported yet",
-                            commodity.name,
-                            alias
-                        );
+                        ctx.commodities
+                            .insert_alias(alias, canonical)
+                            .map_err(BookKeepError::InvalidCommodity)?;
                     }
                 }
+                Ok(())
             }
-            _ => {}
+            _ => Ok(()),
         }
-        // TODO: Report file path and location, maybe use ReportError if needed
-        Ok::<(), ReportError>(())
-    })?;
-    Ok((txns, balance))
+    }
 }
 
 /// Evaluated transaction, already processed to have right balance.
@@ -135,7 +166,7 @@ fn add_transaction<'ctx>(
     let mut unfilled: Option<usize> = None;
     let mut balance = Amount::default();
     for (i, posting) in txn.posts.iter().enumerate() {
-        let account = ctx.accounts.intern(&posting.account);
+        let account = ctx.accounts.ensure(&posting.account);
         let posting = match (&posting.amount, &posting.balance) {
             (None, None) => {
                 if let Some(j) = unfilled.replace(i) {
@@ -199,7 +230,7 @@ mod tests {
         let mut ctx = ReportContext::new(&arena);
 
         let balance = Balance::default();
-        assert_eq!(balance.get_balance(&ctx.accounts.intern("Expenses")), None);
+        assert_eq!(balance.get_balance(&ctx.accounts.ensure("Expenses")), None);
     }
 
     #[test]
@@ -209,27 +240,27 @@ mod tests {
 
         let mut balance = Balance::default();
         let updated = balance.increment(
-            ctx.accounts.intern("Expenses"),
-            Amount::from_value(dec!(1000), ctx.commodities.intern("JPY")),
+            ctx.accounts.ensure("Expenses"),
+            Amount::from_value(dec!(1000), ctx.commodities.ensure("JPY")),
         );
 
         assert_eq!(
             updated,
-            Amount::from_value(dec!(1000), ctx.commodities.intern("JPY"))
+            Amount::from_value(dec!(1000), ctx.commodities.ensure("JPY"))
         );
         assert_eq!(
-            balance.get_balance(&ctx.accounts.intern("Expenses")),
+            balance.get_balance(&ctx.accounts.ensure("Expenses")),
             Some(&updated)
         );
 
         let updated = balance.increment(
-            ctx.accounts.intern("Expenses"),
-            Amount::from_value(dec!(-1000), ctx.commodities.intern("JPY")),
+            ctx.accounts.ensure("Expenses"),
+            Amount::from_value(dec!(-1000), ctx.commodities.ensure("JPY")),
         );
 
         assert_eq!(updated, Amount::zero());
         assert_eq!(
-            balance.get_balance(&ctx.accounts.intern("Expenses")),
+            balance.get_balance(&ctx.accounts.ensure("Expenses")),
             Some(&updated)
         );
     }
@@ -241,33 +272,33 @@ mod tests {
 
         let mut balance = Balance::default();
         let prev = balance.set_balance(
-            ctx.accounts.intern("Expenses"),
-            Amount::from_value(dec!(1000), ctx.commodities.intern("JPY")),
+            ctx.accounts.ensure("Expenses"),
+            Amount::from_value(dec!(1000), ctx.commodities.ensure("JPY")),
         );
 
         assert_eq!(prev, Amount::zero());
         assert_eq!(
-            balance.get_balance(&ctx.accounts.intern("Expenses")),
+            balance.get_balance(&ctx.accounts.ensure("Expenses")),
             Some(&Amount::from_value(
                 dec!(1000),
-                ctx.commodities.intern("JPY")
+                ctx.commodities.ensure("JPY")
             ))
         );
 
         let prev = balance.set_balance(
-            ctx.accounts.intern("Expenses"),
-            Amount::from_value(dec!(-1000), ctx.commodities.intern("JPY")),
+            ctx.accounts.ensure("Expenses"),
+            Amount::from_value(dec!(-1000), ctx.commodities.ensure("JPY")),
         );
 
         assert_eq!(
             prev,
-            Amount::from_value(dec!(1000), ctx.commodities.intern("JPY"))
+            Amount::from_value(dec!(1000), ctx.commodities.ensure("JPY"))
         );
         assert_eq!(
-            balance.get_balance(&ctx.accounts.intern("Expenses")),
+            balance.get_balance(&ctx.accounts.ensure("Expenses")),
             Some(&Amount::from_value(
                 dec!(-1000),
-                ctx.commodities.intern("JPY")
+                ctx.commodities.ensure("JPY")
             ))
         );
     }

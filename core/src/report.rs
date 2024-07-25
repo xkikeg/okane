@@ -27,7 +27,7 @@ where
     loader.borrow().load_repl(|_path, _ctx, entry| {
         if let LedgerEntry::Txn(txn) = entry {
             for posting in &txn.posts {
-                ctx.accounts.intern(&posting.account);
+                ctx.accounts.ensure(&posting.account);
             }
         }
         Ok::<(), load::LoadError>(())
