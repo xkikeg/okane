@@ -82,7 +82,7 @@ mod tests {
         let got: Amount<'_> = got.try_into().expect("not an amount");
         assert_eq!(
             hashmap! {
-                ctx.commodities.intern("USD") => dec!(100.12345),
+                ctx.commodities.ensure("USD") => dec!(100.12345),
             },
             got.into_values()
         );
@@ -98,8 +98,8 @@ mod tests {
         let got: Amount<'_> = got.try_into().expect("not an amount");
         assert_eq!(
             hashmap! {
-                ctx.commodities.intern("EUR") => dec!(300),
-                ctx.commodities.intern("JPY") => dec!(20000),
+                ctx.commodities.ensure("EUR") => dec!(300),
+                ctx.commodities.ensure("JPY") => dec!(20000),
             },
             got.into_values()
         );
@@ -115,8 +115,8 @@ mod tests {
         let got: Amount<'_> = got.try_into().expect("not an amount");
         assert_eq!(
             hashmap! {
-                ctx.commodities.intern("USD") => dec!(180),
-                ctx.commodities.intern("EUR") => dec!(400),
+                ctx.commodities.ensure("USD") => dec!(180),
+                ctx.commodities.ensure("EUR") => dec!(400),
             },
             got.into_values()
         );

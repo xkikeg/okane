@@ -46,7 +46,7 @@ impl<'ctx> Evaluated<'ctx> {
         if amount.commodity.is_empty() {
             return amount.value.value.into();
         }
-        let commodity = ctx.commodities.intern(&amount.commodity);
+        let commodity = ctx.commodities.ensure(&amount.commodity);
         Amount::from_value(amount.value.clone().into(), commodity).into()
     }
 
@@ -159,10 +159,10 @@ mod tests {
         assert_eq!(
             Amount::try_from(Evaluated::from(Amount::from_value(
                 dec!(1000),
-                ctx.commodities.intern("USD")
+                ctx.commodities.ensure("USD")
             )))
             .unwrap(),
-            Amount::from_value(dec!(1000), ctx.commodities.intern("USD"))
+            Amount::from_value(dec!(1000), ctx.commodities.ensure("USD"))
         );
     }
 
@@ -176,11 +176,11 @@ mod tests {
 
         assert!(Evaluated::from(Amount::zero()).is_zero());
         assert!(
-            Evaluated::from(Amount::from_value(dec!(0), ctx.commodities.intern("USD"))).is_zero()
+            Evaluated::from(Amount::from_value(dec!(0), ctx.commodities.ensure("USD"))).is_zero()
         );
         assert!(!Evaluated::from(Amount::from_value(
             dec!(1000),
-            ctx.commodities.intern("USD")
+            ctx.commodities.ensure("USD")
         ))
         .is_zero());
     }
@@ -198,12 +198,12 @@ mod tests {
         assert_eq!(
             Evaluated::from(Amount::from_value(
                 dec!(1000),
-                ctx.commodities.intern("USD")
+                ctx.commodities.ensure("USD")
             ))
             .negate(),
             Evaluated::from(Amount::from_value(
                 dec!(-1000),
-                ctx.commodities.intern("USD")
+                ctx.commodities.ensure("USD")
             ))
         );
     }
@@ -223,16 +223,16 @@ mod tests {
         assert_eq!(
             Evaluated::from(Amount::from_value(
                 dec!(1000),
-                ctx.commodities.intern("JPY")
+                ctx.commodities.ensure("JPY")
             ))
             .check_add(Evaluated::from(Amount::from_value(
                 dec!(100),
-                ctx.commodities.intern("USD")
+                ctx.commodities.ensure("USD")
             )))
             .unwrap(),
             Evaluated::from(Amount::from_values([
-                (dec!(1000), ctx.commodities.intern("JPY")),
-                (dec!(100), ctx.commodities.intern("USD")),
+                (dec!(1000), ctx.commodities.ensure("JPY")),
+                (dec!(100), ctx.commodities.ensure("USD")),
             ]))
         );
 
@@ -240,7 +240,7 @@ mod tests {
             Evaluated::from(dec!(1))
                 .check_add(Evaluated::from(Amount::from_value(
                     dec!(1000),
-                    ctx.commodities.intern("JPY")
+                    ctx.commodities.ensure("JPY")
                 )))
                 .unwrap_err(),
             EvalError::UnmatchingOperation
@@ -248,7 +248,7 @@ mod tests {
         assert_eq!(
             Evaluated::from(Amount::from_value(
                 dec!(1000),
-                ctx.commodities.intern("JPY")
+                ctx.commodities.ensure("JPY")
             ))
             .check_add(Evaluated::from(dec!(1)))
             .unwrap_err(),
@@ -271,16 +271,16 @@ mod tests {
         assert_eq!(
             Evaluated::from(Amount::from_value(
                 dec!(1000),
-                ctx.commodities.intern("JPY")
+                ctx.commodities.ensure("JPY")
             ))
             .check_sub(Evaluated::from(Amount::from_value(
                 dec!(100),
-                ctx.commodities.intern("USD")
+                ctx.commodities.ensure("USD")
             )))
             .unwrap(),
             Evaluated::from(Amount::from_values([
-                (dec!(1000), ctx.commodities.intern("JPY")),
-                (dec!(-100), ctx.commodities.intern("USD")),
+                (dec!(1000), ctx.commodities.ensure("JPY")),
+                (dec!(-100), ctx.commodities.ensure("USD")),
             ]))
         );
 
@@ -288,7 +288,7 @@ mod tests {
             Evaluated::from(dec!(1))
                 .check_sub(Evaluated::from(Amount::from_value(
                     dec!(1000),
-                    ctx.commodities.intern("JPY")
+                    ctx.commodities.ensure("JPY")
                 )))
                 .unwrap_err(),
             EvalError::UnmatchingOperation
@@ -296,7 +296,7 @@ mod tests {
         assert_eq!(
             Evaluated::from(Amount::from_value(
                 dec!(1000),
-                ctx.commodities.intern("JPY")
+                ctx.commodities.ensure("JPY")
             ))
             .check_sub(Evaluated::from(dec!(1)))
             .unwrap_err(),
@@ -320,36 +320,36 @@ mod tests {
             Evaluated::from(dec!(-0.2))
                 .check_mul(Evaluated::from(Amount::from_value(
                     dec!(1000),
-                    ctx.commodities.intern("JPY")
+                    ctx.commodities.ensure("JPY")
                 )))
                 .unwrap(),
             Evaluated::from(Amount::from_value(
                 dec!(-200),
-                ctx.commodities.intern("JPY")
+                ctx.commodities.ensure("JPY")
             ))
         );
 
         assert_eq!(
             Evaluated::from(Amount::from_value(
                 dec!(3.15),
-                ctx.commodities.intern("USD")
+                ctx.commodities.ensure("USD")
             ))
             .check_mul(Evaluated::from(dec!(0.5)))
             .unwrap(),
             Evaluated::from(Amount::from_value(
                 dec!(1.575),
-                ctx.commodities.intern("USD")
+                ctx.commodities.ensure("USD")
             ))
         );
 
         assert_eq!(
             Evaluated::from(Amount::from_value(
                 dec!(1000),
-                ctx.commodities.intern("JPY")
+                ctx.commodities.ensure("JPY")
             ))
             .check_mul(Evaluated::from(Amount::from_value(
                 dec!(100),
-                ctx.commodities.intern("USD")
+                ctx.commodities.ensure("USD")
             )))
             .unwrap_err(),
             EvalError::UnmatchingOperation
@@ -378,13 +378,13 @@ mod tests {
         assert_eq!(
             Evaluated::from(Amount::from_value(
                 dec!(3.15),
-                ctx.commodities.intern("USD")
+                ctx.commodities.ensure("USD")
             ))
             .check_div(Evaluated::from(dec!(0.5)))
             .unwrap(),
             Evaluated::from(Amount::from_value(
                 dec!(6.30),
-                ctx.commodities.intern("USD")
+                ctx.commodities.ensure("USD")
             ))
         );
 
@@ -392,7 +392,7 @@ mod tests {
             Evaluated::from(dec!(-0.2))
                 .check_div(Evaluated::from(Amount::from_value(
                     dec!(1000),
-                    ctx.commodities.intern("JPY")
+                    ctx.commodities.ensure("JPY")
                 )))
                 .unwrap_err(),
             EvalError::UnmatchingOperation
@@ -403,11 +403,11 @@ mod tests {
         assert_eq!(
             Evaluated::from(Amount::from_value(
                 dec!(1000),
-                ctx.commodities.intern("JPY")
+                ctx.commodities.ensure("JPY")
             ))
             .check_div(Evaluated::from(Amount::from_value(
                 dec!(100),
-                ctx.commodities.intern("JPY")
+                ctx.commodities.ensure("JPY")
             )))
             .unwrap_err(),
             EvalError::UnmatchingOperation
