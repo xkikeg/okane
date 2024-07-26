@@ -208,6 +208,7 @@ mod tests {
     use indoc::indoc;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
+    use smallvec::smallvec;
 
     #[test]
     fn posting_cost_parses_valid_input() {
@@ -266,7 +267,7 @@ mod tests {
                         })
                         .into()
                     ),
-                    metadata: vec![
+                    metadata: smallvec![
                         repl::Metadata::KeyValueTag {
                             key: "Payee".into(),
                             value: repl::MetadataValue::Text("My Card".into()),
@@ -276,7 +277,7 @@ mod tests {
                             value: repl::MetadataValue::Expr("[2022-3-4]".into()),
                         },
                         repl::Metadata::Comment("My card took commission".into()),
-                        repl::Metadata::WordTags(vec!["financial".into(), "経済".into(),],),
+                        repl::Metadata::WordTags(smallvec!["financial".into(), "経済".into(),],),
                     ],
                     ..repl::Posting::new("Expenses:Commissions")
                 }

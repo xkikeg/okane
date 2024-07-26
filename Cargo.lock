@@ -179,6 +179,7 @@ checksum = "0beb903daa49b43bcafb5d5eebe633f9ad638d8b16cd08f95fb05ee7bd099321"
 dependencies = [
  "bounded-static-derive",
  "chrono",
+ "smallvec",
 ]
 
 [[package]]
@@ -836,6 +837,7 @@ dependencies = [
  "pretty_assertions",
  "rust_decimal",
  "rust_decimal_macros",
+ "smallvec",
  "strum",
  "thiserror",
  "unicode-width",
@@ -1272,6 +1274,12 @@ name = "simdutf8"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
+
+[[package]]
+name = "smallvec"
+version = "1.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "strsim"

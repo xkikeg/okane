@@ -1,11 +1,50 @@
 //! Defines abstracted utility to work with other parsers.
 
+use smallvec::SmallVec;
 use winnow::{
-    combinator::{opt, peek},
+    combinator::{opt, peek, repeat, separated, trace},
     error::ParserError,
     stream::Stream,
     Parser,
 };
+
+use super::adaptor::SmallVecAdaptor;
+
+/// repeated for smallvec.
+pub fn repeated_smallvec<Input, Output, Error, Element, ParseNext>(
+    occurrences: impl Into<winnow::stream::Range>,
+    parser: ParseNext,
+) -> impl Parser<Input, SmallVec<Output>, Error>
+where
+    Input: Stream,
+    ParseNext: Parser<Input, Element, Error>,
+    Error: ParserError<Input>,
+    Output: smallvec::Array<Item = Element>,
+{
+    trace(
+        "combinator::repeated_smallvec",
+        repeat(occurrences, parser).map(|accum: SmallVecAdaptor<Output>| accum.into()),
+    )
+}
+
+/// separated for smallvec.
+pub fn separated_smallvec<Input, Output, Error, Element, ParseNext, Sep, SepParser>(
+    occurrences: impl Into<winnow::stream::Range>,
+    parser: ParseNext,
+    sep: SepParser,
+) -> impl Parser<Input, SmallVec<Output>, Error>
+where
+    Input: Stream,
+    ParseNext: Parser<Input, Element, Error>,
+    SepParser: Parser<Input, Sep, Error>,
+    Error: ParserError<Input>,
+    Output: smallvec::Array<Item = Element>,
+{
+    trace(
+        "combinator::repeated_smallvec",
+        separated(occurrences, parser, sep).map(|accum: SmallVecAdaptor<Output>| accum.into()),
+    )
+}
 
 /// Calls first parser if the condition is met, otherwise the second parser.
 pub fn cond_else<I, O, E: ParserError<I>, F, G>(
