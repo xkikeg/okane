@@ -1,5 +1,6 @@
 //! Defines parser for the Ledger format.
 
+mod adaptor;
 mod character;
 mod combinator;
 mod directive;
@@ -164,6 +165,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use repl::LedgerEntry;
+    use smallvec::smallvec;
 
     fn parse_ledger_into(input: &str) -> Vec<(ParsedContext, LedgerEntry)> {
         let r: Result<Vec<(ParsedContext, LedgerEntry)>, ParseError> =
@@ -211,7 +213,7 @@ mod tests {
                         span: 0..38
                     },
                     repl::LedgerEntry::Txn(repl::Transaction {
-                        posts: vec![repl::Posting::new("Expenses:Grocery")],
+                        posts: smallvec![repl::Posting::new("Expenses:Grocery")],
                         ..repl::Transaction::new(
                             NaiveDate::from_ymd_opt(2024, 4, 10).unwrap(),
                             "Migros",
@@ -224,7 +226,7 @@ mod tests {
                         span: 38..74
                     },
                     repl::LedgerEntry::Txn(repl::Transaction {
-                        posts: vec![repl::Posting::new("Expenses:Grocery")],
+                        posts: smallvec![repl::Posting::new("Expenses:Grocery")],
                         ..repl::Transaction::new(
                             NaiveDate::from_ymd_opt(2024, 4, 20).unwrap(),
                             "Coop"

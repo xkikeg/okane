@@ -11,11 +11,12 @@ repository.workspace = true
 
 [dependencies]
 annotate-snippets.workspace = true
-bounded-static = { version = "0.8", default-features=false, features = ["derive", "alloc", "chrono"] }
+bounded-static = { version = "0.8", default-features=false, features = ["derive", "alloc", "chrono", "smallvec"] }
 bumpalo.workspace = true
 chrono.workspace = true
 log.workspace = true
 rust_decimal.workspace = true
+smallvec = "1.13.2"
 strum = { version = "0.26", features = ["derive"] }
 thiserror.workspace = true
 unicode-width = "0.1.12"

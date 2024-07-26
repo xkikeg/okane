@@ -2,11 +2,11 @@
 
 use std::borrow::Cow;
 
+use smallvec::SmallVec;
 use winnow::{
     ascii::{line_ending, space0, space1, till_line_ending},
     combinator::{
-        alt, backtrack_err, cut_err, delimited, dispatch, opt, peek, preceded, repeat, separated,
-        terminated, trace,
+        alt, backtrack_err, cut_err, delimited, dispatch, opt, peek, preceded, terminated, trace,
     },
     error::ParserError,
     stream::{AsChar, Stream, StreamIsPartial},
@@ -14,8 +14,12 @@ use winnow::{
     PResult, Parser,
 };
 
-use crate::parse::character;
 use crate::repl;
+
+use super::{
+    character,
+    combinator::{repeated_smallvec, separated_smallvec},
+};
 
 /// Parses a ClearState.
 pub fn clear_state<I, E>(input: &mut I) -> PResult<repl::ClearState, E>
@@ -40,7 +44,9 @@ where
 
 /// Parses block of metadata including the last line_end.
 /// Note this consumes at least one line_ending regardless of Metadata existence.
-pub fn block_metadata<'i, I, E>(input: &mut I) -> PResult<Vec<repl::Metadata<'i>>, E>
+pub fn block_metadata<'i, I, E, const N: usize>(
+    input: &mut I,
+) -> PResult<SmallVec<[repl::Metadata<'i>; N]>, E>
 where
     I: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -48,13 +54,14 @@ where
         + winnow::stream::FindSlice<(char, char)>,
     E: ParserError<I>,
     <I as Stream>::Token: AsChar + Clone,
+    [repl::Metadata<'i>; N]: smallvec::Array<Item = repl::Metadata<'i>>,
 {
     // For now, we can't go with regular repeat because it's hard to have a initial value in Accumulate.
     trace(
         "metadata::block_metadata",
         dispatch! {peek(any);
-            ';' => separated(1.., line_metadata, space1),
-            _ => preceded(line_ending, repeat(0.., preceded(space1, line_metadata))),
+            ';' => separated_smallvec(1.., line_metadata, space1),
+            _ => preceded(line_ending, repeated_smallvec(0.., preceded(space1, line_metadata))),
         },
     )
     .parse_next(input)
@@ -99,10 +106,10 @@ where
         "metadata::metadata_tags",
         delimited(
             one_of(':'),
-            repeat(1.., terminated(tag_key.map(Cow::Borrowed), one_of(':'))),
+            repeated_smallvec(1.., terminated(tag_key.map(Cow::Borrowed), one_of(':')))
+                .map(repl::Metadata::WordTags),
             space0,
-        )
-        .map(repl::Metadata::WordTags),
+        ),
     )
     .parse_next(input)
 }
@@ -165,28 +172,33 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse::testing::expect_parse_ok;
 
     use pretty_assertions::assert_eq;
+    use smallvec::smallvec;
+
+    use crate::parse::testing::expect_parse_ok;
+
+    type MetadataVec<'i> = SmallVec<[repl::Metadata<'i>; 5]>;
 
     #[test]
     fn block_metadata_empty() {
         let input = "\r\n ";
-        assert_eq!(expect_parse_ok(block_metadata, input), (" ", vec![]))
+        let want: MetadataVec = smallvec![];
+        assert_eq!(expect_parse_ok(block_metadata, input), (" ", want))
     }
 
     #[test]
     fn block_metadata_consumes_first_comment_inline() {
         let input = "; foo\n ; bar\n; baz\n";
+        let want: MetadataVec = smallvec![
+            repl::Metadata::Comment("foo".into()),
+            repl::Metadata::Comment("bar".into()),
+        ];
         assert_eq!(
             expect_parse_ok(block_metadata, input),
             (
                 // This line isn't a block_metadata because it doesn't have preceding spaces.
-                "; baz\n",
-                vec![
-                    repl::Metadata::Comment("foo".into()),
-                    repl::Metadata::Comment("bar".into()),
-                ]
+                "; baz\n", want
             )
         )
     }
@@ -194,22 +206,18 @@ mod tests {
     #[test]
     fn block_metadata_consumes_newline_immediately() {
         let input = "\n ; foo\n ; bar\n";
-        assert_eq!(
-            expect_parse_ok(block_metadata, input),
-            (
-                "",
-                vec![
-                    repl::Metadata::Comment("foo".into()),
-                    repl::Metadata::Comment("bar".into()),
-                ]
-            )
-        )
+        let want: MetadataVec = smallvec![
+            repl::Metadata::Comment("foo".into()),
+            repl::Metadata::Comment("bar".into()),
+        ];
+        assert_eq!(expect_parse_ok(block_metadata, input), ("", want))
     }
 
     #[test]
     fn block_metadata_stops_at_top_level_comment() {
         let input = "\n; foo\n";
-        assert_eq!(expect_parse_ok(block_metadata, input), ("; foo\n", vec![]))
+        let want: MetadataVec = smallvec![];
+        assert_eq!(expect_parse_ok(block_metadata, input), ("; foo\n", want))
     }
 
     #[test]
@@ -219,7 +227,7 @@ mod tests {
             expect_parse_ok(line_metadata, input),
             (
                 "",
-                repl::Metadata::WordTags(vec!["tag1".into(), "tag2".into(), "tag3".into()])
+                repl::Metadata::WordTags(smallvec!["tag1".into(), "tag2".into(), "tag3".into()])
             )
         )
     }

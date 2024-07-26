@@ -13,11 +13,12 @@ use std::{borrow::Cow, fmt};
 
 use bounded_static::ToStatic;
 use chrono::NaiveDate;
+use smallvec::SmallVec;
 
 use crate::datamodel;
 
 /// Top-level entry of the LedgerFile.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq, Clone, ToStatic)]
 pub enum LedgerEntry<'i> {
     /// Transaction
     Txn(Transaction<'i>),
@@ -36,11 +37,11 @@ pub enum LedgerEntry<'i> {
 }
 
 /// Top-level comment. OK to have multi-line comment.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq, Clone, ToStatic)]
 pub struct TopLevelComment<'i>(pub Cow<'i, str>);
 
 /// "apply tag" directive content.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq, Clone, ToStatic)]
 pub struct ApplyTag<'i> {
     pub key: Cow<'i, str>,
     pub value: Option<MetadataValue<'i>>,
@@ -48,11 +49,11 @@ pub struct ApplyTag<'i> {
 
 /// "include" directive, taking a path as an argument.
 /// Path can be a relative path or an absolute path.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq, Clone, ToStatic)]
 pub struct IncludeFile<'i>(pub Cow<'i, str>);
 
 /// "account" directive to declare account information.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq, Clone, ToStatic)]
 pub struct AccountDeclaration<'i> {
     /// Canonical name of the account.
     pub name: Cow<'i, str>,
@@ -61,7 +62,7 @@ pub struct AccountDeclaration<'i> {
 }
 
 /// Sub directives for "account" directive.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq, Clone, ToStatic)]
 pub enum AccountDetail<'i> {
     /// Comment is a pure comment without any semantics, similar to `TopLevelComment`.
     Comment(Cow<'i, str>),
@@ -73,7 +74,7 @@ pub enum AccountDetail<'i> {
 }
 
 /// "commodity" directive to declare commodity information.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq, Clone, ToStatic)]
 pub struct CommodityDeclaration<'i> {
     /// Canonical name of the commodity.
     pub name: Cow<'i, str>,
@@ -82,7 +83,7 @@ pub struct CommodityDeclaration<'i> {
 }
 
 /// Sub directives for "commodity" directive.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq, Clone, ToStatic)]
 pub enum CommodityDetail<'i> {
     /// Comment is a pure comment without any semantics, similar to `TopLevelComment`.
     Comment(Cow<'i, str>),
@@ -97,7 +98,7 @@ pub enum CommodityDetail<'i> {
 }
 
 /// Represents a transaction where the money transfered across the accounts.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Transaction<'i> {
     /// Date when the transaction issued.
     pub date: NaiveDate,
@@ -110,9 +111,25 @@ pub struct Transaction<'i> {
     /// Label of the transaction, often the opposite party of the transaction.
     pub payee: Cow<'i, str>,
     /// Postings of the transaction, could be empty.
-    pub posts: Vec<Posting<'i>>,
+    pub posts: SmallVec<[Posting<'i>; 3]>,
     /// Transaction level metadata.
-    pub metadata: Vec<Metadata<'i>>,
+    pub metadata: SmallVec<[Metadata<'i>; 0]>,
+}
+
+impl<'i> bounded_static::ToBoundedStatic for Transaction<'i> {
+    type Static = Transaction<'static>;
+
+    fn to_static(&self) -> Self::Static {
+        todo!("DO NOT SUBMIT")
+    }
+}
+
+impl<'i> bounded_static::IntoBoundedStatic for Transaction<'i> {
+    type Static = Transaction<'static>;
+
+    fn into_static(self) -> Self::Static {
+        todo!("DO NOT SUBMIT")
+    }
 }
 
 impl<'i> Transaction<'i> {
@@ -127,8 +144,8 @@ impl<'i> Transaction<'i> {
             clear_state: ClearState::Uncleared,
             code: None,
             payee: payee.into(),
-            metadata: Vec::new(),
-            posts: Vec::new(),
+            metadata: SmallVec::new(),
+            posts: SmallVec::new(),
         }
     }
 }
@@ -141,13 +158,13 @@ impl<'i> From<&'i datamodel::Transaction> for Transaction<'i> {
             clear_state: orig.clear_state,
             code: orig.code.as_ref().map(|x| Cow::Borrowed(x.as_str())),
             payee: (&orig.payee).into(),
-            metadata: Vec::new(),
+            metadata: SmallVec::new(),
             posts: orig.posts.iter().map(Into::into).collect(),
         }
     }
 }
 
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 /// Posting in a transaction to represent a particular account amount increase / decrease.
 pub struct Posting<'i> {
     /// Account of the post target.
@@ -159,7 +176,23 @@ pub struct Posting<'i> {
     /// Balance after the transaction of the specified account.
     pub balance: Option<expr::ValueExpr<'i>>,
     /// Metadata information such as comment or tag.
-    pub metadata: Vec<Metadata<'i>>,
+    pub metadata: SmallVec<[Metadata<'i>; 0]>,
+}
+
+impl<'i> bounded_static::ToBoundedStatic for Posting<'i> {
+    type Static = Posting<'static>;
+
+    fn to_static(&self) -> Self::Static {
+        todo!("DO NOT SUBMIT")
+    }
+}
+
+impl<'i> bounded_static::IntoBoundedStatic for Posting<'i> {
+    type Static = Posting<'static>;
+
+    fn into_static(self) -> Self::Static {
+        todo!("DO NOT SUBMIT")
+    }
 }
 
 impl<'i> Posting<'i> {
@@ -169,7 +202,7 @@ impl<'i> Posting<'i> {
             clear_state: ClearState::default(),
             amount: None,
             balance: None,
-            metadata: Vec::new(),
+            metadata: SmallVec::new(),
         }
     }
 }
@@ -195,12 +228,12 @@ impl<'i> From<&'i datamodel::Posting> for Posting<'i> {
 }
 
 /// Metadata represents meta information associated with transactions / posts.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Metadata<'i> {
     /// Comment, which covers just one line (without the suceeding new line).
     Comment(Cow<'i, str>),
     /// Tags of word, in a format :tag1:tag2:tag3:, each tag can't contain white spaces.
-    WordTags(Vec<Cow<'i, str>>),
+    WordTags(SmallVec<[Cow<'i, str>; 1]>),
     /// Key-value paired tag. Key can't contain white spaces.
     KeyValueTag {
         key: Cow<'i, str>,
@@ -208,8 +241,24 @@ pub enum Metadata<'i> {
     },
 }
 
+impl<'i> bounded_static::ToBoundedStatic for Metadata<'i> {
+    type Static = Metadata<'static>;
+
+    fn to_static(&self) -> Self::Static {
+        todo!("DO NOT SUBMIT")
+    }
+}
+
+impl<'i> bounded_static::IntoBoundedStatic for Metadata<'i> {
+    type Static = Metadata<'static>;
+
+    fn into_static(self) -> Self::Static {
+        todo!("DO NOT SUBMIT")
+    }
+}
+
 /// MetadataValue represents the value in key-value pair used in `Metadata`.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq, Clone, ToStatic)]
 pub enum MetadataValue<'i> {
     /// Regular string.
     Text(Cow<'i, str>),
@@ -223,7 +272,7 @@ pub enum MetadataValue<'i> {
 /// - how much the asset is increased.
 /// - what was the cost in the other commodity.
 /// - lot information.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq, Clone, ToStatic)]
 pub struct PostingAmount<'i> {
     pub amount: expr::ValueExpr<'i>,
     pub cost: Option<Exchange<'i>>,
@@ -251,7 +300,7 @@ impl<'i> From<&'i datamodel::ExchangedAmount> for PostingAmount<'i> {
 }
 
 /// Lot information is a set of metadata to record the original lot which the commodity is acquired with.
-#[derive(Debug, Default, PartialEq, Eq, ToStatic)]
+#[derive(Debug, Default, PartialEq, Eq, Clone, ToStatic)]
 pub struct Lot<'i> {
     pub price: Option<Exchange<'i>>,
     pub date: Option<NaiveDate>,
@@ -259,7 +308,7 @@ pub struct Lot<'i> {
 }
 
 /// Exchange represents the amount expressed in the different commodity.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq, Clone, ToStatic)]
 pub enum Exchange<'i> {
     /// Specified value equals to the total amount.
     /// For example,
