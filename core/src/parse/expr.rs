@@ -2,7 +2,10 @@
 
 use winnow::{
     ascii::space0,
-    combinator::{alt, delimited, dispatch, peek, preceded, separated_foldl1, terminated, trace},
+    combinator::{
+        alt, delimited, dispatch, opt, peek, permutation, preceded, separated_foldl1, terminated,
+        trace,
+    },
     error::{ContextError, FromExternalError, ParseError, ParserError},
     stream::{AsChar, Stream, StreamIsPartial},
     token::{any, one_of},
@@ -117,6 +120,46 @@ where
     .parse_next(input)
 }
 
+/// Parses amount expression, possibly with negative op.
+fn unary_amount<'i, I, E>(input: &mut I) -> PResult<expr::Amount<'i>, E>
+where
+    I: Stream<Slice = &'i str> + StreamIsPartial,
+    E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
+    <I as Stream>::Token: AsChar + Clone,
+{
+    // This supports prefix commodity.
+    trace(
+        "expr::unary_amount",
+        (
+            opt(one_of('-')),
+            permutation((
+                terminated(primitive::pretty_decimal, space0),
+                terminated(primitive::commodity, space0),
+            )),
+        )
+            .map(|(negate, (mut value, c)): (_, (_, &str))| {
+                if negate.is_some() {
+                    value
+                        .value
+                        .set_sign_positive(!value.value.is_sign_positive());
+                }
+                expr::Amount {
+                    value,
+                    commodity: c.into(),
+                }
+            }),
+    )
+    .parse_next(input)
+}
+
+impl<'i> TryFrom<&'i str> for expr::Amount<'i> {
+    type Error = ParseError<&'i str, ContextError>;
+
+    fn try_from(value: &'i str) -> Result<Self, Self::Error> {
+        unary_amount.parse(value)
+    }
+}
+
 fn negate_expr<'i, I, E>(input: &mut I) -> PResult<expr::Expr<'i>, E>
 where
     I: Stream<Token = char, Slice = &'i str> + StreamIsPartial + Clone,
@@ -147,7 +190,7 @@ where
     trace(
         "expr::amount",
         (
-            terminated(primitive::comma_decimal, space0),
+            terminated(primitive::pretty_decimal, space0),
             primitive::commodity,
         )
             .map(|(value, c): (_, &str)| expr::Amount {

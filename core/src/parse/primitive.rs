@@ -13,7 +13,7 @@ use winnow::{
 };
 
 /// Parses comma separated decimal.
-pub fn comma_decimal<'a, I, E>(input: &mut I) -> PResult<PrettyDecimal, E>
+pub fn pretty_decimal<'a, I, E>(input: &mut I) -> PResult<PrettyDecimal, E>
 where
     I: Stream<Slice = &'a str> + StreamIsPartial,
     E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
@@ -89,15 +89,15 @@ mod tests {
     #[test]
     fn comma_decimal_parses_valid_inputs() {
         assert_eq!(
-            expect_parse_ok(comma_decimal, "123"),
+            expect_parse_ok(pretty_decimal, "123"),
             ("", PrettyDecimal::unformatted(dec!(123)))
         );
         assert_eq!(
-            expect_parse_ok(comma_decimal, "-12,345.67 JPY"),
+            expect_parse_ok(pretty_decimal, "-12,345.67 JPY"),
             (" JPY", PrettyDecimal::comma3dot(dec!(-12345.67)))
         );
         assert_eq!(
-            expect_parse_ok(comma_decimal, "-012.3$"),
+            expect_parse_ok(pretty_decimal, "-012.3$"),
             ("$", PrettyDecimal::unformatted(dec!(-12.3)))
         );
     }
@@ -105,14 +105,14 @@ mod tests {
     #[test]
     fn comma_decimal_fails_on_invalid_inputs() {
         assert_eq!(
-            comma_decimal.parse_peek("不可能"),
+            pretty_decimal.parse_peek("不可能"),
             Err(ErrMode::Backtrack(InputError::new(
                 "不可能",
                 ErrorKind::Slice
             )))
         );
         assert_eq!(
-            comma_decimal.parse_peek("!"),
+            pretty_decimal.parse_peek("!"),
             Err(ErrMode::Backtrack(InputError::new("!", ErrorKind::Slice)))
         );
     }
