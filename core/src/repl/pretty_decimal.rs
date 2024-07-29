@@ -41,8 +41,8 @@ impl IntoBoundedStatic for PrettyDecimal {
 
 #[derive(thiserror::Error, PartialEq, Debug)]
 pub enum Error {
-    #[error("unexpected char {0} at {0}")]
-    UnexpectedChar(u8, usize),
+    #[error("unexpected char {0} at {1}")]
+    UnexpectedChar(String, usize),
     #[error("comma required at {0}")]
     CommaRequired(usize),
     #[error("unexpressible decimal {0}")]
@@ -132,13 +132,24 @@ impl FromStr for PrettyDecimal {
                     scale = scale.map(|x| x + 1);
                 }
                 _ => {
-                    return Err(Error::UnexpectedChar(c, i));
+                    return Err(Error::UnexpectedChar(try_find_char(s, i, c), i));
                 }
             }
         }
         let value = Decimal::try_from_i128_with_scale(sign * mantissa, scale.unwrap_or(0))?;
         Ok(Self { format, value })
     }
+}
+
+// Find the char at i. Note it returns String instead of char for complicated situations.
+fn try_find_char(s: &str, i: usize, chr: u8) -> String {
+    let begin = (0..=i).rev().find(|j| s.is_char_boundary(*j)).unwrap_or(0);
+    let end = (i + 1..s.len())
+        .find(|j| s.is_char_boundary(*j))
+        .unwrap_or(s.len());
+    s.get(begin..end)
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("{:?}", chr))
 }
 
 impl Display for PrettyDecimal {
