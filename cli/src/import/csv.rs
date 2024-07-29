@@ -19,9 +19,14 @@ use super::ImportError;
 
 pub struct CsvImporter {}
 
-fn str_to_comma_decimal(input: &str) -> Result<Decimal, pretty_decimal::Error> {
-    let r: Result<PrettyDecimal, pretty_decimal::Error> = input.parse();
-    r.map(|x| x.into())
+fn str_to_comma_decimal(input: &str) -> Result<Option<Decimal>, ImportError> {
+    if input.is_empty() {
+        return Ok(None);
+    }
+    let a: repl::expr::Amount = input
+        .try_into()
+        .map_err(|e| ImportError::Other(format!("failed to parse comma decimal: {}", e)))?;
+    Ok(Some(a.value.value))
 }
 
 impl super::Importer for CsvImporter {
@@ -74,13 +79,16 @@ impl super::Importer for CsvImporter {
             let amount = fm.value.amount(config.account_type, &r)?;
             let balance = fm
                 .balance
-                .map(|i| str_to_comma_decimal(r.get(i).unwrap()))
-                .transpose()?;
+                .map_or(Ok(None), |i| str_to_comma_decimal(r.get(i).unwrap()))?;
             let secondary_amount = fm
                 .secondary_amount
-                .map(|i| str_to_comma_decimal(r.get(i).unwrap()))
-                .transpose()?;
+                .map_or(Ok(None), |i| str_to_comma_decimal(r.get(i).unwrap()))?;
             let secondary_commodity = fm.secondary_commodity.and_then(|i| r.get(i));
+            log::info!(
+                "secondary: {:?} {:?}",
+                secondary_amount,
+                secondary_commodity
+            );
             let category = fm.category.and_then(|i| r.get(i));
             let commodity = fm
                 .commodity
@@ -89,8 +97,7 @@ impl super::Importer for CsvImporter {
                 .unwrap_or_else(|| config.commodity.primary.clone());
             let rate = fm
                 .rate
-                .map(|i| str_to_comma_decimal(r.get(i).unwrap()))
-                .transpose()?;
+                .map_or_else(|| Ok(None), |i| str_to_comma_decimal(r.get(i).unwrap()))?;
             let fragment = extractor.extract(Record {
                 payee: original_payee,
                 category,
@@ -194,15 +201,15 @@ impl FieldMapValues {
                 let credit = r.get(*credit).unwrap();
                 let debit = r.get(*debit).unwrap();
                 if !credit.is_empty() {
-                    Ok(str_to_comma_decimal(credit)?)
+                    Ok(str_to_comma_decimal(credit)?.unwrap_or(Decimal::ZERO))
                 } else if !debit.is_empty() {
-                    Ok(-str_to_comma_decimal(debit)?)
+                    Ok(-str_to_comma_decimal(debit)?.unwrap_or(Decimal::ZERO))
                 } else {
                     Err(ImportError::Other("credit and debit both zero".to_string()))
                 }
             }
             FieldMapValues::Amount(a) => {
-                let amount = str_to_comma_decimal(r.get(*a).unwrap())?;
+                let amount = str_to_comma_decimal(r.get(*a).unwrap())?.unwrap_or(Decimal::ZERO);
                 Ok(match at {
                     config::AccountType::Asset => amount,
                     config::AccountType::Liability => -amount,

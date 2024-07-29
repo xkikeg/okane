@@ -1,5 +1,3 @@
-use okane_core::repl::pretty_decimal;
-
 use csv::Error as CsvError;
 use regex::Error as RegexError;
 
@@ -23,8 +21,6 @@ pub enum ImportError {
     InvalidDatetime(#[from] chrono::ParseError),
     #[error("invalid decimal")]
     InvalidDecimal(#[from] rust_decimal::Error),
-    #[error("invalid pretty decimal")]
-    InvalidPrettyDecimal(#[from] pretty_decimal::Error),
     #[error("invalid regex")]
     InvalidRegex(#[from] RegexError),
     #[error("other error: {0}")]
