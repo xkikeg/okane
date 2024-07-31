@@ -1,6 +1,6 @@
 use super::config;
 use super::extract;
-use super::single_entry;
+use super::single_entry::{self, CommodityPair};
 use super::ImportError;
 use okane_core::datamodel;
 use okane_core::repl;
@@ -126,19 +126,21 @@ impl super::Importer for CsvImporter {
                 })?;
                 let tra = match conv {
                     extract::Conversion::Primary => {
-                        txn.rate(datamodel::Exchange::Rate(datamodel::Amount {
-                            value: rate,
-                            commodity: config.commodity.primary.clone(),
-                        }));
+                        let rate_key = single_entry::CommodityPair {
+                            source: config.commodity.primary.clone(),
+                            target: commodity.clone(),
+                        };
                         let value = secondary_amount.ok_or_else(|| ImportError::Other(format!(
                             "secondary_amount should be specified when primary conversion is used @ line {}", pos.line()
                         )))?;
-                        datamodel::ExchangedAmount {
-                            amount: datamodel::Amount {
-                                value,
-                                commodity: config.commodity.primary.clone(),
-                            },
-                            exchange: None,
+
+                        let transferred_amount = datamodel::Amount {
+                            value,
+                            commodity: config.commodity.primary.clone(),
+                        };
+                        Converted {
+                            rate_key,
+                            transferred_amount,
                         }
                     }
                     extract::Conversion::Secondary => {
@@ -146,31 +148,34 @@ impl super::Importer for CsvImporter {
                         let value = secondary_amount.ok_or_else(|| ImportError::Other(format!(
                             "secondary_amount should be specified when secondary type conversion is used @ line {}", pos.line()
                         )))?;
-                        datamodel::ExchangedAmount {
-                            amount: datamodel::Amount {
-                                value,
-                                commodity: secondary_commodity.to_string(),
-                            },
-                            exchange: Some(datamodel::Exchange::Rate(datamodel::Amount {
-                                value: rate,
-                                commodity: commodity.clone(),
-                            })),
+                        let rate_key = CommodityPair {
+                            source: commodity.clone(),
+                            target: secondary_commodity.to_string(),
+                        };
+                        let transferred_amount = datamodel::Amount {
+                            value,
+                            commodity: secondary_commodity.to_string(),
+                        };
+                        Converted {
+                            rate_key,
+                            transferred_amount,
                         }
                     }
                     extract::Conversion::Specified {
                         commodity: rate_commodity,
-                    } => datamodel::ExchangedAmount {
-                        amount: datamodel::Amount {
+                    } => Converted {
+                        transferred_amount: datamodel::Amount {
                             value: amount / rate,
-                            commodity: rate_commodity,
+                            commodity: rate_commodity.clone(),
                         },
-                        exchange: Some(datamodel::Exchange::Rate(datamodel::Amount {
-                            value: rate,
-                            commodity,
-                        })),
+                        rate_key: CommodityPair {
+                            source: commodity,
+                            target: rate_commodity,
+                        },
                     },
                 };
-                txn.transferred_amount(tra);
+                txn.add_rate(tra.rate_key, rate)?;
+                txn.transferred_amount(tra.transferred_amount);
             }
             res.push(txn);
         }
@@ -182,6 +187,11 @@ impl super::Importer for CsvImporter {
         }
         Ok(res)
     }
+}
+
+struct Converted {
+    rate_key: single_entry::CommodityPair,
+    transferred_amount: datamodel::Amount,
 }
 
 #[derive(PartialEq, Debug)]
