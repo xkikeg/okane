@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::ImportError;
 use okane_core::datamodel;
 
@@ -25,15 +27,15 @@ pub struct Txn {
     clear_state: Option<datamodel::ClearState>,
 
     /// amount in exchanged rate.
-    transferred_amount: Option<datamodel::ExchangedAmount>,
+    transferred_amount: Option<datamodel::Amount>,
 
     /// Amount of the transaction, applied for the associated account.
     /// For bank account, positive means deposit, negative means withdraw.
     /// For credit card account, negative means expense, positive means payment to the card.
     amount: datamodel::Amount,
 
-    /// Rate of the amount, useful if the statement amount is in foreign currency.
-    rate: Option<datamodel::Exchange>,
+    /// Rate of the given commodity, useful if the statement amount is in foreign currency.
+    rates: HashMap<String, datamodel::Amount>,
 
     balance: Option<datamodel::Amount>,
 
@@ -56,7 +58,7 @@ impl Txn {
             clear_state: None,
             transferred_amount: None,
             amount,
-            rate: None,
+            rates: HashMap::new(),
             balance: None,
             charges: Vec::new(),
         }
@@ -95,14 +97,33 @@ impl Txn {
         self
     }
 
-    pub fn transferred_amount(&mut self, amount: datamodel::ExchangedAmount) -> &mut Txn {
+    pub fn transferred_amount(&mut self, amount: datamodel::Amount) -> &mut Txn {
         self.transferred_amount = Some(amount);
         self
     }
 
-    pub fn rate(&mut self, rate: datamodel::Exchange) -> &mut Txn {
-        self.rate = Some(rate);
-        self
+    pub fn add_rate(&mut self, key: CommodityPair, rate: Decimal) -> Result<&mut Txn, ImportError> {
+        match self.rates.insert(
+            key.target.clone(),
+            datamodel::Amount {
+                value: rate,
+                commodity: key.source.clone(),
+            },
+        ) {
+            Some(existing) if (&existing.commodity, existing.value) != (&key.source, rate) => {
+                Err(ImportError::Other(format!(
+                    "given commodity {} has two distinct rates: @ {} {} and @ {} {}",
+                    key.target, existing.value, existing.commodity, key.source, rate
+                )))
+            }
+            _ => Ok(self),
+        }
+    }
+
+    fn rate(&self, target: &str) -> Option<datamodel::Exchange> {
+        self.rates
+            .get(target)
+            .map(|x| datamodel::Exchange::Rate(x.clone()))
     }
 
     pub fn try_add_charge_not_included<'a>(
@@ -120,12 +141,9 @@ impl Txn {
                 "already set transferred_amount isn't supported",
             ));
         }
-        self.transferred_amount(datamodel::ExchangedAmount {
-            amount: datamodel::Amount {
-                value: self.amount.value - amount.value,
-                commodity: amount.commodity.clone(),
-            },
-            exchange: None,
+        self.transferred_amount(datamodel::Amount {
+            value: self.amount.value - amount.value,
+            commodity: amount.commodity.clone(),
         });
         self.charges.push(Charge {
             payee: payee.to_string(),
@@ -145,19 +163,19 @@ impl Txn {
     fn amount(&self) -> datamodel::ExchangedAmount {
         datamodel::ExchangedAmount {
             amount: self.amount.clone(),
-            exchange: self.rate.clone(),
+            exchange: self.rate(&self.amount.commodity),
         }
     }
 
     fn dest_amount(&self) -> datamodel::ExchangedAmount {
         self.transferred_amount
             .as_ref()
-            .map(|x| datamodel::ExchangedAmount {
+            .map(|transferred| datamodel::ExchangedAmount {
                 // transferred_amount can be absolute value, or signed value.
                 // Assuming all commodities are "positive",
                 // it should have the opposite sign of the original amount.
-                amount: amount_with_sign(x.amount.clone(), -self.amount.value),
-                exchange: x.exchange.clone(),
+                amount: amount_with_sign(transferred.clone(), -self.amount.value),
+                exchange: self.rate(&transferred.commodity),
             })
             .unwrap_or(datamodel::ExchangedAmount {
                 amount: -self.amount.clone(),
@@ -241,6 +259,13 @@ impl Txn {
     }
 }
 
+/// Pair of commodity, used for rate computation.
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub struct CommodityPair {
+    pub source: String,
+    pub target: String,
+}
+
 fn amount_with_sign(mut amount: datamodel::Amount, sign: Decimal) -> datamodel::Amount {
     amount.value.set_sign_positive(sign.is_sign_positive());
     amount
@@ -316,10 +341,15 @@ mod tests {
             "foo",
             amount(dec!(1000), "JPY"),
         );
-        txn.transferred_amount(datamodel::ExchangedAmount {
-            amount: amount(dec!(10.00), "USD"),
-            exchange: Some(datamodel::Exchange::Rate(amount(dec!(100), "JPY"))),
-        });
+        txn.add_rate(
+            CommodityPair {
+                source: "JPY".to_owned(),
+                target: "USD".to_owned(),
+            },
+            dec!(100),
+        )
+        .unwrap();
+        txn.transferred_amount(amount(dec!(10.00), "USD"));
 
         assert_eq!(
             txn.dest_amount(),
@@ -337,10 +367,15 @@ mod tests {
             "foo",
             amount(dec!(1000), "JPY"),
         );
-        txn.transferred_amount(datamodel::ExchangedAmount {
-            amount: amount(dec!(-10.00), "USD"),
-            exchange: Some(datamodel::Exchange::Rate(amount(dec!(100), "JPY"))),
-        });
+        txn.add_rate(
+            CommodityPair {
+                source: "JPY".to_owned(),
+                target: "USD".to_owned(),
+            },
+            dec!(100),
+        )
+        .unwrap();
+        txn.transferred_amount(amount(dec!(-10.00), "USD"));
 
         assert_eq!(
             txn.dest_amount(),

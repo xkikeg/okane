@@ -3,6 +3,7 @@ mod xmlnode;
 use super::config;
 use super::extract;
 use super::single_entry;
+use super::single_entry::CommodityPair;
 use super::ImportError;
 use okane_core::datamodel;
 
@@ -95,22 +96,23 @@ impl super::Importer for IsoCamt053Importer {
                     }
                     if let Some(amount_details) = transaction.amount_details.as_ref() {
                         if transaction.amount != amount_details.transaction.amount {
-                            txn.transferred_amount(datamodel::ExchangedAmount {
-                                amount: amount_details
+                            if let Some(exchange) =
+                                amount_details.transaction.currency_exchange.as_ref()
+                            {
+                                txn.add_rate(
+                                    CommodityPair {
+                                        source: exchange.source_currency.clone(),
+                                        target: exchange.target_currency.clone(),
+                                    },
+                                    exchange.exchange_rate.value,
+                                )?;
+                            }
+                            txn.transferred_amount(
+                                amount_details
                                     .transaction
                                     .amount
                                     .to_data(transaction.credit_or_debit.value),
-                                exchange: amount_details
-                                    .transaction
-                                    .currency_exchange
-                                    .as_ref()
-                                    .map(|x| {
-                                        datamodel::Exchange::Rate(datamodel::Amount {
-                                            value: x.exchange_rate.value,
-                                            commodity: x.source_currency.clone(),
-                                        })
-                                    }),
-                            });
+                            );
                         }
                     }
                     add_charges(&mut txn, config, &entry.charges)?;

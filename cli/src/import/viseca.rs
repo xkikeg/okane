@@ -1,15 +1,17 @@
 pub mod format;
 pub mod parser;
 
-use super::config;
-use super::extract;
-use super::single_entry;
-use super::ImportError;
-use okane_core::datamodel;
-
 use std::convert::{TryFrom, TryInto};
 
 use regex::Regex;
+
+use okane_core::datamodel;
+
+use super::config;
+use super::extract;
+use super::single_entry;
+use super::single_entry::CommodityPair;
+use super::ImportError;
 
 pub struct VisecaImporter {}
 
@@ -54,18 +56,16 @@ impl super::Importer for VisecaImporter {
                         line_count
                     ))
                 })?;
-                txn.transferred_amount(datamodel::ExchangedAmount {
-                    amount: -datamodel::Amount::from(spent),
-                    exchange: Some(datamodel::Exchange::Rate(datamodel::Amount {
-                        value: exchange.rate,
-                        commodity: exchange.equivalent.currency,
-                    })),
-                });
+                txn.add_rate(
+                    CommodityPair {
+                        source: exchange.equivalent.currency,
+                        target: spent.currency.clone(),
+                    },
+                    exchange.rate,
+                )?;
+                txn.transferred_amount(-datamodel::Amount::from(spent));
             } else if let Some(spent) = entry.spent {
-                txn.transferred_amount(datamodel::ExchangedAmount {
-                    amount: -datamodel::Amount::from(spent),
-                    exchange: None,
-                });
+                txn.transferred_amount(-datamodel::Amount::from(spent));
             }
             if let Some(fee) = entry.fee {
                 let payee = config.operator.as_ref().ok_or(ImportError::InvalidConfig(
