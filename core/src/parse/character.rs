@@ -19,7 +19,7 @@ where
 {
     trace(
         "character::line_ending_or_semi",
-        alt((one_of(';').recognize(), line_ending)),
+        alt((one_of(';').take(), line_ending)),
     )
     .parse_next(input)
 }

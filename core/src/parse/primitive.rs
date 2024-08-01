@@ -71,7 +71,7 @@ where
     trace(
         "primitive::date",
         alt((slash.value(DateType::Slash), hyphen.value(DateType::Hyphen)))
-            .with_recognized()
+            .with_taken()
             .try_map(|(date_type, s)| NaiveDate::parse_from_str(s, date_type.pattern())),
     )
     .parse_next(input)
