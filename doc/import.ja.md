@@ -127,11 +127,9 @@ rewrite:
 * `account`: ルールが適用された場合アカウントを指定された文字列にします。
 * `payee`: ルールが適用された場合`payee`(相手方)を指定された文字列にします。
 * `peinding`: `true`にした場合その取引が保留中のマークがつきます。
-* `conversion`: コモディティ(通貨)の変換レートについて指定します。いくつかの指定方法があります。
-    * `conversion: { commodity: foo }` マッチした取引の第二通貨(セカンダリ・コモディティ)を直接指定された値に設定します。
-      `$amount $commodity == $amount / $rate $conversion_commodity`, `1 $conversion_commodity == $rate $commodity`です。
-      TODO: Do we need to specify secondary_amount still? Or rate is used?
-    * `conversion: {type: primary }`: `secondary_amount`と`rate`を第一通貨として扱います。つまり`$amount $commodity == $secondary_amount $primary_commodity`, `1 $commodity == $rate $primary_commodity`ということです。
-    * `conversion: {type: secondary }`: `secondary_amount`を`secondary_commodity`として扱います。つまり、`$amount $commodity == $secondary_amount $secondary_commodity`, `1 $secondary_commodity = $rate $commodity`です。
+* `conversion`: コモディティ(通貨)の変換レートについて指定します。次の項目を設定できます。
+    * `amount`: デフォルトでは`extract`、指定された`secondary_amount`の値を読み込みます。`compute`が指定されたときはレートから計算します。
+    * `commodity`: 取引の第二通貨を指定できます。指定がなければfieldsで指定された`secondary_commodity`の値を使用します。
+    * `rate`: `rate`で指定された値がどちら向きなのか指定します。標準では`secondary`、つまり第二通貨のレートを第一通貨で指定します。(`1 $secondary_commodity = $rate $comodity`)。`primary`が指定された場合、逆に第一通貨のレートを第二通貨で指定します。(`1 $commodity = $rate $secondary_commodity`)
 
 このmatcherは複数マッチした場合listの順が早い方から適用されます。また、正規表現中に名前付きグループがあった場合、その部分マッチが`payee`なら相手方の名前に、`code`なら取引コードに設定されます。
