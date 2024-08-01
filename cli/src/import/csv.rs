@@ -11,7 +11,7 @@ use rust_decimal::Decimal;
 use okane_core::datamodel;
 use okane_core::repl;
 
-use super::config;
+use super::config::{self, TemplateField};
 use super::extract;
 use super::single_entry::{self, CommodityPair};
 use super::ImportError;
@@ -280,6 +280,11 @@ fn resolve_fields(
             match &pos {
                 config::FieldPos::Index(i) => Some(*i),
                 config::FieldPos::Label(label) => hm.get(label.as_str()).cloned(),
+                config::FieldPos::Template(TemplateField {
+                    template: _template,
+                }) => {
+                    todo!("support template syntax")
+                }
             }
             .map(|i| (k, i))
         })
