@@ -1,7 +1,5 @@
 //! Contains YAML serde representation for the config.
 
-use super::error::ImportError;
-
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::path::{Path, PathBuf};
@@ -10,6 +8,9 @@ use log::warn;
 use path_slash::PathBufExt;
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
+
+use super::error::ImportError;
+use super::template::Template;
 
 /// Set of config covering several paths.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -292,6 +293,12 @@ pub enum FieldKey {
 pub enum FieldPos {
     Index(usize),
     Label(String),
+    Template(TemplateField),
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
+pub struct TemplateField {
+    pub template: Template,
 }
 
 /// RewriteRule specifies the rewrite rule matched against transaction.
