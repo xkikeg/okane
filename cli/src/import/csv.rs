@@ -10,7 +10,6 @@ use rust_decimal::Decimal;
 
 use okane_core::datamodel;
 use okane_core::repl;
-use repl::pretty_decimal::{self, PrettyDecimal};
 
 use super::config;
 use super::extract;
