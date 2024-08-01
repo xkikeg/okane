@@ -72,7 +72,7 @@ pub struct ConfigEntry {
     /// Operator of the import target.
     /// Required only when some charges applied.
     pub operator: Option<String>,
-    pub commodity: CommoditySpec,
+    pub commodity: AccountCommoditySpec,
     pub format: FormatSpec,
     pub rewrite: Vec<RewriteRule>,
 }
@@ -122,7 +122,7 @@ struct ConfigFragment {
     /// Operator of the import target.
     /// Required only when some charges applied.
     pub operator: Option<String>,
-    pub commodity: Option<CommodityConfig>,
+    pub commodity: Option<AccountCommodityConfig>,
     pub format: Option<FormatSpec>,
     #[serde(default)]
     pub rewrite: Vec<RewriteRule>,
@@ -190,23 +190,23 @@ pub enum AccountType {
 /// CommodityConfig contains either primary commodity string, or more complex CommoditySpec.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
-enum CommodityConfig {
+enum AccountCommodityConfig {
     PrimaryCommodity(String),
-    Spec(CommoditySpec),
+    Spec(AccountCommoditySpec),
 }
 
 /// CommoditySpec describes commodity configs.
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
-pub struct CommoditySpec {
+pub struct AccountCommoditySpec {
     /// Primary commodity used in the account.
     pub primary: String,
 }
 
-impl From<CommodityConfig> for CommoditySpec {
-    fn from(value: CommodityConfig) -> Self {
+impl From<AccountCommodityConfig> for AccountCommoditySpec {
+    fn from(value: AccountCommodityConfig) -> Self {
         match value {
-            CommodityConfig::PrimaryCommodity(c) => CommoditySpec { primary: c },
-            CommodityConfig::Spec(spec) => spec,
+            AccountCommodityConfig::PrimaryCommodity(c) => AccountCommoditySpec { primary: c },
+            AccountCommodityConfig::Spec(spec) => spec,
         }
     }
 }
@@ -274,15 +274,16 @@ pub enum FieldKey {
     /// Remaining balance amount.
     Balance,
     /// Currency (commodity) of the transaction.
+    /// If not specified, fallback to primary commodity specified in the account.
     Commodity,
     /// Currency rate used in the statement.
     Rate,
     /// Secondary amount represents the amount in the secondary currency.
-    /// Useful when the transaction exchanges one one commodity into the other.
-    /// The commodity can be specified via CommodityConversion.
+    /// Useful when the transaction exchanges amount into another commodity into the other.
+    /// Detailed logic could be referred in [CommodityConversionSpec].
     SecondaryAmount,
-    /// Secondary commodity for the `SecondaryAmount`.
-    /// Used only when `PresetCommodityConversion::Secondary` is specified.
+    /// Secondary commodity corresponding the [FieldKey::SecondaryAmount].
+    /// Also refer [CommodityConversionSpec] for the detialed explanation.
     SecondaryCommodity,
 }
 
@@ -314,37 +315,45 @@ pub struct RewriteRule {
     /// Commodity (currency) conversion specification.
     ///
     /// This field is only used in CSV import, and only applicable when
-    /// the transcation has multi commodities. See details for CommodityConversion.
+    /// the transcation has multi commodities. See details for [CommodityConversionSpec].
     #[serde(default)]
-    pub conversion: Option<CommodityConversion>,
+    pub conversion: Option<CommodityConversionSpec>,
 }
 
-/// Specify the currency conversion described in the transaction.
+/// Specify the currency conversion details described in the transaction.
 ///
-/// This is useful when CSV has only one currency on the row,
-/// and it's hard to tell if the conversion rate is FOO/BAR or BAR/FOO.
-///
-/// Example:
-/// When CSV contains commodity="USD" and rate=1.10 and you know the row is USD->EUR conversion,
-/// then you should set the Explicit conversion with commodity "EUR".
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
-#[serde(untagged)]
-pub enum CommodityConversion {
-    /// Conversion currency is specified as preset.
-    /// As of 2024-02 only primary commodity is supported.
-    Preset(PresetCommodityConversion),
-    /// Conversion commodity is specified by the rule.
-    Trivial { commodity: String },
+/// This is useful when CSV has non-straightforward logic.
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields, default)]
+pub struct CommodityConversionSpec {
+    /// Decides how the `secondary_amount` is computed.
+    pub amount: ConversionAmountSpec,
+    /// Overrides `secondary_commodity` with the given value.
+    pub commodity: Option<String>,
+    /// Decides `rate` meaning.
+    pub rate: ConversionRateSpec,
 }
 
-/// Give preset commodity conversion.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
-#[serde(rename_all = "snake_case", tag = "type")]
-pub enum PresetCommodityConversion {
-    /// Secondary amount is in the account primary commodity.
-    Primary,
-    /// Secondary amount is in the secondary commodity specified in each row.
-    Secondary,
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum ConversionAmountSpec {
+    /// Extracts the `secondary_amount` from the input data field.
+    #[default]
+    Extract,
+    /// Computes the `secondary_amount` using the specified rate.
+    Compute,
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum ConversionRateSpec {
+    /// Given rate is a price of secondary commodity, e.g.
+    /// `1 $secondary_commodity == $rate $commodity`.
+    #[default]
+    PriceOfSecondary,
+    /// Given rate is a price of primary commodity, e.g.
+    /// `1 $commodity == $rate $secondary_commodity`
+    PriceOfPrimary,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
@@ -424,7 +433,7 @@ mod tests {
             path: path.to_owned(),
             account_type: Some(AccountType::Asset),
             operator: None,
-            commodity: Some(CommodityConfig::PrimaryCommodity("JPY".to_owned())),
+            commodity: Some(AccountCommodityConfig::PrimaryCommodity("JPY".to_owned())),
             format: Some(FormatSpec {
                 date: "%Y%m%d".to_owned(),
                 ..FormatSpec::default()
@@ -478,7 +487,7 @@ mod tests {
                     path: "bank/".to_string(),
                     encoding: Some(Encoding(encoding_rs::UTF_8)),
                     account_type: Some(AccountType::Asset),
-                    commodity: Some(CommodityConfig::PrimaryCommodity("JPY".to_string())),
+                    commodity: Some(AccountCommodityConfig::PrimaryCommodity("JPY".to_string())),
                     format: Some(FormatSpec {
                         date: "%Y/%m/%d".to_string(),
                         ..Default::default()
@@ -499,7 +508,7 @@ mod tests {
                 ConfigFragment {
                     path: "bank/checking/".to_string(),
                     // Normally commodity won't be overridden by merge.
-                    commodity: Some(CommodityConfig::Spec(CommoditySpec {
+                    commodity: Some(AccountCommodityConfig::Spec(AccountCommoditySpec {
                         primary: "CHF".to_string(),
                     })),
                     account: Some("Assets:Banks:Checking".to_string()),
@@ -536,7 +545,7 @@ mod tests {
                 account: "Assets:Banks:Checking".to_string(),
                 account_type: AccountType::Asset,
                 operator: None,
-                commodity: CommoditySpec {
+                commodity: AccountCommoditySpec {
                     primary: "CHF".to_string(),
                 },
                 format: FormatSpec {
@@ -614,7 +623,7 @@ mod tests {
         };
         let commodity = || ConfigFragment {
             path: "commodity/".to_string(),
-            commodity: Some(CommodityConfig::Spec(CommoditySpec {
+            commodity: Some(AccountCommodityConfig::Spec(AccountCommoditySpec {
                 primary: "primary commodity".to_string(),
             })),
             ..empty()
@@ -702,8 +711,9 @@ mod tests {
                 pending: false,
                 payee: None,
                 account: Some("Assets:Wire:Okane".to_string()),
-                conversion: Some(CommodityConversion::Trivial {
-                    commodity: "EUR".to_string(),
+                conversion: Some(CommodityConversionSpec {
+                    commodity: Some("EUR".to_string()),
+                    ..CommodityConversionSpec::default()
                 }),
             },
         ];
@@ -749,7 +759,7 @@ mod tests {
           domain_code: PMNT
         account: Income:Salary
         conversion:
-          type: primary
+          rate: price_of_primary
         "#};
         let de = serde_yaml::Deserializer::from_str(input);
         let matcher = RewriteRule {
@@ -759,9 +769,11 @@ mod tests {
             pending: false,
             payee: None,
             account: Some("Income:Salary".to_string()),
-            conversion: Some(CommodityConversion::Preset(
-                PresetCommodityConversion::Primary,
-            )),
+            conversion: Some(CommodityConversionSpec {
+                amount: ConversionAmountSpec::Extract,
+                commodity: None,
+                rate: ConversionRateSpec::PriceOfPrimary,
+            }),
         };
         assert_eq!(matcher, RewriteRule::deserialize(de).unwrap());
     }

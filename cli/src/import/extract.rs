@@ -1,7 +1,7 @@
+use std::convert::{From, TryFrom, TryInto};
+
 use super::config;
 use super::error::ImportError;
-
-use std::convert::{From, TryFrom, TryInto};
 
 /// Extractor is a set of `ExtractRule`, so to extract `Fragment` out of the entity.
 ///
@@ -50,7 +50,7 @@ pub struct Fragment<'a> {
     /// Code identifying the transaction, `None` if not found.
     pub code: Option<&'a str>,
     /// Currency conversion, `None` if not found.
-    pub conversion: Option<Conversion>,
+    pub conversion: Option<&'a config::CommodityConversionSpec>,
 }
 
 impl<'a> std::ops::AddAssign for Fragment<'a> {
@@ -113,36 +113,13 @@ pub struct Matched<'a> {
     pub code: Option<&'a str>,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Conversion {
-    Primary,
-    Secondary,
-    Specified { commodity: String },
-}
-
-impl From<config::CommodityConversion> for Conversion {
-    fn from(config: config::CommodityConversion) -> Conversion {
-        match config {
-            config::CommodityConversion::Preset(config::PresetCommodityConversion::Primary) => {
-                Conversion::Primary
-            }
-            config::CommodityConversion::Preset(config::PresetCommodityConversion::Secondary) => {
-                Conversion::Secondary
-            }
-            config::CommodityConversion::Trivial { commodity } => {
-                Conversion::Specified { commodity }
-            }
-        }
-    }
-}
-
 #[derive(Debug)]
 struct ExtractRule<'a, M: EntityMatcher> {
     match_expr: MatchOrExpr<M>,
     pending: bool,
     payee: Option<&'a str>,
     account: Option<&'a str>,
-    conversion: Option<Conversion>,
+    conversion: Option<&'a config::CommodityConversionSpec>,
 }
 
 impl<'a, M: EntityMatcher> TryFrom<&'a config::RewriteRule> for ExtractRule<'a, M> {
@@ -155,7 +132,7 @@ impl<'a, M: EntityMatcher> TryFrom<&'a config::RewriteRule> for ExtractRule<'a, 
             pending: from.pending,
             payee: from.payee.as_deref(),
             account: from.account.as_deref(),
-            conversion: from.conversion.clone().map(|x| x.into()),
+            conversion: from.conversion.as_ref(),
         })
     }
 }
@@ -165,7 +142,7 @@ impl<'a, M: EntityMatcher> ExtractRule<'a, M> {
         self.match_expr.extract(current, entity).map(|mut current| {
             current.payee = self.payee.or(current.payee);
             current.account = self.account;
-            current.conversion = self.conversion.clone().or(current.conversion);
+            current.conversion = self.conversion.or(current.conversion);
             if current.account.is_some() {
                 current.cleared = current.cleared || !self.pending;
             }
@@ -268,6 +245,8 @@ mod tests {
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
 
+    use config::CommodityConversionSpec;
+
     #[test]
     fn fragment_add_assign_filled() {
         let mut x = Fragment {
@@ -277,12 +256,13 @@ mod tests {
             code: None,
             conversion: None,
         };
+        let conversion = CommodityConversionSpec::default();
         let y = Fragment {
             cleared: false,
             payee: Some("bar"),
             account: Some("baz"),
             code: Some("txn-id"),
-            conversion: Some(Conversion::Primary),
+            conversion: Some(&conversion),
         };
         x += y;
         assert_eq!(
@@ -292,21 +272,20 @@ mod tests {
                 payee: Some("bar"),
                 account: Some("baz"),
                 code: Some("txn-id"),
-                conversion: Some(Conversion::Primary),
+                conversion: Some(&CommodityConversionSpec::default()),
             }
         );
     }
 
     #[test]
     fn fragment_add_assign_empty() {
+        let conversion = CommodityConversionSpec::default();
         let orig = Fragment {
             cleared: false,
             payee: Some("foo"),
             account: None,
             code: Some("txn-id"),
-            conversion: Some(Conversion::Specified {
-                commodity: "JPY".to_string(),
-            }),
+            conversion: Some(&conversion),
         };
         let mut x = orig.clone();
         x += Fragment::default();
@@ -412,6 +391,10 @@ mod tests {
 
     #[test]
     fn extract_multi_match() {
+        let conversion = config::CommodityConversionSpec {
+            commodity: Some("JPY".to_string()),
+            ..config::CommodityConversionSpec::default()
+        };
         let rw = vec![
             config::RewriteRule {
                 pending: false, // pending: true implied
@@ -444,9 +427,7 @@ mod tests {
                 pending: true,
                 payee: None,
                 account: Some("Expenses:Petrol".to_string()),
-                conversion: Some(config::CommodityConversion::Trivial {
-                    commodity: "JPY".to_string(),
-                }),
+                conversion: Some(conversion.clone()),
                 ..into_rule(config::RewriteMatcher::Field(config::FieldMatcher {
                     fields: hashmap! {
                         config::RewriteField::Payee => "Certain Petrol".to_string(),
@@ -499,9 +480,7 @@ mod tests {
                 account: Some("Expenses:Petrol"),
                 payee: Some("Certain Petrol"),
                 code: Some("123"),
-                conversion: Some(Conversion::Specified {
-                    commodity: "JPY".to_string(),
-                }),
+                conversion: Some(&conversion),
             },
             Fragment {
                 cleared: false,

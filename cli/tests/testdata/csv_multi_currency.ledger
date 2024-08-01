@@ -10,6 +10,14 @@
     Assets:Okane Bank                         -23.45 CHF = 0.00 CHF
     Expenses:Grocery                           23.45 CHF
 
+2020/07/29 * 外貨普通預金（スイスフラン）へ振替
+    Assets:Okane Bank                       -1097.94 USD @ 0.9108 CHF = 31691.78 USD
+    Assets:Wire                          1000.003752 CHF
+
+2020/07/29 * 外貨普通預金（米ドル）より振替
+    Assets:Wire                             -1000.00 CHF
+    Assets:Okane Bank                        1000.00 CHF = 1000.00 CHF
+
 2020/07/29 * 外貨普通預金（ユーロ）へ振替
     Assets:Okane Bank                       -2353.40 USD = 29338.38 USD
     Assets:Wire                              2000.00 EUR @ 1.1767 USD
