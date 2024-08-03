@@ -16,16 +16,9 @@ use super::config::FieldKey;
 ///
 /// It can be instantiated with String containing `{key_name}`,
 /// which will be interpolated with map from [FieldKey] to &str values.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
-#[serde(try_from = "&str", into = "String")]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Template {
     segments: Vec<Segment>,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-enum Segment {
-    Literal(String),
-    Reference(FieldKey),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -34,6 +27,20 @@ pub enum ParseError {
     InvalidTemplate(String),
     #[error("unknown field_key {field_key}")]
     UnknownFieldKey { field_key: String },
+}
+#[derive(Debug, PartialEq, Eq, Clone)]
+enum Segment {
+    Literal(String),
+    Reference(FieldKey),
+}
+
+impl Display for Segment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Segment::Literal(s) => write!(f, "{}", s),
+            Segment::Reference(fk) => write!(f, "{{{}}}", fk.as_str()),
+        }
+    }
 }
 
 impl TryFrom<&str> for Template {
@@ -44,16 +51,12 @@ impl TryFrom<&str> for Template {
     }
 }
 
-impl From<Template> for String {
-    fn from(value: Template) -> Self {
-        let mut ret = String::new();
-        for segment in &value.segments {
-            match segment {
-                Segment::Literal(s) => ret.push_str(s),
-                Segment::Reference(fk) => ret.push_str(&format!("{{{}}}", fk.as_str())),
-            }
+impl Display for Template {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for segment in &self.segments {
+            write!(f, "{}", segment)?;
         }
-        ret
+        Ok(())
     }
 }
 
@@ -82,27 +85,64 @@ impl FromStr for Template {
     }
 }
 
+impl Serialize for Template {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for Template {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+        let s: &str = Deserialize::deserialize(deserializer)?;
+        s.parse()
+            .map_err(|err| D::Error::custom(format!("failed to parse the template: {}", err)))
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError {
     #[error("field_key {0:?} in template is not supported")]
     FieldKeyUnsupported(FieldKey),
+    #[error("field_key {0:?} is self recurring in the template")]
+    SelfRecusiveFieldKey(FieldKey),
 }
 
 struct RenderedTemplate<'a> {
     parts: Vec<&'a str>,
 }
 
+pub trait RenderValue<'a> {
+    fn query(&self, key: FieldKey) -> Option<&'a str>;
+}
+
+impl<'a> RenderValue<'a> for &HashMap<FieldKey, &'a str> {
+    fn query(&self, key: FieldKey) -> Option<&'a str> {
+        self.get(&key).copied()
+    }
+}
+
 impl Template {
-    pub fn render<'a>(
+    pub fn render<'a, T: RenderValue<'a>>(
         &'a self,
-        values: &HashMap<FieldKey, &'a str>,
+        field_key: FieldKey,
+        values: T,
     ) -> Result<impl Display + 'a, RenderError> {
         let mut parts = Vec::with_capacity(self.segments.len());
         for segment in &self.segments {
             let part = match segment {
                 Segment::Literal(l) => l.as_str(),
+                Segment::Reference(fk) if *fk == field_key => {
+                    Err(RenderError::SelfRecusiveFieldKey(field_key))?
+                }
                 Segment::Reference(fk) => values
-                    .get(fk)
+                    .query(*fk)
                     .ok_or(RenderError::FieldKeyUnsupported(*fk))?,
             };
             parts.push(part);
@@ -160,7 +200,7 @@ mod tests {
         let t: Template = "this is a pen".parse().unwrap();
         assert_eq!(
             "this is a pen",
-            format!("{}", t.render(&HashMap::new()).unwrap())
+            format!("{}", t.render(FieldKey::Payee, &HashMap::new()).unwrap())
         )
     }
 
@@ -171,10 +211,13 @@ mod tests {
             "Transport - SBB",
             format!(
                 "{}",
-                t.render(&hashmap! {
-                    FieldKey::Category => "Transport",
-                    FieldKey::Note => "SBB",
-                })
+                t.render(
+                    FieldKey::Payee,
+                    &hashmap! {
+                        FieldKey::Category => "Transport",
+                        FieldKey::Note => "SBB",
+                    }
+                )
                 .unwrap()
             )
         );
