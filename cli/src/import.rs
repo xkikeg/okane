@@ -5,7 +5,6 @@ pub mod csv;
 pub mod extract;
 pub mod iso_camt053;
 pub mod single_entry;
-pub(crate) mod template;
 pub mod viseca;
 
 mod error;
