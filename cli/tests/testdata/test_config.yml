@@ -55,7 +55,9 @@ format:
   delimiter: "\t"
   fields:
     date: お取り引き日
-    payee: 摘要
+    payee:
+      template: "{commodity} - {note}"
+    note: 摘要
     debit: 出金額
     credit: 入金額
     balance: 残高
@@ -69,7 +71,7 @@ format:
       precision: 2
 rewrite:
   - matcher:
-      payee: ^Visaデビット　(?P<code>\d+)　(?P<payee>.*)$
+      payee: .*Visaデビット　(?P<code>\d+)　(?P<payee>.*)$
   - account: Assets:Wire
     matcher:
       payee: 円普通預金(へ|より)振替
