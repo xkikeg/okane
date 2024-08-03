@@ -85,10 +85,7 @@ impl<'arena, T: Copy> StoredValue<'arena, T> {
     fn as_canonical(&self) -> T {
         match self {
             StoredValue::Canonical(x) => *x,
-            StoredValue::Alias {
-                alias: _,
-                canonical,
-            } => *canonical,
+            StoredValue::Alias { canonical, .. } => *canonical,
         }
     }
 }
@@ -119,10 +116,7 @@ impl<'arena, T: FromInterned<'arena>> InternStore<'arena, T> {
         match self.get(value) {
             None => Ok(self.insert(value, None)),
             Some(StoredValue::Canonical(found)) => Ok(found),
-            Some(StoredValue::Alias {
-                alias: _,
-                canonical: _,
-            }) => Err(InternError::AlreadyAlias),
+            Some(StoredValue::Alias { .. }) => Err(InternError::AlreadyAlias),
         }
     }
 
