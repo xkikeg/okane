@@ -10,6 +10,7 @@ use serde::de::Error;
 use serde::{Deserialize, Serialize};
 
 use super::error::ImportError;
+use super::template::Template;
 
 /// Set of config covering several paths.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -297,7 +298,7 @@ pub enum FieldPos {
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub struct TemplateField {
-    pub template: String,
+    pub template: Template,
 }
 
 /// RewriteRule specifies the rewrite rule matched against transaction.
@@ -669,9 +670,8 @@ mod tests {
               date: "%Y年%m月%d日"
               fields:
                 date: お取り引き日
-                payee:
-                    template: "{commodity} - {note}"
-                note: 摘要
+                payee: 摘要
+                note: 参考情報
                 credit: お預け入れ額
                 debit: お引き出し額
                 balance: 差し引き残高
@@ -757,19 +757,6 @@ mod tests {
             .get(&FieldKey::Amount)
             .unwrap();
         assert_eq!(*field_amount, FieldPos::Index(2));
-    }
-
-    #[test]
-    fn test_parse_template_field_pos() {
-        let de = serde_yaml::Deserializer::from_str("template: \"{payee} - {category} - {note}\"");
-        TemplateField::deserialize(de).expect("must not fail");
-
-        let input = indoc! {r#"
-            payee:
-              template: "{commodity} - {note}"
-        "#};
-        let got: HashMap<FieldKey, FieldPos> = serde_yaml::from_str(input).unwrap();
-        assert!(got.contains_key(&FieldKey::Payee));
     }
 
     #[test]
