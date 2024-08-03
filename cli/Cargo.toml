@@ -33,7 +33,6 @@ serde_with = { version = "3.8", features = [ "chrono" ] }
 serde_yaml = "0.9.34"
 strum = { version = "0.26", features = ["derive"] }
 thiserror.workspace = true
-winnow.workspace = true
 
 [dev-dependencies]
 assert_cmd = "2.0"

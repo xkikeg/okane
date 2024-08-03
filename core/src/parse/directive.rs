@@ -158,7 +158,7 @@ where
                 space1,
                 literal("tag"),
             )
-                .take(),
+                .recognize(),
             (space0, line_ending_or_eof),
         ),
     )
