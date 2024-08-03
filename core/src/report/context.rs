@@ -76,7 +76,10 @@ impl<'ctx> ReportContext<'ctx> {
             .iter()
             .filter_map(|x| match x {
                 StoredValue::Canonical(x) => Some(x),
-                StoredValue::Alias { .. } => None,
+                StoredValue::Alias {
+                    alias: _,
+                    canonical: _,
+                } => None,
             })
             .collect();
         r.sort_unstable_by_key(|x| x.as_str());
