@@ -280,7 +280,7 @@ impl extract::EntityMatcher for FieldMatch {
                     MatchField::CreditorName => transaction
                         .and_then(|t| t.related_parties.as_ref())
                         .and_then(|rp| rp.creditor.as_ref())
-                        .map(|cd| cd.name.as_str()),
+                        .map(|cd| cd.name()),
                     MatchField::CreditorAccountId => transaction
                         .and_then(|t| t.related_parties.as_ref())
                         .and_then(|rp| rp.creditor_account.as_ref())
@@ -288,11 +288,11 @@ impl extract::EntityMatcher for FieldMatch {
                     MatchField::UltimateCreditorName => transaction
                         .and_then(|t| t.related_parties.as_ref())
                         .and_then(|rp| rp.ultimate_creditor.as_ref())
-                        .map(|ud| ud.name.as_str()),
+                        .map(|ud| ud.name()),
                     MatchField::DebtorName => transaction
                         .and_then(|t| t.related_parties.as_ref())
                         .and_then(|rp| rp.debtor.as_ref())
-                        .map(|dt| dt.name.as_str()),
+                        .map(|dt| dt.name()),
                     MatchField::DebtorAccountId => transaction
                         .and_then(|t| t.related_parties.as_ref())
                         .and_then(|rp| rp.debtor_account.as_ref())
@@ -300,7 +300,7 @@ impl extract::EntityMatcher for FieldMatch {
                     MatchField::UltimateDebtorName => transaction
                         .and_then(|t| t.related_parties.as_ref())
                         .and_then(|rp| rp.ultimate_debtor.as_ref())
-                        .map(|ud| ud.name.as_str()),
+                        .map(|ud| ud.name()),
                     MatchField::RemittanceUnstructuredInfo => transaction
                         .and_then(|t| t.remittance_info.as_ref())
                         .and_then(|i| i.unstructured.as_ref())
@@ -401,12 +401,14 @@ mod tests {
             }),
             charges: None,
             related_parties: Some(xmlnode::RelatedParties {
-                debtor: Some(xmlnode::Party {
+                debtor: Some(xmlnode::RelatedParty::from_inner(xmlnode::PartyDetails {
                     name: "debtor".to_string(),
-                }),
-                creditor: Some(xmlnode::Party {
+                    ..xmlnode::PartyDetails::default()
+                })),
+                creditor: Some(xmlnode::RelatedParty::from_inner(xmlnode::PartyDetails {
                     name: "creditor".to_string(),
-                }),
+                    ..xmlnode::PartyDetails::default()
+                })),
                 creditor_account: None,
                 debtor_account: None,
                 ultimate_debtor: None,
@@ -493,12 +495,14 @@ mod tests {
         let entry = test_entry();
         let without_ultimate = xmlnode::TransactionDetails {
             related_parties: Some(xmlnode::RelatedParties {
-                debtor: Some(xmlnode::Party {
+                debtor: Some(xmlnode::RelatedParty::from_inner(xmlnode::PartyDetails {
                     name: "expected debtor".to_string(),
-                }),
-                creditor: Some(xmlnode::Party {
+                    ..xmlnode::PartyDetails::default()
+                })),
+                creditor: Some(xmlnode::RelatedParty::from_inner(xmlnode::PartyDetails {
                     name: "expected creditor".to_string(),
-                }),
+                    ..xmlnode::PartyDetails::default()
+                })),
                 creditor_account: None,
                 debtor_account: None,
                 ultimate_debtor: None,
@@ -508,20 +512,24 @@ mod tests {
         };
         let with_ultimate = xmlnode::TransactionDetails {
             related_parties: Some(xmlnode::RelatedParties {
-                debtor: Some(xmlnode::Party {
+                debtor: Some(xmlnode::RelatedParty::from_inner(xmlnode::PartyDetails {
                     name: "expected debtor".to_string(),
-                }),
-                creditor: Some(xmlnode::Party {
+                    ..xmlnode::PartyDetails::default()
+                })),
+                creditor: Some(xmlnode::RelatedParty::from_inner(xmlnode::PartyDetails {
                     name: "expected creditor".to_string(),
-                }),
+                    ..xmlnode::PartyDetails::default()
+                })),
                 creditor_account: None,
                 debtor_account: None,
-                ultimate_debtor: Some(xmlnode::Party {
+                ultimate_debtor: Some(xmlnode::RelatedParty::from_inner(xmlnode::PartyDetails {
                     name: "expected ultimate debtor".to_string(),
-                }),
-                ultimate_creditor: Some(xmlnode::Party {
+                    ..xmlnode::PartyDetails::default()
+                })),
+                ultimate_creditor: Some(xmlnode::RelatedParty::from_inner(xmlnode::PartyDetails {
                     name: "expected ultimate creditor".to_string(),
-                }),
+                    ..xmlnode::PartyDetails::default()
+                })),
             }),
             ..test_transaction()
         };
