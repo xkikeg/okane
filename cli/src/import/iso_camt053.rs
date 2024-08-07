@@ -146,22 +146,24 @@ fn add_charges(
     config: &config::ConfigEntry,
     charges: &Option<xmlnode::Charges>,
 ) -> Result<(), ImportError> {
-    if let Some(charges) = &charges {
-        for cr in &charges.records {
-            if cr.amount.value.is_zero() {
-                continue;
-            }
-            let payee = config.operator.as_ref().ok_or(ImportError::InvalidConfig(
-                "config should have operator to have charge",
-            ))?;
-            log::info!("ADDED cr: {:?}", cr);
-            // charge_amount must be negated, as charge is by default debit.
-            let charge_amount = -cr.amount.to_data(cr.credit_or_debit.value);
-            if !cr.is_charge_included {
-                txn.try_add_charge_not_included(payee, charge_amount)?;
-            } else {
-                txn.add_charge(payee, charge_amount);
-            }
+    let charges = match charges {
+        Some(charges) => charges,
+        None => return Ok(()),
+    };
+    for cr in &charges.records {
+        if cr.amount.value.is_zero() {
+            continue;
+        }
+        let payee = config.operator.as_ref().ok_or(ImportError::InvalidConfig(
+            "config should have operator to have charge",
+        ))?;
+        log::info!("ADDED cr: {:?}", cr);
+        // charge_amount must be negated, as charge is by default debit.
+        let charge_amount = -cr.amount.to_data(cr.credit_or_debit.value);
+        if !cr.is_charge_included {
+            txn.try_add_charge_not_included(payee, charge_amount)?;
+        } else {
+            txn.add_charge(payee, charge_amount);
         }
     }
     Ok(())
