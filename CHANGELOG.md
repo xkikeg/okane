@@ -8,6 +8,25 @@
 
 ### Fixed
 
+## [0.11.0] - 2024-08-07
+
+### Added
+
+* Supported account / commodity aliases (https://github.com/xkikeg/okane/pull/157).
+* Supported CSV with $ prefixed amount (https://github.com/xkikeg/okane/pull/159).
+* Supported template field in CSV import (https://github.com/xkikeg/okane/pull/163).
+* Supported ISO Camt053 2019 edition (https://github.com/xkikeg/okane/pull/165).
+
+### Changed
+
+* Changed conversion logic in import rewrite (https://github.com/xkikeg/okane/pull/162).
+
+### Fixed
+
+* Print the line number on parse failure (https://github.com/xkikeg/okane/pull/153).
+* Print the transaction on failed balance (https://github.com/xkikeg/okane/pull/155).
+
+
 ## [0.10.0] - 2024-07-05
 
 ### Added
