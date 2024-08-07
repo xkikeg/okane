@@ -126,6 +126,20 @@ impl super::Importer for CsvImporter {
                     commodity: commodity.clone().into_owned(),
                 });
             }
+            if let Some(charge) = fm.extract(FieldKey::Charge, &r)? {
+                let payee = config.operator.as_ref().ok_or(ImportError::InvalidConfig(
+                    "config should have operator to have charge",
+                ))?;
+                if let Some(value) = str_to_comma_decimal(&charge)? {
+                    txn.add_charge(
+                        payee,
+                        datamodel::Amount {
+                            value,
+                            commodity: commodity.clone().into_owned(),
+                        },
+                    );
+                }
+            }
             if let Some(conv) = fragment.conversion {
                 let rate = rate.ok_or_else(|| {
                     ImportError::Other(format!(
