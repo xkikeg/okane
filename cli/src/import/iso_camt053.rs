@@ -155,13 +155,12 @@ fn add_charges(
                 "config should have operator to have charge",
             ))?;
             log::info!("ADDED cr: {:?}", cr);
+            // charge_amount must be negated, as charge is by default debit.
+            let charge_amount = -cr.amount.to_data(cr.credit_or_debit.value);
             if !cr.is_charge_included {
-                txn.try_add_charge_not_included(
-                    payee,
-                    cr.amount.to_data(cr.credit_or_debit.value),
-                )?;
+                txn.try_add_charge_not_included(payee, charge_amount)?;
             } else {
-                txn.add_charge(payee, cr.amount.to_data(cr.credit_or_debit.value));
+                txn.add_charge(payee, charge_amount);
             }
         }
     }

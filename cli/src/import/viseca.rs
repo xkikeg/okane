@@ -71,7 +71,7 @@ impl super::Importer for VisecaImporter {
                 let payee = config.operator.as_ref().ok_or(ImportError::InvalidConfig(
                     "config should have operator to have charge",
                 ))?;
-                txn.add_charge(payee, -datamodel::Amount::from(fee.amount));
+                txn.add_charge(payee, datamodel::Amount::from(fee.amount));
             }
             result.push(txn);
         }
