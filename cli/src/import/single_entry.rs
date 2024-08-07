@@ -142,7 +142,7 @@ impl Txn {
             ));
         }
         self.transferred_amount(datamodel::Amount {
-            value: self.amount.value - amount.value,
+            value: self.amount.value + amount.value,
             commodity: amount.commodity.clone(),
         });
         self.charges.push(Charge {
@@ -242,7 +242,7 @@ impl Txn {
                 account: "Expenses:Commissions".to_string(),
                 clear_state: datamodel::ClearState::Uncleared,
                 amount: Some(datamodel::ExchangedAmount {
-                    amount: -chrg.amount.clone(),
+                    amount: chrg.amount.clone(),
                     exchange: None,
                 }),
                 balance: None,
