@@ -285,6 +285,8 @@ pub enum FieldKey {
     /// Secondary commodity corresponding the [FieldKey::SecondaryAmount].
     /// Also refer [CommodityConversionSpec] for the detialed explanation.
     SecondaryCommodity,
+    /// Charge, commision or fee related to the transaction.
+    Charge,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
