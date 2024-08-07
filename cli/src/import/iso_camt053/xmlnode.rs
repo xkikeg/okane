@@ -1,19 +1,24 @@
-use rust_decimal::Decimal;
-use serde::Deserialize;
+use std::{borrow::Cow, marker::PhantomData};
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+use rust_decimal::Decimal;
+use serde::{
+    de::value::{CowStrDeserializer, MapAccessDeserializer},
+    Deserialize, Serialize,
+};
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Document {
     #[serde(rename = "BkToCstmrStmt")]
     pub bank_to_customer: BankToCustomerStatement,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BankToCustomerStatement {
     #[serde(rename = "Stmt")]
     pub statements: Vec<Statement>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Statement {
     #[serde(rename = "Bal")]
     pub balance: Vec<Balance>,
@@ -21,7 +26,7 @@ pub struct Statement {
     pub entries: Vec<Entry>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Balance {
     #[serde(rename = "Tp")]
     pub balance_type: BalanceType,
@@ -31,25 +36,25 @@ pub struct Balance {
     pub credit_or_debit: CreditDebitIndicator,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BalanceType {
     #[serde(rename = "CdOrPrtry")]
     pub credit_or_property: CodeOrProperty,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CodeOrProperty {
     #[serde(rename = "Cd")]
     pub code: BalanceCodeValue,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BalanceCodeValue {
     #[serde(rename = "$text")]
     pub value: BalanceCode,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum BalanceCode {
     #[serde(rename = "OPBD")]
     Opening,
@@ -57,13 +62,13 @@ pub enum BalanceCode {
     Closing,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CreditDebitIndicator {
     #[serde(rename = "$text")]
     pub value: CreditOrDebit,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
 pub enum CreditOrDebit {
     #[serde(rename = "CRDT")]
     Credit,
@@ -71,7 +76,7 @@ pub enum CreditOrDebit {
     Debit,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Entry {
     #[serde(rename = "Amt")]
     pub amount: Amount,
@@ -91,13 +96,13 @@ pub struct Entry {
     pub additional_info: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BankTransactionCode {
     #[serde(rename = "Domn")]
     pub domain: Domain,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Domain {
     #[serde(rename = "Cd")]
     pub code: DomainCodeValue,
@@ -105,7 +110,7 @@ pub struct Domain {
     pub family: DomainFamily,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DomainFamily {
     #[serde(rename = "Cd")]
     pub code: DomainFamilyCodeValue,
@@ -113,31 +118,31 @@ pub struct DomainFamily {
     pub sub_family_code: DomainSubFamilyCodeValue,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DomainCodeValue {
     #[serde(rename = "$text")]
     pub value: DomainCode,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum DomainCode {
     #[serde(rename = "PMNT")]
     Payment,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DomainFamilyCodeValue {
     #[serde(rename = "$text")]
     pub value: DomainFamilyCode,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DomainSubFamilyCodeValue {
     #[serde(rename = "$text")]
     pub value: DomainSubFamilyCode,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum DomainFamilyCode {
     #[serde(rename = "ICDT")]
     IssuedCreditTransfers,
@@ -147,7 +152,7 @@ pub enum DomainFamilyCode {
     ReceivedDirectDebits,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum DomainSubFamilyCode {
     #[serde(rename = "AUTT")]
     AutomaticTransfer,
@@ -163,7 +168,7 @@ pub enum DomainSubFamilyCode {
     Other,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EntryDetails {
     #[serde(rename = "Btch", default)]
     pub batch: Batch,
@@ -171,7 +176,7 @@ pub struct EntryDetails {
     pub transactions: Vec<TransactionDetails>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct Batch {
     #[serde(rename = "NbOfTxs")]
     pub number_of_transactions: usize,
@@ -182,7 +187,7 @@ pub struct Batch {
     // pub credit_or_debit: CreditDebitIndicator,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TransactionDetails {
     #[serde(rename = "Refs")]
     pub refs: References,
@@ -202,13 +207,13 @@ pub struct TransactionDetails {
     pub additional_info: Option<String>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RemittanceInfo {
     #[serde(rename = "Ustrd")]
     pub unstructured: Option<String>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct References {
     #[serde(rename = "AcctSvcrRef")]
     pub account_servicer_reference: Option<String>,
@@ -222,41 +227,141 @@ pub struct References {
     // pub transaction_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RelatedParties {
     #[serde(rename = "Dbtr")]
-    pub debtor: Option<Party>,
+    pub debtor: Option<RelatedParty>,
     #[serde(rename = "Cdtr")]
-    pub creditor: Option<Party>,
+    pub creditor: Option<RelatedParty>,
     #[serde(rename = "CdtrAcct")]
     pub creditor_account: Option<Account>,
     #[serde(rename = "DbtrAcct")]
     pub debtor_account: Option<Account>,
     #[serde(rename = "UltmtDbtr")]
-    pub ultimate_debtor: Option<Party>,
+    pub ultimate_debtor: Option<RelatedParty>,
     #[serde(rename = "UltmtCdtr")]
-    pub ultimate_creditor: Option<Party>,
+    pub ultimate_creditor: Option<RelatedParty>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum RelatedParty {
+    Nested(Party),
+    Inline(PartyDetails),
+}
+
+impl<'de> Deserialize<'de> for RelatedParty {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_map(RelatedPartyVisitor::default())
+    }
+}
+
+struct RuminateMap<'de, M>
+where
+    M: serde::de::MapAccess<'de>,
+{
+    first_key: Option<Cow<'de, str>>,
+    inner: M,
+}
+
+impl<'de, M> serde::de::MapAccess<'de> for RuminateMap<'de, M>
+where
+    M: serde::de::MapAccess<'de>,
+{
+    type Error = M::Error;
+
+    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
+    where
+        K: serde::de::DeserializeSeed<'de>,
+    {
+        match self.first_key.take() {
+            Some(key) => seed.deserialize(CowStrDeserializer::new(key)).map(Some),
+            _ => self.inner.next_key_seed(seed),
+        }
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
+    where
+        V: serde::de::DeserializeSeed<'de>,
+    {
+        self.inner.next_value_seed(seed)
+    }
+}
+
+#[derive(Default)]
+struct RelatedPartyVisitor<'de>(PhantomData<&'de u8>);
+
+impl<'de> serde::de::Visitor<'de> for RelatedPartyVisitor<'de> {
+    type Value = RelatedParty;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("Pty element containing party details, or elements of party details")
+    }
+
+    fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+    where
+        M: serde::de::MapAccess<'de>,
+    {
+        let key: Cow<str> = map.next_key()?.ok_or_else(|| {
+            <M::Error as serde::de::Error>::custom("expected Pty element or inline party details")
+        })?;
+        let map = RuminateMap {
+            inner: map,
+            first_key: Some(key),
+        };
+        if map.first_key.as_deref() == Some("Pty") {
+            Party::deserialize(MapAccessDeserializer::new(map)).map(RelatedParty::Nested)
+        } else {
+            PartyDetails::deserialize(MapAccessDeserializer::new(map)).map(RelatedParty::Inline)
+        }
+    }
+}
+
+impl RelatedParty {
+    pub fn from_inner(party: PartyDetails) -> Self {
+        RelatedParty::Nested(Party { party })
+    }
+
+    pub fn name(&self) -> &str {
+        let details = match self {
+            RelatedParty::Nested(party) => &party.party,
+            RelatedParty::Inline(party) => party,
+        };
+        &details.name
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Party {
+    #[serde(rename = "Pty")]
+    party: PartyDetails,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PartyDetails {
     #[serde(rename = "Nm")]
     pub name: String,
+
+    #[serde(rename = "PstlAdr")]
+    pub postal_address: Option<()>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Account {
     #[serde(rename = "Id")]
     pub id: AccountIdWrapper,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AccountIdWrapper {
     #[serde(rename = "$value")]
     pub value: AccountId,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AccountId {
     #[serde(rename = "IBAN")]
     Iban(String),
@@ -273,13 +378,13 @@ impl AccountId {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OtherAccountId {
     #[serde(rename = "Id")]
     pub id: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Amount {
     #[serde(rename = "@Ccy")]
     pub currency: String,
@@ -287,7 +392,7 @@ pub struct Amount {
     pub value: Decimal,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AmountWithExchange {
     #[serde(rename = "Amt")]
     pub amount: Amount,
@@ -295,7 +400,7 @@ pub struct AmountWithExchange {
     pub currency_exchange: Option<CurrencyExchange>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CurrencyExchange {
     #[serde(rename = "SrcCcy")]
     pub source_currency: String,
@@ -305,13 +410,13 @@ pub struct CurrencyExchange {
     pub exchange_rate: ExchangeRate,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExchangeRate {
     #[serde(rename = "$value")]
     pub value: Decimal,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AmountDetails {
     // Actual passed amount.
     #[serde(rename = "InstdAmt")]
@@ -321,7 +426,7 @@ pub struct AmountDetails {
     pub transaction: AmountWithExchange,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Charges {
     #[serde(rename = "TtlChrgsAndTaxAmt")]
     pub total: Option<Amount>,
@@ -329,7 +434,7 @@ pub struct Charges {
     pub records: Vec<ChargeRecord>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ChargeRecord {
     #[serde(rename = "Amt")]
     pub amount: Amount,
@@ -339,7 +444,7 @@ pub struct ChargeRecord {
     pub is_charge_included: bool,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Date {
     #[serde(rename = "Dt")]
     pub date: chrono::NaiveDate,
@@ -378,5 +483,69 @@ mod tests {
         "};
         let account: Account = quick_xml::de::from_str(input).unwrap();
         assert_eq!("0123456789", account.id.value.as_str_id());
+    }
+
+    #[test]
+    fn serialize_related_parties() {
+        let input = RelatedParties {
+            debtor: Some(RelatedParty::Nested(Party {
+                party: PartyDetails {
+                    name: "ピカチュウ".to_string(),
+                    ..PartyDetails::default()
+                },
+            })),
+            creditor: Some(RelatedParty::Inline(PartyDetails {
+                name: "サトシ".to_string(),
+                ..PartyDetails::default()
+            })),
+            creditor_account: None,
+            debtor_account: None,
+            ..RelatedParties::default()
+        };
+        let want = concat!(
+            "<RelatedParties>",
+            "<Dbtr><Pty><Nm>ピカチュウ</Nm><PstlAdr/></Pty></Dbtr>",
+            "<Cdtr><Nm>サトシ</Nm><PstlAdr/></Cdtr>",
+            "<CdtrAcct/>",
+            "<DbtrAcct/>",
+            "<UltmtDbtr/>",
+            "<UltmtCdtr/>",
+            "</RelatedParties>",
+        );
+
+        let got = quick_xml::se::to_string(&input).unwrap();
+
+        assert_eq!(want, got);
+    }
+
+    #[test]
+    fn parse_party_new() {
+        let input = indoc! { "
+            <Cdtr>
+              <Pty>
+                <Nm>北条時行</Nm>
+                <PstlAdr>
+                  <AdrLine>248-0006 神奈川県鎌倉市</AdrLine>
+                  <AdrLine>北条執権邸</AdrLine>
+                </PstlAdr>
+              </Pty>
+            </Cdtr>
+        "};
+        let party: RelatedParty = quick_xml::de::from_str(input).unwrap();
+        assert_eq!("北条時行", party.name());
+    }
+
+    #[test]
+    fn parse_party_old() {
+        let input = indoc! { "
+            <Cdtr>
+              <Nm>Albert Einstein</Nm>
+              <PstlAdr>
+                <AdrLine>8804 Zürich</AdrLine>
+              </PstlAdr>
+            </Cdtr>
+        "};
+        let party: RelatedParty = quick_xml::de::from_str(input).unwrap();
+        assert_eq!("Albert Einstein", party.name());
     }
 }
