@@ -70,7 +70,7 @@ impl<'ctx> ReportContext<'ctx> {
     }
 
     /// Returns all accounts, sorted as string order.
-    pub fn all_accounts(&'ctx self) -> Vec<Account<'ctx>> {
+    pub fn all_accounts(&self) -> Vec<Account<'ctx>> {
         let mut r: Vec<Account<'ctx>> = self
             .accounts
             .iter()
@@ -84,7 +84,7 @@ impl<'ctx> ReportContext<'ctx> {
     }
 
     /// Returns the given account, or `None` if not found.
-    pub fn account(&'ctx self, value: &str) -> Option<Account<'ctx>> {
+    pub fn account(&self, value: &str) -> Option<Account<'ctx>> {
         self.accounts.resolve(value)
     }
 }
