@@ -140,9 +140,9 @@ impl<'arena, T: FromInterned<'arena>> InternStore<'arena, T> {
     }
 
     /// Returns the Iterator for all elements.
-    pub fn iter<'a>(&'a self) -> Iter<'a, T>
+    pub fn iter<'container>(&'container self) -> Iter<'arena, 'container, T>
     where
-        'a: 'arena,
+        'arena: 'container,
     {
         Iter {
             base: self.records.iter(),
@@ -183,8 +183,8 @@ impl<'arena, T: FromInterned<'arena>> InternStore<'arena, T> {
 /// an iterator over the items of a `Interner`.
 /// Compared to the underlying HashSet iterator,
 /// this struct ensures the `T` type.
-pub struct Iter<'arena, T> {
-    base: std::collections::hash_map::Iter<'arena, &'arena str, Option<&'arena str>>,
+pub struct Iter<'arena, 'container, T> {
+    base: std::collections::hash_map::Iter<'container, &'arena str, Option<&'arena str>>,
     phantom: PhantomData<T>,
 }
 
@@ -192,7 +192,7 @@ fn to_interned<'arena, T: FromInterned<'arena>>(x: &'arena str) -> T {
     <T as FromInterned>::from_interned(InternedStr(x))
 }
 
-impl<'arena, T> Iterator for Iter<'arena, T>
+impl<'arena, 'container, T> Iterator for Iter<'arena, 'container, T>
 where
     T: FromInterned<'arena>,
 {
