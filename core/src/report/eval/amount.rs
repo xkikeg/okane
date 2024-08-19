@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     fmt::Display,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+    sync::atomic::{self, AtomicI64},
 };
 
 use rust_decimal::Decimal;
@@ -12,12 +13,30 @@ use super::error::EvalError;
 
 /// Amount with multiple commodities, or simple zero.
 // TODO: Rename it to ValueAmount.
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Amount<'ctx> {
     // if values.len == zero, then it'll be completely zero.
     // TODO: Consider optimizing for small number of commodities,
     // as most of the case it needs to be just a few elements.
     values: HashMap<Commodity<'ctx>, Decimal>,
+}
+
+pub static AMOUNT_DEFAULT_COUNT: AtomicI64 = AtomicI64::new(0);
+pub static AMOUNT_DROP_COUNT: AtomicI64 = AtomicI64::new(0);
+
+impl<'ctx> Drop for Amount<'ctx> {
+    fn drop(&mut self) {
+        AMOUNT_DROP_COUNT.fetch_add(1, atomic::Ordering::SeqCst);
+    }
+}
+
+impl<'ctx> Default for Amount<'ctx> {
+    fn default() -> Self {
+        AMOUNT_DEFAULT_COUNT.fetch_add(1, atomic::Ordering::SeqCst);
+        Self {
+            values: HashMap::default(),
+        }
+    }
 }
 
 impl<'ctx> Amount<'ctx> {
@@ -45,8 +64,8 @@ impl<'ctx> Amount<'ctx> {
     }
 
     /// Takes out the instance and returns map from commodity to its value.
-    pub fn into_values(self) -> HashMap<Commodity<'ctx>, Decimal> {
-        self.values
+    pub fn into_values(mut self) -> HashMap<Commodity<'ctx>, Decimal> {
+        self.values.drain().collect()
     }
 
     /// Returns an objectt to print the amount as inline.
@@ -126,8 +145,8 @@ impl<'ctx> Add for Amount<'ctx> {
 }
 
 impl<'ctx> AddAssign for Amount<'ctx> {
-    fn add_assign(&mut self, rhs: Self) {
-        for (c, v2) in rhs.values {
+    fn add_assign(&mut self, mut rhs: Self) {
+        for (c, v2) in rhs.values.drain() {
             let mut v1 = self.values.entry(c).or_insert(Decimal::ZERO);
             v1 += v2;
             // it's questionable if we should eliminate zero commodities,
@@ -150,8 +169,8 @@ impl<'ctx> Sub for Amount<'ctx> {
 }
 
 impl<'ctx> SubAssign for Amount<'ctx> {
-    fn sub_assign(&mut self, rhs: Self) {
-        for (c, v2) in rhs.values {
+    fn sub_assign(&mut self, mut rhs: Self) {
+        for (c, v2) in rhs.values.drain() {
             let mut v1 = self.values.entry(c).or_insert(Decimal::ZERO);
             v1 -= v2;
             if v1.is_zero() {

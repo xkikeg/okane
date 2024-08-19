@@ -87,6 +87,15 @@ impl<'ctx> ReportContext<'ctx> {
     pub fn account(&self, value: &str) -> Option<Account<'ctx>> {
         self.accounts.resolve(value)
     }
+
+    /// DO NOT SUBMIT: at least make it pub(super)
+    pub fn ensure_account(&mut self, value: &str) -> Account<'ctx> {
+        self.accounts.ensure(value)
+    }
+
+    pub fn ensure_commodity(&mut self, value: &str) -> Commodity<'ctx> {
+        self.commodities.ensure(value)
+    }
 }
 
 #[cfg(test)]

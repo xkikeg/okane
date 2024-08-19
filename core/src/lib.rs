@@ -5,6 +5,7 @@
 pub mod datamodel;
 pub mod format;
 pub mod load;
-pub(crate) mod parse;
+// DO NOT SUBMIT: use pub(crate)
+pub mod parse;
 pub mod repl;
 pub mod report;

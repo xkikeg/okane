@@ -8,11 +8,15 @@ pub use amount::Amount;
 pub use error::EvalError;
 pub use evaluated::Evaluated;
 
+// DO NOT SUBMIT
+pub use amount::{AMOUNT_DEFAULT_COUNT, AMOUNT_DROP_COUNT};
+
 use super::context::ReportContext;
 use crate::repl::expr;
 
 // TODO: Consider if this is ok to be private or needs to be pub.
-pub(crate) trait Evaluable {
+// DO NOT SUBMIT: make this pub(crate)
+pub trait Evaluable {
     fn eval<'ctx>(&self, ctx: &mut ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError>;
 }
 

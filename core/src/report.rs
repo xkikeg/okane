@@ -12,6 +12,10 @@ pub use book_keeping::{process, Balance, Posting, Transaction};
 pub use context::{Account, ReportContext};
 pub use error::ReportError;
 
+// remove these
+pub use book_keeping::add_transaction;
+pub use eval::{Amount, Evaluable, AMOUNT_DEFAULT_COUNT, AMOUNT_DROP_COUNT};
+
 use crate::{load, repl::LedgerEntry};
 
 /// Returns all accounts for the given LedgerEntry.

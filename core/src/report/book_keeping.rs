@@ -5,6 +5,7 @@ use std::{borrow::Borrow, collections::HashMap};
 
 use bumpalo::collections as bcc;
 use chrono::NaiveDate;
+use rust_decimal::Decimal;
 
 use crate::{load, repl};
 
@@ -118,10 +119,10 @@ impl<'ctx> ProcessAccumulator<'ctx> {
 
 /// Evaluated transaction, already processed to have right balance.
 // TODO: Rename it to EvaluatedTxn?
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Transaction<'ctx> {
     pub date: NaiveDate,
-    pub postings: &'ctx [Posting<'ctx>],
+    pub postings: bumpalo::boxed::Box<'ctx, [Posting<'ctx>]>,
 }
 
 /// Evaluated posting of the transaction.
@@ -157,7 +158,8 @@ impl<'ctx> Balance<'ctx> {
 }
 
 /// Adds a repl transaction, and converts it into a processed Transaction.
-fn add_transaction<'ctx>(
+/// DO NOT SUBMIT: Mark this private.
+pub fn add_transaction<'ctx>(
     ctx: &mut ReportContext<'ctx>,
     bal: &mut Balance<'ctx>,
     txn: &repl::Transaction,
@@ -190,8 +192,9 @@ fn add_transaction<'ctx>(
             (Some(amount), _) => {
                 // TODO: add balance constraints check.
                 let amount: Amount = amount.amount.eval(ctx)?.try_into()?;
-                bal.increment(account, amount.clone());
-                balance += amount.clone();
+                // DO NOT SUBMIT
+                // bal.increment(account, amount.clone());
+                // balance += amount.clone();
                 Ok(Posting { account, amount })
             }
         }?;
@@ -212,7 +215,7 @@ fn add_transaction<'ctx>(
     }
     Ok(Transaction {
         date: txn.date,
-        postings: postings.into_bump_slice(),
+        postings: postings.into_boxed_slice(),
     })
 }
 

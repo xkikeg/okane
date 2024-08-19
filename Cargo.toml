@@ -16,7 +16,7 @@ repository = "https://github.com/xkikeg/okane"
 [workspace.dependencies]
 # dependencies
 annotate-snippets = "0.11"
-bumpalo = {version = "3.16", features = ["collections"]}
+bumpalo = {version = "3.16", features = ["collections", "boxed"]}
 chrono = "0.4.38"
 log = "0.4"
 rust_decimal = "1.35"
@@ -25,6 +25,7 @@ winnow = "0.6.18"
 
 # middle
 env_logger = "0.11"
+lazy_static = "1.5"
 
 # dev-dependencies
 ctor = "0.2.8"
@@ -32,3 +33,6 @@ indoc = "2.0"
 maplit = "1.0"
 pretty_assertions = "1.4"
 rust_decimal_macros = "1.35"
+
+[profile.bench]
+debug = "limited"
