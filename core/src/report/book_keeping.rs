@@ -118,10 +118,14 @@ impl<'ctx> ProcessAccumulator<'ctx> {
 
 /// Evaluated transaction, already processed to have right balance.
 // TODO: Rename it to EvaluatedTxn?
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Transaction<'ctx> {
     pub date: NaiveDate,
-    pub postings: &'ctx [Posting<'ctx>],
+    // Posting in the transaction.
+    // Note this MUST be a Box instead of &[Posting],
+    // as Posting is a [Drop] and we can't skip calling Drop,
+    // otherwise we leave allocated memory for Amount HashMap.
+    pub postings: bumpalo::boxed::Box<'ctx, [Posting<'ctx>]>,
 }
 
 /// Evaluated posting of the transaction.
@@ -212,7 +216,7 @@ fn add_transaction<'ctx>(
     }
     Ok(Transaction {
         date: txn.date,
-        postings: postings.into_bump_slice(),
+        postings: postings.into_boxed_slice(),
     })
 }
 
