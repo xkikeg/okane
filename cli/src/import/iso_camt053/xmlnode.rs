@@ -321,6 +321,7 @@ impl<'de> serde::de::Visitor<'de> for RelatedPartyVisitor<'de> {
 }
 
 impl RelatedParty {
+    #[cfg(test)]
     pub fn from_inner(party: PartyDetails) -> Self {
         RelatedParty::Nested(Party { party })
     }
