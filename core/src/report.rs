@@ -1,5 +1,6 @@
 //! eval module contains functions for Ledger file evaluation.
 
+mod balance;
 mod book_keeping;
 mod context;
 mod error;
@@ -8,7 +9,8 @@ mod intern;
 
 use std::borrow::Borrow;
 
-pub use book_keeping::{process, Balance, Posting, Transaction};
+pub use balance::Balance;
+pub use book_keeping::{process, Posting, Transaction};
 pub use context::{Account, ReportContext};
 pub use error::ReportError;
 
