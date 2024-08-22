@@ -4,13 +4,25 @@ use rust_decimal::Decimal;
 
 use crate::{repl::expr, report::ReportContext};
 
-use super::{amount::Amount, error::EvalError};
+use super::{
+    amount::{Amount, PostingAmount},
+    error::EvalError,
+};
 
 /// Represents any evaluated value.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Evaluated<'ctx> {
     Number(Decimal),
     Commodities(Amount<'ctx>),
+}
+
+impl<'ctx> TryFrom<Evaluated<'ctx>> for PostingAmount<'ctx> {
+    type Error = EvalError;
+
+    fn try_from(value: Evaluated<'ctx>) -> Result<Self, Self::Error> {
+        let amount: Amount<'ctx> = value.try_into()?;
+        amount.try_into()
+    }
 }
 
 impl<'ctx> TryFrom<Evaluated<'ctx>> for Amount<'ctx> {

@@ -204,7 +204,7 @@ impl BalanceCmd {
         let (_, balance) = report::process(&mut ctx, load::new_loader(self.source))?;
         let accounts = ctx.all_accounts();
         for account in &accounts {
-            if let Some(amount) = balance.get_balance(account) {
+            if let Some(amount) = balance.get(account) {
                 writeln!(w, "{}: {}", account.as_str(), amount.as_inline_display())?;
             } else {
                 writeln!(w, "{}: not found, probably zero", account.as_str())?;
@@ -236,7 +236,7 @@ impl RegisterCmd {
         for txn in txns {
             if let Some(account) = &account {
                 if let Some(p) = txn.postings.iter().find(|p| p.account == *account) {
-                    let b = balance.increment(*account, p.amount.clone());
+                    let b = balance.add_amount(*account, p.amount.clone());
                     writeln!(
                         w,
                         "{} {} {}",

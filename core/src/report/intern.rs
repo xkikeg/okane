@@ -51,7 +51,7 @@ pub(super) trait FromInterned<'arena>: Copy {
 }
 
 /// Error on InternStore operations.
-#[derive(Debug, PartialEq, thiserror::Error)]
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum InternError {
     #[error("given alias is already registered as canonical")]
     AlreadyCanonical,
@@ -102,7 +102,7 @@ impl<'arena, T: FromInterned<'arena>> InternStore<'arena, T> {
 
     /// Interns given `str` and returns the shared instance.
     /// Note if `value` is registered as alias, it'll resolve to the canonical one.
-    /// If `value` is not registered yet, registered as canonical value.
+    /// If `value` is not registered yet, register the value as canonical value.
     pub fn ensure(&mut self, value: &str) -> T {
         match self.resolve(value) {
             Some(found) => found,
