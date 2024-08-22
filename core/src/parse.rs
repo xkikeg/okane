@@ -8,7 +8,7 @@ mod expr;
 mod metadata;
 mod posting;
 mod primitive;
-mod transaction;
+pub(crate) mod transaction;
 
 #[cfg(test)]
 pub(crate) mod testing;

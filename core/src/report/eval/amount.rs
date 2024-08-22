@@ -10,6 +10,131 @@ use crate::report::context::Commodity;
 
 use super::error::EvalError;
 
+/// Amount with only one commodities, or total zero.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum PostingAmount<'ctx> {
+    Zero,
+    Single {
+        value: Decimal,
+        commodity: Commodity<'ctx>,
+    },
+}
+
+impl<'ctx> Default for PostingAmount<'ctx> {
+    fn default() -> Self {
+        Self::Zero
+    }
+}
+
+impl<'ctx> TryFrom<Amount<'ctx>> for PostingAmount<'ctx> {
+    type Error = EvalError;
+
+    fn try_from(value: Amount<'ctx>) -> Result<Self, Self::Error> {
+        PostingAmount::try_from(&value)
+    }
+}
+
+impl<'ctx> TryFrom<&Amount<'ctx>> for PostingAmount<'ctx> {
+    type Error = EvalError;
+
+    fn try_from(value: &Amount<'ctx>) -> Result<Self, Self::Error> {
+        if value.values.len() > 1 {
+            Err(EvalError::SingleCommodityAmountRequired)
+        } else {
+            Ok(value
+                .values
+                .iter()
+                .next()
+                .map(|(commodity, value)| PostingAmount::Single {
+                    value: *value,
+                    commodity: *commodity,
+                })
+                .unwrap_or_default())
+        }
+    }
+}
+
+impl<'ctx> From<PostingAmount<'ctx>> for Amount<'ctx> {
+    fn from(value: PostingAmount<'ctx>) -> Self {
+        match value {
+            PostingAmount::Zero => Amount::zero(),
+            PostingAmount::Single { value, commodity } => Amount::from_value(value, commodity),
+        }
+    }
+}
+
+impl<'ctx> Neg for PostingAmount<'ctx> {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        match self {
+            PostingAmount::Zero => PostingAmount::Zero,
+            PostingAmount::Single { value, commodity } => PostingAmount::Single {
+                value: -value,
+                commodity,
+            },
+        }
+    }
+}
+
+impl<'ctx> PostingAmount<'ctx> {
+    /// Returns absolute zero.
+    pub fn zero() -> Self {
+        Self::default()
+    }
+
+    /// Constructs an instance with single commodity.
+    pub fn from_value(value: Decimal, commodity: Commodity<'ctx>) -> Self {
+        PostingAmount::Single { value, commodity }
+    }
+
+    /// Adds the amount with keeping commodity single.
+    pub fn check_add(self, rhs: Self) -> Result<Self, EvalError> {
+        match (self, rhs) {
+            (PostingAmount::Zero, _) => Ok(rhs),
+            (_, PostingAmount::Zero) => Ok(self),
+            (
+                PostingAmount::Single {
+                    value: lhs_value,
+                    commodity: lhs_commodity,
+                },
+                PostingAmount::Single {
+                    value: rhs_value,
+                    commodity: rhs_commodity,
+                },
+            ) => {
+                if lhs_commodity != rhs_commodity {
+                    Err(EvalError::UnmatchingCommodities(
+                        lhs_commodity.as_str().to_string(),
+                        rhs_commodity.as_str().to_string(),
+                    ))
+                } else {
+                    Ok(PostingAmount::Single {
+                        value: lhs_value + rhs_value,
+                        commodity: lhs_commodity,
+                    })
+                }
+            }
+        }
+    }
+
+    /// Subtracts the amount with keeping the commodity single.
+    pub fn check_sub(self, rhs: Self) -> Result<Self, EvalError> {
+        self.check_add(-rhs)
+    }
+}
+
+impl<'ctx> Display for PostingAmount<'ctx> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PostingAmount::Zero => write!(f, "0"),
+            PostingAmount::Single { value, commodity } => {
+                write!(f, "{} {}", value, commodity.as_str())
+            }
+        }
+    }
+}
+
 /// Amount with multiple commodities, or simple zero.
 // TODO: Rename it to ValueAmount.
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
@@ -65,6 +190,23 @@ impl<'ctx> Amount<'ctx> {
         self.values.iter().all(|(_, v)| v.is_zero())
     }
 
+    /// Replace the amount of the particular commodity, and returns the previous amount for the commodity.
+    /// E.g. (100 USD + 100 EUR).set_partial(200, USD) returns 100.
+    pub fn set_partial(&mut self, amount: Decimal, commodity: Commodity<'ctx>) -> Decimal {
+        if amount.is_zero() {
+            self.values.remove(&commodity)
+        } else {
+            self.values.insert(commodity, amount)
+        }
+        .unwrap_or_default()
+    }
+
+    /// Returns the amount of the particular commodity.
+    pub fn get_part(&self, commodity: Commodity<'ctx>) -> Decimal {
+        self.values.get(&commodity).copied().unwrap_or_default()
+    }
+
+    /// Creates negated instance.
     pub fn negate(mut self) -> Self {
         for (_, v) in self.values.iter_mut() {
             v.set_sign_positive(!v.is_sign_positive())
@@ -72,6 +214,7 @@ impl<'ctx> Amount<'ctx> {
         self
     }
 
+    /// Run division with error checking.
     pub fn check_div(mut self, rhs: Decimal) -> Result<Self, EvalError> {
         if rhs.is_zero() {
             return Err(EvalError::DivideByZero);
@@ -80,6 +223,19 @@ impl<'ctx> Amount<'ctx> {
             *v = v.checked_div(rhs).ok_or(EvalError::NumberOverflow)?;
         }
         Ok(self)
+    }
+
+    /// Checks if the amount is consistent with the given [PostingAmount].
+    /// Consistent means
+    ///
+    /// *   If the [PostingAmount] is zero, then the amount must be zero.
+    /// *   If the [PostingAmount] is a value with commodity,
+    ///     then the amount should be equal to given value only on the commodity.
+    pub fn is_consistent(&self, rhs: PostingAmount<'ctx>) -> bool {
+        match rhs {
+            PostingAmount::Zero => self.is_zero(),
+            PostingAmount::Single { value, commodity } => self.get_part(commodity) == value,
+        }
     }
 }
 
@@ -135,6 +291,21 @@ impl<'ctx> AddAssign for Amount<'ctx> {
             // don't have behavior difference.
             if v1.is_zero() {
                 self.values.remove(&c);
+            }
+        }
+    }
+}
+
+impl<'ctx> AddAssign<PostingAmount<'ctx>> for Amount<'ctx> {
+    fn add_assign(&mut self, rhs: PostingAmount<'ctx>) {
+        match rhs {
+            PostingAmount::Zero => (),
+            PostingAmount::Single { value, commodity } => {
+                let curr = self.values.entry(commodity).or_default();
+                *curr += value;
+                if curr.is_zero() {
+                    self.values.remove(&commodity);
+                }
             }
         }
     }
