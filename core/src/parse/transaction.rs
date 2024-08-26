@@ -4,7 +4,7 @@ use std::borrow::Cow;
 
 use winnow::{
     ascii::{space0, space1},
-    combinator::{cond, cut_err, opt, peek, preceded, repeat, terminated, trace},
+    combinator::{cond, cut_err, opt, peek, preceded, terminated, trace},
     error::StrContext,
     stream::{AsChar, Stream, StreamIsPartial},
     token::one_of,
@@ -15,6 +15,8 @@ use crate::{
     parse::{character, combinator::has_peek, metadata, posting, primitive},
     repl,
 };
+
+use super::combinator::repeated_smallvec;
 
 /// Parses a transaction from given string.
 pub fn transaction<'i, I>(input: &mut I) -> PResult<repl::Transaction<'i>>
@@ -45,7 +47,7 @@ where
         let payee =
             opt(character::till_line_ending_or_semi.map(str::trim_end)).parse_next(input)?;
         let metadata = metadata::block_metadata(input)?;
-        let posts = repeat(0.., preceded(peek(one_of(' ')), cut_err(posting::posting)))
+        let posts = repeated_smallvec(0.., preceded(peek(one_of(' ')), cut_err(posting::posting)))
             .parse_next(input)?;
         Ok(repl::Transaction {
             effective_date,
@@ -68,6 +70,7 @@ mod tests {
     use indoc::indoc;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
+    use smallvec::smallvec;
 
     #[test]
     fn transaction_parses_valid_minimal() {
@@ -97,7 +100,7 @@ mod tests {
                     clear_state: repl::ClearState::Cleared,
                     code: Some(Cow::Borrowed("code")),
                     payee: Cow::Borrowed("Foo"),
-                    posts: vec![
+                    posts: smallvec![
                         repl::Posting {
                             amount: Some(repl::PostingAmount {
                                 amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
@@ -138,11 +141,11 @@ mod tests {
                     clear_state: repl::ClearState::Pending,
                     code: Some(Cow::Borrowed("code")),
                     payee: Cow::Borrowed("Foo"),
-                    metadata: vec![
+                    metadata: smallvec![
                         repl::Metadata::Comment(Cow::Borrowed("とりあえずのメモ")),
-                        repl::Metadata::WordTags(vec![Cow::Borrowed("取引")]),
+                        repl::Metadata::WordTags(smallvec![Cow::Borrowed("取引")]),
                     ],
-                    posts: vec![
+                    posts: smallvec![
                         repl::Posting {
                             amount: Some(repl::PostingAmount {
                                 amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
@@ -152,7 +155,7 @@ mod tests {
                                 cost: None,
                                 lot: repl::Lot::default(),
                             }),
-                            metadata: vec![
+                            metadata: smallvec![
                                 repl::Metadata::Comment(Cow::Borrowed("Note expense A")),
                                 repl::Metadata::KeyValueTag {
                                     key: Cow::Borrowed("Payee"),
@@ -174,7 +177,7 @@ mod tests {
                                 value: PrettyDecimal::plain(dec!(-1000)),
                                 commodity: Cow::Borrowed("CHF"),
                             })),
-                            metadata: vec![repl::Metadata::WordTags(vec![
+                            metadata: smallvec![repl::Metadata::WordTags(smallvec![
                                 Cow::Borrowed("tag1"),
                                 Cow::Borrowed("他のタグ")
                             ]),],
@@ -185,7 +188,7 @@ mod tests {
                                 value: PrettyDecimal::unformatted(dec!(0)),
                                 commodity: Cow::Borrowed(""),
                             })),
-                            metadata: vec![
+                            metadata: smallvec![
                                 repl::Metadata::Comment(Cow::Borrowed("Cのノート")),
                                 repl::Metadata::Comment(Cow::Borrowed("これなんだっけ")),
                             ],

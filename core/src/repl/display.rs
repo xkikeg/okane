@@ -398,6 +398,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
+    use smallvec::smallvec;
 
     fn amount<'a, T, U>(value: T, commodity: U) -> expr::ValueExpr<'a>
     where
@@ -474,7 +475,7 @@ mod tests {
                 clear_state: ClearState::Uncleared,
                 code: None,
                 payee: Cow::Borrowed("Example Grocery"),
-                posts: vec![Posting {
+                posts: smallvec![Posting {
                     account: Cow::Borrowed("Assets"),
                     clear_state: ClearState::Uncleared,
                     amount: Some(PostingAmount {
@@ -483,9 +484,9 @@ mod tests {
                         lot: Lot::default(),
                     }),
                     balance: None,
-                    metadata: Vec::new(),
+                    metadata: SmallVec::new(),
                 }],
-                metadata: Vec::new(),
+                metadata: SmallVec::new(),
             }))
         );
         let want = concat!(
