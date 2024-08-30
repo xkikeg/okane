@@ -1,6 +1,9 @@
 use bumpalo::Bump;
 
-use super::intern::{FromInterned, InternStore, InternedStr, StoredValue};
+use super::{
+    commodity::CommodityStore,
+    intern::{FromInterned, InternStore, InternedStr, StoredValue},
+};
 
 /// `&str` for accounts, interned within the `'arena` bounded allocator lifetime.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -25,31 +28,6 @@ impl<'arena> Account<'arena> {
 
 /// `Interner` for `Account`.
 pub(super) type AccountStore<'arena> = InternStore<'arena, Account<'arena>>;
-
-/// `&str` for commodities, interned within the `'arena` bounded allocator lifetime.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-pub struct Commodity<'arena>(InternedStr<'arena>);
-
-impl<'arena> FromInterned<'arena> for Commodity<'arena> {
-    fn from_interned(v: InternedStr<'arena>) -> Self {
-        Self(v)
-    }
-
-    fn as_interned(&self) -> InternedStr<'arena> {
-        self.0
-    }
-}
-
-impl<'arena> Commodity<'arena> {
-    /// Returns the `&str`.
-    pub fn as_str(&self) -> &'arena str {
-        self.0.as_str()
-    }
-}
-
-/// `Interner` for `Commodity`.
-pub(super) type CommodityStore<'arena> = InternStore<'arena, Commodity<'arena>>;
-
 /// Context object extensively used across Ledger file evaluation.
 pub struct ReportContext<'ctx> {
     pub(super) arena: &'ctx Bump,

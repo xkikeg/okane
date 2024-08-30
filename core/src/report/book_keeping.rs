@@ -108,10 +108,14 @@ impl<'ctx> ProcessAccumulator<'ctx> {
                     .insert_canonical(&commodity.name)
                     .map_err(BookKeepError::InvalidCommodity)?;
                 for cd in &commodity.details {
-                    if let repl::CommodityDetail::Alias(alias) = cd {
-                        ctx.commodities
-                            .insert_alias(alias, canonical)
-                            .map_err(BookKeepError::InvalidCommodity)?;
+                    match cd {
+                        repl::CommodityDetail::Alias(alias) => {
+                            ctx.commodities
+                                .insert_alias(alias, canonical)
+                                .map_err(BookKeepError::InvalidCommodity)?;
+                        }
+                        repl::CommodityDetail::Format(format_amount) => {}
+                        _ => {}
                     }
                 }
                 Ok(())
