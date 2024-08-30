@@ -13,7 +13,7 @@ pub enum BalanceError {
 }
 
 /// Accumulated balance of accounts.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct Balance<'ctx> {
     accounts: HashMap<Account<'ctx>, Amount<'ctx>>,
 }
@@ -80,6 +80,13 @@ impl<'ctx> Balance<'ctx> {
     /// Gets the balance of the given account.
     pub fn get(&self, account: &Account<'ctx>) -> Option<&Amount<'ctx>> {
         self.accounts.get(account)
+    }
+
+    /// Constructs sorted vec of account and commodity tuple.
+    pub fn into_vec(self) -> Vec<(Account<'ctx>, Amount<'ctx>)> {
+        let mut ret: Vec<(Account<'ctx>, Amount<'ctx>)> = self.accounts.into_iter().collect();
+        ret.sort_unstable_by_key(|(a, _)| a.as_str());
+        ret
     }
 }
 
@@ -291,7 +298,7 @@ mod tests {
 
         assert_eq!(
             err,
-            BalanceError::MultiCommodityWithPartialSet(EvalError::SingleCommodityAmountRequired)
+            BalanceError::MultiCommodityWithPartialSet(EvalError::PostingAmountRequired)
         );
     }
 }

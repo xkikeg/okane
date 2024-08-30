@@ -5,7 +5,7 @@ use rust_decimal::Decimal;
 use crate::{repl::expr, report::ReportContext};
 
 use super::{
-    amount::{Amount, PostingAmount},
+    amount::{Amount, PostingAmount, SingleAmount},
     error::EvalError,
 };
 
@@ -14,6 +14,15 @@ use super::{
 pub enum Evaluated<'ctx> {
     Number(Decimal),
     Commodities(Amount<'ctx>),
+}
+
+impl<'ctx> TryFrom<Evaluated<'ctx>> for SingleAmount<'ctx> {
+    type Error = EvalError;
+
+    fn try_from(value: Evaluated<'ctx>) -> Result<Self, Self::Error> {
+        let amount: Amount<'ctx> = value.try_into()?;
+        amount.try_into()
+    }
 }
 
 impl<'ctx> TryFrom<Evaluated<'ctx>> for PostingAmount<'ctx> {
@@ -32,7 +41,7 @@ impl<'ctx> TryFrom<Evaluated<'ctx>> for Amount<'ctx> {
         match value {
             Evaluated::Commodities(x) => Ok(x),
             Evaluated::Number(x) if x.is_zero() => Ok(Self::default()),
-            _ => Err(EvalError::CommodityAmountRequired),
+            _ => Err(EvalError::AmountRequired),
         }
     }
 }
@@ -165,7 +174,7 @@ mod tests {
 
         assert_eq!(
             Amount::try_from(Evaluated::from(dec!(5))).unwrap_err(),
-            EvalError::CommodityAmountRequired
+            EvalError::AmountRequired
         );
 
         assert_eq!(

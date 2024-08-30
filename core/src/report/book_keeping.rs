@@ -12,7 +12,7 @@ use super::{
     balance::{Balance, BalanceError},
     context::{Account, ReportContext},
     error::{self, ReportError},
-    eval::{Amount, EvalError, Evaluable, PostingAmount},
+    eval::{Amount, EvalError, Evaluable, PostingAmount, SingleAmount},
     intern::InternError,
 };
 
@@ -114,7 +114,10 @@ impl<'ctx> ProcessAccumulator<'ctx> {
                                 .insert_alias(alias, canonical)
                                 .map_err(BookKeepError::InvalidCommodity)?;
                         }
-                        repl::CommodityDetail::Format(format_amount) => {}
+                        repl::CommodityDetail::Format(format_amount) => {
+                            ctx.commodities
+                                .set_format(canonical, format_amount.value.clone());
+                        }
                         _ => {}
                     }
                 }
@@ -157,42 +160,43 @@ fn add_transaction<'ctx>(
     let mut balance = Amount::default();
     for (i, posting) in txn.posts.iter().enumerate() {
         let account = ctx.accounts.ensure(&posting.account);
-        let amount = match (&posting.amount, &posting.balance) {
-            (None, None) => {
-                if let Some(j) = unfilled.replace(i) {
-                    Err(BookKeepError::UndeduciblePostingAmount(j, i))
-                } else {
-                    Ok(PostingAmount::zero())
-                }
-            }
-            (None, Some(balance_constraints)) => {
-                let current: PostingAmount = balance_constraints.eval(ctx)?.try_into()?;
-                let prev: PostingAmount = bal.set_partial(account, current)?;
-
-                Ok(current.check_sub(prev)?)
-            }
-            (Some(amount), balance_constraints) => {
-                // TODO: add balance constraints check.
-                let amount: PostingAmount = amount.amount.eval(ctx)?.try_into()?;
-                let expected_balance: Option<PostingAmount> = balance_constraints
-                    .as_ref()
-                    .map(|x| x.eval(ctx))
-                    .transpose()?
-                    .map(|x| x.try_into())
-                    .transpose()?;
-                let current = bal.add_posting_amount(account, amount);
-                if let Some(expected) = expected_balance {
-                    if !current.is_consistent(expected) {
-                        return Err(BookKeepError::BalanceAssertionFailure(
-                            format!("{}", current.as_inline_display()),
-                            format!("{}", expected),
-                        ));
+        let (amount, balance_amount): (PostingAmount, PostingAmount) =
+            match (&posting.amount, &posting.balance) {
+                (None, None) => {
+                    if let Some(j) = unfilled.replace(i) {
+                        Err(BookKeepError::UndeduciblePostingAmount(j, i))
+                    } else {
+                        Ok((PostingAmount::zero(), PostingAmount::zero()))
                     }
                 }
-                Ok(amount)
-            }
-        }?;
-        balance += amount;
+                (None, Some(balance_constraints)) => {
+                    let current: PostingAmount = balance_constraints.eval(ctx)?.try_into()?;
+                    let prev: PostingAmount = bal.set_partial(account, current)?;
+                    let amount = current.check_sub(prev)?;
+                    Ok((amount, amount))
+                }
+                (Some(syntax_amount), balance_constraints) => {
+                    let amount: PostingAmount = syntax_amount.amount.eval(ctx)?.try_into()?;
+                    let expected_balance: Option<PostingAmount> = balance_constraints
+                        .as_ref()
+                        .map(|x| x.eval(ctx))
+                        .transpose()?
+                        .map(|x| x.try_into())
+                        .transpose()?;
+                    let current = bal.add_posting_amount(account, amount);
+                    if let Some(expected) = expected_balance {
+                        if !current.is_consistent(expected) {
+                            return Err(BookKeepError::BalanceAssertionFailure(
+                                format!("{}", current.as_inline_display()),
+                                format!("{}", expected),
+                            ));
+                        }
+                    }
+                    let balance_amount = calculate_balance_amount(ctx, syntax_amount, amount)?;
+                    Ok((amount, balance_amount))
+                }
+            }?;
+        balance += balance_amount;
         postings.push(Posting {
             account,
             amount: amount.into(),
@@ -203,18 +207,61 @@ fn add_transaction<'ctx>(
         postings[u].amount = deduced.clone();
         bal.add_amount(postings[u].account, deduced);
     } else if !balance.is_zero() {
-        // TODO: restore balance checks here.
-        // let's ignore this for now, as we're not checking balance properly.
-        // This should account for lot price and cost.
-        // return Err(BookKeepError::UnbalancedPostings(format!(
-        //     "{}",
-        //     balance.as_inline_display()
-        // )));
+        return Err(BookKeepError::UnbalancedPostings(format!(
+            "{}",
+            balance.as_inline_display()
+        )));
     }
     Ok(Transaction {
         date: txn.date,
         postings: postings.into_boxed_slice(),
     })
+}
+
+fn calculate_balance_amount<'ctx>(
+    ctx: &mut ReportContext<'ctx>,
+    posting_amount: &repl::PostingAmount,
+    computed_amount: PostingAmount<'ctx>,
+) -> Result<PostingAmount<'ctx>, BookKeepError> {
+    let cost: Option<SingleAmount<'ctx>> = posting_amount
+        .cost
+        .as_ref()
+        .map(|x| calculate_exchanged_amount(ctx, x, computed_amount.try_into()?))
+        .transpose()?;
+    let lot: Option<SingleAmount<'ctx>> = posting_amount
+        .lot
+        .price
+        .as_ref()
+        .map(|x| calculate_exchanged_amount(ctx, x, computed_amount.try_into()?))
+        .transpose()?;
+    // Actually, there's no point to compute cost if lot price is provided.
+    // Example: if you sell a X with cost p Y lot q Y.
+    //   Broker          -a X {{q Y}} @@ p Y
+    //   Broker           p Y
+    //   Income   (-(p - q) Y)
+    //
+    // if you set the first posting amount t,
+    // t + p Y - (p - q) Y = 0
+    // t = -q Y
+    Ok(lot.or(cost).map(Into::into).unwrap_or(computed_amount))
+}
+
+fn calculate_exchanged_amount<'ctx>(
+    ctx: &mut ReportContext<'ctx>,
+    cost: &repl::Exchange,
+    amount: SingleAmount<'ctx>,
+) -> Result<SingleAmount<'ctx>, BookKeepError> {
+    let exchanged: Result<SingleAmount, EvalError> = match cost {
+        repl::Exchange::Rate(x) => {
+            let rate: SingleAmount = x.eval(ctx)?.try_into()?;
+            Ok(rate * amount.value)
+        }
+        repl::Exchange::Total(y) => {
+            let abs: SingleAmount = y.eval(ctx)?.try_into()?;
+            Ok(abs.with_sign_of(amount))
+        }
+    };
+    Ok(exchanged?)
 }
 
 #[cfg(test)]
@@ -252,7 +299,7 @@ mod tests {
               Account 1      200 JPY = 1200 JPY
               Account 2     -100 JPY = -100 JPY
               Account 2     -100 JPY = -200 JPY
-              Account 3      300 JPY
+              Account 3     2.00 CHF @ 150 JPY
               Account 4              = -300 JPY
         "};
         let txn = parse::transaction::transaction.parse(input).unwrap();
@@ -266,7 +313,7 @@ mod tests {
             ctx.accounts.ensure("Account 2") =>
                 Amount::from_value(dec!(-200), ctx.commodities.ensure("JPY")),
             ctx.accounts.ensure("Account 3") =>
-                Amount::from_value(dec!(300), ctx.commodities.ensure("JPY")),
+                Amount::from_value(dec!(2), ctx.commodities.ensure("CHF")),
             ctx.accounts.ensure("Account 4") =>
                 Amount::from_values([
                     (dec!(-300), ctx.commodities.ensure("JPY")),
@@ -275,7 +322,7 @@ mod tests {
         }
         .into_iter()
         .collect();
-        assert_eq!(want_balance, bal);
+        assert_eq!(want_balance.into_vec(), bal.into_vec());
     }
 
     #[test]

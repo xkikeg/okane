@@ -32,6 +32,7 @@ impl<'arena> Commodity<'arena> {
 /// `Interner` for `Commodity`.
 pub(super) struct CommodityStore<'arena> {
     intern: InternStore<'arena, Commodity<'arena>>,
+    formatting: HashMap<Commodity<'arena>, PrettyDecimal>,
 }
 
 impl<'arena> CommodityStore<'arena> {
@@ -39,6 +40,7 @@ impl<'arena> CommodityStore<'arena> {
     pub fn new(arena: &'arena Bump) -> Self {
         Self {
             intern: InternStore::new(arena),
+            formatting: HashMap::new(),
         }
     }
 
@@ -63,5 +65,13 @@ impl<'arena> CommodityStore<'arena> {
         canonical: Commodity<'arena>,
     ) -> Result<(), InternError> {
         self.intern.insert_alias(value, canonical)
+    }
+
+    pub fn get_decimal_point(&self, commodity: Commodity<'arena>) -> Option<u32> {
+        self.formatting.get(&commodity).map(|x| x.value.scale())
+    }
+
+    pub fn set_format(&mut self, commodity: Commodity<'arena>, format: PrettyDecimal) {
+        self.formatting.insert(commodity, format);
     }
 }

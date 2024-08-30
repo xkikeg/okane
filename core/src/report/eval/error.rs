@@ -10,7 +10,9 @@ pub enum EvalError {
     #[error("overflow happened")]
     NumberOverflow,
     #[error("expected 0 or amount with commodity")]
-    CommodityAmountRequired,
+    AmountRequired,
     #[error("0 or amount with single commodity expected")]
-    SingleCommodityAmountRequired,
+    PostingAmountRequired,
+    #[error("amount with single commodity expected")]
+    SingleAmountRequired,
 }
