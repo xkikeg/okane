@@ -2,6 +2,7 @@
 
 mod balance;
 mod book_keeping;
+mod commodity;
 mod context;
 mod error;
 mod eval;
