@@ -10,6 +10,13 @@ use crate::report::commodity::Commodity;
 
 use super::error::EvalError;
 
+/// Amount with only one commodity.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct SingleAmount<'ctx> {
+    pub value: Decimal,
+    pub commodity: Commodity<'ctx>,
+}
+
 /// Amount with only one commodity, or total zero.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PostingAmount<'ctx> {
@@ -17,16 +24,17 @@ pub enum PostingAmount<'ctx> {
     Single(SingleAmount<'ctx>),
 }
 
-/// Amount with only one commodity.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct SingleAmount<'ctx> {
-    value: Decimal,
-    commodity: Commodity<'ctx>,
-}
-
 impl<'ctx> Default for PostingAmount<'ctx> {
     fn default() -> Self {
         Self::Zero
+    }
+}
+
+impl<'ctx> TryFrom<Amount<'ctx>> for SingleAmount<'ctx> {
+    type Error = EvalError;
+
+    fn try_from(value: Amount<'ctx>) -> Result<Self, Self::Error> {
+        SingleAmount::try_from(&value)
     }
 }
 
@@ -38,12 +46,28 @@ impl<'ctx> TryFrom<Amount<'ctx>> for PostingAmount<'ctx> {
     }
 }
 
+impl<'ctx> TryFrom<&Amount<'ctx>> for SingleAmount<'ctx> {
+    type Error = EvalError;
+
+    fn try_from(value: &Amount<'ctx>) -> Result<Self, Self::Error> {
+        let (commodity, value) = value
+            .values
+            .iter()
+            .next()
+            .ok_or(EvalError::SingleAmountRequired)?;
+        Ok(SingleAmount {
+            value: *value,
+            commodity: *commodity,
+        })
+    }
+}
+
 impl<'ctx> TryFrom<&Amount<'ctx>> for PostingAmount<'ctx> {
     type Error = EvalError;
 
     fn try_from(value: &Amount<'ctx>) -> Result<Self, Self::Error> {
         if value.values.len() > 1 {
-            Err(EvalError::SingleCommodityAmountRequired)
+            Err(EvalError::PostingAmountRequired)
         } else {
             Ok(value
                 .values
@@ -66,6 +90,23 @@ impl<'ctx> From<PostingAmount<'ctx>> for Amount<'ctx> {
             PostingAmount::Zero => Amount::zero(),
             PostingAmount::Single(single_amount) => single_amount.into(),
         }
+    }
+}
+
+impl<'ctx> TryFrom<PostingAmount<'ctx>> for SingleAmount<'ctx> {
+    type Error = EvalError;
+
+    fn try_from(amount: PostingAmount<'ctx>) -> Result<Self, Self::Error> {
+        match amount {
+            PostingAmount::Single(single) => Ok(single),
+            PostingAmount::Zero => Err(EvalError::SingleAmountRequired),
+        }
+    }
+}
+
+impl<'ctx> From<SingleAmount<'ctx>> for PostingAmount<'ctx> {
+    fn from(amount: SingleAmount<'ctx>) -> Self {
+        PostingAmount::Single(amount)
     }
 }
 
@@ -92,6 +133,28 @@ impl<'ctx> Neg for SingleAmount<'ctx> {
     fn neg(self) -> Self::Output {
         SingleAmount {
             value: -self.value,
+            commodity: self.commodity,
+        }
+    }
+}
+
+impl<'ctx> Mul<Decimal> for PostingAmount<'ctx> {
+    type Output = Self;
+
+    fn mul(self, rhs: Decimal) -> Self::Output {
+        match self {
+            PostingAmount::Zero => PostingAmount::Zero,
+            PostingAmount::Single(single) => PostingAmount::Single(single * rhs),
+        }
+    }
+}
+
+impl<'ctx> Mul<Decimal> for SingleAmount<'ctx> {
+    type Output = Self;
+
+    fn mul(self, rhs: Decimal) -> Self::Output {
+        Self {
+            value: self.value * rhs,
             commodity: self.commodity,
         }
     }
@@ -166,6 +229,19 @@ impl<'ctx> SingleAmount<'ctx> {
                 .ok_or(EvalError::NumberOverflow)?,
             commodity: self.commodity,
         })
+    }
+
+    /// Returns a new instance with having the same sign with given SingleAmount.
+    pub fn with_sign_of(self, rhs: SingleAmount<'ctx>) -> Self {
+        let value = if rhs.value.is_sign_positive() {
+            self.value
+        } else {
+            self.value.neg()
+        };
+        Self {
+            value,
+            commodity: self.commodity,
+        }
     }
 }
 

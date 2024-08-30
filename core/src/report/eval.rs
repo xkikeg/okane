@@ -4,7 +4,7 @@ mod amount;
 mod error;
 mod evaluated;
 
-pub use amount::{Amount, PostingAmount};
+pub use amount::{Amount, PostingAmount, SingleAmount};
 pub use error::EvalError;
 pub use evaluated::Evaluated;
 
