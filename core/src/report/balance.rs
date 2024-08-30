@@ -66,16 +66,13 @@ impl<'ctx> Balance<'ctx> {
                     .try_into()
                     .map_err(BalanceError::MultiCommodityWithPartialSet)
             }
-            PostingAmount::Single { value, commodity } => {
+            PostingAmount::Single(single_amount) => {
                 let prev = self
                     .accounts
                     .entry(account)
                     .or_default()
-                    .set_partial(value, commodity);
-                Ok(PostingAmount::Single {
-                    value: prev,
-                    commodity,
-                })
+                    .set_partial(single_amount);
+                Ok(PostingAmount::Single(prev))
             }
         }
     }
