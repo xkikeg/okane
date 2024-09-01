@@ -140,7 +140,10 @@ impl<'ctx> SingleAmount<'ctx> {
             ))
         } else {
             Ok(Self {
-                value: self.value + rhs.value,
+                value: self
+                    .value
+                    .checked_add(rhs.value)
+                    .ok_or(EvalError::NumberOverflow)?,
                 commodity: self.commodity,
             })
         }
@@ -149,6 +152,20 @@ impl<'ctx> SingleAmount<'ctx> {
     /// Subtracts the amount with keeping the commodity single.
     pub fn check_sub(self, rhs: Self) -> Result<Self, EvalError> {
         self.check_add(-rhs)
+    }
+
+    /// Divides by given Decimal.
+    pub fn check_div(self, rhs: Decimal) -> Result<Self, EvalError> {
+        if rhs.is_zero() {
+            return Err(EvalError::DivideByZero);
+        }
+        Ok(Self {
+            value: self
+                .value
+                .checked_div(rhs)
+                .ok_or(EvalError::NumberOverflow)?,
+            commodity: self.commodity,
+        })
     }
 }
 
