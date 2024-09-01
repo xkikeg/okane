@@ -131,6 +131,11 @@ impl<'ctx> Evaluated<'ctx> {
             (Evaluated::Commodities(x), Evaluated::Number(y)) => {
                 x.check_div(y).map(Evaluated::Commodities)
             }
+            (Evaluated::Number(x), Evaluated::Commodities(y)) => {
+                let y: SingleAmount = y.try_into()?;
+                let ret = SingleAmount::from_value(x, y.commodity).check_div(y.value)?;
+                Ok(Evaluated::Commodities(ret.into()))
+            }
             _ => Err(EvalError::UnmatchingOperation),
         }
     }
@@ -403,11 +408,14 @@ mod tests {
         assert_eq!(
             Evaluated::from(dec!(-0.2))
                 .check_div(Evaluated::from(Amount::from_value(
-                    dec!(1000),
+                    dec!(100),
                     ctx.commodities.ensure("JPY")
                 )))
-                .unwrap_err(),
-            EvalError::UnmatchingOperation
+                .unwrap(),
+            Evaluated::from(Amount::from_value(
+                dec!(-0.002),
+                ctx.commodities.ensure("JPY")
+            ))
         );
 
         // Division across the same currency could be supported,
