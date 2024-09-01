@@ -335,6 +335,39 @@ impl<'ctx> Amount<'ctx> {
         self.values.get(&commodity).copied().unwrap_or_default()
     }
 
+    /// Returns pair of commodity amount, if the amount contains exactly 2 commodities.
+    /// Otherwise returns None.
+    pub fn maybe_pair(&self) -> Option<(SingleAmount<'ctx>, SingleAmount<'ctx>)> {
+        if self.values.len() != 2 {
+            return None;
+        }
+        let ((c1, v1), (c2, v2)) = self.values.iter().zip(self.values.iter().skip(1)).next()?;
+        Some((
+            SingleAmount::from_value(*v1, *c1),
+            SingleAmount::from_value(*v2, *c2),
+        ))
+    }
+
+    /// Rounds the balance with given decimal point.
+    pub fn round<T>(&mut self, mut decimal_point: T)
+    where
+        T: FnMut(Commodity<'ctx>) -> Option<u32>,
+    {
+        for (k, v) in self.values.iter_mut() {
+            match decimal_point(*k) {
+                None => (),
+                Some(dp) => {
+                    let updated = v.round_dp_with_strategy(
+                        dp,
+                        rust_decimal::RoundingStrategy::MidpointNearestEven,
+                    );
+                    *v = updated;
+                }
+            }
+        }
+        self.values.retain(|_, v| !v.is_zero());
+    }
+
     /// Creates negated instance.
     pub fn negate(mut self) -> Self {
         for (_, v) in self.values.iter_mut() {
