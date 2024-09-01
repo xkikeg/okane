@@ -69,7 +69,7 @@ pub enum InternError {
 ///   or vice versa.
 pub(super) struct InternStore<'arena, T> {
     // Contains None for canonical, Some for alias.
-    records: HashMap<&'arena str, Option<&'arena str>>,
+    records: HashMap<&'arena str, Option<InternedStr<'arena>>>,
     allocator: &'arena Bump,
     phantom: PhantomData<T>,
 }
@@ -106,7 +106,7 @@ impl<'arena, T: FromInterned<'arena>> InternStore<'arena, T> {
     pub fn ensure(&mut self, value: &str) -> T {
         match self.resolve(value) {
             Some(found) => found,
-            None => self.insert(value, None),
+            None => self.insert_canonical_impl(value),
         }
     }
 
@@ -114,7 +114,7 @@ impl<'arena, T: FromInterned<'arena>> InternStore<'arena, T> {
     /// Returns the registered canonical, or error if given `value` is already registered as alias.
     pub fn insert_canonical(&mut self, value: &str) -> Result<T, InternError> {
         match self.get(value) {
-            None => Ok(self.insert(value, None)),
+            None => Ok(self.insert_canonical_impl(value)),
             Some(StoredValue::Canonical(found)) => Ok(found),
             Some(StoredValue::Alias { .. }) => Err(InternError::AlreadyAlias),
         }
@@ -127,7 +127,7 @@ impl<'arena, T: FromInterned<'arena>> InternStore<'arena, T> {
             Some(StoredValue::Canonical(_)) => Err(InternError::AlreadyCanonical),
             Some(StoredValue::Alias { .. }) => Ok(()),
             None => {
-                self.insert(value, Some(canonical.as_interned().as_str()));
+                self.insert_alias_impl(value, canonical.as_interned());
                 Ok(())
             }
         }
@@ -156,22 +156,33 @@ impl<'arena, T: FromInterned<'arena>> InternStore<'arena, T> {
             (canonical, None) => StoredValue::Canonical(Self::as_type(canonical)),
             (alias, Some(canonical)) => StoredValue::Alias {
                 alias,
-                canonical: Self::as_type(canonical),
+                canonical: T::from_interned(*canonical),
             },
         };
         Some(v)
     }
 
     #[inline]
-    fn insert(&mut self, value: &str, canonical: Option<&'arena str>) -> T {
+    fn insert_canonical_impl(&mut self, value: &str) -> T {
         let copied: &'arena str = self.allocator.alloc_str(value);
-        let ret = self.records.insert(copied, canonical);
+        let ret = self.records.insert(copied, None);
         debug_assert!(
             ret.is_none(),
             "insert must be called on non-existing key, but already found: {:#?}",
             ret
         );
         Self::as_type(copied)
+    }
+
+    #[inline]
+    fn insert_alias_impl(&mut self, value: &str, canonical: InternedStr<'arena>) {
+        let copied: &'arena str = self.allocator.alloc_str(value);
+        let ret = self.records.insert(copied, Some(canonical));
+        debug_assert!(
+            ret.is_none(),
+            "insert must be called on non-existing key, but already found: {:#?}",
+            ret
+        );
     }
 
     #[inline]
@@ -184,7 +195,7 @@ impl<'arena, T: FromInterned<'arena>> InternStore<'arena, T> {
 /// Compared to the underlying HashSet iterator,
 /// this struct ensures the `T` type.
 pub struct Iter<'arena, 'container, T> {
-    base: std::collections::hash_map::Iter<'container, &'arena str, Option<&'arena str>>,
+    base: std::collections::hash_map::Iter<'container, &'arena str, Option<InternedStr<'arena>>>,
     phantom: PhantomData<T>,
 }
 
@@ -203,7 +214,7 @@ where
             None => StoredValue::Canonical(to_interned(key)),
             Some(value) => StoredValue::Alias {
                 alias: key,
-                canonical: to_interned(value),
+                canonical: <T as FromInterned>::from_interned(*value),
             },
         })
     }
