@@ -206,16 +206,34 @@ fn add_transaction<'ctx>(
         let deduced: Amount = balance.clone().negate();
         postings[u].amount = deduced.clone();
         bal.add_amount(postings[u].account, deduced);
-    } else if !balance.is_zero() {
-        return Err(BookKeepError::UnbalancedPostings(format!(
-            "{}",
-            balance.as_inline_display()
-        )));
+    } else {
+        check_balance(ctx, balance)?;
     }
     Ok(Transaction {
         date: txn.date,
         postings: postings.into_boxed_slice(),
     })
+}
+
+fn check_balance<'ctx>(
+    ctx: &ReportContext<'ctx>,
+    mut balance: Amount<'ctx>,
+) -> Result<(), BookKeepError> {
+    balance.round(|commodity| ctx.commodities.get_decimal_point(commodity));
+    if balance.is_zero() {
+        return Ok(());
+    }
+    if let Some((a1, a2)) = balance.maybe_pair() {
+        log::info!("deduced price {} == {}", a1, a2);
+        return Ok(());
+    }
+    if !balance.is_zero() {
+        return Err(BookKeepError::UnbalancedPostings(format!(
+            "{}",
+            balance.as_inline_display()
+        )));
+    }
+    Ok(())
 }
 
 fn calculate_balance_amount<'ctx>(
@@ -243,6 +261,7 @@ fn calculate_balance_amount<'ctx>(
     // if you set the first posting amount t,
     // t + p Y - (p - q) Y = 0
     // t = -q Y
+    // so actually cost is pointless in this case.
     Ok(lot.or(cost).map(Into::into).unwrap_or(computed_amount))
 }
 
@@ -461,5 +480,141 @@ mod tests {
         let mut bal = Balance::default();
         let got = add_transaction(&mut ctx, &mut bal, &txn).expect_err("must fail");
         assert_eq!(got, BookKeepError::UndeduciblePostingAmount(0, 1));
+    }
+
+    #[test]
+    fn add_transaction_balances_with_lot() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let mut bal = Balance::default();
+        let input = indoc! {"
+            2024/08/01 Sample
+              Account 1             12 OKANE {100 JPY}
+              Account 2         -1,200 JPY
+        "};
+        let txn = parse::transaction::transaction.parse(input).unwrap();
+        let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
+        let want = Transaction {
+            date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
+            postings: bcc::Vec::from_iter_in(
+                [
+                    Posting {
+                        account: ctx.accounts.ensure("Account 1"),
+                        amount: Amount::from_value(dec!(12), ctx.commodities.ensure("OKANE")),
+                    },
+                    Posting {
+                        account: ctx.accounts.ensure("Account 2"),
+                        amount: Amount::from_value(dec!(-1200), ctx.commodities.ensure("JPY")),
+                    },
+                ],
+                &arena,
+            )
+            .into_boxed_slice(),
+        };
+        assert_eq!(want, got);
+    }
+
+    #[test]
+    fn add_transaction_balances_with_price() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let mut bal = Balance::default();
+        let input = indoc! {"
+            2024/08/01 Sample
+              Account 1             12 OKANE @ (1 * 100 JPY)
+              Account 2         -1,200 JPY
+        "};
+        let txn = parse::transaction::transaction.parse(input).unwrap();
+        let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
+        let want = Transaction {
+            date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
+            postings: bcc::Vec::from_iter_in(
+                [
+                    Posting {
+                        account: ctx.accounts.ensure("Account 1"),
+                        amount: Amount::from_value(dec!(12), ctx.commodities.ensure("OKANE")),
+                    },
+                    Posting {
+                        account: ctx.accounts.ensure("Account 2"),
+                        amount: Amount::from_value(dec!(-1200), ctx.commodities.ensure("JPY")),
+                    },
+                ],
+                &arena,
+            )
+            .into_boxed_slice(),
+        };
+        assert_eq!(want, got);
+    }
+
+    #[test]
+    fn add_transaction_balances_with_lot_and_price() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let mut bal = Balance::default();
+        let input = indoc! {"
+            2024/08/01 Sample
+              Account 1            -12 OKANE {100 JPY} @ 120 JPY
+              Account 2          1,440 JPY
+              Income              -240 JPY
+        "};
+        let txn = parse::transaction::transaction.parse(input).unwrap();
+        let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
+        let want = Transaction {
+            date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
+            postings: bcc::Vec::from_iter_in(
+                [
+                    Posting {
+                        account: ctx.accounts.ensure("Account 1"),
+                        amount: Amount::from_value(dec!(-12), ctx.commodities.ensure("OKANE")),
+                    },
+                    Posting {
+                        account: ctx.accounts.ensure("Account 2"),
+                        amount: Amount::from_value(dec!(1440), ctx.commodities.ensure("JPY")),
+                    },
+                    Posting {
+                        account: ctx.accounts.ensure("Income"),
+                        amount: Amount::from_value(dec!(-240), ctx.commodities.ensure("JPY")),
+                    },
+                ],
+                &arena,
+            )
+            .into_boxed_slice(),
+        };
+        assert_eq!(want, got);
+    }
+
+    #[test]
+    fn add_transaction_balances_minor_diff() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let chf = ctx.commodities.insert_canonical("CHF").unwrap();
+        ctx.commodities
+            .set_format(chf, "20,000.00".parse().unwrap());
+        let mut bal = Balance::default();
+        let input = indoc! {"
+            2024/08/01 Sample
+              Expenses               300 EUR @ (1 / 1.0538 CHF)
+              Liabilities        -284.68 CHF
+        "};
+        let txn = parse::transaction::transaction.parse(input).unwrap();
+        let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
+        let want = Transaction {
+            date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
+            postings: bcc::Vec::from_iter_in(
+                [
+                    Posting {
+                        account: ctx.accounts.ensure("Expenses"),
+                        amount: Amount::from_value(dec!(300), ctx.commodities.ensure("EUR")),
+                    },
+                    Posting {
+                        account: ctx.accounts.ensure("Liabilities"),
+                        amount: Amount::from_value(dec!(-284.68), ctx.commodities.ensure("CHF")),
+                    },
+                ],
+                &arena,
+            )
+            .into_boxed_slice(),
+        };
+        assert_eq!(want, got);
     }
 }
