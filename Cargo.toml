@@ -19,7 +19,7 @@ annotate-snippets = "0.11"
 bumpalo = {version = "3.16", features = ["collections", "boxed"]}
 chrono = "0.4.38"
 log = "0.4"
-rust_decimal = "1.35"
+rust_decimal = "1.36"
 thiserror = "1.0"
 winnow = "0.6.18"
 
@@ -31,7 +31,7 @@ ctor = "0.2.8"
 indoc = "2.0"
 maplit = "1.0"
 pretty_assertions = "1.4"
-rust_decimal_macros = "1.35"
+rust_decimal_macros = "1.36"
 
 [profile.bench]
 debug = "limited"
