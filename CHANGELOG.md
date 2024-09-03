@@ -8,6 +8,23 @@
 
 ### Fixed
 
+## [0.12.0] - 2024-09-03
+
+### Added
+
+* Supported commission / charge in CSV import (https://github.com/xkikeg/okane/pull/168).
+
+### Changed
+
+* Changed to correctly assert the in-transaction balance (https://github.com/xkikeg/okane/pull/176).
+
+### Fixed
+
+* Fixed minor lifetime fix (https://github.com/xkikeg/okane/pull/170).
+* Fixed memory leak in `okane_core::report::process` (https://github.com/xkikeg/okane/pull/172).
+* Fixed balance deduction logic with balance assertion (https://github.com/xkikeg/okane/pull/173).
+* Fixed internal logic to avoid future potential inconsistency (https://github.com/xkikeg/okane/pull/177).
+
 ## [0.11.0] - 2024-08-07
 
 ### Added
