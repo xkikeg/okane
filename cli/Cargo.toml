@@ -10,7 +10,7 @@ readme = "../README.md"
 repository.workspace = true
 
 [dependencies]
-okane-core = { version = "0.12.0-dev", path = "../core" }
+okane-core = { version = "0.13.0-dev", path = "../core" }
 
 annotate-snippets.workspace = true
 # anstream = "0.6"
