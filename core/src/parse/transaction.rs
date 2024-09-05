@@ -13,18 +13,20 @@ use winnow::{
 
 use crate::{
     parse::{character, combinator::has_peek, metadata, posting, primitive},
-    repl,
+    repl::{self, decoration::Decoration},
 };
 
 /// Parses a transaction from given string.
-pub fn transaction<'i, I>(input: &mut I) -> PResult<repl::Transaction<'i>>
+pub fn transaction<'i, I, Deco>(input: &mut I) -> PResult<repl::Transaction<'i, Deco>>
 where
     I: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
         + winnow::stream::Compare<&'static str>
         + winnow::stream::FindSlice<(char, char)>
+        + winnow::stream::Location
         + Clone,
     <I as Stream>::Token: AsChar + Clone,
+    Deco: Decoration,
 {
     trace("transaction::transaction", move |input: &mut I| {
         let date = trace(
@@ -45,8 +47,11 @@ where
         let payee =
             opt(character::till_line_ending_or_semi.map(str::trim_end)).parse_next(input)?;
         let metadata = metadata::block_metadata(input)?;
-        let posts = repeat(0.., preceded(peek(one_of(' ')), cut_err(posting::posting)))
-            .parse_next(input)?;
+        let posts = repeat(
+            0..,
+            Deco::decorate_parser(preceded(peek(one_of(b" \t")), cut_err(posting::posting))),
+        )
+        .parse_next(input)?;
         Ok(repl::Transaction {
             effective_date,
             clear_state,
@@ -62,12 +67,19 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{parse::testing::expect_parse_ok, repl::pretty_decimal::PrettyDecimal};
 
     use chrono::NaiveDate;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
+
+    use crate::{
+        parse::testing::expect_parse_ok,
+        repl::{
+            plain::{Posting, PostingAmount, Transaction},
+            pretty_decimal::PrettyDecimal,
+        },
+    };
 
     #[test]
     fn transaction_parses_valid_minimal() {
@@ -76,7 +88,7 @@ mod tests {
             expect_parse_ok(transaction, input),
             (
                 "",
-                repl::Transaction::new(NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(), "")
+                Transaction::new(NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(), "")
             )
         );
     }
@@ -98,8 +110,8 @@ mod tests {
                     code: Some(Cow::Borrowed("code")),
                     payee: Cow::Borrowed("Foo"),
                     posts: vec![
-                        repl::Posting {
-                            amount: Some(repl::PostingAmount {
+                        Posting {
+                            amount: Some(PostingAmount {
                                 amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
                                     value: PrettyDecimal::comma3dot(dec!(123456.78)),
                                     commodity: Cow::Borrowed("USD"),
@@ -107,11 +119,11 @@ mod tests {
                                 cost: None,
                                 lot: repl::Lot::default(),
                             }),
-                            ..repl::Posting::new("Expense A")
+                            ..Posting::new("Expense A")
                         },
-                        repl::Posting::new("Liabilities B")
+                        Posting::new("Liabilities B")
                     ],
-                    ..repl::Transaction::new(NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(), "")
+                    ..Transaction::new(NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(), "")
                 }
             )
         );
@@ -143,8 +155,8 @@ mod tests {
                         repl::Metadata::WordTags(vec![Cow::Borrowed("取引")]),
                     ],
                     posts: vec![
-                        repl::Posting {
-                            amount: Some(repl::PostingAmount {
+                        Posting {
+                            amount: Some(PostingAmount {
                                 amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
                                     value: PrettyDecimal::comma3dot(dec!(-123456.78)),
                                     commodity: Cow::Borrowed("USD"),
@@ -159,10 +171,10 @@ mod tests {
                                     value: repl::MetadataValue::Text(Cow::Borrowed("Bar"))
                                 },
                             ],
-                            ..repl::Posting::new("Expense A")
+                            ..Posting::new("Expense A")
                         },
-                        repl::Posting {
-                            amount: Some(repl::PostingAmount {
+                        Posting {
+                            amount: Some(PostingAmount {
                                 amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
                                     value: PrettyDecimal::unformatted(dec!(12)),
                                     commodity: Cow::Borrowed("JPY"),
@@ -178,9 +190,9 @@ mod tests {
                                 Cow::Borrowed("tag1"),
                                 Cow::Borrowed("他のタグ")
                             ]),],
-                            ..repl::Posting::new("Liabilities B")
+                            ..Posting::new("Liabilities B")
                         },
-                        repl::Posting {
+                        Posting {
                             balance: Some(repl::expr::ValueExpr::Amount(repl::expr::Amount {
                                 value: PrettyDecimal::unformatted(dec!(0)),
                                 commodity: Cow::Borrowed(""),
@@ -190,10 +202,10 @@ mod tests {
                                 repl::Metadata::Comment(Cow::Borrowed("これなんだっけ")),
                             ],
 
-                            ..repl::Posting::new("Assets C")
+                            ..Posting::new("Assets C")
                         }
                     ],
-                    ..repl::Transaction::new(NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(), "")
+                    ..Transaction::new(NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(), "")
                 }
             )
         );

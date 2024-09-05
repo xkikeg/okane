@@ -4,7 +4,7 @@ use bumpalo::Bump;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use okane_core::{
     load::{self, LoadError},
-    report,
+    repl, report,
 };
 
 pub mod testing;
@@ -15,7 +15,7 @@ fn load_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let mut count = 0;
             load::new_loader(input.rootpath().to_owned())
-                .load_repl(|_, _, _| {
+                .load_repl(|_, _, _: &repl::tracked::LedgerEntry| {
                     count += 1;
                     Ok::<(), LoadError>(())
                 })

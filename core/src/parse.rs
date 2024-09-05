@@ -12,7 +12,7 @@ pub(crate) mod transaction;
 
 #[cfg(test)]
 pub(crate) mod testing;
-use std::ops::Range;
+use std::{marker::PhantomData, ops::Range};
 
 pub use error::ParseError;
 
@@ -24,13 +24,13 @@ use winnow::{
     Located, PResult, Parser,
 };
 
-use crate::repl;
+use crate::repl::{self, decoration::Decoration};
 
 /// Parses single ledger repl value with consuming whitespace.
 /// To control the behavior precisely, use [ParseOptions::parse_ledger].
-pub fn parse_ledger(
-    input: &str,
-) -> impl Iterator<Item = Result<(ParsedContext, repl::LedgerEntry), ParseError>> {
+pub fn parse_ledger<'i, Deco: 'i + Decoration>(
+    input: &'i str,
+) -> impl Iterator<Item = Result<(ParsedContext<'i>, repl::LedgerEntry<'i, Deco>), ParseError>> {
     ParseOptions::default().parse_ledger(input)
 }
 
@@ -54,15 +54,16 @@ impl ParseOptions {
         self
     }
 
-    pub fn parse_ledger<'i>(
+    pub fn parse_ledger<'i, Deco: Decoration + 'static>(
         &self,
         input: &'i str,
-    ) -> impl Iterator<Item = Result<(ParsedContext<'i>, repl::LedgerEntry<'i>), ParseError>> + 'i
+    ) -> impl Iterator<Item = Result<(ParsedContext<'i>, repl::LedgerEntry<'i, Deco>), ParseError>> + 'i
     {
         ParsedIter {
             initial: input,
             input: Located::new(input),
             renderer: self.error_style.clone(),
+            _phantom: PhantomData,
         }
     }
 }
@@ -90,14 +91,15 @@ impl<'i> ParsedContext<'i> {
 }
 
 /// Iterator to return parsed ledger entry one-by-one.
-struct ParsedIter<'i> {
+struct ParsedIter<'i, Deco> {
     initial: &'i str,
     input: Located<&'i str>,
     renderer: annotate_snippets::Renderer,
+    _phantom: PhantomData<Deco>,
 }
 
-impl<'i> Iterator for ParsedIter<'i> {
-    type Item = Result<(ParsedContext<'i>, repl::LedgerEntry<'i>), ParseError>;
+impl<'i, Deco: Decoration + 'static> Iterator for ParsedIter<'i, Deco> {
+    type Item = Result<(ParsedContext<'i>, repl::LedgerEntry<'i, Deco>), ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let start = self.input.checkpoint();
@@ -121,13 +123,15 @@ impl<'i> Iterator for ParsedIter<'i> {
 }
 
 /// Parses given `input` into `repl::LedgerEntry`.
-fn parse_ledger_entry<'i, I>(input: &mut I) -> PResult<repl::LedgerEntry<'i>>
+fn parse_ledger_entry<'i, I, Deco>(input: &mut I) -> PResult<repl::LedgerEntry<'i, Deco>>
 where
     I: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
-        + winnow::stream::FindSlice<(char, char)>
         + winnow::stream::Compare<&'static str>
+        + winnow::stream::FindSlice<(char, char)>
+        + winnow::stream::Location
         + Clone,
+    Deco: Decoration + 'static,
 {
     trace(
         "parse_ledger_entry",
@@ -163,7 +167,7 @@ mod tests {
     use indoc::indoc;
     use pretty_assertions::assert_eq;
 
-    use repl::LedgerEntry;
+    use repl::plain::LedgerEntry;
 
     fn parse_ledger_into(input: &str) -> Vec<(ParsedContext, LedgerEntry)> {
         let r: Result<Vec<(ParsedContext, LedgerEntry)>, ParseError> =

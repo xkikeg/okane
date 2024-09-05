@@ -162,7 +162,7 @@ impl Txn {
         self
     }
 
-    fn amount(&self) -> repl::PostingAmount {
+    fn amount(&self) -> repl::plain::PostingAmount {
         repl::PostingAmount {
             amount: as_syntax_amount(&self.amount).into(),
             cost: self.rate(&self.amount.commodity),
@@ -170,7 +170,7 @@ impl Txn {
         }
     }
 
-    fn dest_amount(&self) -> repl::PostingAmount {
+    fn dest_amount(&self) -> repl::plain::PostingAmount {
         self.transferred_amount
             .as_ref()
             .map(|transferred| repl::PostingAmount {
@@ -194,8 +194,8 @@ impl Txn {
     pub fn to_double_entry<'a>(
         &'a self,
         src_account: &'a str,
-    ) -> Result<repl::Transaction<'a>, ImportError> {
-        let mut posts: Vec<repl::Posting> = Vec::new();
+    ) -> Result<repl::plain::Transaction<'a>, ImportError> {
+        let mut posts: Vec<repl::plain::Posting> = Vec::new();
         let post_clear = self.clear_state.unwrap_or(match &self.dest_account {
             Some(_) => repl::ClearState::Uncleared,
             None => repl::ClearState::Pending,
@@ -270,7 +270,7 @@ fn negate_amount(mut amount: repl::expr::Amount) -> repl::expr::Amount {
     amount
 }
 
-fn to_posting_amount(amount: repl::expr::Amount) -> repl::PostingAmount {
+fn to_posting_amount(amount: repl::expr::Amount) -> repl::plain::PostingAmount {
     repl::PostingAmount {
         amount: amount.into(),
         cost: None,

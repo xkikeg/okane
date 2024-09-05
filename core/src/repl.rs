@@ -3,20 +3,28 @@
 //! however, repl is for textual representation while
 //! data is more for understanding.
 
+pub mod decoration;
 pub mod display;
 pub mod expr;
+pub mod plain;
 pub mod pretty_decimal;
+pub mod tracked;
 
 use std::{borrow::Cow, fmt};
 
 use bounded_static::ToStatic;
 use chrono::NaiveDate;
 
+#[cfg(test)]
+use bounded_static::ToBoundedStatic;
+
+use decoration::Decoration;
+
 /// Top-level entry of the LedgerFile.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
-pub enum LedgerEntry<'i> {
+#[derive(Debug, PartialEq, Eq)]
+pub enum LedgerEntry<'i, Deco: Decoration> {
     /// Transaction
-    Txn(Transaction<'i>),
+    Txn(Transaction<'i, Deco>),
     /// Comment, not limited to one-line oppose to `Metadata`.
     Comment(TopLevelComment<'i>),
     /// Apply tag directive.
@@ -29,6 +37,21 @@ pub enum LedgerEntry<'i> {
     Account(AccountDeclaration<'i>),
     /// "commodity" directive.
     Commodity(CommodityDeclaration<'i>),
+}
+
+impl<'i> LedgerEntry<'i, plain::Ident> {
+    #[cfg(test)]
+    pub(crate) fn to_static(&self) -> LedgerEntry<'static, plain::Ident> {
+        match self {
+            LedgerEntry::Txn(v) => LedgerEntry::Txn(v.to_static()),
+            LedgerEntry::Comment(v) => LedgerEntry::Comment(v.to_static()),
+            LedgerEntry::ApplyTag(v) => LedgerEntry::ApplyTag(v.to_static()),
+            LedgerEntry::EndApplyTag => LedgerEntry::EndApplyTag,
+            LedgerEntry::Include(v) => LedgerEntry::Include(v.to_static()),
+            LedgerEntry::Account(v) => LedgerEntry::Account(v.to_static()),
+            LedgerEntry::Commodity(v) => LedgerEntry::Commodity(v.to_static()),
+        }
+    }
 }
 
 /// Top-level comment. OK to have multi-line comment.
@@ -93,8 +116,8 @@ pub enum CommodityDetail<'i> {
 }
 
 /// Represents a transaction where the money transfered across the accounts.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
-pub struct Transaction<'i> {
+#[derive(Debug, PartialEq, Eq)]
+pub struct Transaction<'i, Deco: Decoration> {
     /// Date when the transaction issued.
     pub date: NaiveDate,
     /// Date when the transaction got effective, optional.
@@ -106,12 +129,31 @@ pub struct Transaction<'i> {
     /// Label of the transaction, often the opposite party of the transaction.
     pub payee: Cow<'i, str>,
     /// Postings of the transaction, could be empty.
-    pub posts: Vec<Posting<'i>>,
+    pub posts: Vec<Deco::Decorated<Posting<'i, Deco>>>,
     /// Transaction level metadata.
     pub metadata: Vec<Metadata<'i>>,
 }
 
-impl<'i> Transaction<'i> {
+impl<'i> Transaction<'i, plain::Ident> {
+    #[cfg(test)]
+    fn to_static(&self) -> Transaction<'static, plain::Ident> {
+        let mut posts = Vec::new();
+        for p in &self.posts {
+            posts.push(p.to_static());
+        }
+        Transaction {
+            date: self.date,
+            effective_date: self.effective_date,
+            clear_state: self.clear_state,
+            code: self.code.to_static(),
+            payee: self.payee.to_static(),
+            posts,
+            metadata: self.metadata.to_static(),
+        }
+    }
+}
+
+impl<'i, Deco: Decoration> Transaction<'i, Deco> {
     /// Constructs minimal transaction.
     pub fn new<T>(date: NaiveDate, payee: T) -> Self
     where
@@ -129,22 +171,35 @@ impl<'i> Transaction<'i> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq)]
 /// Posting in a transaction to represent a particular account amount increase / decrease.
-pub struct Posting<'i> {
+pub struct Posting<'i, Deco: Decoration> {
     /// Account of the post target.
     pub account: Cow<'i, str>,
     /// Posting specific ClearState.
     pub clear_state: ClearState,
     /// Amount of the posting.
-    pub amount: Option<PostingAmount<'i>>,
+    pub amount: Option<PostingAmount<'i, Deco>>,
     /// Balance after the transaction of the specified account.
-    pub balance: Option<expr::ValueExpr<'i>>,
+    pub balance: Option<Deco::Decorated<expr::ValueExpr<'i>>>,
     /// Metadata information such as comment or tag.
     pub metadata: Vec<Metadata<'i>>,
 }
 
-impl<'i> Posting<'i> {
+impl<'i> Posting<'i, plain::Ident> {
+    #[cfg(test)]
+    fn to_static(&self) -> Posting<'static, plain::Ident> {
+        Posting {
+            account: self.account.to_static(),
+            clear_state: self.clear_state,
+            amount: self.amount.as_ref().map(|x| x.to_static()),
+            balance: self.balance.to_static(),
+            metadata: self.metadata.to_static(),
+        }
+    }
+}
+
+impl<'i, Deco: Decoration> Posting<'i, Deco> {
     pub fn new<T: Into<Cow<'i, str>>>(account: T) -> Self {
         Posting {
             account: account.into(),
@@ -197,14 +252,25 @@ pub enum MetadataValue<'i> {
 /// - how much the asset is increased.
 /// - what was the cost in the other commodity.
 /// - lot information.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
-pub struct PostingAmount<'i> {
-    pub amount: expr::ValueExpr<'i>,
-    pub cost: Option<Exchange<'i>>,
-    pub lot: Lot<'i>,
+#[derive(Debug, PartialEq, Eq)]
+pub struct PostingAmount<'i, Deco: Decoration> {
+    pub amount: Deco::Decorated<expr::ValueExpr<'i>>,
+    pub cost: Option<Deco::Decorated<Exchange<'i>>>,
+    pub lot: Lot<'i, Deco>,
 }
 
-impl<'i> From<expr::ValueExpr<'i>> for PostingAmount<'i> {
+impl<'i> PostingAmount<'i, plain::Ident> {
+    #[cfg(test)]
+    fn to_static(&self) -> PostingAmount<'static, plain::Ident> {
+        PostingAmount {
+            amount: self.amount.to_static(),
+            cost: self.cost.to_static(),
+            lot: self.lot.to_static(),
+        }
+    }
+}
+
+impl<'i> From<expr::ValueExpr<'i>> for PostingAmount<'i, plain::Ident> {
     fn from(v: expr::ValueExpr<'i>) -> Self {
         PostingAmount {
             amount: v,
@@ -215,11 +281,32 @@ impl<'i> From<expr::ValueExpr<'i>> for PostingAmount<'i> {
 }
 
 /// Lot information is a set of metadata to record the original lot which the commodity is acquired with.
-#[derive(Debug, Default, PartialEq, Eq, ToStatic)]
-pub struct Lot<'i> {
-    pub price: Option<Exchange<'i>>,
+#[derive(Debug, PartialEq, Eq)]
+pub struct Lot<'i, Deco: Decoration> {
+    pub price: Option<Deco::Decorated<Exchange<'i>>>,
     pub date: Option<NaiveDate>,
     pub note: Option<Cow<'i, str>>,
+}
+
+impl<'i> Lot<'i, plain::Ident> {
+    #[cfg(test)]
+    fn to_static(&self) -> Lot<'static, plain::Ident> {
+        Lot {
+            price: self.price.to_static(),
+            date: self.date.to_static(),
+            note: self.note.to_static(),
+        }
+    }
+}
+
+impl<'i, Deco: Decoration> Default for Lot<'i, Deco> {
+    fn default() -> Self {
+        Self {
+            price: None,
+            date: None,
+            note: None,
+        }
+    }
 }
 
 /// Exchange represents the amount expressed in the different commodity.

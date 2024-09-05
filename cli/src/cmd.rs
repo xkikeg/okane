@@ -7,6 +7,7 @@ use clap::{Args, Subcommand};
 use encoding_rs_io::DecodeReaderBytesBuilder;
 
 use okane_core::repl::display::DisplayContext;
+use okane_core::repl::plain::LedgerEntry;
 use okane_core::{load, repl, report};
 
 use crate::format;
@@ -97,7 +98,7 @@ impl ImportCmd {
                 .collect(),
         };
         for xact in xacts {
-            let xact: repl::Transaction = xact.to_double_entry(&config_entry.account)?;
+            let xact: repl::plain::Transaction = xact.to_double_entry(&config_entry.account)?;
             writeln!(w, "{}", ctx.as_display(&xact))?;
         }
         Ok(())
@@ -161,10 +162,12 @@ impl FlattenCmd {
     {
         // TODO: Pick DisplayContext from load results.
         let ctx = DisplayContext::default();
-        load::new_loader(self.source).load_repl(|_path, _ctx, entry| -> Result<(), Error> {
-            writeln!(w, "{}", ctx.as_display(entry))?;
-            Ok(())
-        })?;
+        load::new_loader(self.source).load_repl(
+            |_path, _ctx, entry: &LedgerEntry| -> Result<(), Error> {
+                writeln!(w, "{}", ctx.as_display(entry))?;
+                Ok(())
+            },
+        )?;
         Ok(())
     }
 }
