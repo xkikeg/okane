@@ -3,6 +3,7 @@
 use super::*;
 use crate::repl::pretty_decimal::PrettyDecimal;
 
+use decoration::AsUndecorated;
 use std::collections::HashMap;
 use unicode_width::UnicodeWidthStr;
 
@@ -40,7 +41,7 @@ impl<'a, T> WithContext<'a, T> {
     }
 }
 
-impl<'a> fmt::Display for WithContext<'a, LedgerEntry<'_>> {
+impl<'a, Deco: Decoration> fmt::Display for WithContext<'a, LedgerEntry<'_, Deco>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.value {
             LedgerEntry::Txn(txn) => self.pass_context(txn).fmt(f),
@@ -135,7 +136,7 @@ impl<'a> fmt::Display for WithContext<'a, CommodityDetail<'_>> {
         }
     }
 }
-impl<'a> fmt::Display for WithContext<'a, Transaction<'_>> {
+impl<'a, Deco: Decoration> fmt::Display for WithContext<'a, Transaction<'_, Deco>> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let xact = self.value;
         write!(f, "{}", xact.date.format("%Y/%m/%d"))?;
@@ -151,14 +152,7 @@ impl<'a> fmt::Display for WithContext<'a, Transaction<'_>> {
             writeln!(f, "    ; {}", m)?;
         }
         for post in &xact.posts {
-            write!(
-                f,
-                "{}",
-                WithContext {
-                    value: post,
-                    context: self.context
-                }
-            )?;
+            write!(f, "{}", self.context.as_display(post.as_undecorated()))?;
         }
         Ok(())
     }
@@ -189,7 +183,7 @@ impl fmt::Display for MetadataValue<'_> {
     }
 }
 
-impl<'a> fmt::Display for WithContext<'a, Posting<'_>> {
+impl<'a, Deco: Decoration> fmt::Display for WithContext<'a, Posting<'_, Deco>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let post = self.value;
         let post_clear = print_clear_state(post.clear_state);
@@ -199,7 +193,7 @@ impl<'a> fmt::Display for WithContext<'a, Posting<'_>> {
         if let Some(amount) = &post.amount {
             let mut amount_str = String::new();
             let alignment = self
-                .pass_context(&amount.amount)
+                .pass_context(amount.amount.as_undecorated())
                 .fmt_with_alignment(&mut amount_str)?
                 .absolute();
             write!(
@@ -211,7 +205,7 @@ impl<'a> fmt::Display for WithContext<'a, Posting<'_>> {
             )?;
             write!(f, "{}", self.pass_context(&amount.lot))?;
             if let Some(exchange) = &amount.cost {
-                match exchange {
+                match exchange.as_undecorated() {
                     Exchange::Rate(v) => write!(f, " @ {}", self.pass_context(v)),
                     Exchange::Total(v) => write!(f, " @@ {}", self.pass_context(v)),
                 }?
@@ -220,7 +214,7 @@ impl<'a> fmt::Display for WithContext<'a, Posting<'_>> {
         if let Some(balance) = &post.balance {
             let mut balance_str = String::new();
             let alignment = self
-                .pass_context(balance)
+                .pass_context(balance.as_undecorated())
                 .fmt_with_alignment(&mut balance_str)?
                 .absolute();
             let trailing = UnicodeWidthStr::width_cjk(balance_str.as_str()) - alignment;
@@ -233,7 +227,7 @@ impl<'a> fmt::Display for WithContext<'a, Posting<'_>> {
                 f,
                 "{:>width$} {}",
                 " =",
-                self.pass_context(balance),
+                self.pass_context(balance.as_undecorated()),
                 width = balance_padding
             )?;
         }
@@ -245,10 +239,10 @@ impl<'a> fmt::Display for WithContext<'a, Posting<'_>> {
     }
 }
 
-impl<'a> fmt::Display for WithContext<'a, Lot<'_>> {
+impl<'a, Deco: Decoration> fmt::Display for WithContext<'a, Lot<'_, Deco>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(price) = &self.value.price {
-            match price {
+            match price.as_undecorated() {
                 Exchange::Total(e) => write!(f, " {{{{{}}}}}", self.pass_context(e)),
                 Exchange::Rate(e) => write!(f, " {{{}}}", self.pass_context(e)),
             }?;
@@ -423,16 +417,16 @@ mod tests {
             concat!(";this\n", ";is\n", ";a pen pineapple apple pen.\n"),
             format!(
                 "{}",
-                ctx.as_display(&LedgerEntry::Comment(TopLevelComment(Cow::Borrowed(
-                    "this\nis\na pen pineapple apple pen."
-                ),)))
+                ctx.as_display(&plain::LedgerEntry::Comment(TopLevelComment(
+                    Cow::Borrowed("this\nis\na pen pineapple apple pen."),
+                )))
             )
         );
         assert_eq!(
             "apply tag foo\n",
             format!(
                 "{}",
-                ctx.as_display(&LedgerEntry::ApplyTag(ApplyTag {
+                ctx.as_display(&tracked::LedgerEntry::ApplyTag(ApplyTag {
                     key: Cow::Borrowed("foo"),
                     value: None
                 })),
@@ -442,7 +436,7 @@ mod tests {
             "apply tag foo: bar\n",
             format!(
                 "{}",
-                ctx.as_display(&LedgerEntry::ApplyTag(ApplyTag {
+                ctx.as_display(&plain::LedgerEntry::ApplyTag(ApplyTag {
                     key: Cow::Borrowed("foo"),
                     value: Some(MetadataValue::Text(Cow::Borrowed("bar")))
                 }))
@@ -452,7 +446,7 @@ mod tests {
             "apply tag foo:: 100\n",
             format!(
                 "{}",
-                ctx.as_display(&LedgerEntry::ApplyTag(ApplyTag {
+                ctx.as_display(&tracked::LedgerEntry::ApplyTag(ApplyTag {
                     key: Cow::Borrowed("foo"),
                     value: Some(MetadataValue::Expr(Cow::Borrowed("100")))
                 }))
@@ -460,7 +454,7 @@ mod tests {
         );
         assert_eq!(
             "end apply tag\n",
-            format!("{}", ctx.as_display(&LedgerEntry::EndApplyTag))
+            format!("{}", ctx.as_display(&plain::LedgerEntry::EndApplyTag))
         );
     }
 
@@ -468,7 +462,7 @@ mod tests {
     fn display_txn() {
         let got = format!(
             "{}",
-            DisplayContext::default().as_display(&LedgerEntry::Txn(Transaction {
+            DisplayContext::default().as_display(&LedgerEntry::Txn(plain::Transaction {
                 date: NaiveDate::from_ymd_opt(2022, 12, 23).unwrap(),
                 effective_date: None,
                 clear_state: ClearState::Uncleared,
@@ -501,7 +495,7 @@ mod tests {
             amount: Some(PostingAmount {
                 amount: amount(1, "USD"),
                 cost: Some(Exchange::Rate(amount(100, "JPY"))),
-                lot: Lot {
+                lot: plain::Lot {
                     price: Some(Exchange::Rate(amount(dec!(1.1), "USD"))),
                     date: Some(NaiveDate::from_ymd_opt(2022, 5, 20).unwrap()),
                     note: Some(Cow::Borrowed("printable note")),
@@ -514,7 +508,7 @@ mod tests {
             amount: Some(PostingAmount {
                 amount: amount(1, "USD"),
                 cost: Some(Exchange::Rate(amount(100, "JPY"))),
-                lot: Lot::default(),
+                lot: plain::Lot::default(),
             }),
             balance: Some(amount(1, "USD")),
             ..Posting::new("Account")
@@ -523,7 +517,7 @@ mod tests {
             amount: Some(PostingAmount {
                 amount: amount(1, "USD"),
                 cost: Some(Exchange::Total(amount(100, "JPY"))),
-                lot: Lot::default(),
+                lot: plain::Lot::default(),
             }),
             ..Posting::new("Account")
         };
@@ -531,17 +525,17 @@ mod tests {
             amount: Some(PostingAmount {
                 amount: amount(1, "USD"),
                 cost: None,
-                lot: Lot::default(),
+                lot: plain::Lot::default(),
             }),
             balance: Some(amount(1, "USD")),
             ..Posting::new("Account")
         };
-        let noamount = Posting {
+        let noamount = plain::Posting {
             amount: None,
             balance: Some(amount(1, "USD")),
             ..Posting::new("Account")
         };
-        let zerobalance = Posting {
+        let zerobalance = plain::Posting {
             amount: None,
             balance: Some(amount(0, "")),
             ..Posting::new("Account")

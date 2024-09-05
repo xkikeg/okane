@@ -2,7 +2,7 @@
 
 use crate::{
     parse::{parse_ledger, ParseError},
-    repl::display::DisplayContext,
+    repl::{self, display::DisplayContext},
 };
 
 use std::io::{Read, Write};
@@ -54,7 +54,7 @@ impl FormatOptions {
         // TODO: Grab DisplayContext externally, or from LedgerEntry.
         let ctx = DisplayContext::default();
         for parsed in parse_ledger(&buf) {
-            let (_, entry) = parsed.map_err(Box::new)?;
+            let (_, entry): (_, repl::plain::LedgerEntry) = parsed.map_err(Box::new)?;
             writeln!(w, "{}", ctx.as_display(&entry))?;
         }
         Ok(())

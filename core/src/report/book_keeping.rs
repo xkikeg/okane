@@ -6,7 +6,10 @@ use std::borrow::Borrow;
 use bumpalo::collections as bcc;
 use chrono::NaiveDate;
 
-use crate::{load, repl};
+use crate::{
+    load,
+    repl::{self, decoration::AsUndecorated},
+};
 
 use super::{
     balance::{Balance, BalanceError},
@@ -80,7 +83,7 @@ impl<'ctx> ProcessAccumulator<'ctx> {
     fn process(
         &mut self,
         ctx: &mut ReportContext<'ctx>,
-        entry: &repl::LedgerEntry,
+        entry: &repl::tracked::LedgerEntry,
     ) -> Result<(), BookKeepError> {
         match entry {
             repl::LedgerEntry::Txn(txn) => {
@@ -153,49 +156,56 @@ pub struct Posting<'ctx> {
 fn add_transaction<'ctx>(
     ctx: &mut ReportContext<'ctx>,
     bal: &mut Balance<'ctx>,
-    txn: &repl::Transaction,
+    txn: &repl::tracked::Transaction,
 ) -> Result<Transaction<'ctx>, BookKeepError> {
     let mut postings = bcc::Vec::with_capacity_in(txn.posts.len(), ctx.arena);
     let mut unfilled: Option<usize> = None;
     let mut balance = Amount::default();
     for (i, posting) in txn.posts.iter().enumerate() {
-        let account = ctx.accounts.ensure(&posting.account);
-        let (amount, balance_amount): (PostingAmount, PostingAmount) =
-            match (&posting.amount, &posting.balance) {
-                (None, None) => {
-                    if let Some(j) = unfilled.replace(i) {
-                        Err(BookKeepError::UndeduciblePostingAmount(j, i))
-                    } else {
-                        Ok((PostingAmount::zero(), PostingAmount::zero()))
+        let account = ctx.accounts.ensure(&posting.as_undecorated().account);
+        let (amount, balance_amount): (PostingAmount, PostingAmount) = match (
+            &posting.as_undecorated().amount,
+            &posting.as_undecorated().balance,
+        ) {
+            (None, None) => {
+                if let Some(j) = unfilled.replace(i) {
+                    Err(BookKeepError::UndeduciblePostingAmount(j, i))
+                } else {
+                    Ok((PostingAmount::zero(), PostingAmount::zero()))
+                }
+            }
+            (None, Some(balance_constraints)) => {
+                let current: PostingAmount =
+                    balance_constraints.as_undecorated().eval(ctx)?.try_into()?;
+                let prev: PostingAmount = bal.set_partial(account, current)?;
+                let amount = current.check_sub(prev)?;
+                Ok((amount, amount))
+            }
+            (Some(syntax_amount), balance_constraints) => {
+                let amount: PostingAmount = syntax_amount
+                    .amount
+                    .as_undecorated()
+                    .eval(ctx)?
+                    .try_into()?;
+                let expected_balance: Option<PostingAmount> = balance_constraints
+                    .as_ref()
+                    .map(|x| x.as_undecorated().eval(ctx))
+                    .transpose()?
+                    .map(|x| x.try_into())
+                    .transpose()?;
+                let current = bal.add_posting_amount(account, amount);
+                if let Some(expected) = expected_balance {
+                    if !current.is_consistent(expected) {
+                        return Err(BookKeepError::BalanceAssertionFailure(
+                            format!("{}", current.as_inline_display()),
+                            format!("{}", expected),
+                        ));
                     }
                 }
-                (None, Some(balance_constraints)) => {
-                    let current: PostingAmount = balance_constraints.eval(ctx)?.try_into()?;
-                    let prev: PostingAmount = bal.set_partial(account, current)?;
-                    let amount = current.check_sub(prev)?;
-                    Ok((amount, amount))
-                }
-                (Some(syntax_amount), balance_constraints) => {
-                    let amount: PostingAmount = syntax_amount.amount.eval(ctx)?.try_into()?;
-                    let expected_balance: Option<PostingAmount> = balance_constraints
-                        .as_ref()
-                        .map(|x| x.eval(ctx))
-                        .transpose()?
-                        .map(|x| x.try_into())
-                        .transpose()?;
-                    let current = bal.add_posting_amount(account, amount);
-                    if let Some(expected) = expected_balance {
-                        if !current.is_consistent(expected) {
-                            return Err(BookKeepError::BalanceAssertionFailure(
-                                format!("{}", current.as_inline_display()),
-                                format!("{}", expected),
-                            ));
-                        }
-                    }
-                    let balance_amount = calculate_balance_amount(ctx, syntax_amount, amount)?;
-                    Ok((amount, balance_amount))
-                }
-            }?;
+                let balance_amount = calculate_balance_amount(ctx, syntax_amount, amount)?;
+                Ok((amount, balance_amount))
+            }
+        }?;
         balance += balance_amount;
         postings.push(Posting {
             account,
@@ -238,19 +248,19 @@ fn check_balance<'ctx>(
 
 fn calculate_balance_amount<'ctx>(
     ctx: &mut ReportContext<'ctx>,
-    posting_amount: &repl::PostingAmount,
+    posting_amount: &repl::tracked::PostingAmount,
     computed_amount: PostingAmount<'ctx>,
 ) -> Result<PostingAmount<'ctx>, BookKeepError> {
     let cost: Option<SingleAmount<'ctx>> = posting_amount
         .cost
         .as_ref()
-        .map(|x| calculate_exchanged_amount(ctx, x, computed_amount.try_into()?))
+        .map(|x| calculate_exchanged_amount(ctx, x.as_undecorated(), computed_amount.try_into()?))
         .transpose()?;
     let lot: Option<SingleAmount<'ctx>> = posting_amount
         .lot
         .price
         .as_ref()
-        .map(|x| calculate_exchanged_amount(ctx, x, computed_amount.try_into()?))
+        .map(|x| calculate_exchanged_amount(ctx, x.as_undecorated(), computed_amount.try_into()?))
         .transpose()?;
     // Actually, there's no point to compute cost if lot price is provided.
     // Example: if you sell a X with cost p Y lot q Y.
@@ -292,9 +302,13 @@ mod tests {
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
-    use winnow::Parser;
 
-    use crate::parse;
+    use crate::parse::{self, testing::expect_parse_ok};
+
+    fn parse_transaction(input: &str) -> repl::tracked::Transaction {
+        let (_, ret) = expect_parse_ok(parse::transaction::transaction, input);
+        ret
+    }
 
     #[test]
     fn add_transaction_maintains_balance() {
@@ -321,7 +335,7 @@ mod tests {
               Account 3     2.00 CHF @ 150 JPY
               Account 4              = -300 JPY
         "};
-        let txn = parse::transaction::transaction.parse(input).unwrap();
+        let txn = parse_transaction(input);
         let _ = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
         let want_balance: Balance = hashmap! {
             ctx.accounts.ensure("Account 1") =>
@@ -355,7 +369,7 @@ mod tests {
               Account 2     -100 JPY = -100 JPY
               Account 2     -100 JPY = -200 JPY
         "};
-        let txn = parse::transaction::transaction.parse(input).unwrap();
+        let txn = parse_transaction(input);
         let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
         let want = Transaction {
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
@@ -399,7 +413,7 @@ mod tests {
               Account 1              = 1200 JPY
               Account 2
         "};
-        let txn = parse::transaction::transaction.parse(input).unwrap();
+        let txn = parse_transaction(input);
         let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
         let want = Transaction {
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
@@ -433,7 +447,7 @@ mod tests {
               Account 3         34.56 CHF
               Account 4
         "};
-        let txn = parse::transaction::transaction.parse(input).unwrap();
+        let txn = parse_transaction(input);
         let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
         let want = Transaction {
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
@@ -474,7 +488,7 @@ mod tests {
               Account 1 ; no amount
               Account 2 ; no amount
         "};
-        let txn = parse::transaction::transaction.parse(input).unwrap();
+        let txn = parse_transaction(input);
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
         let mut bal = Balance::default();
@@ -492,7 +506,7 @@ mod tests {
               Account 1             12 OKANE {100 JPY}
               Account 2         -1,200 JPY
         "};
-        let txn = parse::transaction::transaction.parse(input).unwrap();
+        let txn = parse_transaction(input);
         let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
         let want = Transaction {
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
@@ -524,7 +538,7 @@ mod tests {
               Account 1             12 OKANE @ (1 * 100 JPY)
               Account 2         -1,200 JPY
         "};
-        let txn = parse::transaction::transaction.parse(input).unwrap();
+        let txn = parse_transaction(input);
         let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
         let want = Transaction {
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
@@ -557,7 +571,7 @@ mod tests {
               Account 2          1,440 JPY
               Income              -240 JPY
         "};
-        let txn = parse::transaction::transaction.parse(input).unwrap();
+        let txn = parse_transaction(input);
         let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
         let want = Transaction {
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
@@ -596,7 +610,7 @@ mod tests {
               Expenses               300 EUR @ (1 / 1.0538 CHF)
               Liabilities        -284.68 CHF
         "};
-        let txn = parse::transaction::transaction.parse(input).unwrap();
+        let txn = parse_transaction(input);
         let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
         let want = Transaction {
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),

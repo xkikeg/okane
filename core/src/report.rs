@@ -15,7 +15,7 @@ pub use book_keeping::{process, Posting, Transaction};
 pub use context::{Account, ReportContext};
 pub use error::ReportError;
 
-use crate::{load, repl::LedgerEntry};
+use crate::{load, repl::plain::LedgerEntry};
 
 /// Returns all accounts for the given LedgerEntry.
 /// WARNING: interface are subject to change.

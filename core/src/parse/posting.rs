@@ -11,21 +11,26 @@ use winnow::{
     PResult, Parser,
 };
 
-use crate::parse::{
-    character::{line_ending_or_semi, paren, till_line_ending_or_semi},
-    combinator::{cond_else, has_peek},
-    expr, metadata, primitive,
-};
 use crate::repl;
+use crate::{
+    parse::{
+        character::{line_ending_or_semi, paren, till_line_ending_or_semi},
+        combinator::{cond_else, has_peek},
+        expr, metadata, primitive,
+    },
+    repl::decoration::Decoration,
+};
 
-pub fn posting<'i, Input>(input: &mut Input) -> PResult<repl::Posting<'i>>
+pub fn posting<'i, Input, Deco>(input: &mut Input) -> PResult<repl::Posting<'i, Deco>>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
+        + winnow::stream::Location
         + winnow::stream::Compare<&'static str>
         + winnow::stream::FindSlice<(char, char)>
         + Clone,
     <Input as Stream>::Token: AsChar + Clone,
+    Deco: Decoration,
 {
     trace("posting::posting", move |input: &mut Input| {
         let clear_state = preceded(space1, metadata::clear_state).parse_next(input)?;
@@ -44,8 +49,11 @@ where
         let amount = opt(terminated(posting_amount, space0))
             .context(StrContext::Label("amount of the posting"))
             .parse_next(input)?;
-        let balance = opt(delimited((one_of('='), space0), expr::value_expr, space0))
-            .context(StrContext::Label("balance of the posting"))
+        let balance =
+            opt(
+                Deco::decorate_parser(delimited((one_of('='), space0), expr::value_expr, space0))
+                    .context(StrContext::Label("balance of the posting")),
+            )
             .parse_next(input)?;
         let metadata = metadata::block_metadata
             .context(StrContext::Label("metadata section of the posting"))
@@ -81,15 +89,17 @@ where
     terminated(take(length), space0).parse_next(input)
 }
 
-fn posting_amount<'i, Input>(input: &mut Input) -> PResult<repl::PostingAmount<'i>>
+fn posting_amount<'i, Input, Deco>(input: &mut Input) -> PResult<repl::PostingAmount<'i, Deco>>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
+        + winnow::stream::Location
         + winnow::stream::Compare<&'static str>
         + std::clone::Clone,
     <Input as Stream>::Token: AsChar + Clone,
+    Deco: Decoration,
 {
-    let amount = terminated(expr::value_expr, space0).parse_next(input)?;
+    let amount = terminated(Deco::decorate_parser(expr::value_expr), space0).parse_next(input)?;
     let lot = lot(input)?;
     let is_at = has_peek(one_of('@')).parse_next(input)?;
     let is_double_at = has_peek(literal("@@")).parse_next(input)?;
@@ -97,20 +107,22 @@ where
         is_at,
         trace(
             "posting::posting_amount@cost",
-            cond_else(is_double_at, total_cost, rate_cost),
+            Deco::decorate_parser(cond_else(is_double_at, total_cost, rate_cost)),
         ),
     )
     .parse_next(input)?;
     Ok(repl::PostingAmount { amount, cost, lot })
 }
 
-fn lot<'i, Input>(input: &mut Input) -> PResult<repl::Lot<'i>>
+fn lot<'i, Input, Deco>(input: &mut Input) -> PResult<repl::Lot<'i, Deco>>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
+        + winnow::stream::Location
         + winnow::stream::Compare<&'static str>
         + Clone,
     <Input as Stream>::Token: AsChar + Clone,
+    Deco: Decoration,
 {
     space0.void().parse_next(input)?;
     let mut lot = repl::Lot::default();
@@ -120,24 +132,8 @@ where
         match open {
             None => return Ok(lot),
             Some('{') if lot.price.is_none() => {
-                let is_total = has_peek(literal("{{")).parse_next(input)?;
-                if is_total {
-                    let amount = delimited(
-                        (literal("{{"), space0),
-                        expr::value_expr,
-                        (space0, literal("}}")),
-                    )
-                    .parse_next(input)?;
-                    lot.price = Some(repl::Exchange::Total(amount));
-                } else {
-                    let amount = delimited(
-                        (literal("{"), space0),
-                        expr::value_expr,
-                        (space0, literal("}")),
-                    )
-                    .parse_next(input)?;
-                    lot.price = Some(repl::Exchange::Rate(amount));
-                }
+                let amount = Deco::decorate_parser(lot_amount).parse_next(input)?;
+                lot.price = Some(amount);
             }
             Some('{') => {
                 return fail
@@ -173,6 +169,34 @@ where
     }
 }
 
+fn lot_amount<'i, Input>(input: &mut Input) -> PResult<repl::Exchange<'i>>
+where
+    Input: Stream<Token = char, Slice = &'i str>
+        + StreamIsPartial
+        + winnow::stream::Compare<&'static str>
+        + Clone,
+    <Input as Stream>::Token: AsChar + Clone,
+{
+    let is_total = has_peek(literal("{{")).parse_next(input)?;
+    if is_total {
+        delimited(
+            (literal("{{"), space0),
+            expr::value_expr,
+            (space0, literal("}}")),
+        )
+        .parse_next(input)
+        .map(repl::Exchange::Total)
+    } else {
+        delimited(
+            (literal("{"), space0),
+            expr::value_expr,
+            (space0, literal("}")),
+        )
+        .parse_next(input)
+        .map(repl::Exchange::Rate)
+    }
+}
+
 fn total_cost<'i, Input>(input: &mut Input) -> PResult<repl::Exchange<'i>>
 where
     Input: Stream<Token = char, Slice = &'i str>
@@ -202,12 +226,21 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{parse::testing::expect_parse_ok, repl::pretty_decimal::PrettyDecimal};
 
     use chrono::NaiveDate;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
+    use repl::plain;
     use rust_decimal_macros::dec;
+    use winnow::Located;
+
+    use crate::{
+        parse::testing::expect_parse_ok,
+        repl::{
+            plain::{Lot, Posting, PostingAmount},
+            pretty_decimal::PrettyDecimal,
+        },
+    };
 
     #[test]
     fn posting_cost_parses_valid_input() {
@@ -215,7 +248,7 @@ mod tests {
             expect_parse_ok(posting_amount, "100 EUR @ 1.2 CHF"),
             (
                 "",
-                repl::PostingAmount {
+                repl::plain::PostingAmount {
                     amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
                         value: PrettyDecimal::unformatted(dec!(100)),
                         commodity: "EUR".into()
@@ -234,7 +267,7 @@ mod tests {
             expect_parse_ok(posting_amount, "1000 EUR @@ 1,020 CHF"),
             (
                 "",
-                repl::PostingAmount {
+                PostingAmount {
                     amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
                         value: PrettyDecimal::plain(dec!(1000)),
                         commodity: "EUR".into()
@@ -258,7 +291,7 @@ mod tests {
             expect_parse_ok(posting, input),
             (
                 "",
-                repl::Posting {
+                Posting {
                     amount: Some(
                         repl::expr::ValueExpr::Amount(repl::expr::Amount {
                             value: PrettyDecimal::unformatted(dec!(1)),
@@ -278,7 +311,7 @@ mod tests {
                         repl::Metadata::Comment("My card took commission".into()),
                         repl::Metadata::WordTags(vec!["financial".into(), "経済".into(),],),
                     ],
-                    ..repl::Posting::new("Expenses:Commissions")
+                    ..Posting::new("Expenses:Commissions")
                 }
             )
         )
@@ -291,9 +324,9 @@ mod tests {
             expect_parse_ok(posting, input),
             (
                 "",
-                repl::Posting {
+                Posting {
                     clear_state: repl::ClearState::Pending,
-                    ..repl::Posting::new("Expenses")
+                    ..Posting::new("Expenses")
                 }
             )
         );
@@ -306,17 +339,17 @@ mod tests {
             expect_parse_ok(posting, input),
             (
                 "",
-                repl::Posting {
+                Posting {
                     clear_state: repl::ClearState::Cleared,
-                    amount: Some(repl::PostingAmount {
+                    amount: Some(PostingAmount {
                         amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
                             value: PrettyDecimal::unformatted(dec!(100)),
                             commodity: "JPY".into()
                         }),
                         cost: None,
-                        lot: repl::Lot::default()
+                        lot: Lot::default()
                     }),
-                    ..repl::Posting::new("Expenses")
+                    ..Posting::new("Expenses")
                 }
             )
         );
@@ -359,15 +392,15 @@ mod tests {
                     let want_fail = i == j || j == k || i == k;
                     let input = format!("{}{}{}", segment[i], segment[j], segment[k]);
                     if want_fail {
-                        preceded(space0, lot)
-                            .parse_peek(input.as_str())
+                        preceded(space0, lot::<_, plain::Ident>)
+                            .parse_peek(Located::new(input.as_str()))
                             .expect_err("should fail");
                     } else {
                         assert_eq!(
                             expect_parse_ok(preceded(space0, lot), input.as_str()),
                             (
                                 "",
-                                repl::Lot {
+                                repl::plain::Lot {
                                     price: Some(repl::Exchange::Rate(
                                         repl::expr::ValueExpr::Amount(repl::expr::Amount {
                                             value: PrettyDecimal::unformatted(dec!(200)),
