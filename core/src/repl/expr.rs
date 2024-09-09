@@ -7,23 +7,12 @@ use std::borrow::Cow;
 use bounded_static::ToStatic;
 
 use super::pretty_decimal::PrettyDecimal;
-use crate::datamodel;
 
-/// Amount with presentation information.
-/// Similar to `datamodel::Amount` with extra formatting information.
+/// Amount, which is a single unit of value with a commodity.
 #[derive(Debug, PartialEq, Eq, Clone, ToStatic)]
 pub struct Amount<'i> {
     pub value: PrettyDecimal,
     pub commodity: Cow<'i, str>,
-}
-
-impl<'i> From<&'i datamodel::Amount> for Amount<'i> {
-    fn from(value: &'i datamodel::Amount) -> Self {
-        Self {
-            value: PrettyDecimal::unformatted(value.value),
-            commodity: Cow::Borrowed(&value.commodity),
-        }
-    }
 }
 
 /// Defines value expression.
@@ -38,12 +27,6 @@ pub enum ValueExpr<'i> {
 impl<'i> From<Amount<'i>> for ValueExpr<'i> {
     fn from(v: Amount<'i>) -> Self {
         ValueExpr::Amount(v)
-    }
-}
-
-impl<'i> From<&'i datamodel::Amount> for ValueExpr<'i> {
-    fn from(value: &'i datamodel::Amount) -> Self {
-        ValueExpr::Amount(value.into())
     }
 }
 

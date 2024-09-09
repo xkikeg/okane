@@ -7,14 +7,10 @@ pub mod display;
 pub mod expr;
 pub mod pretty_decimal;
 
-pub use crate::datamodel::ClearState;
-
 use std::{borrow::Cow, fmt};
 
 use bounded_static::ToStatic;
 use chrono::NaiveDate;
-
-use crate::datamodel;
 
 /// Top-level entry of the LedgerFile.
 #[derive(Debug, PartialEq, Eq, ToStatic)]
@@ -133,20 +129,6 @@ impl<'i> Transaction<'i> {
     }
 }
 
-impl<'i> From<&'i datamodel::Transaction> for Transaction<'i> {
-    fn from(orig: &'i datamodel::Transaction) -> Self {
-        Transaction {
-            date: orig.date,
-            effective_date: orig.effective_date,
-            clear_state: orig.clear_state,
-            code: orig.code.as_ref().map(|x| Cow::Borrowed(x.as_str())),
-            payee: (&orig.payee).into(),
-            metadata: Vec::new(),
-            posts: orig.posts.iter().map(Into::into).collect(),
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, ToStatic)]
 /// Posting in a transaction to represent a particular account amount increase / decrease.
 pub struct Posting<'i> {
@@ -174,24 +156,16 @@ impl<'i> Posting<'i> {
     }
 }
 
-impl<'i> From<&'i datamodel::Posting> for Posting<'i> {
-    fn from(orig: &'i datamodel::Posting) -> Self {
-        let metadata = orig
-            .payee
-            .iter()
-            .map(|v| Metadata::KeyValueTag {
-                key: Cow::Borrowed("Payee"),
-                value: MetadataValue::Text(Cow::Borrowed(v.as_str())),
-            })
-            .collect();
-        Posting {
-            account: Cow::Borrowed(&orig.account),
-            clear_state: orig.clear_state,
-            amount: orig.amount.as_ref().map(Into::into),
-            balance: orig.balance.as_ref().map(Into::into),
-            metadata,
-        }
-    }
+/// Represents a clearing state, often combined with the ambiguity.
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, ToStatic)]
+pub enum ClearState {
+    /// No specific meaning.
+    #[default]
+    Uncleared,
+    /// Useful to declare that the transaction / post is confirmed.
+    Cleared,
+    /// Useful to declare that the transaction / post is still pending.
+    Pending,
 }
 
 /// Metadata represents meta information associated with transactions / posts.
@@ -240,16 +214,6 @@ impl<'i> From<expr::ValueExpr<'i>> for PostingAmount<'i> {
     }
 }
 
-impl<'i> From<&'i datamodel::ExchangedAmount> for PostingAmount<'i> {
-    fn from(v: &'i datamodel::ExchangedAmount) -> Self {
-        PostingAmount {
-            amount: (&v.amount).into(),
-            cost: v.exchange.as_ref().map(Into::into),
-            lot: Lot::default(),
-        }
-    }
-}
-
 /// Lot information is a set of metadata to record the original lot which the commodity is acquired with.
 #[derive(Debug, Default, PartialEq, Eq, ToStatic)]
 pub struct Lot<'i> {
@@ -271,13 +235,4 @@ pub enum Exchange<'i> {
     /// `200 JPY @ (1 / 100 USD)`
     /// means the amount was 200 JPY, where 1 JPY is equal to 1/100 USD.
     Rate(expr::ValueExpr<'i>),
-}
-
-impl<'i> From<&'i datamodel::Exchange> for Exchange<'i> {
-    fn from(v: &'i datamodel::Exchange) -> Self {
-        match v {
-            datamodel::Exchange::Total(total) => Exchange::Total(total.into()),
-            datamodel::Exchange::Rate(rate) => Exchange::Rate(rate.into()),
-        }
-    }
 }
