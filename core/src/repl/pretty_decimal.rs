@@ -1,4 +1,4 @@
-use std::{convert::TryInto, fmt::Display, str::FromStr};
+use std::{convert::TryInto, fmt::Display, ops::Neg, str::FromStr};
 
 use bounded_static::{IntoBoundedStatic, ToBoundedStatic, ToStatic};
 use rust_decimal::Decimal;
@@ -21,6 +21,15 @@ pub struct PrettyDecimal {
     /// Format of the decimal, None means there's no associated information.
     pub format: Option<Format>,
     pub value: Decimal,
+}
+
+impl Neg for PrettyDecimal {
+    type Output = Self;
+
+    fn neg(mut self) -> Self::Output {
+        self.set_sign_positive(!self.value.is_sign_positive());
+        self
+    }
 }
 
 impl ToBoundedStatic for PrettyDecimal {
@@ -50,37 +59,51 @@ pub enum Error {
 }
 
 impl PrettyDecimal {
-    /// Constructs a new instance with [Format].
-    pub fn with_format(value: Decimal, format: Option<Format>) -> Self {
-        Self { format, value }
-    }
-
     /// Constructs unformatted PrettyDecimal.
     #[inline]
-    pub fn unformatted(value: Decimal) -> Self {
-        Self::with_format(value, None)
+    pub const fn unformatted(value: Decimal) -> Self {
+        Self {
+            format: None,
+            value,
+        }
     }
 
     /// Constructs plain PrettyDecimal.
     #[inline]
-    pub fn plain(value: Decimal) -> Self {
-        Self::with_format(value, Some(Format::Plain))
+    pub const fn plain(value: Decimal) -> Self {
+        Self {
+            format: Some(Format::Plain),
+            value,
+        }
     }
 
     /// Constructs comma3 PrettyDecimal.
     #[inline]
-    pub fn comma3dot(value: Decimal) -> Self {
-        Self::with_format(value, Some(Format::Comma3Dot))
+    pub const fn comma3dot(value: Decimal) -> Self {
+        Self {
+            format: Some(Format::Comma3Dot),
+            value,
+        }
     }
 
     /// Returns the current scale.
-    pub fn scale(&self) -> u32 {
+    pub const fn scale(&self) -> u32 {
         self.value.scale()
     }
 
     /// Rescale the underlying value.
     pub fn rescale(&mut self, scale: u32) {
         self.value.rescale(scale)
+    }
+
+    /// Sets the sign positive.
+    pub fn set_sign_positive(&mut self, positive: bool) {
+        self.value.set_sign_positive(positive)
+    }
+
+    /// Returns `true` if the value is positive.
+    pub const fn is_sign_positive(&self) -> bool {
+        self.value.is_sign_positive()
     }
 }
 
