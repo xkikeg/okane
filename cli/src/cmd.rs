@@ -97,7 +97,7 @@ impl ImportCmd {
                 .collect(),
         };
         for xact in xacts {
-            let xact: repl::Transaction = (&xact).into();
+            let xact: repl::Transaction = xact.to_double_entry(&config_entry.account)?;
             writeln!(w, "{}", ctx.as_display(&xact))?;
         }
         Ok(())

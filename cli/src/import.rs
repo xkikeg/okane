@@ -1,5 +1,6 @@
 // Define converter interface here.
 
+pub mod amount;
 pub mod config;
 pub mod csv;
 pub mod extract;
@@ -11,8 +12,6 @@ pub mod viseca;
 mod error;
 
 pub use error::ImportError;
-
-use okane_core::datamodel::Transaction;
 
 /// Format of the supported importer.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -26,18 +25,12 @@ pub fn import<R: std::io::Read>(
     r: R,
     fmt: Format,
     config: &config::ConfigEntry,
-) -> Result<Vec<Transaction>, ImportError> {
-    let txns = match fmt {
+) -> Result<Vec<single_entry::Txn>, ImportError> {
+    match fmt {
         Format::Csv => csv::CsvImporter {}.import(r, config),
         Format::IsoCamt053 => iso_camt053::IsoCamt053Importer {}.import(r, config),
         Format::Viseca => viseca::VisecaImporter {}.import(r, config),
-    }?;
-    let mut res = Vec::new();
-    for txn in txns {
-        let de = txn.to_double_entry(config.account.as_str())?;
-        res.push(de);
     }
-    Ok(res)
 }
 
 /// Trait the each format should implement, to be used in import() internally.

@@ -1,16 +1,17 @@
 mod xmlnode;
 
-use super::config;
-use super::extract;
-use super::single_entry;
-use super::single_entry::CommodityPair;
-use super::ImportError;
-use okane_core::datamodel;
-
 use std::convert::{TryFrom, TryInto};
 
 use regex::Regex;
 use rust_decimal::Decimal;
+
+use okane_core::repl;
+
+use super::amount::OwnedAmount;
+use super::config;
+use super::extract;
+use super::single_entry::{self, CommodityPair};
+use super::ImportError;
 
 pub struct IsoCamt053Importer {}
 
@@ -33,7 +34,7 @@ impl super::Importer for IsoCamt053Importer {
                     let mut txn = single_entry::Txn::new(
                         first.value_date.date,
                         "Initial Balance",
-                        datamodel::Amount {
+                        OwnedAmount {
                             commodity: opening_balance.commodity.clone(),
                             value: Decimal::ZERO,
                         },
@@ -67,7 +68,7 @@ impl super::Importer for IsoCamt053Importer {
                     txn.effective_date(entry.booking_date.date)
                         .dest_account_option(fragment.account);
                     if !fragment.cleared {
-                        txn.clear_state(datamodel::ClearState::Pending);
+                        txn.clear_state(repl::ClearState::Pending);
                     }
                     add_charges(&mut txn, config, &entry.charges)?;
                     res.push(txn);
@@ -92,7 +93,7 @@ impl super::Importer for IsoCamt053Importer {
                         .code_option(code)
                         .dest_account_option(fragment.account);
                     if !fragment.cleared {
-                        txn.clear_state(datamodel::ClearState::Pending);
+                        txn.clear_state(repl::ClearState::Pending);
                     }
                     if let Some(amount_details) = transaction.amount_details.as_ref() {
                         if transaction.amount != amount_details.transaction.amount {
@@ -130,10 +131,7 @@ impl super::Importer for IsoCamt053Importer {
     }
 }
 
-fn find_balance(
-    stmt: &xmlnode::Statement,
-    code: xmlnode::BalanceCode,
-) -> Option<datamodel::Amount> {
+fn find_balance(stmt: &xmlnode::Statement, code: xmlnode::BalanceCode) -> Option<OwnedAmount> {
     stmt.balance
         .iter()
         .filter(|x| x.balance_type.credit_or_property.code.value == code)
@@ -170,8 +168,8 @@ fn add_charges(
 }
 
 impl xmlnode::Amount {
-    fn to_data(&self, credit_or_debit: xmlnode::CreditOrDebit) -> datamodel::Amount {
-        datamodel::Amount {
+    fn to_data(&self, credit_or_debit: xmlnode::CreditOrDebit) -> OwnedAmount {
+        OwnedAmount {
             value: match credit_or_debit {
                 xmlnode::CreditOrDebit::Credit => self.value,
                 xmlnode::CreditOrDebit::Debit => -self.value,

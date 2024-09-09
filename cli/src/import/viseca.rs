@@ -5,8 +5,9 @@ use std::convert::{TryFrom, TryInto};
 
 use regex::Regex;
 
-use okane_core::datamodel;
+use okane_core::repl;
 
+use super::amount::OwnedAmount;
 use super::config;
 use super::extract;
 use super::single_entry;
@@ -38,7 +39,7 @@ impl super::Importer for VisecaImporter {
             let mut txn = single_entry::Txn::new(
                 entry.date,
                 payee,
-                datamodel::Amount {
+                OwnedAmount {
                     value: -entry.amount,
                     commodity: config.commodity.primary.clone(),
                 },
@@ -46,7 +47,7 @@ impl super::Importer for VisecaImporter {
             txn.effective_date(entry.effective_date)
                 .dest_account_option(fragment.account);
             if !fragment.cleared {
-                txn.clear_state(datamodel::ClearState::Pending);
+                txn.clear_state(repl::ClearState::Pending);
             }
             if let Some(exchange) = entry.exchange {
                 let line_count = entry.line_count;
@@ -58,33 +59,24 @@ impl super::Importer for VisecaImporter {
                 })?;
                 txn.add_rate(
                     CommodityPair {
-                        source: exchange.equivalent.currency,
-                        target: spent.currency.clone(),
+                        source: exchange.equivalent.commodity,
+                        target: spent.commodity.clone(),
                     },
                     exchange.rate,
                 )?;
-                txn.transferred_amount(-datamodel::Amount::from(spent));
+                txn.transferred_amount(-spent);
             } else if let Some(spent) = entry.spent {
-                txn.transferred_amount(-datamodel::Amount::from(spent));
+                txn.transferred_amount(-spent);
             }
             if let Some(fee) = entry.fee {
                 let payee = config.operator.as_ref().ok_or(ImportError::InvalidConfig(
                     "config should have operator to have charge",
                 ))?;
-                txn.add_charge(payee, datamodel::Amount::from(fee.amount));
+                txn.add_charge(payee, fee.amount);
             }
             result.push(txn);
         }
         Ok(result)
-    }
-}
-
-impl From<format::Amount> for datamodel::Amount {
-    fn from(from: format::Amount) -> datamodel::Amount {
-        datamodel::Amount {
-            value: from.value,
-            commodity: from.currency,
-        }
     }
 }
 

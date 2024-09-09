@@ -9,9 +9,9 @@ use log::{info, warn};
 use regex::Regex;
 use rust_decimal::Decimal;
 
-use okane_core::datamodel;
 use okane_core::repl;
 
+use super::amount::OwnedAmount;
 use super::config::{self, FieldKey, TemplateField};
 use super::single_entry::{self, CommodityPair};
 use super::template::Template;
@@ -110,7 +110,7 @@ impl super::Importer for CsvImporter {
             let mut txn = single_entry::Txn::new(
                 date,
                 fragment.payee.unwrap_or(&original_payee),
-                datamodel::Amount {
+                OwnedAmount {
                     value: amount,
                     commodity: commodity.clone().into_owned(),
                 },
@@ -118,10 +118,10 @@ impl super::Importer for CsvImporter {
             txn.code_option(fragment.code)
                 .dest_account_option(fragment.account);
             if !fragment.cleared {
-                txn.clear_state(datamodel::ClearState::Pending);
+                txn.clear_state(repl::ClearState::Pending);
             }
             if let Some(b) = balance {
-                txn.balance(datamodel::Amount {
+                txn.balance(OwnedAmount {
                     value: b,
                     commodity: commodity.clone().into_owned(),
                 });
@@ -133,7 +133,7 @@ impl super::Importer for CsvImporter {
                 if let Some(value) = str_to_comma_decimal(&charge)? {
                     txn.add_charge(
                         payee,
-                        datamodel::Amount {
+                        OwnedAmount {
                             value,
                             commodity: commodity.clone().into_owned(),
                         },
@@ -172,7 +172,7 @@ impl super::Importer for CsvImporter {
                     )))?,
                     config::ConversionAmountSpec::Compute => computed_transferred,
                 };
-                txn.transferred_amount(datamodel::Amount {
+                txn.transferred_amount(OwnedAmount {
                     value: transferred,
                     commodity: secondary_commodity.to_owned(),
                 });

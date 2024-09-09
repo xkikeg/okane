@@ -1,5 +1,4 @@
-use super::format::{Amount, Entry, Exchange, Fee};
-use crate::import::ImportError;
+//! Defines parser for viseca format.
 
 use std::io::BufRead;
 use std::str::FromStr;
@@ -8,6 +7,9 @@ use chrono::NaiveDate;
 use lazy_static::lazy_static;
 use regex::Regex;
 use rust_decimal::Decimal;
+
+use super::format::{Entry, Exchange, Fee};
+use crate::import::{amount::OwnedAmount, ImportError};
 
 lazy_static! {
     static ref FIRST_LINE: Regex = Regex::new(r"^(?P<date>\d{2}.\d{2}.\d{2}) (?P<edate>\d{2}.\d{2}.\d{2}) (?P<payee>.*?)(?: (?P<currency>[A-Z]{3}) (?P<examount>[0-9.']+))? (?P<amount>[0-9.']+)(?P<neg> -)?$").unwrap();
@@ -55,7 +57,7 @@ impl<T: BufRead> Parser<T> {
         let exchange = entry_base
             .spent
             .as_ref()
-            .filter(|spent| *spent.currency != self.currency)
+            .filter(|spent| *spent.commodity != self.currency)
             .map(|_| self.parse_exchange())
             .transpose()?;
         let fee = entry_base
@@ -96,8 +98,8 @@ impl<T: BufRead> Parser<T> {
                     "currency and examount should exist together",
                 )?;
                 let examount = parse_decimal(examount_str)?;
-                Some(Amount {
-                    currency: currency.as_str().to_string(),
+                Some(OwnedAmount {
+                    commodity: currency.as_str().to_string(),
                     value: sign * examount,
                 })
             }
@@ -137,8 +139,8 @@ impl<T: BufRead> Parser<T> {
         Ok(Exchange {
             rate,
             rate_date: date,
-            equivalent: Amount {
-                currency: equiv_currency,
+            equivalent: OwnedAmount {
+                commodity: equiv_currency,
                 value: equiv_amount,
             },
         })
@@ -173,8 +175,8 @@ impl<T: BufRead> Parser<T> {
         let fee_amount = parse_decimal(fee_amount)?;
         Ok(Some(Fee {
             percent,
-            amount: Amount {
-                currency: fee_currency,
+            amount: OwnedAmount {
+                commodity: fee_currency,
                 value: fee_amount * credit_applier,
             },
         }))
@@ -387,23 +389,23 @@ mod tests {
                 payee: "Super gas".to_string(),
                 amount: dec!(52.10),
                 category: "Service stations".to_string(),
-                spent: Some(Amount {
+                spent: Some(OwnedAmount {
                     value: dec!(46.88),
-                    currency: "EUR".to_string(),
+                    commodity: "EUR".to_string(),
                 }),
                 exchange: Some(Exchange {
                     rate: dec!(1.092432),
                     rate_date: NaiveDate::from_ymd_opt(2020, 8, 9).unwrap(),
-                    equivalent: Amount {
+                    equivalent: OwnedAmount {
                         value: dec!(51.20),
-                        currency: "CHF".to_string(),
+                        commodity: "CHF".to_string(),
                     },
                 }),
                 fee: Some(Fee {
                     percent: dec!(1.75),
-                    amount: Amount {
+                    amount: OwnedAmount {
                         value: dec!(0.90),
-                        currency: "CHF".to_string(),
+                        commodity: "CHF".to_string(),
                     },
                 }),
             }),
@@ -417,15 +419,15 @@ mod tests {
                 payee: "PAYPAL *STEAM GAMES, 35314369001 GB".to_string(),
                 amount: dec!(19.35),
                 category: "Game, toy, and hobby shops".to_string(),
-                spent: Some(Amount {
+                spent: Some(OwnedAmount {
                     value: dec!(19.00),
-                    currency: "CHF".to_string(),
+                    commodity: "CHF".to_string(),
                 }),
                 exchange: None,
                 fee: Some(Fee {
                     percent: dec!(1.75),
-                    amount: Amount {
-                        currency: "CHF".to_string(),
+                    amount: OwnedAmount {
+                        commodity: "CHF".to_string(),
                         value: dec!(0.35),
                     },
                 },),
@@ -469,16 +471,16 @@ mod tests {
                 payee: "Super gas".to_string(),
                 amount: dec!(52.10),
                 category: "Service stations".to_string(),
-                spent: Some(Amount {
+                spent: Some(OwnedAmount {
                     value: dec!(46.88),
-                    currency: "EUR".to_string(),
+                    commodity: "EUR".to_string(),
                 }),
                 exchange: Some(Exchange {
                     rate: dec!(1.092432),
                     rate_date: NaiveDate::from_ymd_opt(2020, 8, 9).unwrap(),
-                    equivalent: Amount {
+                    equivalent: OwnedAmount {
                         value: dec!(51.20),
-                        currency: "CHF".to_string(),
+                        commodity: "CHF".to_string(),
                     },
                 }),
                 fee: None,
@@ -493,16 +495,16 @@ mod tests {
                 payee: "MY TAXI, Amsterdam NL".to_string(),
                 amount: dec!(1.05),
                 category: "Taxicabs and limousines".to_string(),
-                spent: Some(Amount {
+                spent: Some(OwnedAmount {
                     value: dec!(1.00),
-                    currency: "EUR".to_string(),
+                    commodity: "EUR".to_string(),
                 }),
                 exchange: Some(Exchange {
                     rate: dec!(1.045704),
                     rate_date: NaiveDate::from_ymd_opt(2020, 8, 23).unwrap(),
-                    equivalent: Amount {
+                    equivalent: OwnedAmount {
                         value: dec!(1.05),
-                        currency: "CHF".to_string(),
+                        commodity: "CHF".to_string(),
                     }
                 }),
                 fee: None,
@@ -537,22 +539,22 @@ mod tests {
                 payee: "MY AIR, FRANKFURT AT".to_string(),
                 amount: dec!(935.05),
                 category: "Air carriers, airlines".to_string(),
-                spent: Some(Amount {
+                spent: Some(OwnedAmount {
                     value: dec!(942.84),
-                    currency: "EUR".to_string(),
+                    commodity: "EUR".to_string(),
                 }),
                 exchange: Some(Exchange {
                     rate: dec!(0.9746651982),
                     rate_date: NaiveDate::from_ymd_opt(2023, 8, 16).unwrap(),
-                    equivalent: Amount {
+                    equivalent: OwnedAmount {
                         value: dec!(918.95),
-                        currency: "CHF".to_string(),
+                        commodity: "CHF".to_string(),
                     },
                 }),
                 fee: Some(Fee {
                     percent: dec!(1.75),
-                    amount: Amount {
-                        currency: "CHF".to_string(),
+                    amount: OwnedAmount {
+                        commodity: "CHF".to_string(),
                         value: dec!(16.10),
                     },
                 },),
