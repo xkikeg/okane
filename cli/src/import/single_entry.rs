@@ -1,10 +1,12 @@
-use std::collections::HashMap;
-
-use super::ImportError;
-use okane_core::datamodel;
+use std::{borrow::Cow, collections::HashMap};
 
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
+
+use okane_core::repl::{self, pretty_decimal::PrettyDecimal};
+
+use super::amount::OwnedAmount;
+use super::ImportError;
 
 /// Represents single-entry transaction, associated with the particular account.
 pub struct Txn {
@@ -24,31 +26,31 @@ pub struct Txn {
     dest_account: Option<String>,
 
     /// ClearState, useful to overwrite default convention (if dest_account is set).
-    clear_state: Option<datamodel::ClearState>,
+    clear_state: Option<repl::ClearState>,
 
     /// amount in exchanged rate.
-    transferred_amount: Option<datamodel::Amount>,
+    transferred_amount: Option<OwnedAmount>,
 
     /// Amount of the transaction, applied for the associated account.
     /// For bank account, positive means deposit, negative means withdraw.
     /// For credit card account, negative means expense, positive means payment to the card.
-    amount: datamodel::Amount,
+    amount: OwnedAmount,
 
     /// Rate of the given commodity, useful if the statement amount is in foreign currency.
-    rates: HashMap<String, datamodel::Amount>,
+    rates: HashMap<String, OwnedAmount>,
 
-    balance: Option<datamodel::Amount>,
+    balance: Option<OwnedAmount>,
 
     charges: Vec<Charge>,
 }
 
 struct Charge {
     payee: String,
-    amount: datamodel::Amount,
+    amount: OwnedAmount,
 }
 
 impl Txn {
-    pub fn new(date: NaiveDate, payee: &str, amount: datamodel::Amount) -> Txn {
+    pub fn new(date: NaiveDate, payee: &str, amount: OwnedAmount) -> Txn {
         Txn {
             date,
             effective_date: None,
@@ -92,12 +94,12 @@ impl Txn {
         self
     }
 
-    pub fn clear_state(&mut self, clear_state: datamodel::ClearState) -> &mut Txn {
+    pub fn clear_state(&mut self, clear_state: repl::ClearState) -> &mut Txn {
         self.clear_state = Some(clear_state);
         self
     }
 
-    pub fn transferred_amount(&mut self, amount: datamodel::Amount) -> &mut Txn {
+    pub fn transferred_amount(&mut self, amount: OwnedAmount) -> &mut Txn {
         self.transferred_amount = Some(amount);
         self
     }
@@ -105,7 +107,7 @@ impl Txn {
     pub fn add_rate(&mut self, key: CommodityPair, rate: Decimal) -> Result<&mut Txn, ImportError> {
         match self.rates.insert(
             key.target.clone(),
-            datamodel::Amount {
+            OwnedAmount {
                 value: rate,
                 commodity: key.source.clone(),
             },
@@ -120,16 +122,16 @@ impl Txn {
         }
     }
 
-    fn rate(&self, target: &str) -> Option<datamodel::Exchange> {
+    fn rate(&self, target: &str) -> Option<repl::Exchange> {
         self.rates
             .get(target)
-            .map(|x| datamodel::Exchange::Rate(x.clone()))
+            .map(|x| repl::Exchange::Rate(as_syntax_amount(x).into()))
     }
 
     pub fn try_add_charge_not_included<'a>(
         &'a mut self,
         payee: &str,
-        amount: datamodel::Amount,
+        amount: OwnedAmount,
     ) -> Result<&'a mut Txn, ImportError> {
         if amount.commodity != self.amount.commodity {
             return Err(ImportError::Unimplemented(
@@ -141,7 +143,7 @@ impl Txn {
                 "already set transferred_amount isn't supported",
             ));
         }
-        self.transferred_amount(datamodel::Amount {
+        self.transferred_amount(OwnedAmount {
             value: self.amount.value + amount.value,
             commodity: amount.commodity.clone(),
         });
@@ -152,7 +154,7 @@ impl Txn {
         Ok(self)
     }
 
-    pub fn add_charge<'a>(&'a mut self, payee: &str, amount: datamodel::Amount) -> &'a mut Txn {
+    pub fn add_charge<'a>(&'a mut self, payee: &str, amount: OwnedAmount) -> &'a mut Txn {
         self.charges.push(Charge {
             payee: payee.to_string(),
             amount,
@@ -160,101 +162,90 @@ impl Txn {
         self
     }
 
-    fn amount(&self) -> datamodel::ExchangedAmount {
-        datamodel::ExchangedAmount {
-            amount: self.amount.clone(),
-            exchange: self.rate(&self.amount.commodity),
+    fn amount(&self) -> repl::PostingAmount {
+        repl::PostingAmount {
+            amount: as_syntax_amount(&self.amount).into(),
+            cost: self.rate(&self.amount.commodity),
+            lot: repl::Lot::default(),
         }
     }
 
-    fn dest_amount(&self) -> datamodel::ExchangedAmount {
+    fn dest_amount(&self) -> repl::PostingAmount {
         self.transferred_amount
             .as_ref()
-            .map(|transferred| datamodel::ExchangedAmount {
+            .map(|transferred| repl::PostingAmount {
                 // transferred_amount can be absolute value, or signed value.
                 // Assuming all commodities are "positive",
                 // it should have the opposite sign of the original amount.
-                amount: amount_with_sign(transferred.clone(), -self.amount.value),
-                exchange: self.rate(&transferred.commodity),
+                amount: amount_with_sign(transferred, -self.amount.value).into(),
+                cost: self.rate(&transferred.commodity),
+                lot: repl::Lot::default(),
             })
-            .unwrap_or(datamodel::ExchangedAmount {
-                amount: -self.amount.clone(),
-                exchange: None,
-            })
+            .unwrap_or(to_posting_amount(negate_amount(as_syntax_amount(
+                &self.amount,
+            ))))
     }
 
-    pub fn balance(&mut self, balance: datamodel::Amount) -> &mut Txn {
+    pub fn balance(&mut self, balance: OwnedAmount) -> &mut Txn {
         self.balance = Some(balance);
         self
     }
 
-    pub fn to_double_entry(
-        &self,
-        src_account: &str,
-    ) -> Result<datamodel::Transaction, ImportError> {
-        let mut posts = Vec::new();
+    pub fn to_double_entry<'a>(
+        &'a self,
+        src_account: &'a str,
+    ) -> Result<repl::Transaction<'a>, ImportError> {
+        let mut posts: Vec<repl::Posting> = Vec::new();
         let post_clear = self.clear_state.unwrap_or(match &self.dest_account {
-            Some(_) => datamodel::ClearState::Uncleared,
-            None => datamodel::ClearState::Pending,
+            Some(_) => repl::ClearState::Uncleared,
+            None => repl::ClearState::Pending,
         });
         if self.amount.is_sign_positive() {
-            posts.push(datamodel::Posting {
-                account: self
-                    .dest_account
-                    .clone()
-                    .unwrap_or_else(|| "Income:Unknown".to_string()),
+            posts.push(repl::Posting {
                 clear_state: post_clear,
                 amount: Some(self.dest_amount()),
-                balance: None,
-                payee: None,
+                ..repl::Posting::new(self.dest_account.as_deref().unwrap_or("Income:Unknown"))
             });
-            posts.push(datamodel::Posting {
-                account: src_account.to_string(),
-                clear_state: datamodel::ClearState::Uncleared,
+            posts.push(repl::Posting {
+                clear_state: repl::ClearState::Uncleared,
                 amount: Some(self.amount()),
-                balance: self.balance.clone(),
-                payee: None,
+                balance: self.balance.as_ref().map(|x| as_syntax_amount(x).into()),
+                ..repl::Posting::new(src_account)
             });
         } else if self.amount.is_sign_negative() {
-            posts.push(datamodel::Posting {
-                account: src_account.to_string(),
-                clear_state: datamodel::ClearState::Uncleared,
+            posts.push(repl::Posting {
+                clear_state: repl::ClearState::Uncleared,
                 amount: Some(self.amount()),
-                balance: self.balance.clone(),
-                payee: None,
+                balance: self.balance.as_ref().map(|x| as_syntax_amount(x).into()),
+                ..repl::Posting::new(src_account)
             });
-            posts.push(datamodel::Posting {
-                account: self
-                    .dest_account
-                    .clone()
-                    .unwrap_or_else(|| "Expenses:Unknown".to_string()),
+            posts.push(repl::Posting {
                 clear_state: post_clear,
                 amount: Some(self.dest_amount()),
-                balance: None,
-                payee: None,
+                ..repl::Posting::new(self.dest_account.as_deref().unwrap_or("Expenses:Unknown"))
             });
         } else {
             // warning log or error?
             return Err(ImportError::Other("credit and debit both zero".to_string()));
         }
         for chrg in &self.charges {
-            posts.push(datamodel::Posting {
-                account: "Expenses:Commissions".to_string(),
-                clear_state: datamodel::ClearState::Uncleared,
-                amount: Some(datamodel::ExchangedAmount {
-                    amount: chrg.amount.clone(),
-                    exchange: None,
-                }),
+            posts.push(repl::Posting {
+                clear_state: repl::ClearState::Uncleared,
+                amount: Some(to_posting_amount(as_syntax_amount(&chrg.amount))),
                 balance: None,
-                payee: Some(chrg.payee.clone()),
+                metadata: vec![repl::Metadata::KeyValueTag {
+                    key: Cow::Borrowed("Payee"),
+                    value: repl::MetadataValue::Text(chrg.payee.as_str().into()),
+                }],
+                ..repl::Posting::new("Expenses:Commissions")
             });
         }
-        Ok(datamodel::Transaction {
+        Ok(repl::Transaction {
             effective_date: self.effective_date,
-            clear_state: datamodel::ClearState::Cleared,
-            code: self.code.clone(),
+            clear_state: repl::ClearState::Cleared,
+            code: self.code.as_deref().map(Into::into),
             posts,
-            ..datamodel::Transaction::new(self.date, self.payee.clone())
+            ..repl::Transaction::new(self.date, &self.payee)
         })
     }
 }
@@ -266,9 +257,31 @@ pub struct CommodityPair {
     pub target: String,
 }
 
-fn amount_with_sign(mut amount: datamodel::Amount, sign: Decimal) -> datamodel::Amount {
-    amount.value.set_sign_positive(sign.is_sign_positive());
+fn as_syntax_amount(amount: &OwnedAmount) -> repl::expr::Amount {
+    repl::expr::Amount {
+        // TODO: pass the right format.
+        value: PrettyDecimal::unformatted(amount.value),
+        commodity: Cow::Borrowed(&amount.commodity),
+    }
+}
+
+fn negate_amount(mut amount: repl::expr::Amount) -> repl::expr::Amount {
+    amount.value = -amount.value;
     amount
+}
+
+fn to_posting_amount(amount: repl::expr::Amount) -> repl::PostingAmount {
+    repl::PostingAmount {
+        amount: amount.into(),
+        cost: None,
+        lot: repl::Lot::default(),
+    }
+}
+
+fn amount_with_sign(amount: &OwnedAmount, sign: Decimal) -> repl::expr::Amount {
+    let mut ret = as_syntax_amount(amount);
+    ret.value.set_sign_positive(sign.is_sign_positive());
+    ret
 }
 
 #[cfg(test)]
@@ -282,7 +295,7 @@ mod tests {
         let mut txn = Txn::new(
             NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
             "foo",
-            datamodel::Amount {
+            OwnedAmount {
                 commodity: "JPY".to_string(),
                 value: dec!(10),
             },
@@ -297,7 +310,7 @@ mod tests {
         let mut txn = Txn::new(
             NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
             "foo",
-            datamodel::Amount {
+            OwnedAmount {
                 commodity: "JPY".to_string(),
                 value: dec!(10),
             },
@@ -310,8 +323,16 @@ mod tests {
         );
     }
 
-    fn amount(value: Decimal, commodity: &str) -> datamodel::Amount {
-        datamodel::Amount {
+    fn syntax_amount(value: PrettyDecimal, commodity: &str) -> repl::expr::ValueExpr {
+        repl::expr::Amount {
+            value,
+            commodity: commodity.into(),
+        }
+        .into()
+    }
+
+    fn owned_amount(value: Decimal, commodity: &str) -> OwnedAmount {
+        OwnedAmount {
             commodity: commodity.to_string(),
             value,
         }
@@ -322,16 +343,13 @@ mod tests {
         let txn = Txn::new(
             NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
             "foo",
-            amount(dec!(10), "JPY"),
+            owned_amount(dec!(10), "JPY"),
         );
 
         assert_eq!(
             txn.dest_amount(),
-            datamodel::ExchangedAmount {
-                amount: amount(dec!(-10), "JPY"),
-                exchange: None,
-            },
-        )
+            syntax_amount(PrettyDecimal::unformatted(dec!(-10)), "JPY").into(),
+        );
     }
 
     #[test]
@@ -339,7 +357,7 @@ mod tests {
         let mut txn = Txn::new(
             NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
             "foo",
-            amount(dec!(1000), "JPY"),
+            owned_amount(dec!(1000), "JPY"),
         );
         txn.add_rate(
             CommodityPair {
@@ -349,13 +367,17 @@ mod tests {
             dec!(100),
         )
         .unwrap();
-        txn.transferred_amount(amount(dec!(10.00), "USD"));
+        txn.transferred_amount(owned_amount(dec!(10.00), "USD"));
 
         assert_eq!(
             txn.dest_amount(),
-            datamodel::ExchangedAmount {
-                amount: amount(dec!(-10.00), "USD"),
-                exchange: Some(datamodel::Exchange::Rate(amount(dec!(100), "JPY"))),
+            repl::PostingAmount {
+                amount: syntax_amount(PrettyDecimal::unformatted(dec!(-10.00)), "USD"),
+                cost: Some(repl::Exchange::Rate(syntax_amount(
+                    PrettyDecimal::unformatted(dec!(100)),
+                    "JPY"
+                ))),
+                lot: repl::Lot::default(),
             },
         )
     }
@@ -365,7 +387,7 @@ mod tests {
         let mut txn = Txn::new(
             NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
             "foo",
-            amount(dec!(1000), "JPY"),
+            owned_amount(dec!(1000), "JPY"),
         );
         txn.add_rate(
             CommodityPair {
@@ -375,13 +397,17 @@ mod tests {
             dec!(100),
         )
         .unwrap();
-        txn.transferred_amount(amount(dec!(-10.00), "USD"));
+        txn.transferred_amount(owned_amount(dec!(-10.00), "USD"));
 
         assert_eq!(
             txn.dest_amount(),
-            datamodel::ExchangedAmount {
-                amount: amount(dec!(-10.00), "USD"),
-                exchange: Some(datamodel::Exchange::Rate(amount(dec!(100), "JPY"))),
+            repl::PostingAmount {
+                amount: syntax_amount(PrettyDecimal::unformatted(dec!(-10.00)), "USD"),
+                cost: Some(repl::Exchange::Rate(syntax_amount(
+                    PrettyDecimal::unformatted(dec!(100)),
+                    "JPY"
+                ))),
+                lot: repl::Lot::default(),
             },
         )
     }
