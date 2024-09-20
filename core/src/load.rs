@@ -9,7 +9,7 @@ use std::{
 
 use crate::{parse, syntax};
 
-/// Error caused by [Loader::load_repl].
+/// Error caused by [Loader::load].
 #[derive(thiserror::Error, Debug)]
 pub enum LoadError {
     #[error("failed to perform IO")]
@@ -53,19 +53,19 @@ impl<F: FileSystem> Loader<F> {
         &self.error_style
     }
 
-    /// Loads `repl::LedgerEntry` and invoke callback on every entry,
+    /// Loads [syntax::LedgerEntry] and invoke callback on every entry,
     /// recursively resolving `include` directives.
-    pub fn load_repl<T, E, Deco>(&self, mut callback: T) -> Result<(), E>
+    pub fn load<T, E, Deco>(&self, mut callback: T) -> Result<(), E>
     where
         T: FnMut(&Path, &parse::ParsedContext<'_>, &syntax::LedgerEntry<'_, Deco>) -> Result<(), E>,
         E: std::error::Error + From<LoadError>,
         Deco: syntax::decoration::Decoration,
     {
         let popts = parse::ParseOptions::default().with_error_style(self.error_style.clone());
-        self.load_repl_impl(&popts, &self.source, &mut callback)
+        self.load_impl(&popts, &self.source, &mut callback)
     }
 
-    fn load_repl_impl<T, E, Deco>(
+    fn load_impl<T, E, Deco>(
         &self,
         parse_options: &parse::ParseOptions,
         path: &Path,
@@ -92,7 +92,7 @@ impl<F: FileSystem> Loader<F> {
                         .parent()
                         .ok_or_else(|| LoadError::IncludePath(path.as_ref().to_owned()))?
                         .join(include_path);
-                    self.load_repl_impl(parse_options, &target, callback)
+                    self.load_impl(parse_options, &target, callback)
                 }
                 _ => callback(&path, &ctx, &entry),
             }?;
@@ -196,7 +196,7 @@ mod tests {
 
     use super::*;
 
-    fn parse_static_repl<'a>(
+    fn parse_static_ledger_entry<'a>(
         input: &[(&Path, &'static str)],
     ) -> Result<Vec<(PathBuf, syntax::plain::LedgerEntry<'static>)>, parse::ParseError> {
         let opts = ParseOptions::default();
@@ -217,7 +217,7 @@ mod tests {
         F: FileSystem,
     {
         let mut ret: Vec<(PathBuf, syntax::plain::LedgerEntry<'static>)> = Vec::new();
-        loader.borrow().load_repl(|path, _ctx, entry| {
+        loader.borrow().load(|path, _ctx, entry| {
             ret.push((path.to_owned(), entry.to_static()));
             Ok::<(), LoadError>(())
         })?;
@@ -242,7 +242,7 @@ mod tests {
             .join("testdata/child3.ledger")
             .canonicalize()
             .unwrap();
-        let want = parse_static_repl(&[
+        let want = parse_static_ledger_entry(&[
             (
                 &root,
                 indoc! {"
@@ -315,7 +315,7 @@ mod tests {
                 ; comment here
             "}.as_bytes().to_vec(),
         };
-        let want = parse_static_repl(&[(
+        let want = parse_static_ledger_entry(&[(
             Path::new("/path/to/sub/child3.ledger"),
             indoc! {"
             ; comment here

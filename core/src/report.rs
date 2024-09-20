@@ -27,7 +27,7 @@ where
     L: Borrow<load::Loader<F>>,
     F: load::FileSystem,
 {
-    loader.borrow().load_repl(|_path, _ctx, entry| {
+    loader.borrow().load(|_path, _ctx, entry| {
         if let LedgerEntry::Txn(txn) = entry {
             for posting in &txn.posts {
                 ctx.accounts.ensure(&posting.account);
