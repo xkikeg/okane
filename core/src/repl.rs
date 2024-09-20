@@ -14,6 +14,7 @@ use std::{borrow::Cow, fmt};
 
 use bounded_static::ToStatic;
 use chrono::NaiveDate;
+use derive_where::derive_where;
 
 #[cfg(test)]
 use bounded_static::ToBoundedStatic;
@@ -21,7 +22,7 @@ use bounded_static::ToBoundedStatic;
 use decoration::Decoration;
 
 /// Top-level entry of the LedgerFile.
-#[derive(Debug, PartialEq, Eq)]
+#[derive_where(Debug, PartialEq, Eq)]
 pub enum LedgerEntry<'i, Deco: Decoration> {
     /// Transaction
     Txn(Transaction<'i, Deco>),
@@ -116,7 +117,7 @@ pub enum CommodityDetail<'i> {
 }
 
 /// Represents a transaction where the money transfered across the accounts.
-#[derive(Debug, PartialEq, Eq)]
+#[derive_where(Debug, PartialEq, Eq)]
 pub struct Transaction<'i, Deco: Decoration> {
     /// Date when the transaction issued.
     pub date: NaiveDate,
@@ -171,7 +172,7 @@ impl<'i, Deco: Decoration> Transaction<'i, Deco> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive_where(Debug, PartialEq, Eq)]
 /// Posting in a transaction to represent a particular account amount increase / decrease.
 pub struct Posting<'i, Deco: Decoration> {
     /// Account of the post target.
@@ -252,7 +253,7 @@ pub enum MetadataValue<'i> {
 /// - how much the asset is increased.
 /// - what was the cost in the other commodity.
 /// - lot information.
-#[derive(Debug, PartialEq, Eq)]
+#[derive_where(Debug, PartialEq, Eq)]
 pub struct PostingAmount<'i, Deco: Decoration> {
     pub amount: Deco::Decorated<expr::ValueExpr<'i>>,
     pub cost: Option<Deco::Decorated<Exchange<'i>>>,
@@ -281,7 +282,7 @@ impl<'i> From<expr::ValueExpr<'i>> for PostingAmount<'i, plain::Ident> {
 }
 
 /// Lot information is a set of metadata to record the original lot which the commodity is acquired with.
-#[derive(Debug, PartialEq, Eq)]
+#[derive_where(Debug, PartialEq, Eq)]
 pub struct Lot<'i, Deco: Decoration> {
     pub price: Option<Deco::Decorated<Exchange<'i>>>,
     pub date: Option<NaiveDate>,

@@ -12,10 +12,7 @@ pub trait AsUndecorated<T: ?Sized> {
 /// Decoration associates the extra information attached to
 /// [crate::repl::Transaction] or any other [crate::repl] data.
 /// See [super::plain] or [super::tracked] for implementations.
-///
-/// Note this Decoration does not need to implement these traits,
-/// it's only required because we use trait GATs as a higher kinded type.
-pub trait Decoration: Debug + PartialEq + Eq + 'static {
+pub trait Decoration: 'static {
     type Decorated<T>: AsUndecorated<T> + Debug + PartialEq + Eq
     where
         T: AsUndecorated<T> + Debug + PartialEq + Eq;
@@ -27,7 +24,7 @@ pub trait Decoration: Debug + PartialEq + Eq + 'static {
         PIn: winnow::Parser<I, O, E>;
 }
 
-macro_rules! define_as_ref {
+macro_rules! define_as_undecorated {
     ([$($impl_generics:tt)*],
      $type_name:ty) => {
         impl<$($impl_generics)*> AsUndecorated<$type_name> for $type_name {
@@ -38,9 +35,9 @@ macro_rules! define_as_ref {
     };
 }
 
-define_as_ref!(['i, Deco: Decoration], super::LedgerEntry<'i, Deco>);
-define_as_ref!(['i, Deco: Decoration], super::Transaction<'i, Deco>);
-define_as_ref!(['i, Deco: Decoration], super::Posting<'i, Deco>);
-define_as_ref!(['i, Deco: Decoration], super::PostingAmount<'i, Deco>);
-define_as_ref!(['i], super::Exchange<'i>);
-define_as_ref!(['i], super::expr::ValueExpr<'i>);
+define_as_undecorated!(['i, Deco: Decoration], super::LedgerEntry<'i, Deco>);
+define_as_undecorated!(['i, Deco: Decoration], super::Transaction<'i, Deco>);
+define_as_undecorated!(['i, Deco: Decoration], super::Posting<'i, Deco>);
+define_as_undecorated!(['i, Deco: Decoration], super::PostingAmount<'i, Deco>);
+define_as_undecorated!(['i], super::Exchange<'i>);
+define_as_undecorated!(['i], super::expr::ValueExpr<'i>);

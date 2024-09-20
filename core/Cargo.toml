@@ -14,6 +14,7 @@ annotate-snippets.workspace = true
 bounded-static = { version = "0.8", default-features = false, features = ["derive", "alloc", "chrono"] }
 bumpalo.workspace = true
 chrono.workspace = true
+derive-where = "1.2"
 log.workspace = true
 rust_decimal.workspace = true
 strum = { version = "0.26", features = ["derive"] }
