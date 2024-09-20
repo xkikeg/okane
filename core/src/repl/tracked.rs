@@ -4,7 +4,6 @@ use std::ops::Range;
 use super::decoration::{AsUndecorated, Decoration};
 
 /// Tracking provides [Tracked] decoration for syntax types.
-#[derive(Debug, PartialEq, Eq)]
 pub struct Tracking;
 
 impl Decoration for Tracking {

@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use super::decoration::{AsUndecorated, Decoration};
 
 /// Ident attaches no extra information.
-#[derive(Debug, PartialEq, Eq)]
 pub struct Ident;
 
 impl Decoration for Ident {
