@@ -1,5 +1,5 @@
-//! Module `load` contains the functions useful for loading Ledger file,
-//! recursively resolving the `include` directives.
+//! Contains the functions to load Ledger file,
+//! with recursively resolving the `include` directives.
 
 use std::{
     borrow::Cow,
@@ -9,7 +9,7 @@ use std::{
 
 use crate::{parse, repl};
 
-/// Error caused by `load_*` functions.
+/// Error caused by [Loader::load_repl].
 #[derive(thiserror::Error, Debug)]
 pub enum LoadError {
     #[error("failed to perform IO")]
@@ -101,6 +101,8 @@ impl<F: FileSystem> Loader<F> {
     }
 }
 
+/// Interface to abstract file system.
+/// Normally you want to use [ProdFileSystem].
 pub trait FileSystem {
     /// canonicalize the given path.
     fn canonicalize_path<'a>(&self, path: &'a Path) -> Cow<'a, Path>;
@@ -109,6 +111,7 @@ pub trait FileSystem {
     fn file_content_utf8<P: AsRef<Path>>(&self, path: P) -> Result<String, std::io::Error>;
 }
 
+/// [FileSystem] to regularly reads the files recursively in the local files.
 pub struct ProdFileSystem;
 
 impl FileSystem for ProdFileSystem {
@@ -136,6 +139,8 @@ impl FileSystem for ProdFileSystem {
     }
 }
 
+/// [FileSystem] with given set of filename and content mapping.
+/// It won't cause any actual file read.
 pub struct FakeFileSystem(HashMap<PathBuf, Vec<u8>>);
 
 impl From<HashMap<PathBuf, Vec<u8>>> for FakeFileSystem {

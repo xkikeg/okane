@@ -1,3 +1,5 @@
+//! Module to define [PrettyDecimal], [Decimal] with formatting.
+
 use std::{convert::TryInto, fmt::Display, ops::Neg, str::FromStr};
 
 use bounded_static::{IntoBoundedStatic, ToBoundedStatic, ToStatic};

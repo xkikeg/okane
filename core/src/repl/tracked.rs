@@ -1,3 +1,6 @@
+//! Provides [Tracking] decoration, which attaches [Tracked] span information
+//! into syntax types so that report can raise error with the right position.
+
 use std::fmt::Debug;
 use std::ops::Range;
 
