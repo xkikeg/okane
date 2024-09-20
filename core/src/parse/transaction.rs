@@ -4,10 +4,10 @@ use std::borrow::Cow;
 
 use winnow::{
     ascii::{space0, space1},
-    combinator::{cond, cut_err, opt, peek, preceded, repeat, terminated, trace},
+    combinator::{cond, cut_err, opt, preceded, repeat, terminated, trace},
     error::StrContext,
     stream::{AsChar, Stream, StreamIsPartial},
-    token::one_of,
+    token::{one_of, take_while},
     PResult, Parser,
 };
 
@@ -49,7 +49,10 @@ where
         let metadata = metadata::block_metadata(input)?;
         let posts = repeat(
             0..,
-            Deco::decorate_parser(preceded(peek(one_of(b" \t")), cut_err(posting::posting))),
+            preceded(
+                take_while(1.., b" \t"),
+                cut_err(Deco::decorate_parser(posting::posting)),
+            ),
         )
         .parse_next(input)?;
         Ok(syntax::Transaction {
