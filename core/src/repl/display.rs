@@ -1,4 +1,4 @@
-//! repl::display contains data & functions for displaying repl data.
+//! Defines data & functions for displaying repl data.
 
 use super::*;
 use crate::repl::pretty_decimal::PrettyDecimal;

@@ -1,8 +1,12 @@
+//! Defines simplest [Decoration] [Ident], which does decorate nothing.
+//! Also provides type aliases with [Ident].
+
 use std::fmt::Debug;
 
 use super::decoration::{AsUndecorated, Decoration};
 
-/// Ident attaches no extra information.
+/// Ident is a [Decoration] that attaches no extra information.
+/// Good to use if you just want a syntax type.
 pub struct Ident;
 
 impl Decoration for Ident {

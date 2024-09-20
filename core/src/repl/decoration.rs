@@ -3,7 +3,7 @@
 
 use std::fmt::Debug;
 
-/// AsUndecorated<T> is equivalent to AsRef, with specific meaning.
+/// `AsUndecorated<T>` is equivalent to [AsRef], with specific meaning.
 /// AsRef can be too generic and not suitable for use case.
 pub trait AsUndecorated<T: ?Sized> {
     fn as_undecorated(&self) -> &T;
