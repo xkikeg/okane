@@ -162,7 +162,7 @@ impl FlattenCmd {
     {
         // TODO: Pick DisplayContext from load results.
         let ctx = DisplayContext::default();
-        load::new_loader(self.source).load_repl(
+        load::new_loader(self.source).load(
             |_path, _ctx, entry: &LedgerEntry| -> Result<(), Error> {
                 writeln!(w, "{}", ctx.as_display(entry))?;
                 Ok(())

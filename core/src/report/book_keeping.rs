@@ -53,7 +53,7 @@ where
     F: load::FileSystem,
 {
     let mut accum = ProcessAccumulator::new();
-    loader.borrow().load_repl(|path, pctx, entry| {
+    loader.borrow().load(|path, pctx, entry| {
         accum.process(ctx, entry).map_err(|berr| {
             ReportError::BookKeep(
                 berr,
@@ -152,7 +152,7 @@ pub struct Posting<'ctx> {
     pub amount: Amount<'ctx>,
 }
 
-/// Adds a repl transaction, and converts it into a processed Transaction.
+/// Adds a syntax transaction, and converts it into a processed Transaction.
 fn add_transaction<'ctx>(
     ctx: &mut ReportContext<'ctx>,
     bal: &mut Balance<'ctx>,
