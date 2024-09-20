@@ -12,7 +12,6 @@ repository.workspace = true
 [dependencies]
 okane-core = { version = "0.13.0-dev", path = "../core" }
 
-annotate-snippets.workspace = true
 # anstream = "0.6"
 bumpalo.workspace = true
 chrono.workspace = true

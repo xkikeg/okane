@@ -811,7 +811,6 @@ dependencies = [
 name = "okane"
 version = "0.13.0-dev"
 dependencies = [
- "annotate-snippets",
  "assert_cmd",
  "bumpalo",
  "chrono",
