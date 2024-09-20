@@ -1,7 +1,7 @@
-//! Defines data & functions for displaying repl data.
+//! Defines data & functions for displaying syntax types.
 
 use super::*;
-use crate::repl::pretty_decimal::PrettyDecimal;
+use crate::syntax::pretty_decimal::PrettyDecimal;
 
 use decoration::AsUndecorated;
 use std::collections::HashMap;

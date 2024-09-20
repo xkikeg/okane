@@ -11,17 +11,17 @@ use winnow::{
     PResult, Parser,
 };
 
-use crate::repl;
+use crate::syntax;
 use crate::{
     parse::{
         character::{line_ending_or_semi, paren, till_line_ending_or_semi},
         combinator::{cond_else, has_peek},
         expr, metadata, primitive,
     },
-    repl::decoration::Decoration,
+    syntax::decoration::Decoration,
 };
 
-pub fn posting<'i, Input, Deco>(input: &mut Input) -> PResult<repl::Posting<'i, Deco>>
+pub fn posting<'i, Input, Deco>(input: &mut Input) -> PResult<syntax::Posting<'i, Deco>>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -40,10 +40,10 @@ where
         let shortcut_amount = has_peek(line_ending_or_semi).parse_next(input)?;
         if shortcut_amount {
             let metadata = metadata::block_metadata.parse_next(input)?;
-            return Ok(repl::Posting {
+            return Ok(syntax::Posting {
                 clear_state,
                 metadata,
-                ..repl::Posting::new(account)
+                ..syntax::Posting::new(account)
             });
         }
         let amount = opt(terminated(posting_amount, space0))
@@ -58,12 +58,12 @@ where
         let metadata = metadata::block_metadata
             .context(StrContext::Label("metadata section of the posting"))
             .parse_next(input)?;
-        Ok(repl::Posting {
+        Ok(syntax::Posting {
             clear_state,
             amount,
             balance,
             metadata,
-            ..repl::Posting::new(account)
+            ..syntax::Posting::new(account)
         })
     })
     .context(StrContext::Label("posting of the transaction"))
@@ -89,7 +89,7 @@ where
     terminated(take(length), space0).parse_next(input)
 }
 
-fn posting_amount<'i, Input, Deco>(input: &mut Input) -> PResult<repl::PostingAmount<'i, Deco>>
+fn posting_amount<'i, Input, Deco>(input: &mut Input) -> PResult<syntax::PostingAmount<'i, Deco>>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -111,10 +111,10 @@ where
         ),
     )
     .parse_next(input)?;
-    Ok(repl::PostingAmount { amount, cost, lot })
+    Ok(syntax::PostingAmount { amount, cost, lot })
 }
 
-fn lot<'i, Input, Deco>(input: &mut Input) -> PResult<repl::Lot<'i, Deco>>
+fn lot<'i, Input, Deco>(input: &mut Input) -> PResult<syntax::Lot<'i, Deco>>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -125,7 +125,7 @@ where
     Deco: Decoration,
 {
     space0.void().parse_next(input)?;
-    let mut lot = repl::Lot::default();
+    let mut lot = syntax::Lot::default();
     loop {
         let open = peek(opt(one_of(['(', '[', '{']))).parse_next(input)?;
         // TODO: Consider if we can implement this with cut_err and permutation.
@@ -169,7 +169,7 @@ where
     }
 }
 
-fn lot_amount<'i, Input>(input: &mut Input) -> PResult<repl::Exchange<'i>>
+fn lot_amount<'i, Input>(input: &mut Input) -> PResult<syntax::Exchange<'i>>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -185,7 +185,7 @@ where
             (space0, literal("}}")),
         )
         .parse_next(input)
-        .map(repl::Exchange::Total)
+        .map(syntax::Exchange::Total)
     } else {
         delimited(
             (literal("{"), space0),
@@ -193,11 +193,11 @@ where
             (space0, literal("}")),
         )
         .parse_next(input)
-        .map(repl::Exchange::Rate)
+        .map(syntax::Exchange::Rate)
     }
 }
 
-fn total_cost<'i, Input>(input: &mut Input) -> PResult<repl::Exchange<'i>>
+fn total_cost<'i, Input>(input: &mut Input) -> PResult<syntax::Exchange<'i>>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -206,11 +206,11 @@ where
     <Input as Stream>::Token: AsChar + Clone,
 {
     preceded((literal("@@"), space0), expr::value_expr)
-        .map(repl::Exchange::Total)
+        .map(syntax::Exchange::Total)
         .parse_next(input)
 }
 
-fn rate_cost<'i, Input>(input: &mut Input) -> PResult<repl::Exchange<'i>>
+fn rate_cost<'i, Input>(input: &mut Input) -> PResult<syntax::Exchange<'i>>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -219,7 +219,7 @@ where
     <Input as Stream>::Token: AsChar + Clone,
 {
     preceded((literal("@"), space0), expr::value_expr)
-        .map(repl::Exchange::Rate)
+        .map(syntax::Exchange::Rate)
         .parse_next(input)
 }
 
@@ -230,13 +230,13 @@ mod tests {
     use chrono::NaiveDate;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
-    use repl::plain;
     use rust_decimal_macros::dec;
+    use syntax::plain;
     use winnow::Located;
 
     use crate::{
         parse::testing::expect_parse_ok,
-        repl::{
+        syntax::{
             plain::{Lot, Posting, PostingAmount},
             pretty_decimal::PrettyDecimal,
         },
@@ -248,18 +248,18 @@ mod tests {
             expect_parse_ok(posting_amount, "100 EUR @ 1.2 CHF"),
             (
                 "",
-                repl::plain::PostingAmount {
-                    amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
+                syntax::plain::PostingAmount {
+                    amount: syntax::expr::ValueExpr::Amount(syntax::expr::Amount {
                         value: PrettyDecimal::unformatted(dec!(100)),
                         commodity: "EUR".into()
                     }),
-                    cost: Some(repl::Exchange::Rate(repl::expr::ValueExpr::Amount(
-                        repl::expr::Amount {
+                    cost: Some(syntax::Exchange::Rate(syntax::expr::ValueExpr::Amount(
+                        syntax::expr::Amount {
                             value: PrettyDecimal::unformatted(dec!(1.2)),
                             commodity: "CHF".into(),
                         }
                     ))),
-                    lot: repl::Lot::default(),
+                    lot: syntax::Lot::default(),
                 }
             )
         );
@@ -268,17 +268,17 @@ mod tests {
             (
                 "",
                 PostingAmount {
-                    amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
+                    amount: syntax::expr::ValueExpr::Amount(syntax::expr::Amount {
                         value: PrettyDecimal::plain(dec!(1000)),
                         commodity: "EUR".into()
                     }),
-                    cost: Some(repl::Exchange::Total(repl::expr::ValueExpr::Amount(
-                        repl::expr::Amount {
+                    cost: Some(syntax::Exchange::Total(syntax::expr::ValueExpr::Amount(
+                        syntax::expr::Amount {
                             value: PrettyDecimal::comma3dot(dec!(1020)),
                             commodity: "CHF".into(),
                         }
                     ))),
-                    lot: repl::Lot::default()
+                    lot: syntax::Lot::default()
                 }
             )
         );
@@ -293,23 +293,23 @@ mod tests {
                 "",
                 Posting {
                     amount: Some(
-                        repl::expr::ValueExpr::Amount(repl::expr::Amount {
+                        syntax::expr::ValueExpr::Amount(syntax::expr::Amount {
                             value: PrettyDecimal::unformatted(dec!(1)),
                             commodity: "USD".into(),
                         })
                         .into()
                     ),
                     metadata: vec![
-                        repl::Metadata::KeyValueTag {
+                        syntax::Metadata::KeyValueTag {
                             key: "Payee".into(),
-                            value: repl::MetadataValue::Text("My Card".into()),
+                            value: syntax::MetadataValue::Text("My Card".into()),
                         },
-                        repl::Metadata::KeyValueTag {
+                        syntax::Metadata::KeyValueTag {
                             key: "Date".into(),
-                            value: repl::MetadataValue::Expr("[2022-3-4]".into()),
+                            value: syntax::MetadataValue::Expr("[2022-3-4]".into()),
                         },
-                        repl::Metadata::Comment("My card took commission".into()),
-                        repl::Metadata::WordTags(vec!["financial".into(), "経済".into(),],),
+                        syntax::Metadata::Comment("My card took commission".into()),
+                        syntax::Metadata::WordTags(vec!["financial".into(), "経済".into(),],),
                     ],
                     ..Posting::new("Expenses:Commissions")
                 }
@@ -325,7 +325,7 @@ mod tests {
             (
                 "",
                 Posting {
-                    clear_state: repl::ClearState::Pending,
+                    clear_state: syntax::ClearState::Pending,
                     ..Posting::new("Expenses")
                 }
             )
@@ -340,9 +340,9 @@ mod tests {
             (
                 "",
                 Posting {
-                    clear_state: repl::ClearState::Cleared,
+                    clear_state: syntax::ClearState::Cleared,
                     amount: Some(PostingAmount {
-                        amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
+                        amount: syntax::expr::ValueExpr::Amount(syntax::expr::Amount {
                             value: PrettyDecimal::unformatted(dec!(100)),
                             commodity: "JPY".into()
                         }),
@@ -400,9 +400,9 @@ mod tests {
                             expect_parse_ok(preceded(space0, lot), input.as_str()),
                             (
                                 "",
-                                repl::plain::Lot {
-                                    price: Some(repl::Exchange::Rate(
-                                        repl::expr::ValueExpr::Amount(repl::expr::Amount {
+                                syntax::plain::Lot {
+                                    price: Some(syntax::Exchange::Rate(
+                                        syntax::expr::ValueExpr::Amount(syntax::expr::Amount {
                                             value: PrettyDecimal::unformatted(dec!(200)),
                                             commodity: "JPY".into()
                                         })

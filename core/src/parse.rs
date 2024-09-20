@@ -24,13 +24,13 @@ use winnow::{
     Located, PResult, Parser,
 };
 
-use crate::repl::{self, decoration::Decoration};
+use crate::syntax::{self, decoration::Decoration};
 
-/// Parses single ledger repl value with consuming whitespace.
+/// Parses single ledger syntax entry [syntax::LedgerEntry] with consuming whitespace.
 /// To control the behavior precisely, use [ParseOptions::parse_ledger].
 pub fn parse_ledger<'i, Deco: 'i + Decoration>(
     input: &'i str,
-) -> impl Iterator<Item = Result<(ParsedContext<'i>, repl::LedgerEntry<'i, Deco>), ParseError>> {
+) -> impl Iterator<Item = Result<(ParsedContext<'i>, syntax::LedgerEntry<'i, Deco>), ParseError>> {
     ParseOptions::default().parse_ledger(input)
 }
 
@@ -57,7 +57,7 @@ impl ParseOptions {
     pub fn parse_ledger<'i, Deco: Decoration + 'static>(
         &self,
         input: &'i str,
-    ) -> impl Iterator<Item = Result<(ParsedContext<'i>, repl::LedgerEntry<'i, Deco>), ParseError>> + 'i
+    ) -> impl Iterator<Item = Result<(ParsedContext<'i>, syntax::LedgerEntry<'i, Deco>), ParseError>> + 'i
     {
         ParsedIter {
             initial: input,
@@ -99,7 +99,7 @@ struct ParsedIter<'i, Deco> {
 }
 
 impl<'i, Deco: Decoration + 'static> Iterator for ParsedIter<'i, Deco> {
-    type Item = Result<(ParsedContext<'i>, repl::LedgerEntry<'i, Deco>), ParseError>;
+    type Item = Result<(ParsedContext<'i>, syntax::LedgerEntry<'i, Deco>), ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let start = self.input.checkpoint();
@@ -122,8 +122,8 @@ impl<'i, Deco: Decoration + 'static> Iterator for ParsedIter<'i, Deco> {
     }
 }
 
-/// Parses given `input` into `repl::LedgerEntry`.
-fn parse_ledger_entry<'i, I, Deco>(input: &mut I) -> PResult<repl::LedgerEntry<'i, Deco>>
+/// Parses given `input` into [syntax::LedgerEntry].
+fn parse_ledger_entry<'i, I, Deco>(input: &mut I) -> PResult<syntax::LedgerEntry<'i, Deco>>
 where
     I: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -139,20 +139,20 @@ where
             'a' => alt((
                 preceded(
                     peek(literal("account")),
-                    cut_err(directive::account_declaration.map(repl::LedgerEntry::Account)),
+                    cut_err(directive::account_declaration.map(syntax::LedgerEntry::Account)),
                 ),
                 preceded(
                     peek(literal("apply")),
-                    cut_err(directive::apply_tag.map(repl::LedgerEntry::ApplyTag)),
+                    cut_err(directive::apply_tag.map(syntax::LedgerEntry::ApplyTag)),
                 ),
             )),
-            'c' => directive::commodity_declaration.map(repl::LedgerEntry::Commodity),
-            'e' => directive::end_apply_tag.map(|_| repl::LedgerEntry::EndApplyTag),
-            'i' => directive::include.map(repl::LedgerEntry::Include),
+            'c' => directive::commodity_declaration.map(syntax::LedgerEntry::Commodity),
+            'e' => directive::end_apply_tag.map(|_| syntax::LedgerEntry::EndApplyTag),
+            'i' => directive::include.map(syntax::LedgerEntry::Include),
             c if directive::is_comment_prefix(c) => {
-                directive::top_comment.map(repl::LedgerEntry::Comment)
+                directive::top_comment.map(syntax::LedgerEntry::Comment)
             },
-            c if c.is_ascii_digit() => transaction::transaction.map(repl::LedgerEntry::Txn),
+            c if c.is_ascii_digit() => transaction::transaction.map(syntax::LedgerEntry::Txn),
             _ => fail.context(StrContext::Label("no matching syntax")),
         },
     )
@@ -167,7 +167,7 @@ mod tests {
     use indoc::indoc;
     use pretty_assertions::assert_eq;
 
-    use repl::plain::LedgerEntry;
+    use syntax::plain::LedgerEntry;
 
     fn parse_ledger_into(input: &str) -> Vec<(ParsedContext, LedgerEntry)> {
         let r: Result<Vec<(ParsedContext, LedgerEntry)>, ParseError> =
@@ -189,7 +189,7 @@ mod tests {
                     initial: input,
                     span: 2..13
                 },
-                repl::LedgerEntry::Txn(repl::Transaction::new(
+                syntax::LedgerEntry::Txn(syntax::Transaction::new(
                     NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(),
                     ""
                 ))
@@ -214,9 +214,9 @@ mod tests {
                         initial: input,
                         span: 0..38
                     },
-                    repl::LedgerEntry::Txn(repl::Transaction {
-                        posts: vec![repl::Posting::new("Expenses:Grocery")],
-                        ..repl::Transaction::new(
+                    syntax::LedgerEntry::Txn(syntax::Transaction {
+                        posts: vec![syntax::Posting::new("Expenses:Grocery")],
+                        ..syntax::Transaction::new(
                             NaiveDate::from_ymd_opt(2024, 4, 10).unwrap(),
                             "Migros",
                         )
@@ -227,9 +227,9 @@ mod tests {
                         initial: input,
                         span: 38..74
                     },
-                    repl::LedgerEntry::Txn(repl::Transaction {
-                        posts: vec![repl::Posting::new("Expenses:Grocery")],
-                        ..repl::Transaction::new(
+                    syntax::LedgerEntry::Txn(syntax::Transaction {
+                        posts: vec![syntax::Posting::new("Expenses:Grocery")],
+                        ..syntax::Transaction::new(
                             NaiveDate::from_ymd_opt(2024, 4, 20).unwrap(),
                             "Coop"
                         )

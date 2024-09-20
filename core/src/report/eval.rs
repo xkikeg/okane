@@ -9,7 +9,7 @@ pub use error::EvalError;
 pub use evaluated::Evaluated;
 
 use super::context::ReportContext;
-use crate::repl::expr;
+use crate::syntax::expr;
 
 // TODO: Consider if this is ok to be private or needs to be pub.
 pub(crate) trait Evaluable {
@@ -68,7 +68,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
-    use crate::repl::pretty_decimal::PrettyDecimal;
+    use crate::syntax::pretty_decimal::PrettyDecimal;
 
     #[test]
     fn eval_expr_simple() {

@@ -5,7 +5,7 @@ use std::convert::{TryFrom, TryInto};
 
 use regex::Regex;
 
-use okane_core::repl;
+use okane_core::syntax;
 
 use super::amount::OwnedAmount;
 use super::config;
@@ -47,7 +47,7 @@ impl super::Importer for VisecaImporter {
             txn.effective_date(entry.effective_date)
                 .dest_account_option(fragment.account);
             if !fragment.cleared {
-                txn.clear_state(repl::ClearState::Pending);
+                txn.clear_state(syntax::ClearState::Pending);
             }
             if let Some(exchange) = entry.exchange {
                 let line_count = entry.line_count;

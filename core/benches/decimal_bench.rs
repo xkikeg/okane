@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use okane_core::repl::pretty_decimal::PrettyDecimal;
+use okane_core::syntax::pretty_decimal::PrettyDecimal;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 

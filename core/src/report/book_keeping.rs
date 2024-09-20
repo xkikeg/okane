@@ -8,7 +8,7 @@ use chrono::NaiveDate;
 
 use crate::{
     load,
-    repl::{self, decoration::AsUndecorated},
+    syntax::{self, decoration::AsUndecorated},
 };
 
 use super::{
@@ -83,21 +83,21 @@ impl<'ctx> ProcessAccumulator<'ctx> {
     fn process(
         &mut self,
         ctx: &mut ReportContext<'ctx>,
-        entry: &repl::tracked::LedgerEntry,
+        entry: &syntax::tracked::LedgerEntry,
     ) -> Result<(), BookKeepError> {
         match entry {
-            repl::LedgerEntry::Txn(txn) => {
+            syntax::LedgerEntry::Txn(txn) => {
                 self.txns
                     .push(add_transaction(ctx, &mut self.balance, txn)?);
                 Ok(())
             }
-            repl::LedgerEntry::Account(account) => {
+            syntax::LedgerEntry::Account(account) => {
                 let canonical = ctx
                     .accounts
                     .insert_canonical(&account.name)
                     .map_err(BookKeepError::InvalidAccount)?;
                 for ad in &account.details {
-                    if let repl::AccountDetail::Alias(alias) = ad {
+                    if let syntax::AccountDetail::Alias(alias) = ad {
                         ctx.accounts
                             .insert_alias(alias, canonical)
                             .map_err(BookKeepError::InvalidAccount)?;
@@ -105,19 +105,19 @@ impl<'ctx> ProcessAccumulator<'ctx> {
                 }
                 Ok(())
             }
-            repl::LedgerEntry::Commodity(commodity) => {
+            syntax::LedgerEntry::Commodity(commodity) => {
                 let canonical = ctx
                     .commodities
                     .insert_canonical(&commodity.name)
                     .map_err(BookKeepError::InvalidCommodity)?;
                 for cd in &commodity.details {
                     match cd {
-                        repl::CommodityDetail::Alias(alias) => {
+                        syntax::CommodityDetail::Alias(alias) => {
                             ctx.commodities
                                 .insert_alias(alias, canonical)
                                 .map_err(BookKeepError::InvalidCommodity)?;
                         }
-                        repl::CommodityDetail::Format(format_amount) => {
+                        syntax::CommodityDetail::Format(format_amount) => {
                             ctx.commodities
                                 .set_format(canonical, format_amount.value.clone());
                         }
@@ -156,7 +156,7 @@ pub struct Posting<'ctx> {
 fn add_transaction<'ctx>(
     ctx: &mut ReportContext<'ctx>,
     bal: &mut Balance<'ctx>,
-    txn: &repl::tracked::Transaction,
+    txn: &syntax::tracked::Transaction,
 ) -> Result<Transaction<'ctx>, BookKeepError> {
     let mut postings = bcc::Vec::with_capacity_in(txn.posts.len(), ctx.arena);
     let mut unfilled: Option<usize> = None;
@@ -248,7 +248,7 @@ fn check_balance<'ctx>(
 
 fn calculate_balance_amount<'ctx>(
     ctx: &mut ReportContext<'ctx>,
-    posting_amount: &repl::tracked::PostingAmount,
+    posting_amount: &syntax::tracked::PostingAmount,
     computed_amount: PostingAmount<'ctx>,
 ) -> Result<PostingAmount<'ctx>, BookKeepError> {
     let cost: Option<SingleAmount<'ctx>> = posting_amount
@@ -277,15 +277,15 @@ fn calculate_balance_amount<'ctx>(
 
 fn calculate_exchanged_amount<'ctx>(
     ctx: &mut ReportContext<'ctx>,
-    cost: &repl::Exchange,
+    cost: &syntax::Exchange,
     amount: SingleAmount<'ctx>,
 ) -> Result<SingleAmount<'ctx>, BookKeepError> {
     let exchanged: Result<SingleAmount, EvalError> = match cost {
-        repl::Exchange::Rate(x) => {
+        syntax::Exchange::Rate(x) => {
             let rate: SingleAmount = x.eval(ctx)?.try_into()?;
             Ok(rate * amount.value)
         }
-        repl::Exchange::Total(y) => {
+        syntax::Exchange::Total(y) => {
             let abs: SingleAmount = y.eval(ctx)?.try_into()?;
             Ok(abs.with_sign_of(amount))
         }
@@ -305,7 +305,7 @@ mod tests {
 
     use crate::parse::{self, testing::expect_parse_ok};
 
-    fn parse_transaction(input: &str) -> repl::tracked::Transaction {
+    fn parse_transaction(input: &str) -> syntax::tracked::Transaction {
         let (_, ret) = expect_parse_ok(parse::transaction::transaction, input);
         ret
     }

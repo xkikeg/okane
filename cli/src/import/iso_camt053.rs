@@ -5,7 +5,7 @@ use std::convert::{TryFrom, TryInto};
 use regex::Regex;
 use rust_decimal::Decimal;
 
-use okane_core::repl;
+use okane_core::syntax;
 
 use super::amount::OwnedAmount;
 use super::config;
@@ -68,7 +68,7 @@ impl super::Importer for IsoCamt053Importer {
                     txn.effective_date(entry.booking_date.date)
                         .dest_account_option(fragment.account);
                     if !fragment.cleared {
-                        txn.clear_state(repl::ClearState::Pending);
+                        txn.clear_state(syntax::ClearState::Pending);
                     }
                     add_charges(&mut txn, config, &entry.charges)?;
                     res.push(txn);
@@ -93,7 +93,7 @@ impl super::Importer for IsoCamt053Importer {
                         .code_option(code)
                         .dest_account_option(fragment.account);
                     if !fragment.cleared {
-                        txn.clear_state(repl::ClearState::Pending);
+                        txn.clear_state(syntax::ClearState::Pending);
                     }
                     if let Some(amount_details) = transaction.amount_details.as_ref() {
                         if transaction.amount != amount_details.transaction.amount {
