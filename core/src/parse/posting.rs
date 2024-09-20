@@ -3,7 +3,7 @@
 use std::cmp::min;
 
 use winnow::{
-    ascii::{space0, space1},
+    ascii::space0,
     combinator::{cond, delimited, fail, opt, peek, preceded, terminated, trace},
     error::StrContext,
     stream::{AsChar, Stream, StreamIsPartial},
@@ -33,7 +33,7 @@ where
     Deco: Decoration,
 {
     trace("posting::posting", move |input: &mut Input| {
-        let clear_state = preceded(space1, metadata::clear_state).parse_next(input)?;
+        let clear_state = preceded(space0, metadata::clear_state).parse_next(input)?;
         let account = posting_account
             .context(StrContext::Label("account of the posting"))
             .parse_next(input)?;
