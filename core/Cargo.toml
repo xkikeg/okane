@@ -10,7 +10,7 @@ readme = "README.md"
 repository.workspace = true
 
 [dependencies]
-annotate-snippets.workspace = true
+annotate-snippets = "0.11"
 bounded-static = { version = "0.8", default-features = false, features = ["derive", "alloc", "chrono"] }
 bumpalo.workspace = true
 chrono.workspace = true
@@ -23,6 +23,7 @@ unicode-width = "0.1.13"
 winnow.workspace = true
 
 [dev-dependencies]
+annotate-snippets = { version = "0.11", features = ["testing-colors"] }
 ctor.workspace = true
 env_logger.workspace = true
 indoc.workspace = true
