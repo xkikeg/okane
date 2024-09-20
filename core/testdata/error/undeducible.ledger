@@ -1,0 +1,6 @@
+; Two postings without amount nor balance are undeducible.
+
+2024/09/01 Shopping with point
+    Expenses                                     100 CHF
+    Assets:Banks
+    Assets:Points

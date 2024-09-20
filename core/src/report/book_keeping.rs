@@ -8,7 +8,7 @@ use chrono::NaiveDate;
 
 use crate::{
     load,
-    syntax::{self, decoration::AsUndecorated},
+    syntax::{self, decoration::AsUndecorated, tracked::Tracked},
 };
 
 use super::{
@@ -29,8 +29,8 @@ pub enum BookKeepError {
     BalanceFailure(#[from] BalanceError),
     #[error("posting amount must be resolved as a simple value with commodity or zero")]
     ComplexPostingAmount,
-    #[error("transaction cannot have multiple postings without amount: {0} {1}")]
-    UndeduciblePostingAmount(usize, usize),
+    #[error("transaction cannot have multiple postings without amount")]
+    UndeduciblePostingAmount(Tracked<usize>, Tracked<usize>),
     #[error("transaction cannot have unbalanced postings: {0}")]
     UnbalancedPostings(String),
     #[error("balance assertion failed: got {0} but expected {1}")]
@@ -159,7 +159,7 @@ fn add_transaction<'ctx>(
     txn: &syntax::tracked::Transaction,
 ) -> Result<Transaction<'ctx>, BookKeepError> {
     let mut postings = bcc::Vec::with_capacity_in(txn.posts.len(), ctx.arena);
-    let mut unfilled: Option<usize> = None;
+    let mut unfilled: Option<Tracked<usize>> = None;
     let mut balance = Amount::default();
     for (i, posting) in txn.posts.iter().enumerate() {
         let account = ctx.accounts.ensure(&posting.as_undecorated().account);
@@ -168,8 +168,11 @@ fn add_transaction<'ctx>(
             &posting.as_undecorated().balance,
         ) {
             (None, None) => {
-                if let Some(j) = unfilled.replace(i) {
-                    Err(BookKeepError::UndeduciblePostingAmount(j, i))
+                if let Some(first) = unfilled.replace(Tracked::new(i, posting.span())) {
+                    Err(BookKeepError::UndeduciblePostingAmount(
+                        first,
+                        Tracked::new(i, posting.span()),
+                    ))
                 } else {
                     Ok((PostingAmount::zero(), PostingAmount::zero()))
                 }
@@ -213,6 +216,7 @@ fn add_transaction<'ctx>(
         });
     }
     if let Some(u) = unfilled {
+        let u = *u.as_undecorated();
         let deduced: Amount = balance.clone().negate();
         postings[u].amount = deduced.clone();
         bal.add_amount(postings[u].account, deduced);
@@ -303,7 +307,10 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
-    use crate::parse::{self, testing::expect_parse_ok};
+    use crate::{
+        parse::{self, testing::expect_parse_ok},
+        syntax::tracked::TrackedSpan,
+    };
 
     fn parse_transaction(input: &str) -> syntax::tracked::Transaction {
         let (_, ret) = expect_parse_ok(parse::transaction::transaction, input);
@@ -493,7 +500,13 @@ mod tests {
         let mut ctx = ReportContext::new(&arena);
         let mut bal = Balance::default();
         let got = add_transaction(&mut ctx, &mut bal, &txn).expect_err("must fail");
-        assert_eq!(got, BookKeepError::UndeduciblePostingAmount(0, 1));
+        assert_eq!(
+            got,
+            BookKeepError::UndeduciblePostingAmount(
+                Tracked::new(0, TrackedSpan::new(20..42)),
+                Tracked::new(1, TrackedSpan::new(44..66))
+            )
+        );
     }
 
     #[test]

@@ -2,11 +2,14 @@
 
 use std::{fmt::Display, path::PathBuf};
 
-use annotate_snippets::{Level, Snippet};
+use annotate_snippets::{Annotation, Level, Snippet};
 
-use crate::{load, parse};
+use crate::{
+    load,
+    parse::{self, ParsedSpan},
+};
 
-use super::book_keeping;
+use super::book_keeping::{self, BookKeepError};
 
 /// Error arised in report APIs.
 #[derive(thiserror::Error, Debug)]
@@ -31,22 +34,35 @@ pub struct ErrorContext {
     path: PathBuf,
     line_start: usize,
     text: String,
+    parsed_span: ParsedSpan,
 }
 
 impl ErrorContext {
-    fn print(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        err: &book_keeping::BookKeepError,
-    ) -> std::fmt::Result {
+    fn print(&self, f: &mut std::fmt::Formatter<'_>, err: &BookKeepError) -> std::fmt::Result {
         let message = err.to_string();
         let path = self.path.to_string_lossy();
+        let annotations: Vec<Annotation> = match err {
+            BookKeepError::UndeduciblePostingAmount(first, second) => {
+                vec![
+                    Level::Warning
+                        .span(self.parsed_span.resolve(first.span()))
+                        .label("first posting that requires deduce"),
+                    Level::Error
+                        .span(self.parsed_span.resolve(second.span()))
+                        .label("either this or previous posting must specify the amount"),
+                ]
+            }
+            _ => {
+                // TODO: Add more detailed error into this.
+                // Also, put these logic into BookKeepError.
+                vec![Level::Error.span(0..self.text.len()).label("error occured")]
+            }
+        };
         let message = Level::Error.title(&message).snippet(
             Snippet::source(&self.text)
                 .origin(&path)
                 .line_start(self.line_start)
-                .fold(true)
-                .annotation(Level::Error.span(0..self.text.len())),
+                .annotations(annotations),
         );
         let rendered = self.renderer.render(message);
         rendered.fmt(f)
@@ -62,6 +78,7 @@ impl ErrorContext {
             path,
             line_start: pctx.compute_line_start(),
             text: pctx.as_str().to_owned(),
+            parsed_span: pctx.span(),
         })
     }
 }
