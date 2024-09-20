@@ -12,7 +12,12 @@ pub(crate) mod transaction;
 
 #[cfg(test)]
 pub(crate) mod testing;
-use std::{marker::PhantomData, ops::Range};
+
+use std::{
+    cmp::{max, min},
+    marker::PhantomData,
+    ops::Range,
+};
 
 pub use error::ParseError;
 
@@ -88,6 +93,28 @@ impl<'i> ParsedContext<'i> {
             .get(self.span.clone())
             .expect("ParsedContext::span must be a valid UTF-8 boundary")
     }
+
+    pub fn span(&self) -> ParsedSpan {
+        ParsedSpan(self.span.clone())
+    }
+}
+
+/// Span of the parsed str.
+#[derive(Debug)]
+pub struct ParsedSpan(Range<usize>);
+
+impl ParsedSpan {
+    /// Returns the span of the given span relative to this span.
+    pub fn resolve(&self, span: syntax::tracked::TrackedSpan) -> Range<usize> {
+        let target = span.as_range();
+        clip(self.0.clone(), target)
+    }
+}
+
+fn clip(parent: Range<usize>, child: Range<usize>) -> Range<usize> {
+    let start = max(parent.start, child.start) - parent.start;
+    let end = min(parent.end, child.end) - parent.start;
+    start..end
 }
 
 /// Iterator to return parsed ledger entry one-by-one.
