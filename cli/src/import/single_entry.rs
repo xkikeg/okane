@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::HashMap};
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
 
-use okane_core::repl::{self, pretty_decimal::PrettyDecimal};
+use okane_core::syntax::{self, pretty_decimal::PrettyDecimal};
 
 use super::amount::OwnedAmount;
 use super::ImportError;
@@ -26,7 +26,7 @@ pub struct Txn {
     dest_account: Option<String>,
 
     /// ClearState, useful to overwrite default convention (if dest_account is set).
-    clear_state: Option<repl::ClearState>,
+    clear_state: Option<syntax::ClearState>,
 
     /// amount in exchanged rate.
     transferred_amount: Option<OwnedAmount>,
@@ -94,7 +94,7 @@ impl Txn {
         self
     }
 
-    pub fn clear_state(&mut self, clear_state: repl::ClearState) -> &mut Txn {
+    pub fn clear_state(&mut self, clear_state: syntax::ClearState) -> &mut Txn {
         self.clear_state = Some(clear_state);
         self
     }
@@ -122,10 +122,10 @@ impl Txn {
         }
     }
 
-    fn rate(&self, target: &str) -> Option<repl::Exchange> {
+    fn rate(&self, target: &str) -> Option<syntax::Exchange> {
         self.rates
             .get(target)
-            .map(|x| repl::Exchange::Rate(as_syntax_amount(x).into()))
+            .map(|x| syntax::Exchange::Rate(as_syntax_amount(x).into()))
     }
 
     pub fn try_add_charge_not_included<'a>(
@@ -162,24 +162,24 @@ impl Txn {
         self
     }
 
-    fn amount(&self) -> repl::plain::PostingAmount {
-        repl::PostingAmount {
+    fn amount(&self) -> syntax::plain::PostingAmount {
+        syntax::PostingAmount {
             amount: as_syntax_amount(&self.amount).into(),
             cost: self.rate(&self.amount.commodity),
-            lot: repl::Lot::default(),
+            lot: syntax::Lot::default(),
         }
     }
 
-    fn dest_amount(&self) -> repl::plain::PostingAmount {
+    fn dest_amount(&self) -> syntax::plain::PostingAmount {
         self.transferred_amount
             .as_ref()
-            .map(|transferred| repl::PostingAmount {
+            .map(|transferred| syntax::PostingAmount {
                 // transferred_amount can be absolute value, or signed value.
                 // Assuming all commodities are "positive",
                 // it should have the opposite sign of the original amount.
                 amount: amount_with_sign(transferred, -self.amount.value).into(),
                 cost: self.rate(&transferred.commodity),
-                lot: repl::Lot::default(),
+                lot: syntax::Lot::default(),
             })
             .unwrap_or(to_posting_amount(negate_amount(as_syntax_amount(
                 &self.amount,
@@ -194,58 +194,58 @@ impl Txn {
     pub fn to_double_entry<'a>(
         &'a self,
         src_account: &'a str,
-    ) -> Result<repl::plain::Transaction<'a>, ImportError> {
-        let mut posts: Vec<repl::plain::Posting> = Vec::new();
+    ) -> Result<syntax::plain::Transaction<'a>, ImportError> {
+        let mut posts: Vec<syntax::plain::Posting> = Vec::new();
         let post_clear = self.clear_state.unwrap_or(match &self.dest_account {
-            Some(_) => repl::ClearState::Uncleared,
-            None => repl::ClearState::Pending,
+            Some(_) => syntax::ClearState::Uncleared,
+            None => syntax::ClearState::Pending,
         });
         if self.amount.is_sign_positive() {
-            posts.push(repl::Posting {
+            posts.push(syntax::Posting {
                 clear_state: post_clear,
                 amount: Some(self.dest_amount()),
-                ..repl::Posting::new(self.dest_account.as_deref().unwrap_or("Income:Unknown"))
+                ..syntax::Posting::new(self.dest_account.as_deref().unwrap_or("Income:Unknown"))
             });
-            posts.push(repl::Posting {
-                clear_state: repl::ClearState::Uncleared,
+            posts.push(syntax::Posting {
+                clear_state: syntax::ClearState::Uncleared,
                 amount: Some(self.amount()),
                 balance: self.balance.as_ref().map(|x| as_syntax_amount(x).into()),
-                ..repl::Posting::new(src_account)
+                ..syntax::Posting::new(src_account)
             });
         } else if self.amount.is_sign_negative() {
-            posts.push(repl::Posting {
-                clear_state: repl::ClearState::Uncleared,
+            posts.push(syntax::Posting {
+                clear_state: syntax::ClearState::Uncleared,
                 amount: Some(self.amount()),
                 balance: self.balance.as_ref().map(|x| as_syntax_amount(x).into()),
-                ..repl::Posting::new(src_account)
+                ..syntax::Posting::new(src_account)
             });
-            posts.push(repl::Posting {
+            posts.push(syntax::Posting {
                 clear_state: post_clear,
                 amount: Some(self.dest_amount()),
-                ..repl::Posting::new(self.dest_account.as_deref().unwrap_or("Expenses:Unknown"))
+                ..syntax::Posting::new(self.dest_account.as_deref().unwrap_or("Expenses:Unknown"))
             });
         } else {
             // warning log or error?
             return Err(ImportError::Other("credit and debit both zero".to_string()));
         }
         for chrg in &self.charges {
-            posts.push(repl::Posting {
-                clear_state: repl::ClearState::Uncleared,
+            posts.push(syntax::Posting {
+                clear_state: syntax::ClearState::Uncleared,
                 amount: Some(to_posting_amount(as_syntax_amount(&chrg.amount))),
                 balance: None,
-                metadata: vec![repl::Metadata::KeyValueTag {
+                metadata: vec![syntax::Metadata::KeyValueTag {
                     key: Cow::Borrowed("Payee"),
-                    value: repl::MetadataValue::Text(chrg.payee.as_str().into()),
+                    value: syntax::MetadataValue::Text(chrg.payee.as_str().into()),
                 }],
-                ..repl::Posting::new("Expenses:Commissions")
+                ..syntax::Posting::new("Expenses:Commissions")
             });
         }
-        Ok(repl::Transaction {
+        Ok(syntax::Transaction {
             effective_date: self.effective_date,
-            clear_state: repl::ClearState::Cleared,
+            clear_state: syntax::ClearState::Cleared,
             code: self.code.as_deref().map(Into::into),
             posts,
-            ..repl::Transaction::new(self.date, &self.payee)
+            ..syntax::Transaction::new(self.date, &self.payee)
         })
     }
 }
@@ -257,28 +257,28 @@ pub struct CommodityPair {
     pub target: String,
 }
 
-fn as_syntax_amount(amount: &OwnedAmount) -> repl::expr::Amount {
-    repl::expr::Amount {
+fn as_syntax_amount(amount: &OwnedAmount) -> syntax::expr::Amount {
+    syntax::expr::Amount {
         // TODO: pass the right format.
         value: PrettyDecimal::unformatted(amount.value),
         commodity: Cow::Borrowed(&amount.commodity),
     }
 }
 
-fn negate_amount(mut amount: repl::expr::Amount) -> repl::expr::Amount {
+fn negate_amount(mut amount: syntax::expr::Amount) -> syntax::expr::Amount {
     amount.value = -amount.value;
     amount
 }
 
-fn to_posting_amount(amount: repl::expr::Amount) -> repl::plain::PostingAmount {
-    repl::PostingAmount {
+fn to_posting_amount(amount: syntax::expr::Amount) -> syntax::plain::PostingAmount {
+    syntax::PostingAmount {
         amount: amount.into(),
         cost: None,
-        lot: repl::Lot::default(),
+        lot: syntax::Lot::default(),
     }
 }
 
-fn amount_with_sign(amount: &OwnedAmount, sign: Decimal) -> repl::expr::Amount {
+fn amount_with_sign(amount: &OwnedAmount, sign: Decimal) -> syntax::expr::Amount {
     let mut ret = as_syntax_amount(amount);
     ret.value.set_sign_positive(sign.is_sign_positive());
     ret
@@ -323,8 +323,8 @@ mod tests {
         );
     }
 
-    fn syntax_amount(value: PrettyDecimal, commodity: &str) -> repl::expr::ValueExpr {
-        repl::expr::Amount {
+    fn syntax_amount(value: PrettyDecimal, commodity: &str) -> syntax::expr::ValueExpr {
+        syntax::expr::Amount {
             value,
             commodity: commodity.into(),
         }
@@ -371,13 +371,13 @@ mod tests {
 
         assert_eq!(
             txn.dest_amount(),
-            repl::PostingAmount {
+            syntax::PostingAmount {
                 amount: syntax_amount(PrettyDecimal::unformatted(dec!(-10.00)), "USD"),
-                cost: Some(repl::Exchange::Rate(syntax_amount(
+                cost: Some(syntax::Exchange::Rate(syntax_amount(
                     PrettyDecimal::unformatted(dec!(100)),
                     "JPY"
                 ))),
-                lot: repl::Lot::default(),
+                lot: syntax::Lot::default(),
             },
         )
     }
@@ -401,13 +401,13 @@ mod tests {
 
         assert_eq!(
             txn.dest_amount(),
-            repl::PostingAmount {
+            syntax::PostingAmount {
                 amount: syntax_amount(PrettyDecimal::unformatted(dec!(-10.00)), "USD"),
-                cost: Some(repl::Exchange::Rate(syntax_amount(
+                cost: Some(syntax::Exchange::Rate(syntax_amount(
                     PrettyDecimal::unformatted(dec!(100)),
                     "JPY"
                 ))),
-                lot: repl::Lot::default(),
+                lot: syntax::Lot::default(),
             },
         )
     }

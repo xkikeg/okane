@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use rust_decimal::Decimal;
 
-use crate::{repl::expr, report::ReportContext};
+use crate::{report::ReportContext, syntax::expr};
 
 use super::{
     amount::{Amount, PostingAmount, SingleAmount},

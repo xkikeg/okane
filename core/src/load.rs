@@ -7,7 +7,7 @@ use std::{
     path::{self, Path, PathBuf},
 };
 
-use crate::{parse, repl};
+use crate::{parse, syntax};
 
 /// Error caused by [Loader::load_repl].
 #[derive(thiserror::Error, Debug)]
@@ -57,9 +57,9 @@ impl<F: FileSystem> Loader<F> {
     /// recursively resolving `include` directives.
     pub fn load_repl<T, E, Deco>(&self, mut callback: T) -> Result<(), E>
     where
-        T: FnMut(&Path, &parse::ParsedContext<'_>, &repl::LedgerEntry<'_, Deco>) -> Result<(), E>,
+        T: FnMut(&Path, &parse::ParsedContext<'_>, &syntax::LedgerEntry<'_, Deco>) -> Result<(), E>,
         E: std::error::Error + From<LoadError>,
-        Deco: repl::decoration::Decoration,
+        Deco: syntax::decoration::Decoration,
     {
         let popts = parse::ParseOptions::default().with_error_style(self.error_style.clone());
         self.load_repl_impl(&popts, &self.source, &mut callback)
@@ -72,9 +72,9 @@ impl<F: FileSystem> Loader<F> {
         callback: &mut T,
     ) -> Result<(), E>
     where
-        T: FnMut(&Path, &parse::ParsedContext<'_>, &repl::LedgerEntry<'_, Deco>) -> Result<(), E>,
+        T: FnMut(&Path, &parse::ParsedContext<'_>, &syntax::LedgerEntry<'_, Deco>) -> Result<(), E>,
         E: std::error::Error + From<LoadError>,
-        Deco: repl::decoration::Decoration,
+        Deco: syntax::decoration::Decoration,
     {
         let path: Cow<'_, Path> = self.filesystem.canonicalize_path(path);
         let content = self
@@ -85,7 +85,7 @@ impl<F: FileSystem> Loader<F> {
             let (ctx, entry) =
                 parsed.map_err(|e| LoadError::Parse(Box::new(e), path.clone().into_owned()))?;
             match entry {
-                repl::LedgerEntry::Include(p) => {
+                syntax::LedgerEntry::Include(p) => {
                     let include_path: PathBuf = p.0.as_ref().into();
                     let target = path
                         .as_ref()
@@ -198,7 +198,7 @@ mod tests {
 
     fn parse_static_repl<'a>(
         input: &[(&Path, &'static str)],
-    ) -> Result<Vec<(PathBuf, repl::plain::LedgerEntry<'static>)>, parse::ParseError> {
+    ) -> Result<Vec<(PathBuf, syntax::plain::LedgerEntry<'static>)>, parse::ParseError> {
         let opts = ParseOptions::default();
         input
             .iter()
@@ -211,12 +211,12 @@ mod tests {
 
     fn parse_into_vec<L, F>(
         loader: L,
-    ) -> Result<Vec<(PathBuf, repl::plain::LedgerEntry<'static>)>, LoadError>
+    ) -> Result<Vec<(PathBuf, syntax::plain::LedgerEntry<'static>)>, LoadError>
     where
         L: Borrow<Loader<F>>,
         F: FileSystem,
     {
-        let mut ret: Vec<(PathBuf, repl::plain::LedgerEntry<'static>)> = Vec::new();
+        let mut ret: Vec<(PathBuf, syntax::plain::LedgerEntry<'static>)> = Vec::new();
         loader.borrow().load_repl(|path, _ctx, entry| {
             ret.push((path.to_owned(), entry.to_static()));
             Ok::<(), LoadError>(())

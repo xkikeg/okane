@@ -1,7 +1,4 @@
-//! repl represents Ledger file format representation.
-//! Note the structure is quite similar to data module,
-//! however, repl is for textual representation while
-//! data is more for understanding.
+//! Provides Ledger file format syntax representation.
 
 pub mod decoration;
 pub mod display;

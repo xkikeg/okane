@@ -13,11 +13,11 @@ use winnow::{
 
 use crate::{
     parse::{character, combinator::has_peek, metadata, posting, primitive},
-    repl::{self, decoration::Decoration},
+    syntax::{self, decoration::Decoration},
 };
 
 /// Parses a transaction from given string.
-pub fn transaction<'i, I, Deco>(input: &mut I) -> PResult<repl::Transaction<'i, Deco>>
+pub fn transaction<'i, I, Deco>(input: &mut I) -> PResult<syntax::Transaction<'i, Deco>>
 where
     I: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -52,13 +52,13 @@ where
             Deco::decorate_parser(preceded(peek(one_of(b" \t")), cut_err(posting::posting))),
         )
         .parse_next(input)?;
-        Ok(repl::Transaction {
+        Ok(syntax::Transaction {
             effective_date,
             clear_state,
             code: code.map(Cow::Borrowed),
             posts,
             metadata,
-            ..repl::Transaction::new(date, payee.unwrap_or(""))
+            ..syntax::Transaction::new(date, payee.unwrap_or(""))
         })
     })
     .parse_next(input)
@@ -75,7 +75,7 @@ mod tests {
 
     use crate::{
         parse::testing::expect_parse_ok,
-        repl::{
+        syntax::{
             plain::{Posting, PostingAmount, Transaction},
             pretty_decimal::PrettyDecimal,
         },
@@ -104,20 +104,20 @@ mod tests {
             expect_parse_ok(transaction, input),
             (
                 "",
-                repl::Transaction {
+                syntax::Transaction {
                     effective_date: Some(NaiveDate::from_ymd_opt(2022, 1, 28).unwrap()),
-                    clear_state: repl::ClearState::Cleared,
+                    clear_state: syntax::ClearState::Cleared,
                     code: Some(Cow::Borrowed("code")),
                     payee: Cow::Borrowed("Foo"),
                     posts: vec![
                         Posting {
                             amount: Some(PostingAmount {
-                                amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
+                                amount: syntax::expr::ValueExpr::Amount(syntax::expr::Amount {
                                     value: PrettyDecimal::comma3dot(dec!(123456.78)),
                                     commodity: Cow::Borrowed("USD"),
                                 }),
                                 cost: None,
-                                lot: repl::Lot::default(),
+                                lot: syntax::Lot::default(),
                             }),
                             ..Posting::new("Expense A")
                         },
@@ -145,61 +145,61 @@ mod tests {
             expect_parse_ok(transaction, input),
             (
                 "",
-                repl::Transaction {
+                syntax::Transaction {
                     effective_date: Some(NaiveDate::from_ymd_opt(2022, 1, 28).unwrap()),
-                    clear_state: repl::ClearState::Pending,
+                    clear_state: syntax::ClearState::Pending,
                     code: Some(Cow::Borrowed("code")),
                     payee: Cow::Borrowed("Foo"),
                     metadata: vec![
-                        repl::Metadata::Comment(Cow::Borrowed("とりあえずのメモ")),
-                        repl::Metadata::WordTags(vec![Cow::Borrowed("取引")]),
+                        syntax::Metadata::Comment(Cow::Borrowed("とりあえずのメモ")),
+                        syntax::Metadata::WordTags(vec![Cow::Borrowed("取引")]),
                     ],
                     posts: vec![
                         Posting {
                             amount: Some(PostingAmount {
-                                amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
+                                amount: syntax::expr::ValueExpr::Amount(syntax::expr::Amount {
                                     value: PrettyDecimal::comma3dot(dec!(-123456.78)),
                                     commodity: Cow::Borrowed("USD"),
                                 }),
                                 cost: None,
-                                lot: repl::Lot::default(),
+                                lot: syntax::Lot::default(),
                             }),
                             metadata: vec![
-                                repl::Metadata::Comment(Cow::Borrowed("Note expense A")),
-                                repl::Metadata::KeyValueTag {
+                                syntax::Metadata::Comment(Cow::Borrowed("Note expense A")),
+                                syntax::Metadata::KeyValueTag {
                                     key: Cow::Borrowed("Payee"),
-                                    value: repl::MetadataValue::Text(Cow::Borrowed("Bar"))
+                                    value: syntax::MetadataValue::Text(Cow::Borrowed("Bar"))
                                 },
                             ],
                             ..Posting::new("Expense A")
                         },
                         Posting {
                             amount: Some(PostingAmount {
-                                amount: repl::expr::ValueExpr::Amount(repl::expr::Amount {
+                                amount: syntax::expr::ValueExpr::Amount(syntax::expr::Amount {
                                     value: PrettyDecimal::unformatted(dec!(12)),
                                     commodity: Cow::Borrowed("JPY"),
                                 }),
                                 cost: None,
-                                lot: repl::Lot::default(),
+                                lot: syntax::Lot::default(),
                             }),
-                            balance: Some(repl::expr::ValueExpr::Amount(repl::expr::Amount {
+                            balance: Some(syntax::expr::ValueExpr::Amount(syntax::expr::Amount {
                                 value: PrettyDecimal::plain(dec!(-1000)),
                                 commodity: Cow::Borrowed("CHF"),
                             })),
-                            metadata: vec![repl::Metadata::WordTags(vec![
+                            metadata: vec![syntax::Metadata::WordTags(vec![
                                 Cow::Borrowed("tag1"),
                                 Cow::Borrowed("他のタグ")
                             ]),],
                             ..Posting::new("Liabilities B")
                         },
                         Posting {
-                            balance: Some(repl::expr::ValueExpr::Amount(repl::expr::Amount {
+                            balance: Some(syntax::expr::ValueExpr::Amount(syntax::expr::Amount {
                                 value: PrettyDecimal::unformatted(dec!(0)),
                                 commodity: Cow::Borrowed(""),
                             })),
                             metadata: vec![
-                                repl::Metadata::Comment(Cow::Borrowed("Cのノート")),
-                                repl::Metadata::Comment(Cow::Borrowed("これなんだっけ")),
+                                syntax::Metadata::Comment(Cow::Borrowed("Cのノート")),
+                                syntax::Metadata::Comment(Cow::Borrowed("これなんだっけ")),
                             ],
 
                             ..Posting::new("Assets C")

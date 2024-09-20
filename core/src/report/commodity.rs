@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use bumpalo::Bump;
 
-use crate::repl::pretty_decimal::PrettyDecimal;
+use crate::syntax::pretty_decimal::PrettyDecimal;
 
 use super::intern::{FromInterned, InternError, InternStore, InternedStr};
 

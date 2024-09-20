@@ -9,7 +9,7 @@ use log::{info, warn};
 use regex::Regex;
 use rust_decimal::Decimal;
 
-use okane_core::repl;
+use okane_core::syntax;
 
 use super::amount::OwnedAmount;
 use super::config::{self, FieldKey, TemplateField};
@@ -24,7 +24,7 @@ fn str_to_comma_decimal(input: &str) -> Result<Option<Decimal>, ImportError> {
     if input.is_empty() {
         return Ok(None);
     }
-    let a: repl::expr::Amount = input
+    let a: syntax::expr::Amount = input
         .try_into()
         .map_err(|e| ImportError::Other(format!("failed to parse comma decimal: {}", e)))?;
     Ok(Some(a.value.value))
@@ -118,7 +118,7 @@ impl super::Importer for CsvImporter {
             txn.code_option(fragment.code)
                 .dest_account_option(fragment.account);
             if !fragment.cleared {
-                txn.clear_state(repl::ClearState::Pending);
+                txn.clear_state(syntax::ClearState::Pending);
             }
             if let Some(b) = balance {
                 txn.balance(OwnedAmount {

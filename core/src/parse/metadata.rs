@@ -15,10 +15,10 @@ use winnow::{
 };
 
 use crate::parse::character;
-use crate::repl;
+use crate::syntax;
 
 /// Parses a ClearState.
-pub fn clear_state<I, E>(input: &mut I) -> PResult<repl::ClearState, E>
+pub fn clear_state<I, E>(input: &mut I) -> PResult<syntax::ClearState, E>
 where
     I: Stream + StreamIsPartial,
     E: ParserError<I>,
@@ -28,8 +28,8 @@ where
         "metadata::clear_state",
         opt(terminated(
             alt((
-                one_of('*').value(repl::ClearState::Cleared),
-                one_of('!').value(repl::ClearState::Pending),
+                one_of('*').value(syntax::ClearState::Cleared),
+                one_of('!').value(syntax::ClearState::Pending),
             )),
             space0,
         ))
@@ -40,7 +40,7 @@ where
 
 /// Parses block of metadata including the last line_end.
 /// Note this consumes at least one line_ending regardless of Metadata existence.
-pub fn block_metadata<'i, I, E>(input: &mut I) -> PResult<Vec<repl::Metadata<'i>>, E>
+pub fn block_metadata<'i, I, E>(input: &mut I) -> PResult<Vec<syntax::Metadata<'i>>, E>
 where
     I: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -60,7 +60,7 @@ where
     .parse_next(input)
 }
 
-fn line_metadata<'i, I, E>(input: &mut I) -> PResult<repl::Metadata<'i>, E>
+fn line_metadata<'i, I, E>(input: &mut I) -> PResult<syntax::Metadata<'i>, E>
 where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
@@ -80,7 +80,7 @@ where
                     if s.contains(':') {
                         log::warn!("metadata containing `:` not parsed as tags: {}", s);
                     }
-                    repl::Metadata::Comment(s.trim_end().into())
+                    syntax::Metadata::Comment(s.trim_end().into())
                 }),
             )),
             character::line_ending_or_eof,
@@ -89,7 +89,7 @@ where
     .parse_next(input)
 }
 
-fn metadata_tags<'i, I, E>(input: &mut I) -> PResult<repl::Metadata<'i>, E>
+fn metadata_tags<'i, I, E>(input: &mut I) -> PResult<syntax::Metadata<'i>, E>
 where
     I: Stream<Slice = &'i str> + StreamIsPartial,
     E: ParserError<I>,
@@ -102,12 +102,12 @@ where
             repeat(1.., terminated(tag_key.map(Cow::Borrowed), one_of(':'))),
             space0,
         )
-        .map(repl::Metadata::WordTags),
+        .map(syntax::Metadata::WordTags),
     )
     .parse_next(input)
 }
 
-fn metadata_kv<'i, I, E>(input: &mut I) -> PResult<repl::Metadata<'i>, E>
+fn metadata_kv<'i, I, E>(input: &mut I) -> PResult<syntax::Metadata<'i>, E>
 where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
@@ -119,7 +119,7 @@ where
     trace(
         "metadata::metadata_kv",
         (terminated(tag_key, space0), metadata_value).map(|(key, value): (&str, _)| {
-            repl::Metadata::KeyValueTag {
+            syntax::Metadata::KeyValueTag {
                 key: key.into(),
                 value,
             }
@@ -129,7 +129,7 @@ where
 }
 
 /// Parses metadata value with `:` or `::` prefix.
-pub fn metadata_value<'i, I, E>(input: &mut I) -> PResult<repl::MetadataValue<'i>, E>
+pub fn metadata_value<'i, I, E>(input: &mut I) -> PResult<syntax::MetadataValue<'i>, E>
 where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
@@ -139,9 +139,9 @@ where
     <I as Stream>::Token: AsChar + Clone,
 {
     let expr = preceded(literal("::"), cut_err(till_line_ending))
-        .map(|x: &str| repl::MetadataValue::Expr(x.trim().into()));
+        .map(|x: &str| syntax::MetadataValue::Expr(x.trim().into()));
     let text = preceded(one_of(':'), cut_err(till_line_ending))
-        .map(|x: &str| repl::MetadataValue::Text(x.trim().into()));
+        .map(|x: &str| syntax::MetadataValue::Text(x.trim().into()));
     trace("metadata::metadata_value", backtrack_err(alt((expr, text)))).parse_next(input)
 }
 
@@ -184,8 +184,8 @@ mod tests {
                 // This line isn't a block_metadata because it doesn't have preceding spaces.
                 "; baz\n",
                 vec![
-                    repl::Metadata::Comment("foo".into()),
-                    repl::Metadata::Comment("bar".into()),
+                    syntax::Metadata::Comment("foo".into()),
+                    syntax::Metadata::Comment("bar".into()),
                 ]
             )
         )
@@ -199,8 +199,8 @@ mod tests {
             (
                 "",
                 vec![
-                    repl::Metadata::Comment("foo".into()),
-                    repl::Metadata::Comment("bar".into()),
+                    syntax::Metadata::Comment("foo".into()),
+                    syntax::Metadata::Comment("bar".into()),
                 ]
             )
         )
@@ -219,7 +219,7 @@ mod tests {
             expect_parse_ok(line_metadata, input),
             (
                 "",
-                repl::Metadata::WordTags(vec!["tag1".into(), "tag2".into(), "tag3".into()])
+                syntax::Metadata::WordTags(vec!["tag1".into(), "tag2".into(), "tag3".into()])
             )
         )
     }
@@ -231,9 +231,9 @@ mod tests {
             expect_parse_ok(line_metadata, input),
             (
                 "",
-                repl::Metadata::KeyValueTag {
+                syntax::Metadata::KeyValueTag {
                     key: "場所".into(),
-                    value: repl::MetadataValue::Text("ドラッグストア".into()),
+                    value: syntax::MetadataValue::Text("ドラッグストア".into()),
                 }
             )
         );
@@ -243,9 +243,9 @@ mod tests {
             expect_parse_ok(line_metadata, input),
             (
                 "",
-                repl::Metadata::KeyValueTag {
+                syntax::Metadata::KeyValueTag {
                     key: "日付".into(),
-                    value: repl::MetadataValue::Expr("[2022-01-19]".into()),
+                    value: syntax::MetadataValue::Expr("[2022-01-19]".into()),
                 }
             )
         );
@@ -258,7 +258,7 @@ mod tests {
             expect_parse_ok(line_metadata, input),
             (
                 "",
-                repl::Metadata::Comment("A fox jumps over: この例文見飽きた".into())
+                syntax::Metadata::Comment("A fox jumps over: この例文見飽きた".into())
             )
         )
     }

@@ -6,9 +6,9 @@ use bumpalo::Bump;
 use clap::{Args, Subcommand};
 use encoding_rs_io::DecodeReaderBytesBuilder;
 
-use okane_core::repl::display::DisplayContext;
-use okane_core::repl::plain::LedgerEntry;
-use okane_core::{load, repl, report};
+use okane_core::syntax::display::DisplayContext;
+use okane_core::syntax::plain::LedgerEntry;
+use okane_core::{load, report, syntax};
 
 use crate::format;
 use crate::import::{self, Format, ImportError};
@@ -89,7 +89,7 @@ impl ImportCmd {
             .encoding(Some(config_entry.encoding.as_encoding()))
             .build(file);
         let xacts = import::import(decoded, format, &config_entry)?;
-        let ctx = repl::display::DisplayContext {
+        let ctx = syntax::display::DisplayContext {
             precisions: config_entry
                 .format
                 .commodity
@@ -98,7 +98,7 @@ impl ImportCmd {
                 .collect(),
         };
         for xact in xacts {
-            let xact: repl::plain::Transaction = xact.to_double_entry(&config_entry.account)?;
+            let xact: syntax::plain::Transaction = xact.to_double_entry(&config_entry.account)?;
             writeln!(w, "{}", ctx.as_display(&xact))?;
         }
         Ok(())

@@ -1,5 +1,5 @@
 //! Module decoration defines the trait,
-//! which describes the extra information attached to [crate::repl] data.
+//! which describes the extra information attached to [crate::syntax] data.
 
 use std::fmt::Debug;
 
@@ -10,7 +10,7 @@ pub trait AsUndecorated<T: ?Sized> {
 }
 
 /// Decoration associates the extra information attached to
-/// [crate::repl::Transaction] or any other [crate::repl] data.
+/// [Transaction][super::Transaction] or any other [crate::syntax] data.
 /// See [super::plain] or [super::tracked] for implementations.
 pub trait Decoration: 'static {
     type Decorated<T>: AsUndecorated<T> + Debug + PartialEq + Eq
