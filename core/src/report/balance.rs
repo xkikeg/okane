@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use crate::inlinemap::InlineMap;
 
 use super::{
     context::Account,
@@ -15,7 +15,7 @@ pub enum BalanceError {
 /// Accumulated balance of accounts.
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct Balance<'ctx> {
-    accounts: HashMap<Account<'ctx>, Amount<'ctx>>,
+    accounts: InlineMap<Account<'ctx>, Amount<'ctx>>,
 }
 
 impl<'ctx> FromIterator<(Account<'ctx>, Amount<'ctx>)> for Balance<'ctx> {
@@ -24,9 +24,15 @@ impl<'ctx> FromIterator<(Account<'ctx>, Amount<'ctx>)> for Balance<'ctx> {
     where
         T: IntoIterator<Item = (Account<'ctx>, Amount<'ctx>)>,
     {
-        Self {
-            accounts: iter.into_iter().collect(),
-        }
+        let iter = iter.into_iter();
+        let mut accounts = match iter.size_hint() {
+            (_, Some(size)) => InlineMap::with_capacity(size),
+            _ => InlineMap::new(),
+        };
+        iter.for_each(|(k, v)| {
+            accounts.insert(k, v);
+        });
+        Self { accounts }
     }
 }
 
