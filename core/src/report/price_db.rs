@@ -38,3 +38,31 @@ pub fn load_price_db(path: &Path) -> Result<(), PriceDBError> {
     );
     Ok(())
 }
+
+use std::collections::BTreeMap;
+
+use super::{commodity::Commodity, eval::SingleAmount};
+
+/// `[PriceHistoryStore]` holds the commodity conversion history.
+/// Later one can create an instance of `[PriceQuery]`.
+pub struct PriceHistoryStore<'arena> {
+    events: Vec<PriceEvent<'arena>>,
+}
+
+/// Database which allows to query historical price information.
+pub struct PriceQuery;
+
+/// Each event of price history.
+struct PriceEvent<'arena> {
+    value_from: SingleAmount<'arena>,
+    value_to: SingleAmount<'arena>,
+    event_type: PriceEventType,
+}
+
+/// Type of [PriceEvent].
+enum PriceEventType {
+    /// Provided from external Price DB file.
+    PriceDB,
+    /// Deduced from the transaction.
+    Transaction,
+}
