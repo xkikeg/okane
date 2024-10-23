@@ -18,8 +18,6 @@ use super::template::Template;
 use super::ImportError;
 use super::{extract, template};
 
-pub struct CsvImporter {}
-
 fn str_to_comma_decimal(input: &str) -> Result<Option<Decimal>, ImportError> {
     if input.is_empty() {
         return Ok(None);
@@ -30,163 +28,160 @@ fn str_to_comma_decimal(input: &str) -> Result<Option<Decimal>, ImportError> {
     Ok(Some(a.value.value))
 }
 
-impl super::Importer for CsvImporter {
-    fn import<R: std::io::Read>(
-        &self,
-        r: R,
-        config: &config::ConfigEntry,
-    ) -> Result<Vec<single_entry::Txn>, ImportError> {
-        let mut res: Vec<single_entry::Txn> = Vec::new();
-        let mut br = BufReader::new(r);
-        let mut rb = csv::ReaderBuilder::new();
-        rb.flexible(true);
-        if !config.format.delimiter.is_empty() {
-            rb.delimiter(config.format.delimiter.as_bytes()[0]);
+pub fn import<R: std::io::Read>(
+    r: R,
+    config: &config::ConfigEntry,
+) -> Result<Vec<single_entry::Txn>, ImportError> {
+    let mut res: Vec<single_entry::Txn> = Vec::new();
+    let mut br = BufReader::new(r);
+    let mut rb = csv::ReaderBuilder::new();
+    rb.flexible(true);
+    if !config.format.delimiter.is_empty() {
+        rb.delimiter(config.format.delimiter.as_bytes()[0]);
+    }
+    if config.format.skip.head > 0 {
+        let mut skipped = String::new();
+        for i in 0..config.format.skip.head {
+            skipped.clear();
+            br.read_line(&mut skipped)?;
+            log::info!("skipped {}-th line: {}", i, skipped.as_str().trim_end());
         }
-        if config.format.skip.head > 0 {
-            let mut skipped = String::new();
-            for i in 0..config.format.skip.head {
-                skipped.clear();
-                br.read_line(&mut skipped)?;
-                log::info!("skipped {}-th line: {}", i, skipped.as_str().trim_end());
-            }
+    }
+    let mut rdr = rb.from_reader(br);
+    if !rdr.has_headers() {
+        return Err(ImportError::Other("no header of CSV".to_string()));
+    }
+    let header = rdr.headers()?;
+    let fm = FieldMap::try_new(&config.format.fields, header)?;
+    let size = fm.max();
+    let extractor: extract::Extractor<CsvMatcher> = (&config.rewrite).try_into()?;
+    for may_record in rdr.records() {
+        let r = may_record?;
+        let pos = r.position().expect("csv record position");
+        if r.len() <= size {
+            return Err(ImportError::Other(format!(
+                "csv record length too short at line {}: want {}, got {}",
+                pos.line(),
+                size,
+                r.len()
+            )));
         }
-        let mut rdr = rb.from_reader(br);
-        if !rdr.has_headers() {
-            return Err(ImportError::Other("no header of CSV".to_string()));
+        let datestr = fm
+            .extract(FieldKey::Date, &r)?
+            .ok_or_else(|| ImportError::Other("Field date must be present".to_string()))?;
+        if datestr.is_empty() {
+            info!("skip empty date at line {}", pos.line());
+            continue;
         }
-        let header = rdr.headers()?;
-        let fm = FieldMap::try_new(&config.format.fields, header)?;
-        let size = fm.max();
-        let extractor: extract::Extractor<CsvMatcher> = (&config.rewrite).try_into()?;
-        for may_record in rdr.records() {
-            let r = may_record?;
-            let pos = r.position().expect("csv record position");
-            if r.len() <= size {
-                return Err(ImportError::Other(format!(
-                    "csv record length too short at line {}: want {}, got {}",
-                    pos.line(),
-                    size,
-                    r.len()
-                )));
-            }
-            let datestr = fm
-                .extract(FieldKey::Date, &r)?
-                .ok_or_else(|| ImportError::Other("Field date must be present".to_string()))?;
-            if datestr.is_empty() {
-                info!("skip empty date at line {}", pos.line());
-                continue;
-            }
-            let date = NaiveDate::parse_from_str(&datestr, config.format.date.as_str())?;
-            let original_payee = fm
-                .extract(FieldKey::Payee, &r)?
-                .ok_or_else(|| ImportError::Other("Field payee must be present".to_string()))?;
-            let amount = fm.amount(config.account_type, &r)?;
-            let balance = fm
-                .extract(FieldKey::Balance, &r)?
-                .map_or(Ok(None), |s| str_to_comma_decimal(&s))?;
-            let secondary_amount = fm
-                .extract(FieldKey::SecondaryAmount, &r)?
-                .map_or(Ok(None), |s| str_to_comma_decimal(&s))?;
-            let secondary_commodity = fm.extract(FieldKey::SecondaryCommodity, &r)?;
-            let category = fm.extract(FieldKey::Category, &r)?;
-            let commodity = fm
-                .extract(FieldKey::Commodity, &r)?
-                .unwrap_or_else(|| Cow::Borrowed(&config.commodity.primary));
-            let rate = fm
-                .extract(FieldKey::Rate, &r)?
-                .map_or_else(|| Ok(None), |s| str_to_comma_decimal(&s))?;
-            let fragment = extractor.extract(Record {
-                payee: &original_payee,
-                category: category.as_deref(),
+        let date = NaiveDate::parse_from_str(&datestr, config.format.date.as_str())?;
+        let original_payee = fm
+            .extract(FieldKey::Payee, &r)?
+            .ok_or_else(|| ImportError::Other("Field payee must be present".to_string()))?;
+        let amount = fm.amount(config.account_type, &r)?;
+        let balance = fm
+            .extract(FieldKey::Balance, &r)?
+            .map_or(Ok(None), |s| str_to_comma_decimal(&s))?;
+        let secondary_amount = fm
+            .extract(FieldKey::SecondaryAmount, &r)?
+            .map_or(Ok(None), |s| str_to_comma_decimal(&s))?;
+        let secondary_commodity = fm.extract(FieldKey::SecondaryCommodity, &r)?;
+        let category = fm.extract(FieldKey::Category, &r)?;
+        let commodity = fm
+            .extract(FieldKey::Commodity, &r)?
+            .unwrap_or_else(|| Cow::Borrowed(&config.commodity.primary));
+        let rate = fm
+            .extract(FieldKey::Rate, &r)?
+            .map_or_else(|| Ok(None), |s| str_to_comma_decimal(&s))?;
+        let fragment = extractor.extract(Record {
+            payee: &original_payee,
+            category: category.as_deref(),
+        });
+        if fragment.account.is_none() {
+            warn!(
+                "account unmatched at line {}, payee={}",
+                pos.line(),
+                original_payee
+            );
+        }
+        let mut txn = single_entry::Txn::new(
+            date,
+            fragment.payee.unwrap_or(&original_payee),
+            OwnedAmount {
+                value: amount,
+                commodity: commodity.clone().into_owned(),
+            },
+        );
+        txn.code_option(fragment.code)
+            .dest_account_option(fragment.account);
+        if !fragment.cleared {
+            txn.clear_state(syntax::ClearState::Pending);
+        }
+        if let Some(b) = balance {
+            txn.balance(OwnedAmount {
+                value: b,
+                commodity: commodity.clone().into_owned(),
             });
-            if fragment.account.is_none() {
-                warn!(
-                    "account unmatched at line {}, payee={}",
-                    pos.line(),
-                    original_payee
+        }
+        if let Some(charge) = fm.extract(FieldKey::Charge, &r)? {
+            let payee = config.operator.as_ref().ok_or(ImportError::InvalidConfig(
+                "config should have operator to have charge",
+            ))?;
+            if let Some(value) = str_to_comma_decimal(&charge)? {
+                txn.add_charge(
+                    payee,
+                    OwnedAmount {
+                        value,
+                        commodity: commodity.clone().into_owned(),
+                    },
                 );
             }
-            let mut txn = single_entry::Txn::new(
-                date,
-                fragment.payee.unwrap_or(&original_payee),
-                OwnedAmount {
-                    value: amount,
-                    commodity: commodity.clone().into_owned(),
-                },
-            );
-            txn.code_option(fragment.code)
-                .dest_account_option(fragment.account);
-            if !fragment.cleared {
-                txn.clear_state(syntax::ClearState::Pending);
-            }
-            if let Some(b) = balance {
-                txn.balance(OwnedAmount {
-                    value: b,
-                    commodity: commodity.clone().into_owned(),
-                });
-            }
-            if let Some(charge) = fm.extract(FieldKey::Charge, &r)? {
-                let payee = config.operator.as_ref().ok_or(ImportError::InvalidConfig(
-                    "config should have operator to have charge",
-                ))?;
-                if let Some(value) = str_to_comma_decimal(&charge)? {
-                    txn.add_charge(
-                        payee,
-                        OwnedAmount {
-                            value,
-                            commodity: commodity.clone().into_owned(),
-                        },
-                    );
-                }
-            }
-            if let Some(conv) = fragment.conversion {
-                let rate = rate.ok_or_else(|| {
-                    ImportError::Other(format!(
-                        "no rate specified for transcation with conversion: line {}",
-                        pos.line()
-                    ))
-                })?;
-                let secondary_commodity = conv.commodity.as_deref().or(secondary_commodity.as_deref())
+        }
+        if let Some(conv) = fragment.conversion {
+            let rate = rate.ok_or_else(|| {
+                ImportError::Other(format!(
+                    "no rate specified for transcation with conversion: line {}",
+                    pos.line()
+                ))
+            })?;
+            let secondary_commodity = conv.commodity.as_deref().or(secondary_commodity.as_deref())
                     .ok_or_else(||ImportError::Other(format!("either rewrite.conversion.commodity or secondary_commodity field must be set @ line {}", pos.line())))?;
-                let (rate_key, computed_transferred) = match conv.rate {
-                    config::ConversionRateSpec::PriceOfPrimary => (
-                        CommodityPair {
-                            source: secondary_commodity.to_owned(),
-                            target: commodity.into_owned(),
-                        },
-                        amount * rate,
-                    ),
-                    config::ConversionRateSpec::PriceOfSecondary => (
-                        CommodityPair {
-                            source: commodity.into_owned(),
-                            target: secondary_commodity.to_owned(),
-                        },
-                        amount / rate,
-                    ),
-                };
-                txn.add_rate(rate_key, rate)?;
-                let transferred = match conv.amount {
+            let (rate_key, computed_transferred) = match conv.rate {
+                config::ConversionRateSpec::PriceOfPrimary => (
+                    CommodityPair {
+                        source: secondary_commodity.to_owned(),
+                        target: commodity.into_owned(),
+                    },
+                    amount * rate,
+                ),
+                config::ConversionRateSpec::PriceOfSecondary => (
+                    CommodityPair {
+                        source: commodity.into_owned(),
+                        target: secondary_commodity.to_owned(),
+                    },
+                    amount / rate,
+                ),
+            };
+            txn.add_rate(rate_key, rate)?;
+            let transferred = match conv.amount {
                     config::ConversionAmountSpec::Extract => secondary_amount.ok_or_else(|| ImportError::Other(format!(
                             "secondary_amount should be specified when conversion.amount is set to extract @ line {}", pos.line()
                     )))?,
                     config::ConversionAmountSpec::Compute => computed_transferred,
                 };
-                txn.transferred_amount(OwnedAmount {
-                    value: transferred,
-                    commodity: secondary_commodity.to_owned(),
-                });
-            }
-            res.push(txn);
+            txn.transferred_amount(OwnedAmount {
+                value: transferred,
+                commodity: secondary_commodity.to_owned(),
+            });
         }
-        match config.format.row_order {
-            config::RowOrder::OldToNew => (),
-            config::RowOrder::NewToOld => {
-                res.reverse();
-            }
-        }
-        Ok(res)
+        res.push(txn);
     }
+    match config.format.row_order {
+        config::RowOrder::OldToNew => (),
+        config::RowOrder::NewToOld => {
+            res.reverse();
+        }
+    }
+    Ok(res)
 }
 
 #[derive(Debug, PartialEq)]
