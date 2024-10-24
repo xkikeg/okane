@@ -6,9 +6,9 @@ commodity: USD
 format:
   date: "%Y-%m-%d"
   fields:
-    date: 0
-    amount: 1
-    payee: 2
+    date: 1
+    amount: 2
+    payee: 3
 rewrite:
   - matcher:
       payee: Debit Card (?P<code>\d+) (?P<payee>.*)
