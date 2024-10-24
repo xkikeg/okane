@@ -185,7 +185,7 @@ pub fn import<R: std::io::Read>(
 }
 
 #[derive(Debug, PartialEq)]
-enum FieldMapValues {
+enum TxnValueField {
     CreditDebit { credit: Field, debit: Field },
     Amount(Field),
 }
@@ -217,7 +217,7 @@ impl<'a> template::RenderValue<'a> for MappedRecord<'a> {
 struct FieldMap {
     date: Field,
     payee: Field,
-    value: FieldMapValues,
+    value: TxnValueField,
     all_fields: HashMap<FieldKey, Field>,
     max_column: usize,
 }
@@ -267,7 +267,7 @@ impl FieldMap {
         r: &csv::StringRecord,
     ) -> Result<Decimal, ImportError> {
         match &self.value {
-            FieldMapValues::CreditDebit { credit, debit } => {
+            TxnValueField::CreditDebit { credit, debit } => {
                 let credit = self
                     .resolve(FieldKey::Credit, credit, r)?
                     .ok_or_else(|| ImportError::Other("Field credit must exist".to_string()))?;
@@ -284,7 +284,7 @@ impl FieldMap {
                     ))
                 }
             }
-            FieldMapValues::Amount(a) => {
+            TxnValueField::Amount(a) => {
                 let s = self
                     .resolve(FieldKey::Amount, a, r)?
                     .ok_or_else(|| ImportError::Other("Field amount must exist".to_string()))?;
@@ -324,7 +324,14 @@ impl FieldMap {
         let mut ki: HashMap<config::FieldKey, Field> = HashMap::with_capacity(config_mapping.len());
         for (&k, pos) in config_mapping {
             let field = match &pos {
-                config::FieldPos::Index(i) => Ok(Field::ColumnIndex(*i)),
+                config::FieldPos::Index(i) => {
+                    if *i == 0 {
+                        return Err(ImportError::Other(
+                            "column index is 1-origin, must be larger than 0".to_string(),
+                        ));
+                    }
+                    Ok(Field::ColumnIndex(*i - 1))
+                }
                 config::FieldPos::Label(label) => hm
                     .get(label.as_str())
                     .cloned()
@@ -360,10 +367,10 @@ impl FieldMap {
         let credit = ki.get(&config::FieldKey::Credit).cloned();
         let debit = ki.get(&config::FieldKey::Debit).cloned();
         let value = match amount {
-            Some(a) => Ok(FieldMapValues::Amount(a)),
+            Some(a) => Ok(TxnValueField::Amount(a)),
             None => credit
                 .zip(debit)
-                .map(|(c, d)| FieldMapValues::CreditDebit {
+                .map(|(c, d)| TxnValueField::CreditDebit {
                     credit: c,
                     debit: d,
                 })
@@ -466,7 +473,7 @@ mod tests {
             FieldMap {
                 date: Field::ColumnIndex(0),
                 payee: Field::ColumnIndex(1),
-                value: FieldMapValues::CreditDebit {
+                value: TxnValueField::CreditDebit {
                     credit: Field::ColumnIndex(2),
                     debit: Field::ColumnIndex(3)
                 },
@@ -486,9 +493,9 @@ mod tests {
     #[test]
     fn field_map_try_new_index_amount() {
         let config: HashMap<FieldKey, FieldPos> = hashmap! {
-            FieldKey::Date => FieldPos::Index(0),
-            FieldKey::Payee => FieldPos::Index(1),
-            FieldKey::Amount => FieldPos::Index(2),
+            FieldKey::Date => FieldPos::Index(1),
+            FieldKey::Payee => FieldPos::Index(2),
+            FieldKey::Amount => FieldPos::Index(3),
         };
         let got = FieldMap::try_new(&config, &csv::StringRecord::from(vec!["unrelated"])).unwrap();
         assert_eq!(
@@ -496,7 +503,7 @@ mod tests {
             FieldMap {
                 date: Field::ColumnIndex(0),
                 payee: Field::ColumnIndex(1),
-                value: FieldMapValues::Amount(Field::ColumnIndex(2)),
+                value: TxnValueField::Amount(Field::ColumnIndex(2)),
                 all_fields: hashmap! {
                     FieldKey::Date => Field::ColumnIndex(0),
                     FieldKey::Payee => Field::ColumnIndex(1),
@@ -510,15 +517,15 @@ mod tests {
     #[test]
     fn field_map_try_new_optionals() {
         let config: HashMap<FieldKey, FieldPos> = hashmap! {
-            FieldKey::Date => FieldPos::Index(0),
-            FieldKey::Payee => FieldPos::Index(1),
-            FieldKey::Amount => FieldPos::Index(2),
-            FieldKey::Balance => FieldPos::Index(3),
-            FieldKey::Category => FieldPos::Index(4),
-            FieldKey::Commodity => FieldPos::Index(5),
-            FieldKey::Rate => FieldPos::Index(6),
-            FieldKey::SecondaryAmount => FieldPos::Index(7),
-            FieldKey::SecondaryCommodity => FieldPos::Index(8),
+            FieldKey::Date => FieldPos::Index(1),
+            FieldKey::Payee => FieldPos::Index(2),
+            FieldKey::Amount => FieldPos::Index(3),
+            FieldKey::Balance => FieldPos::Index(4),
+            FieldKey::Category => FieldPos::Index(5),
+            FieldKey::Commodity => FieldPos::Index(6),
+            FieldKey::Rate => FieldPos::Index(7),
+            FieldKey::SecondaryAmount => FieldPos::Index(8),
+            FieldKey::SecondaryCommodity => FieldPos::Index(9),
         };
         let got = FieldMap::try_new(&config, &csv::StringRecord::from(vec!["unrelated"])).unwrap();
         assert_eq!(
@@ -526,7 +533,7 @@ mod tests {
             FieldMap {
                 date: Field::ColumnIndex(0),
                 payee: Field::ColumnIndex(1),
-                value: FieldMapValues::Amount(Field::ColumnIndex(2)),
+                value: TxnValueField::Amount(Field::ColumnIndex(2)),
                 all_fields: hashmap! {
                     FieldKey::Date => Field::ColumnIndex(0),
                     FieldKey::Payee => Field::ColumnIndex(1),
@@ -546,11 +553,11 @@ mod tests {
     #[test]
     fn field_map_extract() {
         let config: HashMap<FieldKey, FieldPos> = hashmap! {
-            FieldKey::Date => FieldPos::Index(0),
+            FieldKey::Date => FieldPos::Index(1),
             FieldKey::Payee => FieldPos::Template(TemplateField { template: "{category} - {note}".parse().expect("this must be the correct template") }),
-            FieldKey::Amount => FieldPos::Index(1),
-            FieldKey::Category => FieldPos::Index(2),
-            FieldKey::Note => FieldPos::Index(3),
+            FieldKey::Amount => FieldPos::Index(2),
+            FieldKey::Category => FieldPos::Index(3),
+            FieldKey::Note => FieldPos::Index(4),
         };
         let fm = FieldMap::try_new(
             &config,
