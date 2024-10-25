@@ -6,8 +6,10 @@ use std::path::{Path, PathBuf};
 
 use log::warn;
 use path_slash::PathBufExt;
-use serde::de::Error;
-use serde::{Deserialize, Serialize};
+use serde::de::value::MapAccessDeserializer;
+use serde::{de, Deserialize, Serialize};
+
+use crate::one_based::OneBasedIndex;
 
 use super::error::ImportError;
 
@@ -173,7 +175,10 @@ impl<'de> Deserialize<'de> for Encoding {
     {
         let s: String = Deserialize::deserialize(deserializer)?;
         encoding_rs::Encoding::for_label(s.as_bytes())
-            .ok_or_else(|| D::Error::custom(format!("unknown encoding {}", s)))
+            .ok_or_else(|| {
+                use de::Error;
+                D::Error::invalid_value(de::Unexpected::Str(&s), &"valid string encoding")
+            })
             .map(Encoding)
     }
 }
@@ -289,12 +294,67 @@ pub enum FieldKey {
     Charge,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
-#[serde(untagged)]
+#[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 pub enum FieldPos {
-    Index(usize),
+    Index(OneBasedIndex),
     Label(String),
     Template(TemplateField),
+}
+
+impl<'de> Deserialize<'de> for FieldPos {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(FieldPosVisitor)
+    }
+}
+
+struct FieldPosVisitor;
+
+impl<'de> de::Visitor<'de> for FieldPosVisitor {
+    type Value = FieldPos;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            formatter,
+            "a positive integer, a string or a map specifying a template"
+        )
+    }
+
+    fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        match OneBasedIndex::from_one_based(v as usize) {
+            Ok(x) => Ok(FieldPos::Index(x)),
+            Err(_) => Err(E::invalid_value(
+                de::Unexpected::Unsigned(v),
+                &"a positive column index",
+            )),
+        }
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        self.visit_string(v.to_string())
+    }
+
+    fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(FieldPos::Label(v))
+    }
+
+    fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+    where
+        A: de::MapAccess<'de>,
+    {
+        TemplateField::deserialize(MapAccessDeserializer::new(map)).map(FieldPos::Template)
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
@@ -410,9 +470,12 @@ pub fn load_from_yaml<R: std::io::Read>(r: R) -> Result<ConfigSet, ImportError> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use indoc::indoc;
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
+
+    use crate::one_based;
 
     #[ctor::ctor]
     fn init() {
@@ -740,9 +803,10 @@ mod tests {
         format:
           date: "%Y/%m/%d"
           fields:
-            date: 0
+            date: 1
             payee: 1
-            note: 6
+            note:
+              template: "{category} - {payee}"
             amount: 2
         rewrite: []
         "#};
@@ -758,7 +822,7 @@ mod tests {
             .fields
             .get(&FieldKey::Amount)
             .unwrap();
-        assert_eq!(*field_amount, FieldPos::Index(2));
+        assert_eq!(*field_amount, FieldPos::Index(one_based!(2)));
     }
 
     #[test]

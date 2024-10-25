@@ -324,14 +324,7 @@ impl FieldMap {
         let mut ki: HashMap<config::FieldKey, Field> = HashMap::with_capacity(config_mapping.len());
         for (&k, pos) in config_mapping {
             let field = match &pos {
-                config::FieldPos::Index(i) => {
-                    if *i == 0 {
-                        return Err(ImportError::Other(
-                            "column index is 1-origin, must be larger than 0".to_string(),
-                        ));
-                    }
-                    Ok(Field::ColumnIndex(*i - 1))
-                }
+                config::FieldPos::Index(i) => Ok(Field::ColumnIndex(i.as_zero_based())),
                 config::FieldPos::Label(label) => hm
                     .get(label.as_str())
                     .cloned()
@@ -450,10 +443,13 @@ impl extract::EntityMatcher for CsvMatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use config::*;
+
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
+
+    use super::config::{AccountType, FieldPos};
+    use crate::one_based;
 
     #[test]
     fn field_map_try_new_label_credit_debit() {
@@ -493,9 +489,9 @@ mod tests {
     #[test]
     fn field_map_try_new_index_amount() {
         let config: HashMap<FieldKey, FieldPos> = hashmap! {
-            FieldKey::Date => FieldPos::Index(1),
-            FieldKey::Payee => FieldPos::Index(2),
-            FieldKey::Amount => FieldPos::Index(3),
+            FieldKey::Date => FieldPos::Index(one_based!(1)),
+            FieldKey::Payee => FieldPos::Index(one_based!(2)),
+            FieldKey::Amount => FieldPos::Index(one_based!(3)),
         };
         let got = FieldMap::try_new(&config, &csv::StringRecord::from(vec!["unrelated"])).unwrap();
         assert_eq!(
@@ -517,15 +513,15 @@ mod tests {
     #[test]
     fn field_map_try_new_optionals() {
         let config: HashMap<FieldKey, FieldPos> = hashmap! {
-            FieldKey::Date => FieldPos::Index(1),
-            FieldKey::Payee => FieldPos::Index(2),
-            FieldKey::Amount => FieldPos::Index(3),
-            FieldKey::Balance => FieldPos::Index(4),
-            FieldKey::Category => FieldPos::Index(5),
-            FieldKey::Commodity => FieldPos::Index(6),
-            FieldKey::Rate => FieldPos::Index(7),
-            FieldKey::SecondaryAmount => FieldPos::Index(8),
-            FieldKey::SecondaryCommodity => FieldPos::Index(9),
+            FieldKey::Date => FieldPos::Index(one_based!(1)),
+            FieldKey::Payee => FieldPos::Index(one_based!(2)),
+            FieldKey::Amount => FieldPos::Index(one_based!(3)),
+            FieldKey::Balance => FieldPos::Index(one_based!(4)),
+            FieldKey::Category => FieldPos::Index(one_based!(5)),
+            FieldKey::Commodity => FieldPos::Index(one_based!(6)),
+            FieldKey::Rate => FieldPos::Index(one_based!(7)),
+            FieldKey::SecondaryAmount => FieldPos::Index(one_based!(8)),
+            FieldKey::SecondaryCommodity => FieldPos::Index(one_based!(9)),
         };
         let got = FieldMap::try_new(&config, &csv::StringRecord::from(vec!["unrelated"])).unwrap();
         assert_eq!(
@@ -553,11 +549,11 @@ mod tests {
     #[test]
     fn field_map_extract() {
         let config: HashMap<FieldKey, FieldPos> = hashmap! {
-            FieldKey::Date => FieldPos::Index(1),
+            FieldKey::Date => FieldPos::Index(one_based!(1)),
             FieldKey::Payee => FieldPos::Template(TemplateField { template: "{category} - {note}".parse().expect("this must be the correct template") }),
-            FieldKey::Amount => FieldPos::Index(2),
-            FieldKey::Category => FieldPos::Index(3),
-            FieldKey::Note => FieldPos::Index(4),
+            FieldKey::Amount => FieldPos::Index(one_based!(2)),
+            FieldKey::Category => FieldPos::Index(one_based!(3)),
+            FieldKey::Note => FieldPos::Index(one_based!(4)),
         };
         let fm = FieldMap::try_new(
             &config,
