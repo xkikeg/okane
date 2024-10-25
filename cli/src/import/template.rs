@@ -10,7 +10,39 @@ use winnow::{
     Parser,
 };
 
+use crate::one_based::{self, OneBasedIndex};
+
 use super::config::FieldKey;
+
+/// Key used in the template.
+/// It could be either `{<field_key_name>}`,
+/// or `{<number>}`.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum TemplateKey {
+    /// Named field.
+    Named(FieldKey),
+    /// Indexed field, specified as 0-origin index.
+    Indexed(OneBasedIndex),
+}
+
+impl Display for TemplateKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            // 1-origin index for UI.
+            TemplateKey::Indexed(i) => write!(f, "{}", i),
+            TemplateKey::Named(fk) => write!(f, "{}", fk.as_str()),
+        }
+    }
+}
+
+impl PartialEq<FieldKey> for TemplateKey {
+    fn eq(&self, other: &FieldKey) -> bool {
+        match self {
+            TemplateKey::Named(fk) => fk == other,
+            TemplateKey::Indexed(_) => false,
+        }
+    }
+}
 
 /// Template constructed from string which can render a String.
 ///
@@ -25,20 +57,23 @@ pub struct Template {
 pub enum ParseError {
     #[error("invalid template {0}")]
     InvalidTemplate(String),
-    #[error("unknown field_key {field_key}")]
-    UnknownFieldKey { field_key: String },
+    #[error("unknown template_key {template_key}: template key must be a positive integer or known field key")]
+    UnknownTemplateKey { template_key: String },
+    #[error("index-based template key must be a positive integer")]
+    InvalidIndexTemplateKey(#[from] one_based::ParseError),
 }
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum Segment {
     Literal(String),
-    Reference(FieldKey),
+    Reference(TemplateKey),
 }
 
 impl Display for Segment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Segment::Literal(s) => write!(f, "{}", s),
-            Segment::Reference(fk) => write!(f, "{{{}}}", fk.as_str()),
+            Segment::Reference(tk) => write!(f, "{{{}}}", tk),
         }
     }
 }
@@ -69,9 +104,10 @@ impl FromStr for Template {
             alt((
                 delimited(
                     one_of('{'),
-                    take_till(1.., b"{}").try_map(field_key_from_str),
+                    take_till(1.., b"{}").try_map(template_key_from_str),
                     one_of('}'),
-                ),
+                )
+                .map(Segment::Reference),
                 take_till(1.., b"{}")
                     .map(str::to_owned)
                     .map(Segment::Literal),
@@ -108,9 +144,9 @@ impl<'de> Deserialize<'de> for Template {
 
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError {
-    #[error("field_key {0:?} in template is not supported")]
-    FieldKeyUnsupported(FieldKey),
-    #[error("field_key {0:?} is self recurring in the template")]
+    #[error("template field {0} in template is not supported")]
+    FieldKeyUnsupported(TemplateKey),
+    #[error("template field {0:?} is self recurring in the template")]
     SelfRecusiveFieldKey(FieldKey),
 }
 
@@ -119,12 +155,15 @@ struct RenderedTemplate<'a> {
 }
 
 pub trait RenderValue<'a> {
-    fn query(&self, key: FieldKey) -> Option<&'a str>;
+    fn query(&self, key: TemplateKey) -> Option<&'a str>;
 }
 
 impl<'a> RenderValue<'a> for &HashMap<FieldKey, &'a str> {
-    fn query(&self, key: FieldKey) -> Option<&'a str> {
-        self.get(&key).copied()
+    fn query(&self, key: TemplateKey) -> Option<&'a str> {
+        match key {
+            TemplateKey::Named(fk) => self.get(&fk).copied(),
+            TemplateKey::Indexed(_) => None,
+        }
     }
 }
 
@@ -174,19 +213,22 @@ impl FieldKey {
     }
 }
 
-fn field_key_from_str(s: &str) -> Result<Segment, ParseError> {
-    let fk = match s {
-        "date" => Ok(FieldKey::Date),
-        "payee" => Ok(FieldKey::Payee),
-        "category" => Ok(FieldKey::Category),
-        "note" => Ok(FieldKey::Note),
-        "commodity" => Ok(FieldKey::Commodity),
-        "secondary_commodity" => Ok(FieldKey::SecondaryCommodity),
-        _ => Err(ParseError::UnknownFieldKey {
-            field_key: s.to_owned(),
+fn template_key_from_str(s: &str) -> Result<TemplateKey, ParseError> {
+    if s.chars().all(|x| x.is_ascii_digit()) {
+        let v: OneBasedIndex = s.parse()?;
+        return Ok(TemplateKey::Indexed(v));
+    }
+    match s {
+        "date" => Ok(TemplateKey::Named(FieldKey::Date)),
+        "payee" => Ok(TemplateKey::Named(FieldKey::Payee)),
+        "category" => Ok(TemplateKey::Named(FieldKey::Category)),
+        "note" => Ok(TemplateKey::Named(FieldKey::Note)),
+        "commodity" => Ok(TemplateKey::Named(FieldKey::Commodity)),
+        "secondary_commodity" => Ok(TemplateKey::Named(FieldKey::SecondaryCommodity)),
+        _ => Err(ParseError::UnknownTemplateKey {
+            template_key: s.to_owned(),
         }),
-    }?;
-    Ok(Segment::Reference(fk))
+    }
 }
 
 #[cfg(test)]
