@@ -22,6 +22,8 @@ pub struct Txn {
     /// Payee (or payer) of the transaction.
     payee: String,
 
+    comments: Vec<String>,
+
     /// Destination account.
     dest_account: Option<String>,
 
@@ -56,6 +58,7 @@ impl Txn {
             effective_date: None,
             code: None,
             payee: payee.to_string(),
+            comments: Vec::new(),
             dest_account: None,
             clear_state: None,
             transferred_amount: None,
@@ -81,6 +84,11 @@ impl Txn {
 
     pub fn code<'a>(&'a mut self, code: &str) -> &'a mut Txn {
         self.code = Some(code.to_string());
+        self
+    }
+
+    pub fn add_comment(&mut self, comment: String) -> &mut Txn {
+        self.comments.push(comment);
         self
     }
 
@@ -240,11 +248,17 @@ impl Txn {
                 ..syntax::Posting::new("Expenses:Commissions")
             });
         }
+        let metadata = self
+            .comments
+            .iter()
+            .map(|x| syntax::Metadata::Comment(Cow::Borrowed(x)))
+            .collect();
         Ok(syntax::Transaction {
             effective_date: self.effective_date,
             clear_state: syntax::ClearState::Cleared,
             code: self.code.as_deref().map(Into::into),
             posts,
+            metadata,
             ..syntax::Transaction::new(self.date, &self.payee)
         })
     }
