@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 /// From human point of view, often 1-based index is easier than 0-based.
 /// But program solely needs 0-based. `OneBasedIndex` provides
 /// safety and easiness to use.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct OneBasedIndex(usize);
 
 impl Display for OneBasedIndex {

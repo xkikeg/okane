@@ -14,9 +14,11 @@ use okane_core::syntax;
 use super::amount::OwnedAmount;
 use super::config::{self, FieldKey, TemplateField};
 use super::single_entry::{self, CommodityPair};
-use super::template::Template;
 use super::ImportError;
-use super::{extract, template};
+use super::{
+    extract,
+    template::{self, Template, TemplateKey},
+};
 
 fn str_to_comma_decimal(input: &str) -> Result<Option<Decimal>, ImportError> {
     if input.is_empty() {
@@ -202,13 +204,18 @@ struct MappedRecord<'a> {
 }
 
 impl<'a> template::RenderValue<'a> for MappedRecord<'a> {
-    fn query(&self, key: FieldKey) -> Option<&'a str> {
-        let key = self.field_map.field(key)?;
+    fn query(&self, key: TemplateKey) -> Option<&'a str> {
+        let key = match key {
+            // Clone here might have penalty on template,
+            // but it will be a failure path so good to go.
+            TemplateKey::Named(fk) => self.field_map.field(fk)?.clone(),
+            TemplateKey::Indexed(i) => Field::ColumnIndex(i.as_zero_based()),
+        };
         match key {
             // It might cause inifite loop if we resolve another template during template rendering.
             // Thus we only support simple column reference.
             Field::Template(_) => None,
-            Field::ColumnIndex(c) => self.record.get(*c),
+            Field::ColumnIndex(c) => self.record.get(c),
         }
     }
 }
