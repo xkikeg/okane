@@ -118,6 +118,11 @@ pub fn import<R: std::io::Read>(
         if !fragment.cleared {
             txn.clear_state(syntax::ClearState::Pending);
         }
+        if let Some(note) = fm.extract(FieldKey::Note, &r)? {
+            if !note.trim().is_empty() {
+                txn.add_comment(note.into_owned());
+            }
+        }
         if let Some(b) = balance {
             txn.balance(OwnedAmount {
                 value: b,
