@@ -8,6 +8,22 @@
 
 ### Fixed
 
+## [0.13.0] - 2024-10-28
+
+### Added
+
+* Added positional tracking to `syntax` types (https://github.com/xkikeg/okane/pull/183).
+* Supported int column index for template field (https://github.com/xkikeg/okane/pull/191).
+
+### Changed
+
+* **IMPORTANT** Use 1-based index for CSV columns (https://github.com/xkikeg/okane/pull/190).
+* Enhanced error message on semantic errors (https://github.com/xkikeg/okane/pull/186).
+* Renamed `repl` module to `syntax` (https://github.com/xkikeg/okane/pull/184).
+* Removed `datamodel` module (https://github.com/xkikeg/okane/pull/181, https://github.com/xkikeg/okane/pull/182).
+
+### Fixed
+
 ## [0.12.0] - 2024-09-03
 
 ### Added
