@@ -1,6 +1,4 @@
-mod testing;
-
-use pretty_assertions::assert_str_eq;
+pub mod testing;
 
 #[ctor::ctor]
 fn init() {
@@ -11,7 +9,7 @@ fn init() {
 fn test_import_csv_index() {
     let config = testing::TESTDATA_DIR.join("test_config.yml");
     let input = testing::TESTDATA_DIR.join("index_amount.csv");
-    let want = testing::read_as_utf8("index_amount.ledger").expect("cannot read want");
+    let golden = testing::Golden::new("index_amount.ledger").expect("cannot create golden");
     let mut result: Vec<u8> = Vec::new();
 
     okane::cmd::ImportCmd {
@@ -20,16 +18,16 @@ fn test_import_csv_index() {
     }
     .run(&mut result)
     .expect("execution failed");
-
     let got = String::from_utf8(result).expect("invalid UTF-8");
-    assert_str_eq!(want, got);
+
+    golden.assert(&got);
 }
 
 #[test]
 fn test_import_csv_label() {
     let config = testing::TESTDATA_DIR.join("test_config.yml");
     let input = testing::TESTDATA_DIR.join("label_credit_debit.csv");
-    let want = testing::read_as_utf8("label_credit_debit.ledger").expect("cannot read want");
+    let golden = testing::Golden::new("label_credit_debit.ledger").expect("cannot create golden");
 
     let mut result: Vec<u8> = Vec::new();
     okane::cmd::ImportCmd {
@@ -39,14 +37,15 @@ fn test_import_csv_label() {
     .run(&mut result)
     .expect("execution failed");
     let got = String::from_utf8(result).expect("invalid UTF-8");
-    assert_str_eq!(want, got);
+
+    golden.assert(&got);
 }
 
 #[test]
 fn test_import_csv_multi_currency() {
     let config = testing::TESTDATA_DIR.join("test_config.yml");
     let input = testing::TESTDATA_DIR.join("csv_multi_currency.csv");
-    let want = testing::read_as_utf8("csv_multi_currency.ledger").expect("cannot read want");
+    let golden = testing::Golden::new("csv_multi_currency.ledger").expect("cannot create golden");
 
     let mut result: Vec<u8> = Vec::new();
     okane::cmd::ImportCmd {
@@ -56,5 +55,24 @@ fn test_import_csv_multi_currency() {
     .run(&mut result)
     .expect("execution failed");
     let got = String::from_utf8(result).expect("invalid UTF-8");
-    assert_str_eq!(want, got);
+
+    golden.assert(&got);
+}
+
+#[test]
+fn test_import_csv_template() {
+    let config = testing::TESTDATA_DIR.join("test_config.yml");
+    let input = testing::TESTDATA_DIR.join("csv_template.csv");
+    let golden = testing::Golden::new("csv_template.ledger").expect("cannot create golden");
+
+    let mut result: Vec<u8> = Vec::new();
+    okane::cmd::ImportCmd {
+        config,
+        source: input,
+    }
+    .run(&mut result)
+    .expect("execution failed");
+    let got = String::from_utf8(result).expect("invalid UTF-8");
+
+    golden.assert(&got);
 }

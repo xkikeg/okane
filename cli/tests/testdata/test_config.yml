@@ -55,9 +55,7 @@ format:
   delimiter: "\t"
   fields:
     date: お取り引き日
-    payee:
-      template: "{commodity} - {note}"
-    note: 摘要
+    payee: 摘要
     debit: 出金額
     credit: 入金額
     balance: 残高
@@ -99,6 +97,51 @@ rewrite:
   - matcher:
       payee: Hamachi Super
     account: Expenses:Grocery
+---
+path: testdata/csv_template.csv
+encoding: UTF-8
+account: Assets:Brokers:Schrank
+account_type: asset
+commodity:
+  primary: USD
+operator: Broker Schrank
+format:
+  date: "%m/%d/%Y"
+  fields:
+    date: Date
+    payee:
+      template: "{category} - {note}"
+    category: Action
+    note: Description
+    secondary_commodity: Symbol
+    secondary_amount: Quantity
+    rate: Price
+    charge: "Fees & Comm"
+    amount: Amount
+  row_order: new_to_old
+rewrite:
+  - account: Assets:Brokers:Schrank
+    conversion: {}
+    matcher:
+    - category: "Reinvest Shares"
+    - category: "Buy"
+  - account: Income:Dividend
+    matcher:
+    - category: Reinvest Dividend
+  - account: Income:Interest
+    matcher:
+    - category: Credit Interest
+  - account: Assets:Receivables:Advances
+    matcher:
+    - payee: WIRED FUNDS FEE
+    - payee: WAIVE WIRE FEE
+  - account: Assets:Wire:Unknown
+    pending: true
+    matcher:
+    - payee: Wire Sent
+  - account: Expenses:Tax:Income
+    matcher:
+    - category: NRA Tax Adj
 ---
 path: testdata/iso_camt
 encoding: UTF-8
