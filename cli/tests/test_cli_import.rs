@@ -1,4 +1,4 @@
-mod testing;
+pub mod testing;
 
 use std::io::{self, Write};
 

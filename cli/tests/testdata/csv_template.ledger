@@ -1,0 +1,40 @@
+2024/07/30 * Credit Interest - SCHWAB1 INT 06/27-07/29
+    ; SCHWAB1 INT 06/27-07/29
+    Income:Interest                           -11.81 USD
+    Assets:Brokers:Schrank                     11.81 USD
+
+2024/08/29 * Credit Interest - SCHWAB1 INT 07/30-08/28
+    ; SCHWAB1 INT 07/30-08/28
+    Income:Interest                            -6.60 USD
+    Assets:Brokers:Schrank                      6.60 USD
+
+2024/09/24 * NRA Tax Adj - VANGUARD HIGH DIVIDEND YIELD ETF
+    ; VANGUARD HIGH DIVIDEND YIELD ETF
+    Assets:Brokers:Schrank                     -0.26 USD
+    Expenses:Tax:Income                         0.26 USD
+
+2024/09/24 * Reinvest Dividend - VANGUARD HIGH DIVIDEND YIELD ETF
+    ; VANGUARD HIGH DIVIDEND YIELD ETF
+    Income:Dividend                            -1.72 USD
+    Assets:Brokers:Schrank                      1.72 USD
+
+2024/09/24 * Service Fee - WIRED FUNDS FEE
+    ; WIRED FUNDS FEE
+    Assets:Brokers:Schrank                    -15.00 USD
+    Assets:Receivables:Advances                15.00 USD
+
+2024/09/24 * Misc Cash Entry - WAIVE WIRE FEE
+    ; WAIVE WIRE FEE
+    Assets:Receivables:Advances               -15.00 USD
+    Assets:Brokers:Schrank                     15.00 USD
+
+2024/09/24 * Wire Sent - WIRED FUNDS DISBURSED
+    ; WIRED FUNDS DISBURSED
+    Assets:Brokers:Schrank                  -8000.00 USD
+    ! Assets:Wire:Unknown                    8000.00 USD
+
+2024/09/24 * Reinvest Shares - VANGUARD HIGH DIVIDEND YIELD ETF
+    ; VANGUARD HIGH DIVIDEND YIELD ETF
+    Assets:Brokers:Schrank                     -1.46 USD
+    Assets:Brokers:Schrank                    0.0114 VYM @ 127.90 USD
+
