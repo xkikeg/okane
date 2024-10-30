@@ -28,6 +28,7 @@ impl<'arena> Account<'arena> {
 
 /// `Interner` for `Account`.
 pub(super) type AccountStore<'arena> = InternStore<'arena, Account<'arena>>;
+
 /// Context object extensively used across Ledger file evaluation.
 pub struct ReportContext<'ctx> {
     pub(super) arena: &'ctx Bump,

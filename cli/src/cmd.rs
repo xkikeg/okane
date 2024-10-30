@@ -1,6 +1,7 @@
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::BufReader;
+use std::path::PathBuf;
 
 use bumpalo::Bump;
 use clap::{Args, Subcommand};
@@ -25,6 +26,9 @@ pub enum Error {
     Load(#[from] load::LoadError),
     #[error("failed to report")]
     Report(#[from] report::ReportError),
+    // TODO: This is temporal, remove.
+    #[error("failed to load price DB")]
+    PriceDB(#[from] report::PriceDBError),
 }
 
 #[derive(Subcommand, Debug)]
@@ -194,6 +198,10 @@ impl AccountsCmd {
 
 #[derive(Args, Debug)]
 pub struct BalanceCmd {
+    #[command(flatten)]
+    eval_options: EvalOptions,
+
+    /// Path to the Ledger file.
     source: std::path::PathBuf,
 }
 
@@ -204,6 +212,10 @@ impl BalanceCmd {
     {
         let arena = Bump::new();
         let mut ctx = report::ReportContext::new(&arena);
+        // TODO: properly integrate with price DB.
+        if let Some(price_db) = &self.eval_options.price_db {
+            report::load_price_db(&PathBuf::from(price_db))?;
+        }
         let (_, balance) = report::process(&mut ctx, load::new_loader(self.source))?;
         let accounts = ctx.all_accounts();
         for account in &accounts {
@@ -219,7 +231,13 @@ impl BalanceCmd {
 
 #[derive(Args, Debug)]
 pub struct RegisterCmd {
+    #[command(flatten)]
+    eval_options: EvalOptions,
+
+    /// Path to the Ledger file.
     source: std::path::PathBuf,
+
+    /// [Optional] Account to track the register.
     account: Option<String>,
 }
 
@@ -254,4 +272,11 @@ impl RegisterCmd {
         }
         Ok(())
     }
+}
+
+#[derive(Args, Debug)]
+pub struct EvalOptions {
+    /// Path to the Price DB.
+    #[arg(long)]
+    price_db: Option<String>,
 }
