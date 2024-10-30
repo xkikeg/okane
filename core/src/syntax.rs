@@ -10,7 +10,7 @@ pub mod tracked;
 use std::{borrow::Cow, fmt};
 
 use bounded_static::ToStatic;
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime};
 use derive_where::derive_where;
 
 #[cfg(test)]
@@ -320,4 +320,15 @@ pub enum Exchange<'i> {
     /// `200 JPY @ (1 / 100 USD)`
     /// means the amount was 200 JPY, where 1 JPY is equal to 1/100 USD.
     Rate(expr::ValueExpr<'i>),
+}
+
+/// Price DB entry, which contains one commodity price
+/// in another commodity on a particular date time.
+#[derive(Debug, PartialEq, Eq, ToStatic)]
+pub struct PriceDBEntry<'i> {
+    pub datetime: NaiveDateTime,
+    /// Target commodity of the price.
+    pub target: Cow<'i, str>,
+    /// The rate of the target commodity.
+    pub rate: expr::ValueExpr<'i>,
 }

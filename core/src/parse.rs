@@ -7,6 +7,7 @@ mod error;
 mod expr;
 mod metadata;
 mod posting;
+pub(crate) mod price;
 mod primitive;
 pub(crate) mod transaction;
 

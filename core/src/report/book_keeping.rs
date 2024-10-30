@@ -238,7 +238,7 @@ fn check_balance<'ctx>(
         return Ok(());
     }
     if let Some((a1, a2)) = balance.maybe_pair() {
-        log::info!("deduced price {} == {}", a1, a2);
+        log::debug!("deduced price {} == {}", a1, a2);
         return Ok(());
     }
     if !balance.is_zero() {
