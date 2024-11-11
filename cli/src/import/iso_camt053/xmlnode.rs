@@ -455,6 +455,8 @@ pub struct Date {
 mod tests {
     use super::*;
 
+    use std::path::{Path, PathBuf};
+
     use indoc::indoc;
     use pretty_assertions::assert_eq;
 
@@ -548,5 +550,21 @@ mod tests {
         "};
         let party: RelatedParty = quick_xml::de::from_str(input).unwrap();
         assert_eq!("Albert Einstein", party.name());
+    }
+
+    #[test]
+    fn parse_complete_camt_file() {
+        let input: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("testdata")
+            .join("iso_camt.xml");
+        let encoded = std::fs::read(&input).expect("must read iso_camt.xml");
+
+        let decoded: Document =
+            quick_xml::de::from_reader(encoded.as_slice()).expect("must ok to parse");
+
+        assert_eq!(decoded.bank_to_customer.statements.len(), 1);
+        assert_eq!(decoded.bank_to_customer.statements[0].balance.len(), 2);
+        assert_eq!(decoded.bank_to_customer.statements[0].entries.len(), 10);
     }
 }
