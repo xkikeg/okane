@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.10">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>123456-1730472609678</MsgId>
+      <CreDtTm>2024-11-01T14:50:09.678834942Z</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>123456-123456789-1730472609678</Id>
+      <CreDtTm>2024-11-01T14:50:09.678834942Z</CreDtTm>
+      <FrToDt>
+        <FrDtTm>2024-01-01T00:00:00+01:00</FrDtTm>
+        <ToDtTm>2024-11-01T00:00:00+01:00</ToDtTm>
+      </FrToDt>
+      <Acct>
+        <Id>
+          <Othr>
+            <Id>123456789</Id>
+            <SchmeNm>
+              <Prtry>Wise Balance ID</Prtry>
+            </SchmeNm>
+            <Issr>Wise Payments Ltd.</Issr>
+          </Othr>
+        </Id>
+        <Ccy>CHF</Ccy>
+        <Ownr>
+          <Nm>Wilhelm Tell</Nm>
+          <PstlAdr>
+            <AdrTp>
+              <Cd>ADDR</Cd>
+            </AdrTp>
+            <PstCd>6460</PstCd>
+            <TwnNm>Altdorf</TwnNm>
+            <AdrLine>Rynächtstrasse 999</AdrLine>
+          </PstlAdr>
+          <Id>
+            <PrvtId>
+              <Othr>
+                <Id>123456</Id>
+                <SchmeNm>
+                  <Cd>CUST</Cd>
+                </SchmeNm>
+              </Othr>
+            </PrvtId>
+          </Id>
+        </Ownr>
+        <Svcr>
+          <FinInstnId>
+            <Nm>Wise Payments Ltd.</Nm>
+            <PstlAdr>
+              <AdrTp>
+                <Cd>ADDR</Cd>
+              </AdrTp>
+              <PstCd>E1 6JJ</PstCd>
+              <TwnNm>London</TwnNm>
+              <AdrLine>6th Floor, The Tea Building, 56 Shoreditch High Street</AdrLine>
+            </PstlAdr>
+          </FinInstnId>
+        </Svcr>
+      </Acct>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>CLBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="CHF">1285.32</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <DtTm>2024-11-01T00:00:00+01:00</DtTm>
+        </Dt>
+      </Bal>
+      <TxsSummry>
+        <TtlNtries>
+          <NbOfNtries>10</NbOfNtries>
+          <Sum>1285.32</Sum>
+          <TtlNetNtry>
+            <Amt>1285.32</Amt>
+            <CdtDbtInd>CRDT</CdtDbtInd>
+          </TtlNetNtry>
+        </TtlNtries>
+        <TtlCdtNtries>
+          <NbOfNtries>3</NbOfNtries>
+          <Sum>2800.90</Sum>
+        </TtlCdtNtries>
+        <TtlDbtNtries>
+          <NbOfNtries>7</NbOfNtries>
+          <Sum>-1515.58</Sum>
+        </TtlDbtNtries>
+      </TxsSummry>
+      <Ntry>
+        <Amt Ccy="CHF">942.15</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>
+          <Cd>BOOK</Cd>
+        </Sts>
+        <BookgDt>
+          <DtTm>2024-10-31T23:58:38.150347+01:00</DtTm>
+        </BookgDt>
+        <BkTxCd>
+          <Prtry>
+            <Cd>BALANCE-3425897</Cd>
+          </Prtry>
+        </BkTxCd>
+        <AmtDtls>
+          <TxAmt>
+            <Amt Ccy="CHF">942.15</Amt>
+            <CcyXchg>
+              <SrcCcy>CHF</SrcCcy>
+              <TrgtCcy>EUR</TrgtCcy>
+              <UnitCcy>CHF</UnitCcy>
+              <XchgRate>1.06384</XchgRate>
+            </CcyXchg>
+          </TxAmt>
+        </AmtDtls>
+        <Chrgs>
+          <TtlChrgsAndTaxAmt Ccy="CHF">2.16</TtlChrgsAndTaxAmt>
+        </Chrgs>
+        <AddtlNtryInf>Converted 942.15 CHF to 1,000.00 EUR</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">2000.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>
+          <Cd>BOOK</Cd>
+        </Sts>
+        <BookgDt>
+          <DtTm>2024-10-31T11:34:16.863523+01:00</DtTm>
+        </BookgDt>
+        <BkTxCd>
+          <Prtry>
+            <Cd>TRANSFER-453789</Cd>
+          </Prtry>
+        </BkTxCd>
+        <Chrgs>
+          <TtlChrgsAndTaxAmt Ccy="CHF">0.00</TtlChrgsAndTaxAmt>
+        </Chrgs>
+        <AddtlNtryInf>Topped up balance</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">89.60</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>
+          <Cd>BOOK</Cd>
+        </Sts>
+        <BookgDt>
+          <DtTm>2024-10-20T10:26:01.140704+01:00</DtTm>
+        </BookgDt>
+        <BkTxCd>
+          <Prtry>
+            <Cd>CARD-9254382</Cd>
+          </Prtry>
+        </BkTxCd>
+        <Chrgs>
+          <TtlChrgsAndTaxAmt Ccy="CHF">0.00</TtlChrgsAndTaxAmt>
+        </Chrgs>
+        <AddtlNtryInf>Card transaction of 89.60 CHF issued by Great Food Zürich</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">400.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>
+          <Cd>BOOK</Cd>
+        </Sts>
+        <BookgDt>
+          <DtTm>2024-10-08T13:02:05.273214+01:00</DtTm>
+        </BookgDt>
+        <BkTxCd>
+          <Prtry>
+            <Cd>BALANCE-5908432</Cd>
+          </Prtry>
+        </BkTxCd>
+        <AmtDtls>
+          <TxAmt>
+            <Amt Ccy="CHF">400.00</Amt>
+            <CcyXchg>
+              <SrcCcy>CHF</SrcCcy>
+              <TrgtCcy>EUR</TrgtCcy>
+              <UnitCcy>CHF</UnitCcy>
+              <XchgRate>1.06246</XchgRate>
+            </CcyXchg>
+          </TxAmt>
+        </AmtDtls>
+        <Chrgs>
+          <TtlChrgsAndTaxAmt Ccy="CHF">0.92</TtlChrgsAndTaxAmt>
+        </Chrgs>
+        <AddtlNtryInf>Converted 400.00 CHF to 424.01 EUR</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">52.28</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>
+          <Cd>BOOK</Cd>
+        </Sts>
+        <BookgDt>
+          <DtTm>2024-10-08T13:00:49.950922+01:00</DtTm>
+        </BookgDt>
+        <BkTxCd>
+          <Prtry>
+            <Cd>CARD-23458903</Cd>
+          </Prtry>
+        </BkTxCd>
+        <AmtDtls>
+          <TxAmt>
+            <Amt Ccy="CHF">52.28</Amt>
+            <CcyXchg>
+              <SrcCcy>CHF</SrcCcy>
+              <TrgtCcy>EUR</TrgtCcy>
+              <UnitCcy>CHF</UnitCcy>
+              <XchgRate>1.06238</XchgRate>
+            </CcyXchg>
+          </TxAmt>
+        </AmtDtls>
+        <Chrgs>
+          <TtlChrgsAndTaxAmt Ccy="CHF">0.12</TtlChrgsAndTaxAmt>
+        </Chrgs>
+        <AddtlNtryInf>Card transaction of 71.20 EUR issued by Ichiran Zürich</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">1.33</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>
+          <Cd>BOOK</Cd>
+        </Sts>
+        <BookgDt>
+          <DtTm>2024-10-07T20:19:07.80857+01:00</DtTm>
+        </BookgDt>
+        <BkTxCd>
+          <Prtry>
+            <Cd>CARD-54398024</Cd>
+          </Prtry>
+        </BkTxCd>
+        <Chrgs>
+          <TtlChrgsAndTaxAmt Ccy="CHF">0.00</TtlChrgsAndTaxAmt>
+        </Chrgs>
+        <AddtlNtryInf>Card transaction of 1.33 CHF issued by Great Food Zürich</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">29.32</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>
+          <Cd>BOOK</Cd>
+        </Sts>
+        <BookgDt>
+          <DtTm>2024-10-07T18:43:38.517265+01:00</DtTm>
+        </BookgDt>
+        <BkTxCd>
+          <Prtry>
+            <Cd>CARD-2718493</Cd>
+          </Prtry>
+        </BkTxCd>
+        <Chrgs>
+          <TtlChrgsAndTaxAmt Ccy="CHF">0.00</TtlChrgsAndTaxAmt>
+        </Chrgs>
+        <AddtlNtryInf>Card transaction of 29.32 CHF issued by Great Food Pending Zürich</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">0.90</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>
+          <Cd>BOOK</Cd>
+        </Sts>
+        <BookgDt>
+          <DtTm>2024-10-07T18:42:57.26457+01:00</DtTm>
+        </BookgDt>
+        <BkTxCd>
+          <Prtry>
+            <Cd>CARD-2390548</Cd>
+          </Prtry>
+        </BkTxCd>
+        <Chrgs>
+          <TtlChrgsAndTaxAmt Ccy="CHF">0.00</TtlChrgsAndTaxAmt>
+        </Chrgs>
+        <AddtlNtryInf>Card transaction of 0.90 CHF issued by Great Food Zürich</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">0.90</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>
+          <Cd>BOOK</Cd>
+        </Sts>
+        <BookgDt>
+          <DtTm>2024-10-07T18:42:49.545971+01:00</DtTm>
+        </BookgDt>
+        <BkTxCd>
+          <Prtry>
+            <Cd>CARD-1871239575</Cd>
+          </Prtry>
+        </BkTxCd>
+        <Chrgs>
+          <TtlChrgsAndTaxAmt Ccy="CHF">0.00</TtlChrgsAndTaxAmt>
+        </Chrgs>
+        <AddtlNtryInf>Card transaction of 0.90 CHF issued by Example Com help.example.com</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">800.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>
+          <Cd>BOOK</Cd>
+        </Sts>
+        <BookgDt>
+          <DtTm>2024-10-04T12:17:04.000971+01:00</DtTm>
+        </BookgDt>
+        <BkTxCd>
+          <Prtry>
+            <Cd>TRANSFER-385345</Cd>
+          </Prtry>
+        </BkTxCd>
+        <Chrgs>
+          <TtlChrgsAndTaxAmt Ccy="CHF">0.00</TtlChrgsAndTaxAmt>
+        </Chrgs>
+        <AddtlNtryInf>Topped up balance</AddtlNtryInf>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

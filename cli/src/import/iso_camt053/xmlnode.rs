@@ -83,14 +83,14 @@ pub struct Entry {
     #[serde(rename = "CdtDbtInd")]
     pub credit_or_debit: CreditDebitIndicator,
     #[serde(rename = "BookgDt")]
-    pub booking_date: Date,
+    pub booking_date: DateHolder,
     #[serde(rename = "ValDt")]
-    pub value_date: Date,
+    pub value_date: Option<DateHolder>,
     #[serde(rename = "BkTxCd")]
     pub bank_transaction_code: BankTransactionCode,
     #[serde(rename = "Chrgs")]
     pub charges: Option<Charges>,
-    #[serde(rename = "NtryDtls")]
+    #[serde(rename = "NtryDtls", default)]
     pub details: EntryDetails,
     #[serde(rename = "AddtlNtryInf")]
     pub additional_info: String,
@@ -99,7 +99,23 @@ pub struct Entry {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BankTransactionCode {
     #[serde(rename = "Domn")]
-    pub domain: Domain,
+    pub domain: Option<Domain>,
+    #[serde(rename = "Prtry")]
+    pub proprietary: Option<Proprietary>,
+}
+
+impl BankTransactionCode {
+    pub fn domain_code(&self) -> Option<DomainCode> {
+        self.domain.as_ref().map(|x| x.code.value)
+    }
+
+    pub fn domain_family_code(&self) -> Option<DomainFamilyCode> {
+        self.domain.as_ref().map(|x| x.family.code.value)
+    }
+
+    pub fn domain_sub_family_code(&self) -> Option<DomainSubFamilyCode> {
+        self.domain.as_ref().map(|x| x.family.sub_family_code.value)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -124,7 +140,7 @@ pub struct DomainCodeValue {
     pub value: DomainCode,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
 pub enum DomainCode {
     #[serde(rename = "PMNT")]
     Payment,
@@ -142,7 +158,7 @@ pub struct DomainSubFamilyCodeValue {
     pub value: DomainSubFamilyCode,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
 pub enum DomainFamilyCode {
     #[serde(rename = "ICDT")]
     IssuedCreditTransfers,
@@ -152,7 +168,7 @@ pub enum DomainFamilyCode {
     ReceivedDirectDebits,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
 pub enum DomainSubFamilyCode {
     #[serde(rename = "AUTT")]
     AutomaticTransfer,
@@ -169,6 +185,14 @@ pub enum DomainSubFamilyCode {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Proprietary {
+    #[serde(rename = "Cd")]
+    pub code: String,
+    #[serde(rename = "Issr")]
+    pub issuer: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct EntryDetails {
     #[serde(rename = "Btch", default)]
     pub batch: Batch,
@@ -431,7 +455,7 @@ pub struct AmountDetails {
 pub struct Charges {
     #[serde(rename = "TtlChrgsAndTaxAmt")]
     pub total: Option<Amount>,
-    #[serde(rename = "Rcrd")]
+    #[serde(rename = "Rcrd", default)]
     pub records: Vec<ChargeRecord>,
 }
 
@@ -446,9 +470,42 @@ pub struct ChargeRecord {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Date {
+pub struct DateHolder {
+    #[serde(rename = "$value")]
+    value: Date,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Date {
     #[serde(rename = "Dt")]
-    pub date: chrono::NaiveDate,
+    Date(chrono::NaiveDate),
+    #[serde(rename = "DtTm")]
+    DateTime(chrono::DateTime<chrono::FixedOffset>),
+}
+
+impl DateHolder {
+    /// Creates instance from NaiveDate.
+    #[cfg(test)]
+    pub fn from_naive_date(date: chrono::NaiveDate) -> Self {
+        Self {
+            value: Date::Date(date),
+        }
+    }
+
+    /// Returns the naive local date for the Date.
+    pub fn as_naive_date(&self) -> chrono::NaiveDate {
+        self.value.as_naive_date()
+    }
+}
+
+impl Date {
+    /// Returns the naive local date for the Date.
+    pub fn as_naive_date(&self) -> chrono::NaiveDate {
+        match &self {
+            Self::Date(d) => *d,
+            Self::DateTime(d) => d.date_naive(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -553,18 +610,31 @@ mod tests {
     }
 
     #[test]
-    fn parse_complete_camt_file() {
-        let input: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests")
-            .join("testdata")
-            .join("iso_camt.xml");
+    fn parse_swiss_bank_camt_file() {
+        let input: PathBuf =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/iso_camt.xml");
         let encoded = std::fs::read(&input).expect("must read iso_camt.xml");
 
         let decoded: Document =
             quick_xml::de::from_reader(encoded.as_slice()).expect("must ok to parse");
 
+        // For now we only have limited assertion as the entire message can be too large.
         assert_eq!(decoded.bank_to_customer.statements.len(), 1);
         assert_eq!(decoded.bank_to_customer.statements[0].balance.len(), 2);
+        assert_eq!(decoded.bank_to_customer.statements[0].entries.len(), 10);
+    }
+
+    #[test]
+    fn parse_wise_camt_file() {
+        let input: PathBuf =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/iso_camt_wise.xml");
+        let encoded = std::fs::read(&input).expect("must read iso_camt_wise.xml");
+
+        let decoded: Document =
+            quick_xml::de::from_reader(encoded.as_slice()).expect("must ok to parse");
+
+        assert_eq!(decoded.bank_to_customer.statements.len(), 1);
+        assert_eq!(decoded.bank_to_customer.statements[0].balance.len(), 1);
         assert_eq!(decoded.bank_to_customer.statements[0].entries.len(), 10);
     }
 }

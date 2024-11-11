@@ -2,6 +2,7 @@ mod xmlnode;
 
 use std::convert::{TryFrom, TryInto};
 
+use chrono::NaiveDate;
 use either::Either;
 use regex::Regex;
 use rust_decimal::Decimal;
@@ -13,6 +14,16 @@ use super::config;
 use super::extract;
 use super::single_entry::{self, CommodityPair};
 use super::ImportError;
+
+impl xmlnode::Entry {
+    /// Returns value_date if available, otherwise booking date.
+    fn guess_value_date(&self) -> NaiveDate {
+        self.value_date
+            .as_ref()
+            .unwrap_or(&self.booking_date)
+            .as_naive_date()
+    }
+}
 
 pub fn import<R>(r: R, config: &config::ConfigEntry) -> Result<Vec<single_entry::Txn>, ImportError>
 where
@@ -26,7 +37,7 @@ where
         if let Some(opening_balance) = find_balance(&stmt, xmlnode::BalanceCode::Opening) {
             if let Some(first) = stmt.entries.first() {
                 let mut txn = single_entry::Txn::new(
-                    first.value_date.date,
+                    first.guess_value_date(),
                     "Initial Balance",
                     OwnedAmount {
                         commodity: opening_balance.commodity.clone(),
@@ -59,11 +70,11 @@ where
                     );
                 }
                 let mut txn = single_entry::Txn::new(
-                    entry.value_date.date,
+                    entry.guess_value_date(),
                     fragment.payee.unwrap_or("unknown payee"),
                     amount,
                 );
-                txn.effective_date(entry.booking_date.date)
+                txn.effective_date(entry.booking_date.as_naive_date())
                     .dest_account_option(fragment.account);
                 if !fragment.cleared {
                     txn.clear_state(syntax::ClearState::Pending);
@@ -83,11 +94,11 @@ where
                     log::warn!("account not set @ {:?} {}", code, fragment.payee.unwrap());
                 }
                 let mut txn = single_entry::Txn::new(
-                    entry.value_date.date,
+                    entry.guess_value_date(),
                     fragment.payee.unwrap_or("unknown payee"),
                     amount,
                 );
-                txn.effective_date(entry.booking_date.date)
+                txn.effective_date(entry.booking_date.as_naive_date())
                     .code_option(code)
                     .dest_account_option(fragment.account);
                 if !fragment.cleared {
@@ -259,20 +270,14 @@ impl extract::EntityMatcher for FieldMatch {
         use either::Either;
         let has_match = match self {
             FieldMatch::DomainCode(code) => {
-                Either::Left(*code == entry.bank_transaction_code.domain.code.value)
+                Either::Left(*code == entry.bank_transaction_code.domain_code()?)
             }
             FieldMatch::DomainFamily(code) => {
-                Either::Left(*code == entry.bank_transaction_code.domain.family.code.value)
+                Either::Left(*code == entry.bank_transaction_code.domain_family_code()?)
             }
-            FieldMatch::DomainSubFamily(code) => Either::Left(
-                *code
-                    == entry
-                        .bank_transaction_code
-                        .domain
-                        .family
-                        .sub_family_code
-                        .value,
-            ),
+            FieldMatch::DomainSubFamily(code) => {
+                Either::Left(*code == entry.bank_transaction_code.domain_sub_family_code()?)
+            }
             FieldMatch::RegexMatch(fd, re) => {
                 let target: Option<&str> = match fd {
                     MatchField::CreditorName => transaction
@@ -338,14 +343,14 @@ mod tests {
             credit_or_debit: xmlnode::CreditDebitIndicator {
                 value: xmlnode::CreditOrDebit::Credit,
             },
-            booking_date: xmlnode::Date {
-                date: NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
-            },
-            value_date: xmlnode::Date {
-                date: NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
-            },
+            booking_date: xmlnode::DateHolder::from_naive_date(
+                NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
+            ),
+            value_date: Some(xmlnode::DateHolder::from_naive_date(
+                NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
+            )),
             bank_transaction_code: xmlnode::BankTransactionCode {
-                domain: xmlnode::Domain {
+                domain: Some(xmlnode::Domain {
                     code: xmlnode::DomainCodeValue {
                         value: xmlnode::DomainCode::Payment,
                     },
@@ -357,7 +362,8 @@ mod tests {
                             value: xmlnode::DomainSubFamilyCode::AutomaticTransfer,
                         },
                     },
-                },
+                }),
+                proprietary: None,
             },
             charges: None,
             additional_info: "entry additional info".to_string(),
