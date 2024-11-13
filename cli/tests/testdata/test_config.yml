@@ -143,7 +143,7 @@ rewrite:
     matcher:
     - category: NRA Tax Adj
 ---
-path: testdata/iso_camt
+path: testdata/iso_camt.
 encoding: UTF-8
 account_type: asset
 operator: Okane Bank (fee)

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::fs;
 
 use lazy_static::lazy_static;
+use log::warn;
 use pretty_assertions::assert_str_eq;
 
 lazy_static! {
@@ -36,8 +37,13 @@ impl Golden {
     pub fn new(filename: &str) -> Result<Self, std::io::Error> {
         let path = TESTDATA_DIR.join(filename);
         let content = read_as_utf8(filename).or_else(|e| {
-            if is_update_golden() && e.kind() == std::io::ErrorKind::NotFound {
-                Ok(String::new())
+            if e.kind() == std::io::ErrorKind::NotFound {
+                if is_update_golden() {
+                    Ok(String::new())
+                } else {
+                    warn!("Golden not found: pass UPDATE_GOLDEN=1");
+                    Err(e)
+                }
             } else {
                 Err(e)
             }
@@ -56,6 +62,10 @@ impl Golden {
         } else {
             want = &self.content;
         }
-        assert_str_eq!(want, got);
+        assert_str_eq!(
+            want,
+            got,
+            "comparison against golden failed. Pass UPDATE_GOLDEN=1 to update the golden."
+        );
     }
 }
