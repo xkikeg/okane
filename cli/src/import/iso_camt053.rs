@@ -2,6 +2,7 @@ mod xmlnode;
 
 use std::convert::{TryFrom, TryInto};
 
+use either::Either;
 use regex::Regex;
 use rust_decimal::Decimal;
 
@@ -38,11 +39,15 @@ where
             }
         }
         let closing_balance = find_balance(&stmt, xmlnode::BalanceCode::Closing);
-        for entry in stmt.entries {
+        let entries = match &config.format.row_order {
+            config::RowOrder::OldToNew => Either::Left(stmt.entries.iter()),
+            config::RowOrder::NewToOld => Either::Right(stmt.entries.iter().rev()),
+        };
+        for entry in entries {
             if entry.details.transactions.is_empty() {
                 // TODO(kikeg): Fix this code repetition.
                 let amount = entry.amount.to_data(entry.credit_or_debit.value);
-                let fragment = extractor.extract((&entry, None));
+                let fragment = extractor.extract((entry, None));
                 if fragment.payee.is_none() {
                     log::warn!("payee not set @ {:?} {:?}", entry.booking_date, amount);
                 } else if fragment.account.is_none() {
@@ -70,7 +75,7 @@ where
                 let amount = transaction
                     .amount
                     .to_data(transaction.credit_or_debit.value);
-                let fragment = extractor.extract((&entry, Some(transaction)));
+                let fragment = extractor.extract((entry, Some(transaction)));
                 let code = transaction.refs.account_servicer_reference.as_deref();
                 if fragment.payee.is_none() {
                     log::warn!("payee not set @ {:?}", code);
