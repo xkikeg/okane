@@ -195,6 +195,7 @@ enum MatchField {
     DebtorAccountId,
     UltimateDebtorName,
     RemittanceUnstructuredInfo,
+    AdditionalEntryInfo,
     AdditionalTransactionInfo,
     Payee,
 }
@@ -210,6 +211,7 @@ fn to_field(f: config::RewriteField) -> Result<MatchField, ImportError> {
         config::RewriteField::RemittanceUnstructuredInfo => {
             Some(MatchField::RemittanceUnstructuredInfo)
         }
+        config::RewriteField::AdditionalEntryInfo => Some(MatchField::AdditionalEntryInfo),
         config::RewriteField::AdditionalTransactionInfo => {
             Some(MatchField::AdditionalTransactionInfo)
         }
@@ -301,6 +303,7 @@ impl extract::EntityMatcher for FieldMatch {
                         .and_then(|t| t.remittance_info.as_ref())
                         .and_then(|i| i.unstructured.as_ref())
                         .map(|v| v.as_str()),
+                    MatchField::AdditionalEntryInfo => Some(&entry.additional_info),
                     MatchField::AdditionalTransactionInfo => transaction
                         .and_then(|t| t.additional_info.as_ref())
                         .map(|ai| ai.as_str()),
