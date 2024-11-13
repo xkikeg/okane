@@ -233,7 +233,7 @@ pub struct FormatSpec {
     pub delimiter: String,
     #[serde(default)]
     pub skip: SkipSpec,
-    /// Order of the row.
+    /// Order of the row. By default, old to new order.
     #[serde(default)]
     pub row_order: RowOrder,
 }
