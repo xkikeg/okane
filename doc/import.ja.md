@@ -118,10 +118,10 @@ rewrite:
 ```
 
 * `matcher`: 必須: このルールを適用する条件です。すぐ下で説明する属性を持つmapか、そのlistとして記述します。listの場合論理和(OR)になり、一つでも当てはまったら適用されます。
-    * `domain_code`, `domain_family`, `domain_sub_family`: ISO Camt053フォーマットのみで有効です。定数だけが指定可能です。詳細は省きます。
-    * `creditor_name`, `creditor_account_id`, `ultimate_creditor_name`: ISO Camt053フォーマットのみで有効です。正規表現が指定できます。詳細は省きます。
-    * `debtor_name`, `debtor_account_id`, `ultimate_debtor_name`: ISO Camt053フォーマットのみで有効です。正規表現が指定できます。詳細は省きます。
-    * `remittance_unstructured_info`, `additional_transaction_info`: ISO Camt053フォーマットのみで有効です。正規表現が指定できます。詳細は省きます。
+    * `domain_code`, `domain_family`, `domain_sub_family`: ISO Camt053フォーマットのみで有効です。取引のコードの定数だけが指定可能です。
+    * `creditor_name`, `creditor_account_id`, `ultimate_creditor_name`: ISO Camt053フォーマットのみで有効です。正規表現で支払側の名前やIDにマッチします。
+    * `debtor_name`, `debtor_account_id`, `ultimate_debtor_name`: ISO Camt053フォーマットのみで有効です。正規表現で受け取り側の名前やIDにマッチします。
+    * `remittance_unstructured_info`, `additional_entry_info`, `additional_transaction_info`: ISO Camt053フォーマットのみで有効です。正規表現で対応するフィールドにマッチします。
     * `category`: CSV/visecaのみで有効です。取引の種類、`fields`で`category`として指定された列の文字列です。正規表現が指定できます。
     * `payee`: この取引の相手方の名前です。正規表現が指定できます。以前のルールで上書きされた場合その値が適用されます。
 * `account`: ルールが適用された場合アカウントを指定された文字列にします。
