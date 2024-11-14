@@ -219,10 +219,10 @@ impl From<AccountCommodityConfig> for AccountCommoditySpec {
 /// FormatSpec describes the several format used in import target.
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub struct FormatSpec {
-    /// Specify the date format, in chrono::format::strftime compatible format.
+    /// Specify the date format, in [chrono::format::strftime] compatible format.
     #[serde(default)]
     pub date: String,
-    /// Commodity (currency) styling
+    /// Commodity (currency) styling.
     #[serde(default)]
     pub commodity: HashMap<String, CommodityFormatSpec>,
     /// Mapping from abstracted field key to abstracted position.
