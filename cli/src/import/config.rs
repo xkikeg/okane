@@ -193,24 +193,75 @@ pub enum AccountType {
 }
 
 /// CommodityConfig contains either primary commodity string, or more complex CommoditySpec.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 #[serde(untagged)]
 enum AccountCommodityConfig {
     PrimaryCommodity(String),
     Spec(AccountCommoditySpec),
 }
 
+impl<'de> Deserialize<'de> for AccountCommodityConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(AccountCommodityConfigVisitor)
+    }
+}
+
+struct AccountCommodityConfigVisitor;
+
+impl<'de> de::Visitor<'de> for AccountCommodityConfigVisitor {
+    type Value = AccountCommodityConfig;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            formatter,
+            "a string or a map specifying a AccountCommoditySpec"
+        )
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        self.visit_string(v.to_string())
+    }
+
+    fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(AccountCommodityConfig::PrimaryCommodity(v))
+    }
+
+    fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+    where
+        A: de::MapAccess<'de>,
+    {
+        AccountCommoditySpec::deserialize(MapAccessDeserializer::new(map))
+            .map(AccountCommodityConfig::Spec)
+    }
+}
+
 /// CommoditySpec describes commodity configs.
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct AccountCommoditySpec {
     /// Primary commodity used in the account.
     pub primary: String,
+    /// Default conversion applied to all transaction, if not specified in rewrite rules.
+    #[serde(default)]
+    pub conversion: CommodityConversionSpec,
 }
 
 impl From<AccountCommodityConfig> for AccountCommoditySpec {
     fn from(value: AccountCommodityConfig) -> Self {
         match value {
-            AccountCommodityConfig::PrimaryCommodity(c) => AccountCommoditySpec { primary: c },
+            AccountCommodityConfig::PrimaryCommodity(c) => AccountCommoditySpec {
+                primary: c,
+                ..AccountCommoditySpec::default()
+            },
             AccountCommodityConfig::Spec(spec) => spec,
         }
     }
@@ -395,16 +446,16 @@ pub struct RewriteRule {
 #[serde(deny_unknown_fields, default)]
 pub struct CommodityConversionSpec {
     /// Decides how the `secondary_amount` is computed.
-    pub amount: ConversionAmountSpec,
+    pub amount: ConversionAmountMode,
     /// Overrides `secondary_commodity` with the given value.
     pub commodity: Option<String>,
     /// Decides `rate` meaning.
-    pub rate: ConversionRateSpec,
+    pub rate: ConversionRateMode,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
-pub enum ConversionAmountSpec {
+pub enum ConversionAmountMode {
     /// Extracts the `secondary_amount` from the input data field.
     #[default]
     Extract,
@@ -414,7 +465,7 @@ pub enum ConversionAmountSpec {
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
-pub enum ConversionRateSpec {
+pub enum ConversionRateMode {
     /// Given rate is a price of secondary commodity, e.g.
     /// `1 $secondary_commodity == $rate $commodity`.
     #[default]
@@ -582,6 +633,7 @@ mod tests {
                     // Normally commodity won't be overridden by merge.
                     commodity: Some(AccountCommodityConfig::Spec(AccountCommoditySpec {
                         primary: "CHF".to_string(),
+                        conversion: CommodityConversionSpec::default(),
                     })),
                     account: Some("Assets:Banks:Checking".to_string()),
                     rewrite: vec![RewriteRule {
@@ -619,6 +671,7 @@ mod tests {
                 operator: None,
                 commodity: AccountCommoditySpec {
                     primary: "CHF".to_string(),
+                    conversion: CommodityConversionSpec::default(),
                 },
                 format: FormatSpec {
                     date: "%Y/%m/%d".to_string(),
@@ -697,6 +750,7 @@ mod tests {
             path: "commodity/".to_string(),
             commodity: Some(AccountCommodityConfig::Spec(AccountCommoditySpec {
                 primary: "primary commodity".to_string(),
+                conversion: CommodityConversionSpec::default(),
             })),
             ..empty()
         };
@@ -857,9 +911,9 @@ mod tests {
             payee: None,
             account: Some("Income:Salary".to_string()),
             conversion: Some(CommodityConversionSpec {
-                amount: ConversionAmountSpec::Extract,
+                amount: ConversionAmountMode::Extract,
                 commodity: None,
-                rate: ConversionRateSpec::PriceOfPrimary,
+                rate: ConversionRateMode::PriceOfPrimary,
             }),
         };
         assert_eq!(matcher, RewriteRule::deserialize(de).unwrap());

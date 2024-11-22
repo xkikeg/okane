@@ -121,7 +121,6 @@ format:
   row_order: new_to_old
 rewrite:
   - account: Assets:Brokers:Schrank
-    conversion: {}
     matcher:
     - category: "Reinvest Shares"
     - category: "Buy"

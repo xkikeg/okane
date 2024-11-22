@@ -267,7 +267,6 @@ impl extract::EntityMatcher for FieldMatch {
         fragment: &extract::Fragment<'a>,
         (entry, transaction): (&'a xmlnode::Entry, Option<&'a xmlnode::TransactionDetails>),
     ) -> Option<extract::Matched<'a>> {
-        use either::Either;
         let has_match = match self {
             FieldMatch::DomainCode(code) => {
                 Either::Left(*code == entry.bank_transaction_code.domain_code()?)

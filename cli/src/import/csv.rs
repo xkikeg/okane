@@ -57,6 +57,7 @@ pub fn import<R: std::io::Read>(
     let fm = FieldMap::try_new(&config.format.fields, header)?;
     let size = fm.max();
     let extractor: extract::Extractor<CsvMatcher> = (&config.rewrite).try_into()?;
+    let default_conversion: &config::CommodityConversionSpec = &config.commodity.conversion;
     for may_record in rdr.records() {
         let r = may_record?;
         let pos = r.position().expect("csv record position");
@@ -98,16 +99,13 @@ pub fn import<R: std::io::Read>(
             payee: &original_payee,
             category: category.as_deref(),
         });
+        let payee = fragment.payee.unwrap_or(&original_payee);
         if fragment.account.is_none() {
-            warn!(
-                "account unmatched at line {}, payee={}",
-                pos.line(),
-                original_payee
-            );
+            warn!("account unmatched at line {}, payee={}", pos.line(), payee);
         }
         let mut txn = single_entry::Txn::new(
             date,
-            fragment.payee.unwrap_or(&original_payee),
+            payee,
             OwnedAmount {
                 value: amount,
                 commodity: commodity.clone().into_owned(),
@@ -133,17 +131,27 @@ pub fn import<R: std::io::Read>(
             let payee = config.operator.as_ref().ok_or(ImportError::InvalidConfig(
                 "config should have operator to have charge",
             ))?;
-            if let Some(value) = str_to_comma_decimal(&charge)? {
-                txn.add_charge(
-                    payee,
-                    OwnedAmount {
-                        value,
-                        commodity: commodity.clone().into_owned(),
-                    },
-                );
+            match str_to_comma_decimal(&charge)? {
+                Some(value) if !value.is_zero() => {
+                    txn.add_charge(
+                        payee,
+                        OwnedAmount {
+                            value,
+                            commodity: commodity.clone().into_owned(),
+                        },
+                    );
+                }
+                _ => (),
             }
         }
-        if let Some(conv) = fragment.conversion {
+        let default_conversion =
+            if rate.is_some() && secondary_amount.is_some() && secondary_commodity.is_some() {
+                Some(default_conversion)
+            } else {
+                None
+            };
+        let conversion = fragment.conversion.or(default_conversion);
+        if let Some(conv) = conversion {
             let rate = rate.ok_or_else(|| {
                 ImportError::Other(format!(
                     "no rate specified for transcation with conversion: line {}",
@@ -151,16 +159,16 @@ pub fn import<R: std::io::Read>(
                 ))
             })?;
             let secondary_commodity = conv.commodity.as_deref().or(secondary_commodity.as_deref())
-                    .ok_or_else(||ImportError::Other(format!("either rewrite.conversion.commodity or secondary_commodity field must be set @ line {}", pos.line())))?;
+                .ok_or_else(||ImportError::Other(format!("either rewrite.conversion.commodity or secondary_commodity field must be set @ line {}", pos.line())))?;
             let (rate_key, computed_transferred) = match conv.rate {
-                config::ConversionRateSpec::PriceOfPrimary => (
+                config::ConversionRateMode::PriceOfPrimary => (
                     CommodityPair {
                         source: secondary_commodity.to_owned(),
                         target: commodity.into_owned(),
                     },
                     amount * rate,
                 ),
-                config::ConversionRateSpec::PriceOfSecondary => (
+                config::ConversionRateMode::PriceOfSecondary => (
                     CommodityPair {
                         source: commodity.into_owned(),
                         target: secondary_commodity.to_owned(),
@@ -170,10 +178,10 @@ pub fn import<R: std::io::Read>(
             };
             txn.add_rate(rate_key, rate)?;
             let transferred = match conv.amount {
-                    config::ConversionAmountSpec::Extract => secondary_amount.ok_or_else(|| ImportError::Other(format!(
+                    config::ConversionAmountMode::Extract => secondary_amount.ok_or_else(|| ImportError::Other(format!(
                             "secondary_amount should be specified when conversion.amount is set to extract @ line {}", pos.line()
                     )))?,
-                    config::ConversionAmountSpec::Compute => computed_transferred,
+                    config::ConversionAmountMode::Compute => computed_transferred,
                 };
             txn.transferred_amount(OwnedAmount {
                 value: transferred,
