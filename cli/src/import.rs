@@ -1,6 +1,6 @@
 // Define converter interface here.
 
-pub mod amount;
+mod amount;
 pub mod config;
 pub mod csv;
 pub mod extract;

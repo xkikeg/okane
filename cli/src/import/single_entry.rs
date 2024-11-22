@@ -5,7 +5,7 @@ use rust_decimal::Decimal;
 
 use okane_core::syntax::{self, pretty_decimal::PrettyDecimal};
 
-use super::amount::OwnedAmount;
+use super::amount::{AmountRef, BorrowedAmount, OwnedAmount};
 use super::ImportError;
 
 /// Represents single-entry transaction, associated with the particular account.
@@ -170,28 +170,28 @@ impl Txn {
         self
     }
 
-    fn amount(&self) -> syntax::plain::PostingAmount {
+    fn to_posting_amount<'a>(
+        &'a self,
+        amount: BorrowedAmount<'a>,
+    ) -> syntax::plain::PostingAmount<'a> {
         syntax::PostingAmount {
-            amount: as_syntax_amount(&self.amount).into(),
-            cost: self.rate(&self.amount.commodity),
+            amount: as_syntax_amount(amount).into(),
+            cost: self.rate(amount.commodity),
             lot: syntax::Lot::default(),
         }
+    }
+
+    fn amount(&self) -> syntax::plain::PostingAmount {
+        self.to_posting_amount(self.amount.into_borrowed())
     }
 
     fn dest_amount(&self) -> syntax::plain::PostingAmount {
         self.transferred_amount
             .as_ref()
-            .map(|transferred| syntax::PostingAmount {
-                // transferred_amount can be absolute value, or signed value.
-                // Assuming all commodities are "positive",
-                // it should have the opposite sign of the original amount.
-                amount: amount_with_sign(transferred, -self.amount.value).into(),
-                cost: self.rate(&transferred.commodity),
-                lot: syntax::Lot::default(),
+            .map(|transferred| {
+                self.to_posting_amount(amount_with_sign(transferred, -self.amount.value))
             })
-            .unwrap_or(to_posting_amount(negate_amount(as_syntax_amount(
-                &self.amount,
-            ))))
+            .unwrap_or_else(|| self.to_posting_amount(-self.amount.into_borrowed()))
     }
 
     pub fn balance(&mut self, balance: OwnedAmount) -> &mut Txn {
@@ -208,7 +208,7 @@ impl Txn {
             Some(_) => syntax::ClearState::Uncleared,
             None => syntax::ClearState::Pending,
         });
-        if self.amount.is_sign_positive() {
+        if self.amount.value.is_sign_positive() {
             posts.push(syntax::Posting {
                 clear_state: post_clear,
                 amount: Some(self.dest_amount()),
@@ -220,7 +220,7 @@ impl Txn {
                 balance: self.balance.as_ref().map(|x| as_syntax_amount(x).into()),
                 ..syntax::Posting::new(src_account)
             });
-        } else if self.amount.is_sign_negative() {
+        } else if self.amount.value.is_sign_negative() {
             posts.push(syntax::Posting {
                 clear_state: syntax::ClearState::Uncleared,
                 amount: Some(self.amount()),
@@ -239,7 +239,7 @@ impl Txn {
         for chrg in &self.charges {
             posts.push(syntax::Posting {
                 clear_state: syntax::ClearState::Uncleared,
-                amount: Some(to_posting_amount(as_syntax_amount(&chrg.amount))),
+                amount: Some(self.to_posting_amount(chrg.amount.into_borrowed())),
                 balance: None,
                 metadata: vec![syntax::Metadata::KeyValueTag {
                     key: Cow::Borrowed("Payee"),
@@ -271,29 +271,20 @@ pub struct CommodityPair {
     pub target: String,
 }
 
-fn as_syntax_amount(amount: &OwnedAmount) -> syntax::expr::Amount {
+fn as_syntax_amount<'a, T>(amount: T) -> syntax::expr::Amount<'a>
+where
+    T: AmountRef<'a>,
+{
+    let amount = amount.into_borrowed();
     syntax::expr::Amount {
         // TODO: pass the right format.
         value: PrettyDecimal::unformatted(amount.value),
-        commodity: Cow::Borrowed(&amount.commodity),
+        commodity: Cow::Borrowed(amount.commodity),
     }
 }
 
-fn negate_amount(mut amount: syntax::expr::Amount) -> syntax::expr::Amount {
-    amount.value = -amount.value;
-    amount
-}
-
-fn to_posting_amount(amount: syntax::expr::Amount) -> syntax::plain::PostingAmount {
-    syntax::PostingAmount {
-        amount: amount.into(),
-        cost: None,
-        lot: syntax::Lot::default(),
-    }
-}
-
-fn amount_with_sign(amount: &OwnedAmount, sign: Decimal) -> syntax::expr::Amount {
-    let mut ret = as_syntax_amount(amount);
+fn amount_with_sign(amount: &OwnedAmount, sign: Decimal) -> BorrowedAmount {
+    let mut ret = amount.into_borrowed();
     ret.value.set_sign_positive(sign.is_sign_positive());
     ret
 }
