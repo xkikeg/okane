@@ -216,7 +216,11 @@ impl BalanceCmd {
         if let Some(price_db) = &self.eval_options.price_db {
             report::load_price_db(&PathBuf::from(price_db))?;
         }
-        let (_, balance) = report::process(&mut ctx, load::new_loader(self.source))?;
+        let (_, balance) = report::process(
+            &mut ctx,
+            load::new_loader(self.source),
+            &self.eval_options.to_process_options(),
+        )?;
         let accounts = ctx.all_accounts();
         for account in &accounts {
             if let Some(amount) = balance.get(account) {
@@ -248,7 +252,11 @@ impl RegisterCmd {
     {
         let arena = Bump::new();
         let mut ctx = report::ReportContext::new(&arena);
-        let (txns, _) = report::process(&mut ctx, load::new_loader(self.source))?;
+        let (txns, _) = report::process(
+            &mut ctx,
+            load::new_loader(self.source),
+            &self.eval_options.to_process_options(),
+        )?;
         let account = self
             .account
             .as_ref()
@@ -278,5 +286,21 @@ impl RegisterCmd {
 pub struct EvalOptions {
     /// Path to the Price DB.
     #[arg(long)]
-    price_db: Option<String>,
+    price_db: Option<PathBuf>,
+
+    /// Commodity used for the evaluation.
+    ///
+    /// When user specifies `--exchange=FOO`,
+    /// all values in other commmodities are converted to FOO.
+    #[arg(short = 'X', long)]
+    exchange: Option<String>,
+}
+
+impl EvalOptions {
+    fn to_process_options(&self) -> report::ProcessOptions {
+        report::ProcessOptions {
+            price_db_path: self.price_db.clone(),
+            conversion: self.exchange.clone(),
+        }
+    }
 }

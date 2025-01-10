@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::path::{Path, PathBuf};
 
-use log::warn;
 use path_slash::PathBufExt;
 use serde::de::value::MapAccessDeserializer;
 use serde::{de, Deserialize, Serialize};
@@ -28,7 +27,7 @@ impl ConfigSet {
     fn select_impl(&self, p: &Path) -> Option<Result<ConfigEntry, ImportError>> {
         let fp: &str = match p.to_str() {
             None => {
-                warn!("invalid Unicode path: {}", p.display());
+                log::warn!("invalid Unicode path: {}", p.display());
                 None
             }
             Some(x) => Some(x),

@@ -12,7 +12,7 @@ mod price_db;
 use std::borrow::Borrow;
 
 pub use balance::Balance;
-pub use book_keeping::{process, Posting, Transaction};
+pub use book_keeping::{process, Posting, ProcessOptions, Transaction};
 pub use context::{Account, ReportContext};
 pub use error::ReportError;
 pub use price_db::{load_price_db, PriceDBError};
