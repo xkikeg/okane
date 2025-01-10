@@ -105,7 +105,7 @@ mod tests {
                 PriceDBEntry {
                     datetime: NaiveDateTime::new(
                         NaiveDate::from_ymd_opt(2022, 2, 2).expect("2022-02-02 must exist"),
-                        NaiveTime::from_hms_opt(17, 06, 0).expect("17:06:00 must exist")
+                        NaiveTime::from_hms_opt(17, 6, 0).expect("17:06:00 must exist")
                     ),
                     target: Cow::Borrowed("DCTOPIX"),
                     rate: syntax::expr::ValueExpr::Amount(Amount {

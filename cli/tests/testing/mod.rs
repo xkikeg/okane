@@ -58,7 +58,7 @@ impl Golden {
         if is_update_golden() {
             want = got;
             // update the original_file.
-            std::fs::write(&self.path, got.to_string()).expect("Update golden failed");
+            std::fs::write(&self.path, got).expect("Update golden failed");
         } else {
             want = &self.content;
         }

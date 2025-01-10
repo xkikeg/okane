@@ -234,7 +234,7 @@ mod tests {
 
     use super::*;
 
-    fn parse_static_ledger_entry<'a>(
+    fn parse_static_ledger_entry(
         input: &[(&Path, &'static str)],
     ) -> Result<Vec<(PathBuf, syntax::plain::LedgerEntry<'static>)>, parse::ParseError> {
         let opts = ParseOptions::default();

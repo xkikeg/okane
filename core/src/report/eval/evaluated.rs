@@ -46,7 +46,7 @@ impl<'ctx> TryFrom<Evaluated<'ctx>> for Amount<'ctx> {
     }
 }
 
-impl<'ctx> From<Decimal> for Evaluated<'ctx> {
+impl From<Decimal> for Evaluated<'_> {
     fn from(value: Decimal) -> Self {
         Evaluated::Number(value)
     }
@@ -150,7 +150,7 @@ impl<'ctx> Evaluated<'ctx> {
     }
 }
 
-impl<'ctx> Display for Evaluated<'ctx> {
+impl Display for Evaluated<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Evaluated::Number(x) => x.fmt(f),

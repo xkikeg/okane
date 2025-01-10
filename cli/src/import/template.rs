@@ -190,7 +190,7 @@ impl Template {
     }
 }
 
-impl<'a> Display for RenderedTemplate<'a> {
+impl Display for RenderedTemplate<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for part in &self.parts {
             write!(f, "{}", part)?;

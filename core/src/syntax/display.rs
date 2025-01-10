@@ -41,7 +41,7 @@ impl<'a, T> WithContext<'a, T> {
     }
 }
 
-impl<'a, Deco: Decoration> fmt::Display for WithContext<'a, LedgerEntry<'_, Deco>> {
+impl<Deco: Decoration> fmt::Display for WithContext<'_, LedgerEntry<'_, Deco>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.value {
             LedgerEntry::Txn(txn) => self.pass_context(txn).fmt(f),
@@ -67,7 +67,7 @@ impl<'a> LineWrapStr<'a> {
     }
 }
 
-impl<'a> fmt::Display for LineWrapStr<'a> {
+impl fmt::Display for LineWrapStr<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for line in self.content.lines() {
             writeln!(f, "{}{}", self.prefix, line)?;
@@ -117,7 +117,7 @@ impl fmt::Display for AccountDetail<'_> {
     }
 }
 
-impl<'a> fmt::Display for WithContext<'a, CommodityDeclaration<'_>> {
+impl fmt::Display for WithContext<'_, CommodityDeclaration<'_>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "commodity {}", self.value.name)?;
         for detail in &self.value.details {
@@ -126,7 +126,7 @@ impl<'a> fmt::Display for WithContext<'a, CommodityDeclaration<'_>> {
         Ok(())
     }
 }
-impl<'a> fmt::Display for WithContext<'a, CommodityDetail<'_>> {
+impl fmt::Display for WithContext<'_, CommodityDetail<'_>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.value {
             CommodityDetail::Comment(v) => LineWrapStr::wrap("    ; ", v).fmt(f),
@@ -136,7 +136,7 @@ impl<'a> fmt::Display for WithContext<'a, CommodityDetail<'_>> {
         }
     }
 }
-impl<'a, Deco: Decoration> fmt::Display for WithContext<'a, Transaction<'_, Deco>> {
+impl<Deco: Decoration> fmt::Display for WithContext<'_, Transaction<'_, Deco>> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let xact = self.value;
         write!(f, "{}", xact.date.format("%Y/%m/%d"))?;
@@ -183,7 +183,7 @@ impl fmt::Display for MetadataValue<'_> {
     }
 }
 
-impl<'a, Deco: Decoration> fmt::Display for WithContext<'a, Posting<'_, Deco>> {
+impl<Deco: Decoration> fmt::Display for WithContext<'_, Posting<'_, Deco>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let post = self.value;
         let post_clear = print_clear_state(post.clear_state);
@@ -239,7 +239,7 @@ impl<'a, Deco: Decoration> fmt::Display for WithContext<'a, Posting<'_, Deco>> {
     }
 }
 
-impl<'a, Deco: Decoration> fmt::Display for WithContext<'a, Lot<'_, Deco>> {
+impl<Deco: Decoration> fmt::Display for WithContext<'_, Lot<'_, Deco>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(price) = &self.value.price {
             match price.as_undecorated() {
@@ -286,7 +286,7 @@ trait DisplayWithAlignment {
     fn fmt_with_alignment<W: fmt::Write>(&self, f: &mut W) -> Result<Alignment, fmt::Error>;
 }
 
-impl<'a, T> fmt::Display for WithContext<'a, T>
+impl<T> fmt::Display for WithContext<'_, T>
 where
     Self: DisplayWithAlignment,
 {
@@ -302,7 +302,7 @@ where
 /// - `2 USD` -> returns 1.
 /// - `(1 USD * 2)` -> returns 2.
 /// - `(2 * 1 USD)` -> returns 6.
-impl<'a> DisplayWithAlignment for WithContext<'a, expr::ValueExpr<'_>> {
+impl DisplayWithAlignment for WithContext<'_, expr::ValueExpr<'_>> {
     fn fmt_with_alignment<W: fmt::Write>(&self, f: &mut W) -> Result<Alignment, fmt::Error> {
         match self.value {
             expr::ValueExpr::Amount(a) => self.pass_context(a).fmt_with_alignment(f),
@@ -316,7 +316,7 @@ impl<'a> DisplayWithAlignment for WithContext<'a, expr::ValueExpr<'_>> {
     }
 }
 
-impl<'a> DisplayWithAlignment for WithContext<'a, expr::Expr<'_>> {
+impl DisplayWithAlignment for WithContext<'_, expr::Expr<'_>> {
     fn fmt_with_alignment<W: fmt::Write>(&self, f: &mut W) -> Result<Alignment, fmt::Error> {
         match self.value {
             expr::Expr::Unary(e) => {
@@ -339,7 +339,7 @@ impl<'a> DisplayWithAlignment for WithContext<'a, expr::Expr<'_>> {
     }
 }
 
-impl<'a> DisplayWithAlignment for WithContext<'a, expr::Amount<'_>> {
+impl DisplayWithAlignment for WithContext<'_, expr::Amount<'_>> {
     fn fmt_with_alignment<W: fmt::Write>(&self, f: &mut W) -> Result<Alignment, fmt::Error> {
         let amount_str = rescale(self.value, self.context).to_string();
         // TODO: Implement prefix-amount.
