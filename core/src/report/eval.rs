@@ -16,7 +16,7 @@ pub(crate) trait Evaluable {
     fn eval<'ctx>(&self, ctx: &mut ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError>;
 }
 
-impl<'a> Evaluable for expr::ValueExpr<'a> {
+impl Evaluable for expr::ValueExpr<'_> {
     fn eval<'ctx>(&self, ctx: &mut ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError> {
         match self {
             expr::ValueExpr::Paren(x) => x.eval(ctx),
@@ -25,7 +25,7 @@ impl<'a> Evaluable for expr::ValueExpr<'a> {
     }
 }
 
-impl<'a> Evaluable for expr::Expr<'a> {
+impl Evaluable for expr::Expr<'_> {
     fn eval<'ctx>(&self, ctx: &mut ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError> {
         match self {
             expr::Expr::Unary(e) => e.eval(ctx),
@@ -35,7 +35,7 @@ impl<'a> Evaluable for expr::Expr<'a> {
     }
 }
 
-impl<'a> Evaluable for expr::UnaryOpExpr<'a> {
+impl Evaluable for expr::UnaryOpExpr<'_> {
     fn eval<'ctx>(&self, ctx: &mut ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError> {
         match self.op {
             expr::UnaryOp::Negate => {
@@ -46,7 +46,7 @@ impl<'a> Evaluable for expr::UnaryOpExpr<'a> {
     }
 }
 
-impl<'a> Evaluable for expr::BinaryOpExpr<'a> {
+impl Evaluable for expr::BinaryOpExpr<'_> {
     fn eval<'ctx>(&self, ctx: &mut ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError> {
         let lhs = self.lhs.eval(ctx)?;
         let rhs = self.rhs.eval(ctx)?;

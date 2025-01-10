@@ -48,7 +48,7 @@ impl<'a> AmountRef<'a> for BorrowedAmount<'a> {
     }
 }
 
-impl<'a> std::ops::Neg for BorrowedAmount<'a> {
+impl std::ops::Neg for BorrowedAmount<'_> {
     type Output = Self;
     fn neg(self) -> Self {
         Self {

@@ -81,7 +81,7 @@ pub struct ParsedContext<'i> {
     span: Range<usize>,
 }
 
-impl<'i> ParsedContext<'i> {
+impl ParsedContext<'_> {
     /// Computes the starting line number from this context.
     /// Note this function is O(N), not a cheap function.
     pub fn compute_line_start(&self) -> usize {

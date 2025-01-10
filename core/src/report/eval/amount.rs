@@ -24,7 +24,7 @@ pub enum PostingAmount<'ctx> {
     Single(SingleAmount<'ctx>),
 }
 
-impl<'ctx> Default for PostingAmount<'ctx> {
+impl Default for PostingAmount<'_> {
     fn default() -> Self {
         Self::Zero
     }
@@ -116,7 +116,7 @@ impl<'ctx> From<SingleAmount<'ctx>> for Amount<'ctx> {
     }
 }
 
-impl<'ctx> Neg for PostingAmount<'ctx> {
+impl Neg for PostingAmount<'_> {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
@@ -127,7 +127,7 @@ impl<'ctx> Neg for PostingAmount<'ctx> {
     }
 }
 
-impl<'ctx> Neg for SingleAmount<'ctx> {
+impl Neg for SingleAmount<'_> {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
@@ -138,7 +138,7 @@ impl<'ctx> Neg for SingleAmount<'ctx> {
     }
 }
 
-impl<'ctx> Mul<Decimal> for PostingAmount<'ctx> {
+impl Mul<Decimal> for PostingAmount<'_> {
     type Output = Self;
 
     fn mul(self, rhs: Decimal) -> Self::Output {
@@ -149,7 +149,7 @@ impl<'ctx> Mul<Decimal> for PostingAmount<'ctx> {
     }
 }
 
-impl<'ctx> Mul<Decimal> for SingleAmount<'ctx> {
+impl Mul<Decimal> for SingleAmount<'_> {
     type Output = Self;
 
     fn mul(self, rhs: Decimal) -> Self::Output {
@@ -245,7 +245,7 @@ impl<'ctx> SingleAmount<'ctx> {
     }
 }
 
-impl<'ctx> Display for PostingAmount<'ctx> {
+impl Display for PostingAmount<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PostingAmount::Zero => write!(f, "0"),
@@ -254,7 +254,7 @@ impl<'ctx> Display for PostingAmount<'ctx> {
     }
 }
 
-impl<'ctx> Display for SingleAmount<'ctx> {
+impl Display for SingleAmount<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {}", self.value, self.commodity.as_str())
     }
@@ -404,7 +404,7 @@ impl<'ctx> Amount<'ctx> {
 #[derive(Debug)]
 struct InlinePrintAmount<'a, 'ctx>(&'a Amount<'ctx>);
 
-impl<'a, 'ctx> Display for InlinePrintAmount<'a, 'ctx> {
+impl Display for InlinePrintAmount<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let vs = &self.0.values;
         match vs.len() {
@@ -426,7 +426,7 @@ impl<'a, 'ctx> Display for InlinePrintAmount<'a, 'ctx> {
     }
 }
 
-impl<'ctx> Neg for Amount<'ctx> {
+impl Neg for Amount<'_> {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
@@ -434,7 +434,7 @@ impl<'ctx> Neg for Amount<'ctx> {
     }
 }
 
-impl<'ctx> Add for Amount<'ctx> {
+impl Add for Amount<'_> {
     type Output = Self;
 
     fn add(mut self, rhs: Self) -> Self::Output {
@@ -443,7 +443,7 @@ impl<'ctx> Add for Amount<'ctx> {
     }
 }
 
-impl<'ctx> AddAssign for Amount<'ctx> {
+impl AddAssign for Amount<'_> {
     fn add_assign(&mut self, rhs: Self) {
         for (c, v2) in rhs.values {
             let mut v1 = self.values.entry(c).or_insert(Decimal::ZERO);
@@ -477,7 +477,7 @@ impl<'ctx> AddAssign<PostingAmount<'ctx>> for Amount<'ctx> {
     }
 }
 
-impl<'ctx> Sub for Amount<'ctx> {
+impl Sub for Amount<'_> {
     type Output = Self;
 
     fn sub(mut self, rhs: Self) -> Self::Output {
@@ -486,7 +486,7 @@ impl<'ctx> Sub for Amount<'ctx> {
     }
 }
 
-impl<'ctx> SubAssign for Amount<'ctx> {
+impl SubAssign for Amount<'_> {
     fn sub_assign(&mut self, rhs: Self) {
         for (c, v2) in rhs.values {
             let mut v1 = self.values.entry(c).or_insert(Decimal::ZERO);
@@ -498,7 +498,7 @@ impl<'ctx> SubAssign for Amount<'ctx> {
     }
 }
 
-impl<'ctx> Mul<Decimal> for Amount<'ctx> {
+impl Mul<Decimal> for Amount<'_> {
     type Output = Self;
 
     fn mul(mut self, rhs: Decimal) -> Self::Output {
@@ -507,7 +507,7 @@ impl<'ctx> Mul<Decimal> for Amount<'ctx> {
     }
 }
 
-impl<'ctx> MulAssign<Decimal> for Amount<'ctx> {
+impl MulAssign<Decimal> for Amount<'_> {
     fn mul_assign(&mut self, rhs: Decimal) {
         if rhs.is_zero() {
             self.values.clear();

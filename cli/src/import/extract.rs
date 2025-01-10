@@ -53,7 +53,7 @@ pub struct Fragment<'a> {
     pub conversion: Option<&'a config::CommodityConversionSpec>,
 }
 
-impl<'a> std::ops::AddAssign for Fragment<'a> {
+impl std::ops::AddAssign for Fragment<'_> {
     #[allow(clippy::suspicious_op_assign_impl)]
     fn add_assign(&mut self, other: Self) {
         self.cleared = other.cleared || self.cleared;
@@ -223,10 +223,10 @@ impl<M: EntityMatcher> MatchAndExpr<M> {
 
 impl<'a> From<regex::Captures<'a>> for Matched<'a> {
     fn from(from: regex::Captures<'a>) -> Self {
-        return Matched {
+        Matched {
             payee: from.name("payee").map(|x| x.as_str()),
             code: from.name("code").map(|x| x.as_str()),
-        };
+        }
     }
 }
 
@@ -328,7 +328,7 @@ mod tests {
         }
     }
 
-    impl<'a> Entity<'a> for TestMatcher {
+    impl Entity<'_> for TestMatcher {
         type T = TestEntity;
     }
 

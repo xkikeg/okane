@@ -37,7 +37,7 @@ pub enum LedgerEntry<'i, Deco: Decoration> {
     Commodity(CommodityDeclaration<'i>),
 }
 
-impl<'i> LedgerEntry<'i, plain::Ident> {
+impl LedgerEntry<'_, plain::Ident> {
     #[cfg(test)]
     pub(crate) fn to_static(&self) -> LedgerEntry<'static, plain::Ident> {
         match self {
@@ -132,7 +132,7 @@ pub struct Transaction<'i, Deco: Decoration> {
     pub metadata: Vec<Metadata<'i>>,
 }
 
-impl<'i> Transaction<'i, plain::Ident> {
+impl Transaction<'_, plain::Ident> {
     #[cfg(test)]
     fn to_static(&self) -> Transaction<'static, plain::Ident> {
         let mut posts = Vec::new();
@@ -184,7 +184,7 @@ pub struct Posting<'i, Deco: Decoration> {
     pub metadata: Vec<Metadata<'i>>,
 }
 
-impl<'i> Posting<'i, plain::Ident> {
+impl Posting<'_, plain::Ident> {
     #[cfg(test)]
     fn to_static(&self) -> Posting<'static, plain::Ident> {
         Posting {
@@ -257,7 +257,7 @@ pub struct PostingAmount<'i, Deco: Decoration> {
     pub lot: Lot<'i, Deco>,
 }
 
-impl<'i> PostingAmount<'i, plain::Ident> {
+impl PostingAmount<'_, plain::Ident> {
     #[cfg(test)]
     fn to_static(&self) -> PostingAmount<'static, plain::Ident> {
         PostingAmount {
@@ -286,7 +286,7 @@ pub struct Lot<'i, Deco: Decoration> {
     pub note: Option<Cow<'i, str>>,
 }
 
-impl<'i> Lot<'i, plain::Ident> {
+impl Lot<'_, plain::Ident> {
     #[cfg(test)]
     fn to_static(&self) -> Lot<'static, plain::Ident> {
         Lot {
@@ -297,7 +297,7 @@ impl<'i> Lot<'i, plain::Ident> {
     }
 }
 
-impl<'i, Deco: Decoration> Default for Lot<'i, Deco> {
+impl<Deco: Decoration> Default for Lot<'_, Deco> {
     fn default() -> Self {
         Self {
             price: None,

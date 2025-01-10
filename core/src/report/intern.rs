@@ -15,7 +15,7 @@ impl<'arena> InternedStr<'arena> {
     }
 }
 
-impl<'arena> Debug for InternedStr<'arena> {
+impl Debug for InternedStr<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("InternedStr")
             .field(&std::ptr::from_ref(self.0))
@@ -30,14 +30,14 @@ impl<'arena> Debug for InternedStr<'arena> {
 ///
 /// For the safety, maybe we can let `InternedStr` to have arena itself,
 /// so that `PartialEq` won't accidentally compare the two different intern sets.
-impl<'arena> PartialEq for InternedStr<'arena> {
+impl PartialEq for InternedStr<'_> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.0, other.0)
     }
 }
 
 /// Hash is based on the pointer, as it's interned.
-impl<'arena> Hash for InternedStr<'arena> {
+impl Hash for InternedStr<'_> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         std::ptr::hash(self.0, state)
     }
@@ -81,7 +81,7 @@ pub enum StoredValue<'arena, T> {
     Alias { alias: &'arena str, canonical: T },
 }
 
-impl<'arena, T: Copy> StoredValue<'arena, T> {
+impl<T: Copy> StoredValue<'_, T> {
     fn as_canonical(&self) -> T {
         match self {
             StoredValue::Canonical(x) => *x,
@@ -203,7 +203,7 @@ fn to_interned<'arena, T: FromInterned<'arena>>(x: &'arena str) -> T {
     <T as FromInterned>::from_interned(InternedStr(x))
 }
 
-impl<'arena, 'container, T> Iterator for Iter<'arena, 'container, T>
+impl<'arena, T> Iterator for Iter<'arena, '_, T>
 where
     T: FromInterned<'arena>,
 {
@@ -243,7 +243,7 @@ mod tests {
         let foo1 = InternedStr(bump.alloc_str(&String::from("foo")));
         let foo2 = InternedStr(bump.alloc_str(&String::from("foo")));
         assert_ne!(foo1, foo2);
-        let foo_copy = foo1.clone();
+        let foo_copy = foo1;
         assert_eq!(foo1, foo_copy);
     }
 
