@@ -27,13 +27,18 @@ fn load_benchmark(c: &mut Criterion) {
 }
 
 fn report_benchmark(c: &mut Criterion) {
+    let opts = report::ProcessOptions::default();
     let input = testing::ExampleInput::new(Path::new("report_bench")).unwrap();
     c.bench_function("process", |b| {
         b.iter(|| {
             let arena = Bump::new();
             let mut ctx = report::ReportContext::new(&arena);
-            let ret = report::process(&mut ctx, load::new_loader(input.rootpath().to_owned()))
-                .expect("report::process must succeed");
+            let ret = report::process(
+                &mut ctx,
+                load::new_loader(input.rootpath().to_owned()),
+                &opts,
+            )
+            .expect("report::process must succeed");
             black_box(ret);
         })
     });

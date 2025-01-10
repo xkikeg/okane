@@ -1,7 +1,7 @@
 //! Contains book keeping logics to process the input stream,
 //! and convert them into a processed Transactions.
 
-use std::borrow::Borrow;
+use std::{borrow::Borrow, path::PathBuf};
 
 use bumpalo::collections as bcc;
 use chrono::NaiveDate;
@@ -41,12 +41,22 @@ pub enum BookKeepError {
     InvalidCommodity(#[source] InternError),
 }
 
+/// Options to control process behavior.
+#[derive(Debug, Default)]
+pub struct ProcessOptions {
+    /// Path to the price DB file.
+    pub price_db_path: Option<PathBuf>,
+    /// Commodity used for conversion.
+    pub conversion: Option<String>,
+}
+
 /// Takes the loader, and gives back the all read transactions.
 /// Also returns the computed balance, as a side-artifact.
 /// Usually this needs to be reordered, so just returning a `Vec`.
 pub fn process<'ctx, L, F>(
     ctx: &mut ReportContext<'ctx>,
     loader: L,
+    _options: &ProcessOptions,
 ) -> Result<(Vec<Transaction<'ctx>>, Balance<'ctx>), ReportError>
 where
     L: Borrow<load::Loader<F>>,
