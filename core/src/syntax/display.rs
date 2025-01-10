@@ -405,7 +405,7 @@ mod tests {
         })
     }
 
-    fn amount_expr<T: Into<Decimal>>(value: T, commodity: &'static str) -> expr::Expr {
+    fn amount_expr<T: Into<Decimal>>(value: T, commodity: &'static str) -> expr::Expr<'static> {
         let value: Decimal = value.into();
         expr::Expr::Value(Box::new(amount(value, commodity)))
     }
