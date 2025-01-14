@@ -216,11 +216,12 @@ impl BalanceCmd {
         if let Some(price_db) = &self.eval_options.price_db {
             report::load_price_db(&PathBuf::from(price_db))?;
         }
-        let (_, balance) = report::process(
+        let ledger = report::process(
             &mut ctx,
             load::new_loader(self.source),
             &self.eval_options.to_process_options(),
         )?;
+        let balance = ledger.balance();
         let accounts = ctx.all_accounts();
         for account in &accounts {
             if let Some(amount) = balance.get(account) {
@@ -252,7 +253,7 @@ impl RegisterCmd {
     {
         let arena = Bump::new();
         let mut ctx = report::ReportContext::new(&arena);
-        let (txns, _) = report::process(
+        let ledger = report::process(
             &mut ctx,
             load::new_loader(self.source),
             &self.eval_options.to_process_options(),
@@ -262,7 +263,7 @@ impl RegisterCmd {
             .as_ref()
             .map(|x| ctx.account(x).expect("TODO: Make this a proper error"));
         let mut balance = report::Balance::default();
-        for txn in txns {
+        for txn in ledger.transactions() {
             if let Some(account) = &account {
                 if let Some(p) = txn.postings.iter().find(|p| p.account == *account) {
                     let b = balance.add_amount(*account, p.amount.clone());
