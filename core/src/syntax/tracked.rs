@@ -10,7 +10,8 @@ use super::decoration::{AsUndecorated, Decoration};
 pub struct Tracking;
 
 impl Decoration for Tracking {
-    type Decorated<T> = Tracked<T>
+    type Decorated<T>
+        = Tracked<T>
     where
         T: AsUndecorated<T> + Debug + PartialEq + Eq;
 
