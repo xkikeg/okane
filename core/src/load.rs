@@ -16,8 +16,14 @@ pub enum LoadError {
     IO(#[from] std::io::Error),
     #[error("failed to parse file {1}")]
     Parse(#[source] Box<parse::ParseError>, PathBuf),
-    #[error("unexpected include path {0}, maybe filesystem root is passed")]
-    IncludePath(PathBuf),
+    #[error("loading file path {0} doesn't have parent, maybe filesystem root is passed")]
+    RootLoadingPath(PathBuf),
+    #[error("invalid Unicode path is not supported: {0}")]
+    InvalidUnicodePath(String),
+    #[error("invalid glob pattern specified")]
+    InvalidIncludeGlob(#[from] glob::PatternError),
+    #[error("failed to match glob pattern")]
+    GlobFailure(#[from] glob::GlobError),
 }
 
 /// Loader is an object to keep loading a given file and may recusrively load them as `repr::LedgerEntry`,
@@ -87,12 +93,22 @@ impl<F: FileSystem> Loader<F> {
             match entry {
                 syntax::LedgerEntry::Include(p) => {
                     let include_path: PathBuf = p.0.as_ref().into();
-                    let target = path
+                    let target: String = path
                         .as_ref()
                         .parent()
-                        .ok_or_else(|| LoadError::IncludePath(path.as_ref().to_owned()))?
-                        .join(include_path);
-                    self.load_impl(parse_options, &target, callback)
+                        .ok_or_else(|| LoadError::RootLoadingPath(path.as_ref().to_owned()))?
+                        .join(include_path)
+                        .into_os_string()
+                        .into_string()
+                        .map_err(|x| {
+                            LoadError::InvalidUnicodePath(format!("{}", PathBuf::from(x).display()))
+                        })?;
+                    let mut paths: Vec<PathBuf> = self.filesystem.glob(&target)?;
+                    paths.sort_unstable();
+                    for path in &paths {
+                        self.load_impl(parse_options, path, callback)?;
+                    }
+                    Ok(())
                 }
                 _ => callback(&path, &ctx, &entry),
             }?;
@@ -109,6 +125,10 @@ pub trait FileSystem {
 
     /// Load the given path and returns it as UTF-8 String.
     fn file_content_utf8<P: AsRef<Path>>(&self, path: P) -> Result<String, std::io::Error>;
+
+    /// Returns all paths matching the given glob.
+    /// Paths can be in arbitrary order, and caller must sort it beforehand.
+    fn glob(&self, pattern: &str) -> Result<Vec<PathBuf>, LoadError>;
 }
 
 /// [FileSystem] to regularly reads the files recursively in the local files.
@@ -136,6 +156,12 @@ impl FileSystem for ProdFileSystem {
 
     fn file_content_utf8<P: AsRef<Path>>(&self, path: P) -> Result<String, std::io::Error> {
         std::fs::read_to_string(path)
+    }
+
+    fn glob(&self, pattern: &str) -> Result<Vec<PathBuf>, LoadError> {
+        let paths: Vec<PathBuf> =
+            glob::glob(pattern)?.collect::<Result<Vec<_>, glob::GlobError>>()?;
+        Ok(paths)
     }
 }
 
@@ -181,6 +207,18 @@ impl FileSystem for FakeFileSystem {
                 String::from_utf8(x.clone())
                     .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
             })
+    }
+
+    fn glob(&self, pattern: &str) -> Result<Vec<PathBuf>, LoadError> {
+        let pattern = glob::Pattern::new(pattern)?;
+        let mut paths: Vec<PathBuf> = self
+            .0
+            .keys()
+            .filter(|x| pattern.matches_path(x))
+            .cloned()
+            .collect();
+        paths.sort_by(|x, y| y.cmp(x));
+        Ok(paths)
     }
 }
 
@@ -242,6 +280,10 @@ mod tests {
             .join("testdata/child3.ledger")
             .canonicalize()
             .unwrap();
+        let child4 = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("testdata/sub/child4.ledger")
+            .canonicalize()
+            .unwrap();
         let want = parse_static_ledger_entry(&[
             (
                 &root,
@@ -283,6 +325,14 @@ mod tests {
                 Income:RSU                    (-50.0000 * 100.23 USD)
                 Expenses:Income Tax
                 Assets:Broker                            40.0000 OKANE @ 100.23 USD
+            "},
+            ),
+            (
+                &child4,
+                indoc! {"
+            2024/7/1 * Send money
+                Assets:Bank:ZKB                         -1000.00 CHF
+                Assets:Wire:Wise                         1000.00 CHF
             "},
             ),
             (
