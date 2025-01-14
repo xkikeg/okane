@@ -10,9 +10,10 @@ use super::decoration::{AsUndecorated, Decoration};
 pub struct Ident;
 
 impl Decoration for Ident {
-    type Decorated<T> = T
+    type Decorated<T>
+        = T
     where
-        T: AsUndecorated<T> + Debug + PartialEq + Eq ;
+        T: AsUndecorated<T> + Debug + PartialEq + Eq;
 
     fn decorate_parser<PIn, I, O, E>(parser: PIn) -> impl winnow::Parser<I, Self::Decorated<O>, E>
     where
