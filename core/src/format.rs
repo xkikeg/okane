@@ -54,7 +54,7 @@ impl FormatOptions {
         // TODO: Grab DisplayContext externally, or from LedgerEntry.
         let ctx = DisplayContext::default();
         for parsed in parse_ledger(&buf) {
-            let (_, entry): (_, syntax::plain::LedgerEntry) = parsed.map_err(Box::new)?;
+            let (_, entry): (_, syntax::plain::LedgerEntry) = parsed?;
             writeln!(w, "{}", ctx.as_display(&entry))?;
         }
         Ok(())

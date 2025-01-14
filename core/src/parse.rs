@@ -36,7 +36,8 @@ use crate::syntax::{self, decoration::Decoration};
 /// To control the behavior precisely, use [ParseOptions::parse_ledger].
 pub fn parse_ledger<'i, Deco: 'i + Decoration>(
     input: &'i str,
-) -> impl Iterator<Item = Result<(ParsedContext<'i>, syntax::LedgerEntry<'i, Deco>), ParseError>> {
+) -> impl Iterator<Item = Result<(ParsedContext<'i>, syntax::LedgerEntry<'i, Deco>), Box<ParseError>>>
+{
     ParseOptions::default().parse_ledger(input)
 }
 
@@ -63,8 +64,9 @@ impl ParseOptions {
     pub fn parse_ledger<'i, Deco: Decoration + 'static>(
         &self,
         input: &'i str,
-    ) -> impl Iterator<Item = Result<(ParsedContext<'i>, syntax::LedgerEntry<'i, Deco>), ParseError>> + 'i
-    {
+    ) -> impl Iterator<
+        Item = Result<(ParsedContext<'i>, syntax::LedgerEntry<'i, Deco>), Box<ParseError>>,
+    > + 'i {
         ParsedIter {
             initial: input,
             input: LocatingSlice::new(input),
@@ -127,7 +129,7 @@ struct ParsedIter<'i, Deco> {
 }
 
 impl<'i, Deco: Decoration + 'static> Iterator for ParsedIter<'i, Deco> {
-    type Item = Result<(ParsedContext<'i>, syntax::LedgerEntry<'i, Deco>), ParseError>;
+    type Item = Result<(ParsedContext<'i>, syntax::LedgerEntry<'i, Deco>), Box<ParseError>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let start = self.input.checkpoint();
@@ -145,7 +147,15 @@ impl<'i, Deco: Decoration + 'static> Iterator for ParsedIter<'i, Deco> {
                 entry,
             )))
         })()
-        .map_err(|e| ParseError::new(self.renderer.clone(), self.initial, self.input, start, e))
+        .map_err(|e| {
+            Box::new(ParseError::new(
+                self.renderer.clone(),
+                self.initial,
+                self.input,
+                start,
+                e,
+            ))
+        })
         .transpose()
     }
 }
@@ -198,7 +208,7 @@ mod tests {
     use syntax::plain::LedgerEntry;
 
     fn parse_ledger_into(input: &str) -> Vec<(ParsedContext, LedgerEntry)> {
-        let r: Result<Vec<(ParsedContext, LedgerEntry)>, ParseError> =
+        let r: Result<Vec<(ParsedContext, LedgerEntry)>, Box<ParseError>> =
             ParseOptions::default().parse_ledger(input).collect();
         match r {
             Ok(x) => x,
