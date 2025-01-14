@@ -7,7 +7,7 @@ use annotate_snippets::{Level, Renderer, Snippet};
 use winnow::{
     error::{ContextError, ErrMode, StrContext},
     stream::{Location, Offset, Stream},
-    Located,
+    LocatingSlice,
 };
 
 #[derive(Debug)]
@@ -24,8 +24,8 @@ impl ParseError {
     pub(super) fn new<'i>(
         renderer: Renderer,
         initial: &'i str,
-        mut input: Located<&'i str>,
-        start: <Located<&'i str> as Stream>::Checkpoint,
+        mut input: LocatingSlice<&'i str>,
+        start: <LocatingSlice<&'i str> as Stream>::Checkpoint,
         error: ErrMode<ContextError<StrContext>>,
     ) -> Self {
         let offset = input.offset_from(&start);

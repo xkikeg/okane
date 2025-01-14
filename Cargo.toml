@@ -3,6 +3,8 @@ members = [
     "core",
     "cli",
 ]
+
+# for workspace, we need to specify resolver explicitly.
 resolver = "2"
 
 [workspace.package]
@@ -19,7 +21,7 @@ bumpalo = {version = "3.16", features = ["collections", "boxed"]}
 chrono = "0.4.38"
 log = "0.4"
 rust_decimal = "1.36"
-thiserror = "1.0"
+thiserror = "2.0"
 winnow = "0.6.18"
 
 # middle
