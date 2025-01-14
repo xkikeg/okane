@@ -232,7 +232,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
     use syntax::plain;
-    use winnow::Located;
+    use winnow::LocatingSlice;
 
     use crate::{
         parse::testing::expect_parse_ok,
@@ -393,7 +393,7 @@ mod tests {
                     let input = format!("{}{}{}", segment[i], segment[j], segment[k]);
                     if want_fail {
                         preceded(space0, lot::<_, plain::Ident>)
-                            .parse_peek(Located::new(input.as_str()))
+                            .parse_peek(LocatingSlice::new(input.as_str()))
                             .expect_err("should fail");
                     } else {
                         assert_eq!(

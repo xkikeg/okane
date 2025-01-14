@@ -27,7 +27,7 @@ use winnow::{
     error::StrContext,
     stream::{Stream, StreamIsPartial},
     token::{any, literal, take_while},
-    Located, PResult, Parser,
+    LocatingSlice, PResult, Parser,
 };
 
 use crate::syntax::{self, decoration::Decoration};
@@ -67,7 +67,7 @@ impl ParseOptions {
     {
         ParsedIter {
             initial: input,
-            input: Located::new(input),
+            input: LocatingSlice::new(input),
             renderer: self.error_style.clone(),
             _phantom: PhantomData,
         }
@@ -121,7 +121,7 @@ fn clip(parent: Range<usize>, child: Range<usize>) -> Range<usize> {
 /// Iterator to return parsed ledger entry one-by-one.
 struct ParsedIter<'i, Deco> {
     initial: &'i str,
-    input: Located<&'i str>,
+    input: LocatingSlice<&'i str>,
     renderer: annotate_snippets::Renderer,
     _phantom: PhantomData<Deco>,
 }
