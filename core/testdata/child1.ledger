@@ -1,4 +1,4 @@
-include sub/child2.ledger
+include sub/child*.ledger
 
 2024/5/1 * Migros
     Expenses:Grocery        -10.00 CHF
