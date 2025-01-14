@@ -89,7 +89,7 @@ impl<F: FileSystem> Loader<F> {
             .map_err(LoadError::IO)?;
         for parsed in parse_options.parse_ledger(&content) {
             let (ctx, entry) =
-                parsed.map_err(|e| LoadError::Parse(Box::new(e), path.clone().into_owned()))?;
+                parsed.map_err(|e| LoadError::Parse(e, path.clone().into_owned()))?;
             match entry {
                 syntax::LedgerEntry::Include(p) => {
                     let include_path: PathBuf = p.0.as_ref().into();
@@ -236,7 +236,7 @@ mod tests {
 
     fn parse_static_ledger_entry(
         input: &[(&Path, &'static str)],
-    ) -> Result<Vec<(PathBuf, syntax::plain::LedgerEntry<'static>)>, parse::ParseError> {
+    ) -> Result<Vec<(PathBuf, syntax::plain::LedgerEntry<'static>)>, Box<parse::ParseError>> {
         let opts = ParseOptions::default();
         input
             .iter()
