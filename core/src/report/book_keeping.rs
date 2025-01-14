@@ -4,7 +4,6 @@
 use std::{borrow::Borrow, path::PathBuf};
 
 use bumpalo::collections as bcc;
-use chrono::NaiveDate;
 
 use crate::{
     load,
@@ -13,10 +12,12 @@ use crate::{
 
 use super::{
     balance::{Balance, BalanceError},
-    context::{Account, ReportContext},
+    context::ReportContext,
     error::{self, ReportError},
     eval::{Amount, EvalError, Evaluable, PostingAmount, SingleAmount},
     intern::InternError,
+    query::Ledger,
+    transaction::{Posting, Transaction},
 };
 
 /// Error related to transaction understanding.
@@ -57,7 +58,7 @@ pub fn process<'ctx, L, F>(
     ctx: &mut ReportContext<'ctx>,
     loader: L,
     _options: &ProcessOptions,
-) -> Result<(Vec<Transaction<'ctx>>, Balance<'ctx>), ReportError>
+) -> Result<Ledger<'ctx>, ReportError>
 where
     L: Borrow<load::Loader<F>>,
     F: load::FileSystem,
@@ -75,7 +76,10 @@ where
             )
         })
     })?;
-    Ok((accum.txns, accum.balance))
+    Ok(Ledger {
+        transactions: accum.txns,
+        raw_balance: accum.balance,
+    })
 }
 
 struct ProcessAccumulator<'ctx> {
@@ -140,28 +144,6 @@ impl<'ctx> ProcessAccumulator<'ctx> {
         }
     }
 }
-
-/// Evaluated transaction, already processed to have right balance.
-// TODO: Rename it to EvaluatedTxn?
-#[derive(Debug, PartialEq, Eq)]
-pub struct Transaction<'ctx> {
-    pub date: NaiveDate,
-    // Posting in the transaction.
-    // Note this MUST be a Box instead of &[Posting],
-    // as Posting is a [Drop] and we can't skip calling Drop,
-    // otherwise we leave allocated memory for Amount HashMap.
-    pub postings: bumpalo::boxed::Box<'ctx, [Posting<'ctx>]>,
-}
-
-/// Evaluated posting of the transaction.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Posting<'ctx> {
-    pub account: Account<'ctx>,
-    /// Note this Amount is not PostingAmount,
-    /// as deduced posting may have non-single commodity amount.
-    pub amount: Amount<'ctx>,
-}
-
 /// Adds a syntax transaction, and converts it into a processed Transaction.
 fn add_transaction<'ctx>(
     ctx: &mut ReportContext<'ctx>,
@@ -312,6 +294,7 @@ mod tests {
     use super::*;
 
     use bumpalo::Bump;
+    use chrono::NaiveDate;
     use indoc::indoc;
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
