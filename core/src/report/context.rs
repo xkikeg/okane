@@ -49,15 +49,15 @@ impl<'ctx> ReportContext<'ctx> {
     }
 
     /// Returns all accounts, sorted as string order.
-    pub fn all_accounts(&self) -> Vec<Account<'ctx>> {
-        let mut r: Vec<Account<'ctx>> = self
-            .accounts
-            .iter()
-            .filter_map(|x| match x {
-                StoredValue::Canonical(x) => Some(x),
-                StoredValue::Alias { .. } => None,
-            })
-            .collect();
+    pub(super) fn all_accounts_unsorted(&self) -> impl Iterator<Item = Account<'ctx>> + '_ {
+        self.accounts.iter().filter_map(|x| match x {
+            StoredValue::Canonical(x) => Some(x),
+            StoredValue::Alias { .. } => None,
+        })
+    }
+    /// Returns all accounts, sorted as string order.
+    pub(super) fn all_accounts(&self) -> Vec<Account<'ctx>> {
+        let mut r: Vec<Account<'ctx>> = self.all_accounts_unsorted().collect();
         r.sort_unstable_by_key(|x| x.as_str());
         r
     }

@@ -221,14 +221,8 @@ impl BalanceCmd {
             load::new_loader(self.source),
             &self.eval_options.to_process_options(),
         )?;
-        let balance = ledger.balance();
-        let accounts = ctx.all_accounts();
-        for account in &accounts {
-            if let Some(amount) = balance.get(account) {
-                writeln!(w, "{}: {}", account.as_str(), amount.as_inline_display())?;
-            } else {
-                writeln!(w, "{}: not found, probably zero", account.as_str())?;
-            }
+        for (account, amount) in ledger.balance().into_owned().into_vec() {
+            writeln!(w, "{}: {}", account.as_str(), amount.as_inline_display())?;
         }
         Ok(())
     }
@@ -258,26 +252,22 @@ impl RegisterCmd {
             load::new_loader(self.source),
             &self.eval_options.to_process_options(),
         )?;
-        let account = self
-            .account
-            .as_ref()
-            .map(|x| ctx.account(x).expect("TODO: Make this a proper error"));
-        let mut balance = report::Balance::default();
-        for txn in ledger.transactions() {
-            if let Some(account) = &account {
-                if let Some(p) = txn.postings.iter().find(|p| p.account == *account) {
-                    let b = balance.add_amount(*account, p.amount.clone());
-                    writeln!(
-                        w,
-                        "{} {} {}",
-                        account.as_str(),
-                        p.amount.as_inline_display(),
-                        b.as_inline_display()
-                    )?;
-                }
-                continue;
-            }
-            writeln!(w, "{:#?}", txn)?;
+        let postings = ledger.postings(
+            &ctx,
+            &report::query::PostingQuery {
+                account: self.account.clone(),
+            },
+        );
+        let mut balance = report::Amount::default();
+        for posting in postings {
+            balance += posting.amount.clone();
+            writeln!(
+                w,
+                "{} {} {}",
+                posting.account.as_str(),
+                posting.amount.as_inline_display(),
+                balance.as_inline_display()
+            )?;
         }
         Ok(())
     }
