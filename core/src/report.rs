@@ -17,6 +17,7 @@ pub use balance::Balance;
 pub use book_keeping::{process, ProcessOptions};
 pub use context::{Account, ReportContext};
 pub use error::ReportError;
+pub use eval::Amount;
 pub use price_db::{load_price_db, PriceDBError};
 pub use transaction::{Posting, Transaction};
 
