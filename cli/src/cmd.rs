@@ -291,7 +291,8 @@ impl EvalOptions {
     fn to_process_options(&self) -> report::ProcessOptions {
         report::ProcessOptions {
             price_db_path: self.price_db.clone(),
-            conversion: self.exchange.clone(),
         }
+        // that will go into query.
+        // conversion: self.exchange.clone(),
     }
 }
