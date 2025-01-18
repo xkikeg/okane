@@ -150,15 +150,20 @@ fn add_transaction<'ctx>(
     bal: &mut Balance<'ctx>,
     txn: &syntax::tracked::Transaction,
 ) -> Result<Transaction<'ctx>, BookKeepError> {
+    // First, process all postings, except the one without balance and amount,
+    // which must be deduced later. And that should appear at most once.
     let mut postings = bcc::Vec::with_capacity_in(txn.posts.len(), ctx.arena);
     let mut unfilled: Option<Tracked<usize>> = None;
     let mut balance = Amount::default();
     for (i, posting) in txn.posts.iter().enumerate() {
         let account = ctx.accounts.ensure(&posting.as_undecorated().account);
-        let (amount, balance_amount): (PostingAmount, PostingAmount) = match (
+        // TODO: record rate. check commodity != cost comodity.
+        // amount stored in the posting, and balance delta.
+        let (posting_value, balance_delta): (PostingAmount, PostingAmount) = match (
             &posting.as_undecorated().amount,
             &posting.as_undecorated().balance,
         ) {
+            // posting with just `Account`, we need to deduce from other postings.
             (None, None) => {
                 if let Some(first) = unfilled.replace(Tracked::new(i, posting.span())) {
                     Err(BookKeepError::UndeduciblePostingAmount(
@@ -166,9 +171,12 @@ fn add_transaction<'ctx>(
                         Tracked::new(i, posting.span()),
                     ))
                 } else {
+                    // placeholder which will be replaced later.
+                    // balance_delta is also zero as we don't know the value yet.
                     Ok((PostingAmount::zero(), PostingAmount::zero()))
                 }
             }
+            // posting with `Account   = X`.
             (None, Some(balance_constraints)) => {
                 let current: PostingAmount =
                     balance_constraints.as_undecorated().eval(ctx)?.try_into()?;
@@ -176,6 +184,7 @@ fn add_transaction<'ctx>(
                 let amount = current.check_sub(prev)?;
                 Ok((amount, amount))
             }
+            // regular posting with `Account    X`, optionally with balance.
             (Some(syntax_amount), balance_constraints) => {
                 let amount: PostingAmount = syntax_amount
                     .amount
@@ -201,14 +210,15 @@ fn add_transaction<'ctx>(
                 Ok((amount, balance_amount))
             }
         }?;
-        balance += balance_amount;
+        balance += balance_delta;
         postings.push(Posting {
             account,
-            amount: amount.into(),
+            amount: posting_value.into(),
         });
     }
     if let Some(u) = unfilled {
         let u = *u.as_undecorated();
+        // Note that deduced amount can be multi-commodity, neither SingleAmount nor PostingAmount.
         let deduced: Amount = balance.clone().negate();
         postings[u].amount = deduced.clone();
         bal.add_amount(postings[u].account, deduced);
@@ -221,6 +231,7 @@ fn add_transaction<'ctx>(
     })
 }
 
+/// Checks if the posting amounts sum to zero.
 fn check_balance<'ctx>(
     ctx: &ReportContext<'ctx>,
     mut balance: Amount<'ctx>,
@@ -242,22 +253,12 @@ fn check_balance<'ctx>(
     Ok(())
 }
 
+/// Returns the amount which sums up to the balance within the transaction.
 fn calculate_balance_amount<'ctx>(
     ctx: &mut ReportContext<'ctx>,
     posting_amount: &syntax::tracked::PostingAmount,
     computed_amount: PostingAmount<'ctx>,
 ) -> Result<PostingAmount<'ctx>, BookKeepError> {
-    let cost: Option<SingleAmount<'ctx>> = posting_amount
-        .cost
-        .as_ref()
-        .map(|x| calculate_exchanged_amount(ctx, x.as_undecorated(), computed_amount.try_into()?))
-        .transpose()?;
-    let lot: Option<SingleAmount<'ctx>> = posting_amount
-        .lot
-        .price
-        .as_ref()
-        .map(|x| calculate_exchanged_amount(ctx, x.as_undecorated(), computed_amount.try_into()?))
-        .transpose()?;
     // Actually, there's no point to compute cost if lot price is provided.
     // Example: if you sell a X with cost p Y lot q Y.
     //   Broker          -a X {{q Y}} @@ p Y
@@ -268,9 +269,38 @@ fn calculate_balance_amount<'ctx>(
     // t + p Y - (p - q) Y = 0
     // t = -q Y
     // so actually cost is pointless in this case.
-    Ok(lot.or(cost).map(Into::into).unwrap_or(computed_amount))
+    match posting_lot_exchange(posting_amount).or(posting_cost_exchange(posting_amount)) {
+        Some(x) => {
+            let exchanged = calculate_exchanged_amount(ctx, x, computed_amount.try_into()?)?;
+            Ok(exchanged.into())
+        }
+        None => Ok(computed_amount),
+    }
 }
 
+/// Returns cost Exchange of the posting.
+#[inline]
+fn posting_cost_exchange<'a, 'ctx>(
+    posting_amount: &'a syntax::tracked::PostingAmount<'ctx>,
+) -> Option<&'a syntax::Exchange<'ctx>> {
+    posting_amount.cost.as_ref().map(Tracked::as_undecorated)
+}
+
+/// Returns lot exchange of the posting.
+#[inline]
+fn posting_lot_exchange<'a, 'ctx>(
+    posting_amount: &'a syntax::tracked::PostingAmount<'ctx>,
+) -> Option<&'a syntax::Exchange<'ctx>> {
+    posting_amount
+        .lot
+        .price
+        .as_ref()
+        .map(Tracked::as_undecorated)
+}
+
+/// Given the exchange rate and the amount, returns the converted amount.
+/// Note we don't need [`PriceRepository`][super::price_db::PriceRepository],
+/// as we only tries to convert the posting with cost / lot information.
 fn calculate_exchanged_amount<'ctx>(
     ctx: &mut ReportContext<'ctx>,
     cost: &syntax::Exchange,
