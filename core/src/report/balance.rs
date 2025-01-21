@@ -39,7 +39,7 @@ impl<'ctx> Balance<'ctx> {
     }
 
     /// Adds a particular account value with the specified commodity, and returns the updated balance.
-    pub fn add_posting_amount(
+    pub(super) fn add_posting_amount(
         &mut self,
         account: Account<'ctx>,
         amount: PostingAmount<'ctx>,
@@ -51,7 +51,7 @@ impl<'ctx> Balance<'ctx> {
 
     /// Tries to set the particular account's balance with the specified commodity,
     /// and returns the delta which should have caused the difference.
-    pub fn set_partial(
+    pub(super) fn set_partial(
         &mut self,
         account: Account<'ctx>,
         amount: PostingAmount<'ctx>,
