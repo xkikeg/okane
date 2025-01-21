@@ -160,15 +160,10 @@ impl Mul<Decimal> for SingleAmount<'_> {
     }
 }
 
-impl<'ctx> PostingAmount<'ctx> {
+impl PostingAmount<'_> {
     /// Returns absolute zero.
     pub fn zero() -> Self {
         Self::default()
-    }
-
-    /// Constructs an instance with single commodity.
-    pub fn from_value(value: Decimal, commodity: Commodity<'ctx>) -> Self {
-        PostingAmount::Single(SingleAmount::from_value(value, commodity))
     }
 
     /// Adds the amount with keeping commodity single.
@@ -185,6 +180,14 @@ impl<'ctx> PostingAmount<'ctx> {
     /// Subtracts the amount with keeping the commodity single.
     pub fn check_sub(self, rhs: Self) -> Result<Self, EvalError> {
         self.check_add(-rhs)
+    }
+}
+
+#[cfg(test)]
+impl<'ctx> PostingAmount<'ctx> {
+    /// Constructs an instance with single commodity.
+    pub(crate) fn from_value(value: Decimal, commodity: Commodity<'ctx>) -> Self {
+        PostingAmount::Single(SingleAmount::from_value(value, commodity))
     }
 }
 
@@ -393,7 +396,7 @@ impl<'ctx> Amount<'ctx> {
     /// *   If the [PostingAmount] is zero, then the amount must be zero.
     /// *   If the [PostingAmount] is a value with commodity,
     ///     then the amount should be equal to given value only on the commodity.
-    pub fn is_consistent(&self, rhs: PostingAmount<'ctx>) -> bool {
+    pub(crate) fn is_consistent(&self, rhs: &PostingAmount<'ctx>) -> bool {
         match rhs {
             PostingAmount::Zero => self.is_zero(),
             PostingAmount::Single(single) => self.get_part(single.commodity) == single.value,

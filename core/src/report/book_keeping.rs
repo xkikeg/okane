@@ -199,7 +199,7 @@ fn add_transaction<'ctx>(
                     .transpose()?;
                 let current = bal.add_posting_amount(account, amount);
                 if let Some(expected) = expected_balance {
-                    if !current.is_consistent(expected) {
+                    if !current.is_consistent(&expected) {
                         return Err(BookKeepError::BalanceAssertionFailure(
                             format!("{}", current.as_inline_display()),
                             format!("{}", expected),
