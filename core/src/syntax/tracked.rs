@@ -34,8 +34,9 @@ pub type Posting<'i> = super::Posting<'i, Tracking>;
 pub type PostingAmount<'i> = super::PostingAmount<'i, Tracking>;
 pub type Lot<'i> = super::Lot<'i, Tracking>;
 
-/// Span of the tracked position.
-/// Only useful within [ParsedContext][crate::parse::ParsedContext].
+/// Span of the tracked item within the original `&str`.
+/// Later one can convert this span into the range within the parsed str with
+/// [`ParsedSpan::resolve()`][crate::parse::ParsedSpan::resolve()].
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TrackedSpan(Range<usize>);
 
