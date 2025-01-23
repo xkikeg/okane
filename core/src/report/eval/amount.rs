@@ -193,6 +193,7 @@ impl<'ctx> PostingAmount<'ctx> {
 
 impl<'ctx> SingleAmount<'ctx> {
     /// Constructs an instance with single commodity.
+    #[inline]
     pub fn from_value(value: Decimal, commodity: Commodity<'ctx>) -> Self {
         Self { value, commodity }
     }
@@ -264,7 +265,6 @@ impl Display for SingleAmount<'_> {
 }
 
 /// Amount with multiple commodities, or simple zero.
-// TODO: Rename it to ValueAmount.
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct Amount<'ctx> {
     // if values.len == zero, then it'll be completely zero.
@@ -274,27 +274,29 @@ pub struct Amount<'ctx> {
 }
 
 impl<'ctx> Amount<'ctx> {
-    /// Creates an [Amount] with zero value.
+    /// Creates an [`Amount`] with zero value.
     #[inline(always)]
     pub fn zero() -> Self {
         Self::default()
     }
 
-    /// Creates an [Amount] with single value and commodity.
+    /// Creates an [`Amount`] with single value and commodity.
     pub fn from_value(amount: Decimal, commodity: Commodity<'ctx>) -> Self {
-        let mut value = Amount::default();
-        value.values.insert(commodity, amount);
+        let mut value = Amount::zero();
+        value += SingleAmount::from_value(amount, commodity);
         value
     }
 
-    /// Creates an [Amount] from a set of values.
+    /// Creates an [`Amount`] from a set of values.
     pub fn from_values<T>(values: T) -> Self
     where
         T: IntoIterator<Item = (Decimal, Commodity<'ctx>)>,
     {
-        Amount {
-            values: values.into_iter().map(|(v, c)| (c, v)).collect(),
+        let mut ret = Amount::zero();
+        for (value, commodity) in values.into_iter() {
+            ret += SingleAmount::from_value(value, commodity);
         }
+        ret
     }
 
     /// Takes out the instance and returns map from commodity to its value.
@@ -307,15 +309,9 @@ impl<'ctx> Amount<'ctx> {
         InlinePrintAmount(self)
     }
 
-    /// Returns `true` if this is 'non-commoditized zero', which is used to assert
-    /// the account balance is completely zero.
-    pub fn is_absolute_zero(&self) -> bool {
-        self.values.is_empty()
-    }
-
-    /// Returns `true` if this is zero, including zero commodities.
+    /// Returns `true` if this is zero.
     pub fn is_zero(&self) -> bool {
-        self.values.iter().all(|(_, v)| v.is_zero())
+        self.values.is_empty()
     }
 
     /// Replace the amount of the particular commodity, and returns the previous amount for the commodity.
@@ -351,6 +347,12 @@ impl<'ctx> Amount<'ctx> {
         ))
     }
 
+    /// Removes zero values, this must be called on all &mut self methods.
+    #[inline]
+    fn remove_zero_entries(&mut self) {
+        self.values.retain(|_, v| !v.is_zero());
+    }
+
     /// Rounds the balance with given decimal point.
     pub fn round<T>(&mut self, mut decimal_point: T)
     where
@@ -368,7 +370,7 @@ impl<'ctx> Amount<'ctx> {
                 }
             }
         }
-        self.values.retain(|_, v| !v.is_zero());
+        self.remove_zero_entries();
     }
 
     /// Creates negated instance.
@@ -376,6 +378,7 @@ impl<'ctx> Amount<'ctx> {
         for (_, v) in self.values.iter_mut() {
             v.set_sign_positive(!v.is_sign_positive())
         }
+        // exception: flipping flag shouldn't make value zero.
         self
     }
 
@@ -387,6 +390,7 @@ impl<'ctx> Amount<'ctx> {
         for (_, v) in self.values.iter_mut() {
             *v = v.checked_div(rhs).ok_or(EvalError::NumberOverflow)?;
         }
+        self.remove_zero_entries();
         Ok(self)
     }
 
@@ -451,13 +455,21 @@ impl AddAssign for Amount<'_> {
         for (c, v2) in rhs.values {
             let mut v1 = self.values.entry(c).or_insert(Decimal::ZERO);
             v1 += v2;
-            // it's questionable if we should eliminate zero commodities,
-            // but it should be safe as non-recorded commotiy and zero commodity
-            // don't have behavior difference.
+            // we need to make sure the zero values are removed,
+            // so that we can check is_zero() as is_empty().
             if v1.is_zero() {
                 self.values.remove(&c);
             }
         }
+    }
+}
+
+impl<'ctx> Add<SingleAmount<'ctx>> for Amount<'ctx> {
+    type Output = Amount<'ctx>;
+
+    fn add(mut self, rhs: SingleAmount<'ctx>) -> Self::Output {
+        self += rhs;
+        self
     }
 }
 
@@ -519,18 +531,21 @@ impl MulAssign<Decimal> for Amount<'_> {
         for (_, mut v) in self.values.iter_mut() {
             v *= rhs;
         }
+        // it can become too small, zero.
+        self.values.retain(|_, v| !v.is_zero());
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use bumpalo::Bump;
+    use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
     use crate::report::ReportContext;
-
-    use super::*;
 
     #[test]
     fn test_default() {
@@ -548,15 +563,23 @@ mod tests {
     }
 
     #[test]
-    fn test_is_absolute_zero() {
+    fn test_from_values() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
         let jpy = ctx.commodities.ensure("JPY");
-        let usd = ctx.commodities.ensure("USD");
+        let chf = ctx.commodities.ensure("CHF");
 
-        assert!(Amount::default().is_absolute_zero());
-        assert!(!Amount::from_value(dec!(0), jpy).is_absolute_zero());
-        assert!(!Amount::from_values([(dec!(0), jpy), (dec!(0), usd)]).is_absolute_zero())
+        let amount = Amount::from_values([(dec!(10), jpy), (dec!(1), chf)]);
+        assert_eq!(
+            amount.into_values(),
+            hashmap! {jpy => dec!(10), chf => dec!(1)},
+        );
+
+        let amount = Amount::from_values([(dec!(10), jpy), (dec!(1), jpy)]);
+        assert_eq!(amount.into_values(), hashmap! {jpy => dec!(11)});
+
+        let amount = Amount::from_values([(dec!(10), jpy), (dec!(-10), jpy)]);
+        assert_eq!(amount, Amount::zero());
     }
 
     #[test]
@@ -593,7 +616,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add() {
+    fn test_add_amount() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
         let jpy = ctx.commodities.ensure("JPY");
@@ -622,6 +645,46 @@ mod tests {
                 + Amount::from_value(dec!(7.89), eur)
                 + Amount::from_value(dec!(100), chf),
         );
+
+        assert_eq!(
+            Amount::zero(),
+            Amount::from_values([(dec!(1), jpy), (dec!(2), usd), (dec!(3), chf)])
+                + Amount::from_values([(dec!(-1), jpy), (dec!(-2), usd), (dec!(-3), chf)])
+        );
+    }
+
+    #[test]
+    fn test_add_single_amount() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let jpy = ctx.commodities.ensure("JPY");
+        let usd = ctx.commodities.ensure("USD");
+        let eur = ctx.commodities.ensure("EUR");
+        let chf = ctx.commodities.ensure("CHF");
+
+        let amount = Amount::zero() + SingleAmount::from_value(dec!(0), usd);
+        assert_eq!(amount, Amount::zero());
+
+        assert_eq!(
+            Amount::zero() + SingleAmount::from_value(dec!(1), jpy),
+            Amount::from_value(dec!(1), jpy),
+        );
+        assert_eq!(
+            Amount::from_values([(dec!(123.00), jpy), (dec!(456.0), usd), (dec!(7.89), eur),]),
+            Amount::from_value(dec!(123.45), jpy)
+                + SingleAmount::from_value(dec!(-0.45), jpy)
+                + SingleAmount::from_value(dec!(456), usd)
+                + SingleAmount::from_value(dec!(0.0), usd)
+                + -SingleAmount::from_value(dec!(100), chf)
+                + SingleAmount::from_value(dec!(7.89), eur)
+                + SingleAmount::from_value(dec!(100), chf),
+        );
+
+        assert_eq!(
+            Amount::zero(),
+            Amount::from_values([(dec!(1), jpy), (dec!(2), usd), (dec!(3), chf)])
+                + Amount::from_values([(dec!(-1), jpy), (dec!(-2), usd), (dec!(-3), chf)])
+        );
     }
 
     #[test]
@@ -649,6 +712,16 @@ mod tests {
                 - Amount::from_values([(dec!(56.780), usd), (dec!(200), eur), (dec!(-13.3), chf)]),
             Amount::from_values([(dec!(12345), jpy), (dec!(-200), eur), (dec!(13.3), chf)])
         );
+
+        assert_eq!(
+            Amount::zero(),
+            Amount::from_values([(dec!(1), jpy), (dec!(2), usd), (dec!(3), chf)])
+                - Amount::from_values([(dec!(1), jpy), (dec!(2), usd), (dec!(3), chf)])
+        );
+    }
+
+    fn eps() -> Decimal {
+        Decimal::try_from_i128_with_scale(1, 28).unwrap()
     }
 
     #[test]
@@ -673,6 +746,7 @@ mod tests {
                 * dec!(-0.5),
             Amount::from_values([(dec!(-5040.5), jpy), (dec!(-100.0), eur), (dec!(6.65), chf)]),
         );
+        assert_eq!(Amount::from_value(eps(), jpy) * eps(), Amount::zero());
     }
 
     #[test]
@@ -698,9 +772,16 @@ mod tests {
 
         assert_eq!(
             Amount::from_value(Decimal::MAX, jpy)
-                .check_div(Decimal::from_i128_with_scale(1, 28))
+                .check_div(eps())
                 .unwrap_err(),
             EvalError::NumberOverflow
+        );
+
+        assert_eq!(
+            Amount::from_value(eps(), jpy)
+                .check_div(Decimal::MAX)
+                .unwrap(),
+            Amount::zero()
         );
 
         assert_eq!(
