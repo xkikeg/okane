@@ -4,6 +4,6 @@
 
 pub mod format;
 pub mod load;
-pub(crate) mod parse;
+pub mod parse;
 pub mod report;
 pub mod syntax;

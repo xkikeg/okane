@@ -1,4 +1,5 @@
 //! Defines parser for the Ledger format.
+//! Currently only the parser for the entire file format is provieded as public.
 
 mod character;
 mod combinator;
@@ -97,12 +98,14 @@ impl ParsedContext<'_> {
             .expect("ParsedContext::span must be a valid UTF-8 boundary")
     }
 
+    /// Returns the position of the parsed string within the original `&str`,
+    /// which can be used to find the position of the [`Tracked`][syntax::tracked::Tracked] item.
     pub fn span(&self) -> ParsedSpan {
         ParsedSpan(self.span.clone())
     }
 }
 
-/// Span of the parsed str.
+/// Range parsed with the given parser within the original input `&str`.
 #[derive(Debug)]
 pub struct ParsedSpan(Range<usize>);
 
