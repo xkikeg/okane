@@ -98,6 +98,7 @@ mod tests {
         let got: Amount<'_> = got.try_into().expect("not an amount");
         assert_eq!(
             hashmap! {
+                ctx.commodities.ensure("USD") => dec!(0),
                 ctx.commodities.ensure("EUR") => dec!(300),
                 ctx.commodities.ensure("JPY") => dec!(20000),
             },

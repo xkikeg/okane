@@ -35,6 +35,7 @@ impl<'ctx> Balance<'ctx> {
     pub fn add_amount(&mut self, account: Account<'ctx>, amount: Amount<'ctx>) -> &Amount<'ctx> {
         let curr: &mut Amount = self.accounts.entry(account).or_default();
         *curr += amount;
+        curr.remove_zero_entries();
         curr
     }
 
@@ -46,6 +47,7 @@ impl<'ctx> Balance<'ctx> {
     ) -> &Amount<'ctx> {
         let curr: &mut Amount = self.accounts.entry(account).or_default();
         *curr += amount;
+        curr.remove_zero_entries();
         curr
     }
 
@@ -60,7 +62,7 @@ impl<'ctx> Balance<'ctx> {
             PostingAmount::Zero => {
                 let prev: Amount<'ctx> = self
                     .accounts
-                    .insert(account, amount.into())
+                    .insert(account, Amount::zero())
                     .unwrap_or_default();
                 (&prev)
                     .try_into()
