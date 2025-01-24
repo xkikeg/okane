@@ -9,12 +9,16 @@ use crate::{
     parse::{self, ParsedSpan},
 };
 
-use super::book_keeping::{self, BookKeepError};
+use super::{
+    book_keeping::{self, BookKeepError},
+    price_db,
+};
 
 /// Error arised in report APIs.
 #[derive(thiserror::Error, Debug)]
 pub enum ReportError {
     Load(#[from] load::LoadError),
+    PriceDB(#[from] price_db::LoadError),
     BookKeep(book_keeping::BookKeepError, Box<ErrorContext>),
 }
 
@@ -22,6 +26,7 @@ impl Display for ReportError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ReportError::Load(_) => write!(f, "failed to load the given file"),
+            ReportError::PriceDB(_) => write!(f, "failed to load the Price DB"),
             ReportError::BookKeep(err, ctx) => ctx.print(f, err),
         }
     }

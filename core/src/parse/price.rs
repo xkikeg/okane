@@ -45,7 +45,7 @@ where
             _: space1,
             target: primitive::commodity.map(Cow::Borrowed),
             _: space1,
-            rate: expr::value_expr,
+            rate: expr::amount,
             _: line_ending,
         }},
     )
@@ -78,10 +78,10 @@ mod tests {
                         NaiveTime::from_hms_opt(0, 0, 0).expect("00:00:00 must exist")
                     ),
                     target: Cow::Borrowed("JRTOK"),
-                    rate: syntax::expr::ValueExpr::Amount(Amount {
+                    rate: Amount {
                         value: PrettyDecimal::comma3dot(dec!(3584)),
                         commodity: Cow::Borrowed("JPY")
-                    })
+                    },
                 }
             )
         );
@@ -98,10 +98,10 @@ mod tests {
                         NaiveTime::from_hms_opt(0, 0, 0).expect("00:00:00 must exist")
                     ),
                     target: Cow::Borrowed("EUR"),
-                    rate: syntax::expr::ValueExpr::Amount(Amount {
+                    rate: Amount {
                         value: PrettyDecimal::unformatted(dec!(0.9367)),
                         commodity: Cow::Borrowed("CHF")
-                    })
+                    },
                 }
             )
         );
@@ -121,10 +121,10 @@ mod tests {
                         NaiveTime::from_hms_opt(17, 6, 0).expect("17:06:00 must exist")
                     ),
                     target: Cow::Borrowed("DCTOPIX"),
-                    rate: syntax::expr::ValueExpr::Amount(Amount {
+                    rate: Amount {
                         value: PrettyDecimal::comma3dot(dec!(22745)),
                         commodity: Cow::Borrowed("JPY")
-                    })
+                    },
                 }
             )
         );

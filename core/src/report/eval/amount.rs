@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{hash_map, HashMap},
     fmt::Display,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
@@ -13,13 +13,13 @@ use super::error::EvalError;
 /// Amount with only one commodity.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct SingleAmount<'ctx> {
-    pub value: Decimal,
-    pub commodity: Commodity<'ctx>,
+    pub(crate) value: Decimal,
+    pub(crate) commodity: Commodity<'ctx>,
 }
 
 /// Amount with only one commodity, or total zero.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum PostingAmount<'ctx> {
+pub(crate) enum PostingAmount<'ctx> {
     Zero,
     Single(SingleAmount<'ctx>),
 }
@@ -235,8 +235,16 @@ impl<'ctx> SingleAmount<'ctx> {
         })
     }
 
+    /// Returns an absolute value of the current value.
+    pub fn abs(self) -> Self {
+        Self {
+            value: self.value.abs(),
+            commodity: self.commodity,
+        }
+    }
+
     /// Returns a new instance with having the same sign with given SingleAmount.
-    pub fn with_sign_of(self, rhs: SingleAmount<'ctx>) -> Self {
+    pub fn with_sign_of(self, rhs: Self) -> Self {
         let value = if rhs.value.is_sign_positive() {
             self.value
         } else {
@@ -302,6 +310,11 @@ impl<'ctx> Amount<'ctx> {
         self.values
     }
 
+    /// Returns iterator over its amount.
+    pub fn iter(&self) -> impl Iterator<Item = SingleAmount<'ctx>> + '_ {
+        return AmountIter(self.values.iter());
+    }
+
     /// Returns an objectt to print the amount as inline.
     pub fn as_inline_display(&self) -> impl Display + '_ {
         InlinePrintAmount(self)
@@ -361,6 +374,7 @@ impl<'ctx> Amount<'ctx> {
     }
 
     /// Rounds the balance with given decimal point.
+    #[inline]
     pub fn round<T>(&mut self, mut decimal_point: T)
     where
         T: FnMut(Commodity<'ctx>) -> Option<u32>,
@@ -409,6 +423,17 @@ impl<'ctx> Amount<'ctx> {
             PostingAmount::Zero => self.is_zero(),
             PostingAmount::Single(single) => self.get_part(single.commodity) == single.value,
         }
+    }
+}
+
+#[derive(Debug)]
+struct AmountIter<'a, 'ctx>(hash_map::Iter<'a, Commodity<'ctx>, Decimal>);
+
+impl<'ctx> Iterator for AmountIter<'_, 'ctx> {
+    type Item = SingleAmount<'ctx>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(c, v)| SingleAmount::from_value(*v, *c))
     }
 }
 
