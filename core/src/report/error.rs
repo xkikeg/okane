@@ -42,16 +42,31 @@ impl ErrorContext {
         let message = err.to_string();
         let path = self.path.to_string_lossy();
         let annotations: Vec<Annotation> = match err {
-            BookKeepError::UndeduciblePostingAmount(first, second) => {
-                vec![
-                    Level::Warning
-                        .span(self.parsed_span.resolve(first.span()))
-                        .label("first posting that requires deduce"),
-                    Level::Error
-                        .span(self.parsed_span.resolve(second.span()))
-                        .label("either this or previous posting must specify the amount"),
-                ]
-            }
+            BookKeepError::UndeduciblePostingAmount(first, second) => vec![
+                Level::Warning
+                    .span(self.parsed_span.resolve(&first.span()))
+                    .label("first posting without constraints"),
+                Level::Error
+                    .span(self.parsed_span.resolve(&second.span()))
+                    .label("cannot deduce this posting"),
+            ],
+            BookKeepError::ZeroAmountWithExchange(exchange) => vec![Level::Error
+                .span(self.parsed_span.resolve(exchange))
+                .label("absolute zero posting should not have exchange")],
+            BookKeepError::ZeroExchangeRate(exchange) => vec![Level::Error
+                .span(self.parsed_span.resolve(exchange))
+                .label("exchange with zero amount")],
+            BookKeepError::ExchangeWithAmountCommodity {
+                posting_amount,
+                exchange,
+            } => vec![
+                Level::Info
+                    .span(self.parsed_span.resolve(posting_amount))
+                    .label("posting amount"),
+                Level::Error
+                    .span(self.parsed_span.resolve(exchange))
+                    .label("exchange cannot have the same commodity with posting"),
+            ],
             _ => {
                 // TODO: Add more detailed error into this.
                 // Also, put these logic into BookKeepError.
