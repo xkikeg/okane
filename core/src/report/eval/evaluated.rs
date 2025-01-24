@@ -75,6 +75,23 @@ impl<'ctx> Evaluated<'ctx> {
         Amount::from_value(amount.value.clone().into(), commodity).into()
     }
 
+    /// Creates [`Evaluated`] from [`expr::Amount`],
+    /// with just looking up the commodity.
+    pub(super) fn from_expr_amount(
+        ctx: &ReportContext<'ctx>,
+        amount: &expr::Amount,
+    ) -> Result<Evaluated<'ctx>, EvalError> {
+        if amount.commodity.is_empty() {
+            return Ok(amount.value.value.into());
+        }
+        let commodity = ctx.commodities.resolve(&amount.commodity).ok_or_else(|| {
+            EvalError::UnknownCommodity(OwnedCommodity::from_string(
+                amount.commodity.clone().into_owned(),
+            ))
+        })?;
+        Ok(Amount::from_value(amount.value.clone().into(), commodity).into())
+    }
+
     /// Returns if the amount is zero.
     pub fn is_zero(&self) -> bool {
         match self {

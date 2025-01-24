@@ -123,6 +123,7 @@ where
 }
 
 /// Parses amount expression, possibly with negative op.
+// Only used for [`Amount`] `TryFrom<&'str>` implementation.
 fn unary_amount<'i, I, E>(input: &mut I) -> PResult<expr::Amount<'i>, E>
 where
     I: Stream<Slice = &'i str> + StreamIsPartial,

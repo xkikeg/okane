@@ -4,6 +4,7 @@ use std::io::BufReader;
 use std::path::PathBuf;
 
 use bumpalo::Bump;
+use chrono::NaiveDate;
 use clap::{Args, Subcommand};
 use encoding_rs_io::DecodeReaderBytesBuilder;
 
@@ -26,9 +27,8 @@ pub enum Error {
     Load(#[from] load::LoadError),
     #[error("failed to report")]
     Report(#[from] report::ReportError),
-    // TODO: This is temporal, remove.
-    #[error("failed to load price DB")]
-    PriceDB(#[from] report::PriceDBError),
+    #[error("failed to query")]
+    Query(#[from] report::query::QueryError),
 }
 
 #[derive(Subcommand, Debug)]
@@ -143,6 +143,8 @@ enum PrimitiveCmd {
     Format(FormatCmd),
     /// Read the given one ledger file, recursively resolves include directives and print to stdout.
     Flatten(FlattenCmd),
+    /// Evaluates the given value under given condition.
+    Eval(EvalCmd),
 }
 
 impl PrimitiveCmd {
@@ -150,6 +152,7 @@ impl PrimitiveCmd {
         match self {
             PrimitiveCmd::Format(cmd) => cmd.run(&mut std::io::stdout().lock()),
             PrimitiveCmd::Flatten(cmd) => cmd.run(&mut std::io::stdout().lock()),
+            PrimitiveCmd::Eval(cmd) => cmd.run(&mut std::io::stdout().lock()),
         }
     }
 }
@@ -172,6 +175,53 @@ impl FlattenCmd {
                 Ok(())
             },
         )?;
+        Ok(())
+    }
+}
+
+#[derive(Args, Debug)]
+struct EvalCmd {
+    /// Date of the price.
+    #[arg(long)]
+    pub date: NaiveDate,
+
+    #[command(flatten)]
+    eval_options: EvalOptions,
+
+    /// source of the Ledger file.
+    #[arg(short = 'f', long = "file")]
+    pub source: std::path::PathBuf,
+
+    /// expression to evaluate.
+    pub expression: Vec<String>,
+}
+
+impl EvalCmd {
+    pub fn run<W>(self, w: &mut W) -> Result<(), Error>
+    where
+        W: std::io::Write,
+    {
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let mut ledger = report::process(
+            &mut ctx,
+            load::new_loader(self.source),
+            &self.eval_options.to_process_options(),
+        )?;
+        let mut expression: String = "(".to_string();
+        for term in &self.expression {
+            expression.push_str(&term);
+        }
+        expression.push_str(")");
+        let result = ledger.eval(
+            &mut ctx,
+            &expression,
+            &report::query::EvalContext {
+                date: self.date,
+                exchange: self.eval_options.exchange,
+            },
+        )?;
+        writeln!(w, "{}", result.as_inline_display())?;
         Ok(())
     }
 }
@@ -212,10 +262,6 @@ impl BalanceCmd {
     {
         let arena = Bump::new();
         let mut ctx = report::ReportContext::new(&arena);
-        // TODO: properly integrate with price DB.
-        if let Some(price_db) = &self.eval_options.price_db {
-            report::load_price_db(&PathBuf::from(price_db))?;
-        }
         let ledger = report::process(
             &mut ctx,
             load::new_loader(self.source),
@@ -291,7 +337,8 @@ impl EvalOptions {
     fn to_process_options(&self) -> report::ProcessOptions {
         report::ProcessOptions {
             price_db_path: self.price_db.clone(),
-            conversion: self.exchange.clone(),
         }
+        // that will go into query.
+        // conversion: self.exchange.clone(),
     }
 }

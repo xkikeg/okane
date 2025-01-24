@@ -7,6 +7,8 @@ pub enum EvalError {
     UnmatchingOperation,
     #[error("unmatching commodities {0} and {1}")]
     UnmatchingCommodities(OwnedCommodity, OwnedCommodity),
+    #[error("unknown commodity {0}")]
+    UnknownCommodity(OwnedCommodity),
     #[error("cannot divide by zero")]
     DivideByZero,
     #[error("overflow happened")]

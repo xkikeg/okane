@@ -22,6 +22,12 @@ impl<'arena> FromInterned<'arena> for Commodity<'arena> {
     }
 }
 
+impl Display for Commodity<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_str().fmt(f)
+    }
+}
+
 impl<'arena> Commodity<'arena> {
     /// Returns the `&str`.
     pub fn as_str(&self) -> &'arena str {
@@ -59,7 +65,7 @@ impl From<Commodity<'_>> for OwnedCommodity {
 
 impl Display for OwnedCommodity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        self.0.fmt(f)
     }
 }
 
@@ -86,7 +92,6 @@ impl<'arena> CommodityStore<'arena> {
     }
 
     /// Returns the Commodity with the given `value` if and only if it's already registered.
-    #[cfg(test)]
     pub fn resolve(&self, value: &str) -> Option<Commodity<'arena>> {
         self.intern.resolve(value)
     }

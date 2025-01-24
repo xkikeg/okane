@@ -4,6 +4,8 @@
 use std::{borrow::Borrow, path::PathBuf};
 
 use bumpalo::collections as bcc;
+use chrono::NaiveDate;
+use rust_decimal::Decimal;
 
 use crate::{
     load,
@@ -20,6 +22,7 @@ use super::{
     error::{self, ReportError},
     eval::{Amount, EvalError, Evaluable, PostingAmount, SingleAmount},
     intern::InternError,
+    price_db::{PriceEvent, PriceRepositoryBuilder, PriceSource},
     query::Ledger,
     transaction::{Posting, Transaction},
 };
@@ -60,8 +63,6 @@ pub enum BookKeepError {
 pub struct ProcessOptions {
     /// Path to the price DB file.
     pub price_db_path: Option<PathBuf>,
-    /// Commodity used for conversion.
-    pub conversion: Option<String>,
 }
 
 /// Takes the loader, and gives back the all read transactions.
@@ -70,7 +71,7 @@ pub struct ProcessOptions {
 pub fn process<'ctx, L, F>(
     ctx: &mut ReportContext<'ctx>,
     loader: L,
-    _options: &ProcessOptions,
+    options: &ProcessOptions,
 ) -> Result<Ledger<'ctx>, ReportError>
 where
     L: Borrow<load::Loader<F>>,
@@ -89,15 +90,20 @@ where
             )
         })
     })?;
+    if let Some(price_db_path) = options.price_db_path.as_deref() {
+        accum.price_repos.load_price_db(ctx, price_db_path)?;
+    }
     Ok(Ledger {
         transactions: accum.txns,
         raw_balance: accum.balance,
+        price_repos: accum.price_repos.build(),
     })
 }
 
 struct ProcessAccumulator<'ctx> {
     balance: Balance<'ctx>,
     txns: Vec<Transaction<'ctx>>,
+    price_repos: PriceRepositoryBuilder<'ctx>,
 }
 
 impl<'ctx> ProcessAccumulator<'ctx> {
@@ -105,6 +111,7 @@ impl<'ctx> ProcessAccumulator<'ctx> {
         Self {
             balance: Balance::default(),
             txns: Vec::new(),
+            price_repos: PriceRepositoryBuilder::default(),
         }
     }
 
@@ -115,8 +122,12 @@ impl<'ctx> ProcessAccumulator<'ctx> {
     ) -> Result<(), BookKeepError> {
         match entry {
             syntax::LedgerEntry::Txn(txn) => {
-                self.txns
-                    .push(add_transaction(ctx, &mut self.balance, txn)?);
+                self.txns.push(add_transaction(
+                    ctx,
+                    &mut self.price_repos,
+                    &mut self.balance,
+                    txn,
+                )?);
                 Ok(())
             }
             syntax::LedgerEntry::Account(account) => {
@@ -161,6 +172,7 @@ impl<'ctx> ProcessAccumulator<'ctx> {
 /// Adds a syntax transaction, and converts it into a processed Transaction.
 fn add_transaction<'ctx>(
     ctx: &mut ReportContext<'ctx>,
+    price_repos: &mut PriceRepositoryBuilder<'ctx>,
     bal: &mut Balance<'ctx>,
     txn: &syntax::tracked::Transaction,
 ) -> Result<Transaction<'ctx>, BookKeepError> {
@@ -202,6 +214,10 @@ fn add_transaction<'ctx>(
                 // regular posting with `Account    X`, optionally with balance.
                 (Some(syntax_amount), balance_constraints) => {
                     let computed = compute_posting_amount(ctx, syntax_amount)?;
+                    // we uses transaction date, maybe good to provide an option to use effective date.
+                    if let Some(event) = posting_price_event(txn.date, &computed)? {
+                        price_repos.insert_price(PriceSource::Ledger, event);
+                    }
                     let expected_balance: Option<PostingAmount> = balance_constraints
                         .as_ref()
                         .map(|x| x.as_undecorated().eval_mut(ctx))
@@ -234,7 +250,7 @@ fn add_transaction<'ctx>(
         postings[u].amount = deduced.clone();
         bal.add_amount(postings[u].account, deduced);
     } else {
-        check_balance(ctx, balance)?;
+        check_balance(ctx, price_repos, txn.date, balance)?;
     }
     Ok(Transaction {
         date: txn.date,
@@ -315,9 +331,40 @@ fn compute_posting_amount<'ctx>(
     Ok(ComputedPosting { amount, cost, lot })
 }
 
+/// Adds the price of the commodity in the posting into PriceRepositoryBuilder.
+fn posting_price_event<'ctx>(
+    date: NaiveDate,
+    computed: &ComputedPosting<'ctx>,
+) -> Result<Option<PriceEvent<'ctx>>, BookKeepError> {
+    let exchange = match computed.cost.as_ref().or(computed.lot.as_ref()) {
+        None => return Ok(None),
+        Some(exchange) => exchange,
+    };
+    Ok(Some(match computed.amount {
+        // TODO: here we can record --market commodities.
+        PostingAmount::Zero => {
+            unreachable!("Given Exchange is set None, this must be SingleAmount.")
+        }
+        PostingAmount::Single(amount) => match exchange {
+            Exchange::Rate(rate) => PriceEvent {
+                price_x: SingleAmount::from_value(Decimal::ONE, amount.commodity),
+                price_y: *rate,
+                date,
+            },
+            Exchange::Total(total) => PriceEvent {
+                price_x: amount.abs(),
+                price_y: *total,
+                date,
+            },
+        },
+    }))
+}
+
 /// Checks if the posting amounts sum to zero.
 fn check_balance<'ctx>(
     ctx: &ReportContext<'ctx>,
+    price_repos: &mut PriceRepositoryBuilder<'ctx>,
+    date: NaiveDate,
     mut balance: Amount<'ctx>,
 ) -> Result<(), BookKeepError> {
     balance.round(|commodity| ctx.commodities.get_decimal_point(commodity));
@@ -325,7 +372,15 @@ fn check_balance<'ctx>(
         return Ok(());
     }
     if let Some((a1, a2)) = balance.maybe_pair() {
-        log::debug!("deduced price {} == {}", a1, a2);
+        // deduced price is logged to price repository.
+        price_repos.insert_price(
+            PriceSource::Ledger,
+            PriceEvent {
+                date,
+                price_x: a1.abs(),
+                price_y: a2.abs(),
+            },
+        );
         return Ok(());
     }
     if !balance.is_zero() {
@@ -443,8 +498,9 @@ mod tests {
               Account 4              = -300 JPY
         "};
         let txn = parse_transaction(input);
+        let mut price_repos = PriceRepositoryBuilder::default();
 
-        let _ = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
+        let _ = add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
 
         let want_balance: Balance = hashmap! {
             ctx.accounts.ensure("Account 1") =>
@@ -482,8 +538,10 @@ mod tests {
               Account 2     -100 JPY = -200 JPY
         "};
         let txn = parse_transaction(input);
+        let mut price_repos = PriceRepositoryBuilder::default();
 
-        let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
+        let got =
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
 
         let want = Transaction {
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
@@ -542,8 +600,10 @@ mod tests {
               Account 4
         "};
         let txn = parse_transaction(input);
+        let mut price_repos = PriceRepositoryBuilder::default();
 
-        let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
+        let got =
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
 
         let want = Transaction {
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
@@ -586,7 +646,9 @@ mod tests {
               Account 4
         "};
         let txn = parse_transaction(input);
-        let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
+        let mut price_repos = PriceRepositoryBuilder::default();
+        let got =
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
         let want = Transaction {
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
             postings: bcc::Vec::from_iter_in(
@@ -630,8 +692,10 @@ mod tests {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
         let mut bal = Balance::default();
+        let mut price_repos = PriceRepositoryBuilder::default();
 
-        let got = add_transaction(&mut ctx, &mut bal, &txn).expect_err("must fail");
+        let got =
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect_err("must fail");
 
         assert_eq!(
             got,
@@ -652,8 +716,10 @@ mod tests {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
         let mut bal = Balance::default();
+        let mut price_repos = PriceRepositoryBuilder::default();
 
-        let got = add_transaction(&mut ctx, &mut bal, &txn).expect_err("must fail");
+        let got =
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect_err("must fail");
 
         assert_eq!(
             got,
@@ -673,8 +739,10 @@ mod tests {
         "};
         let date = NaiveDate::from_ymd_opt(2024, 8, 1).unwrap();
         let txn = parse_transaction(input);
+        let mut price_repos = PriceRepositoryBuilder::default();
 
-        let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
+        let got =
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
 
         let okane = ctx.commodities.resolve("OKANE").unwrap();
         let jpy = ctx.commodities.resolve("JPY").unwrap();
@@ -696,6 +764,20 @@ mod tests {
             .into_boxed_slice(),
         };
         assert_eq!(want, got);
+
+        let want_prices = vec![
+            PriceEvent {
+                date,
+                price_x: SingleAmount::from_value(dec!(1), jpy),
+                price_y: SingleAmount::from_value(dec!(1) / dec!(100), okane),
+            },
+            PriceEvent {
+                date,
+                price_x: SingleAmount::from_value(dec!(1), okane),
+                price_y: SingleAmount::from_value(dec!(100), jpy),
+            },
+        ];
+        assert_eq!(price_repos.into_events(), want_prices);
     }
 
     #[test]
@@ -709,7 +791,9 @@ mod tests {
               Account 2         -1,200 JPY
         "};
         let txn = parse_transaction(input);
-        let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
+        let mut price_repos = PriceRepositoryBuilder::default();
+        let got =
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
         let want = Transaction {
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
             postings: bcc::Vec::from_iter_in(
@@ -743,8 +827,10 @@ mod tests {
         "};
         let date = NaiveDate::from_ymd_opt(2024, 8, 1).unwrap();
         let txn = parse_transaction(input);
+        let mut price_repos = PriceRepositoryBuilder::default();
 
-        let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
+        let got =
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
 
         let okane = ctx.commodities.resolve("OKANE").unwrap();
         let jpy = ctx.commodities.resolve("JPY").unwrap();
@@ -770,6 +856,20 @@ mod tests {
             .into_boxed_slice(),
         };
         assert_eq!(want, got);
+
+        let want_prices = vec![
+            PriceEvent {
+                date,
+                price_x: SingleAmount::from_value(dec!(1), jpy),
+                price_y: SingleAmount::from_value(dec!(1) / dec!(120), okane),
+            },
+            PriceEvent {
+                date,
+                price_x: SingleAmount::from_value(dec!(1), okane),
+                price_y: SingleAmount::from_value(dec!(120), jpy),
+            },
+        ];
+        assert_eq!(price_repos.into_events(), want_prices);
     }
 
     #[test]
@@ -785,8 +885,10 @@ mod tests {
         "};
         let date = NaiveDate::from_ymd_opt(2024, 8, 1).unwrap();
         let txn = parse_transaction(input);
+        let mut price_repos = PriceRepositoryBuilder::default();
 
-        let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
+        let got =
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
 
         let okane = ctx.commodities.resolve("OKANE").unwrap();
         let jpy = ctx.commodities.resolve("JPY").unwrap();
@@ -812,6 +914,20 @@ mod tests {
             .into_boxed_slice(),
         };
         assert_eq!(want, got);
+
+        let want_prices = vec![
+            PriceEvent {
+                date,
+                price_x: SingleAmount::from_value(dec!(1), jpy),
+                price_y: SingleAmount::from_value(dec!(1) / dec!(120), okane),
+            },
+            PriceEvent {
+                date,
+                price_x: SingleAmount::from_value(dec!(1), okane),
+                price_y: SingleAmount::from_value(dec!(120), jpy),
+            },
+        ];
+        assert_eq!(price_repos.into_events(), want_prices);
     }
 
     #[test]
@@ -829,8 +945,10 @@ mod tests {
         "};
         let date = NaiveDate::from_ymd_opt(2024, 8, 1).unwrap();
         let txn = parse_transaction(input);
+        let mut price_repos = PriceRepositoryBuilder::default();
 
-        let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
+        let got =
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
         let eur = ctx.commodities.resolve("EUR").unwrap();
         let want = Transaction {
             date,
@@ -850,5 +968,19 @@ mod tests {
             .into_boxed_slice(),
         };
         assert_eq!(want, got);
+
+        let want_prices = vec![
+            PriceEvent {
+                date,
+                price_x: SingleAmount::from_value(dec!(1), chf),
+                price_y: SingleAmount::from_value(dec!(1.0538), eur),
+            },
+            PriceEvent {
+                date,
+                price_x: SingleAmount::from_value(dec!(1), eur),
+                price_y: SingleAmount::from_value(dec!(1) / dec!(1.0538), chf),
+            },
+        ];
+        assert_eq!(price_repos.into_events(), want_prices);
     }
 }

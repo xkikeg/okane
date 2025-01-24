@@ -330,5 +330,6 @@ pub struct PriceDBEntry<'i> {
     /// Target commodity of the price.
     pub target: Cow<'i, str>,
     /// The rate of the target commodity.
-    pub rate: expr::ValueExpr<'i>,
+    /// 1 target == rate.
+    pub rate: expr::Amount<'i>,
 }

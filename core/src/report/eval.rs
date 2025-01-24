@@ -4,7 +4,8 @@ mod amount;
 mod error;
 mod evaluated;
 
-pub use amount::{Amount, PostingAmount, SingleAmount};
+pub(super) use amount::PostingAmount;
+pub use amount::{Amount, SingleAmount};
 pub use error::EvalError;
 pub use evaluated::Evaluated;
 
@@ -21,6 +22,11 @@ pub(crate) trait Evaluable {
     /// Evaluate the self with mutable `ctx`, which allows unknown commodities in the expressions to be registered.
     fn eval_mut<'ctx>(&self, ctx: &mut ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError> {
         self.eval_visit(&mut |amount| Ok(Evaluated::from_expr_amount_mut(ctx, amount)))
+    }
+
+    /// Evaluate the self with immutable `ctx`, which raises error on unknown commoditieis.
+    fn eval<'ctx>(&self, ctx: &ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError> {
+        self.eval_visit(&mut |amount| Evaluated::from_expr_amount(ctx, amount))
     }
 }
 
