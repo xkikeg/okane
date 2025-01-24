@@ -111,7 +111,7 @@ pub struct ParsedSpan(Range<usize>);
 
 impl ParsedSpan {
     /// Returns the span of the given span relative to this span.
-    pub fn resolve(&self, span: syntax::tracked::TrackedSpan) -> Range<usize> {
+    pub fn resolve(&self, span: &syntax::tracked::TrackedSpan) -> Range<usize> {
         let target = span.as_range();
         clip(self.0.clone(), target)
     }

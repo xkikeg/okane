@@ -29,7 +29,7 @@ impl<'arena> Commodity<'arena> {
     }
 }
 
-/// `Interner` for `Commodity`.
+/// `Interner` for [`Commodity`].
 pub(super) struct CommodityStore<'arena> {
     intern: InternStore<'arena, Commodity<'arena>>,
     formatting: HashMap<Commodity<'arena>, PrettyDecimal>,
@@ -44,22 +44,33 @@ impl<'arena> CommodityStore<'arena> {
         }
     }
 
-    /// Facade for [InternStore::ensure].
+    /// Returns the Commodity with the given `value`,
+    /// potentially resolving the alias.
+    /// If not available, registers the given `value` as the canonical.
     pub fn ensure(&mut self, value: &str) -> Commodity<'arena> {
         self.intern.ensure(value)
+    }
+
+    /// Returns the Commodity with the given `value` if and only if it's already registered.
+    #[cfg(test)]
+    pub fn resolve(&self, value: &str) -> Option<Commodity<'arena>> {
+        self.intern.resolve(value)
     }
 
     /// Inserts given `value` as always canonical.
     /// Returns the registered canonical, or error if given `value` is already registered as alias.
     /// Facade for [InternStore::insert_canonical].
-    pub fn insert_canonical(&mut self, value: &str) -> Result<Commodity<'arena>, InternError> {
+    pub(super) fn insert_canonical(
+        &mut self,
+        value: &str,
+    ) -> Result<Commodity<'arena>, InternError> {
         self.intern.insert_canonical(value)
     }
 
     /// Inserts given `value` as always alias of `canonical`.
     /// Returns error if given `value` is already registered as canonical.
     /// Facade for [InternStore::insert_alias].
-    pub fn insert_alias(
+    pub(super) fn insert_alias(
         &mut self,
         value: &str,
         canonical: Commodity<'arena>,
