@@ -354,19 +354,26 @@ mod tests {
             PostingAmount::from_value(dec!(123), ctx.commodities.ensure("EUR")),
         );
         bal.add_posting_amount(
+            ctx.accounts.ensure("Account 2"),
+            PostingAmount::from_value(dec!(1), ctx.commodities.ensure("EUR")),
+        );
+        bal.add_posting_amount(
             ctx.accounts.ensure("Account 4"),
             PostingAmount::from_value(dec!(10), ctx.commodities.ensure("CHF")),
         );
         let input = indoc! {"
             2024/08/01 Sample
               Account 1      200 JPY = 1200 JPY
+              Account 2        0 JPY = 0 JPY
               Account 2     -100 JPY = -100 JPY
               Account 2     -100 JPY = -200 JPY
               Account 3     2.00 CHF @ 150 JPY
               Account 4              = -300 JPY
         "};
         let txn = parse_transaction(input);
+
         let _ = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
+
         let want_balance: Balance = hashmap! {
             ctx.accounts.ensure("Account 1") =>
                 Amount::from_values([
@@ -374,7 +381,10 @@ mod tests {
                     (dec!(123), ctx.commodities.ensure("EUR")),
                 ]),
             ctx.accounts.ensure("Account 2") =>
-                Amount::from_value(dec!(-200), ctx.commodities.ensure("JPY")),
+                Amount::from_values([
+                    (dec!(-200), ctx.commodities.ensure("JPY")),
+                    (dec!(1), ctx.commodities.ensure("EUR")),
+                ]),
             ctx.accounts.ensure("Account 3") =>
                 Amount::from_value(dec!(2), ctx.commodities.ensure("CHF")),
             ctx.accounts.ensure("Account 4") =>
@@ -400,7 +410,9 @@ mod tests {
               Account 2     -100 JPY = -200 JPY
         "};
         let txn = parse_transaction(input);
+
         let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
+
         let want = Transaction {
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
             postings: bcc::Vec::from_iter_in(
@@ -438,13 +450,29 @@ mod tests {
             ctx.accounts.ensure("Account 1"),
             PostingAmount::from_value(dec!(123), ctx.commodities.ensure("USD")),
         );
+        bal.add_posting_amount(
+            ctx.accounts.ensure("Account 2"),
+            PostingAmount::from_value(dec!(-100), ctx.commodities.ensure("JPY")),
+        );
+        bal.add_posting_amount(
+            ctx.accounts.ensure("Account 2"),
+            PostingAmount::from_value(dec!(-30), ctx.commodities.ensure("USD")),
+        );
+        bal.add_posting_amount(
+            ctx.accounts.ensure("Account 3"),
+            PostingAmount::from_value(dec!(-150), ctx.commodities.ensure("JPY")),
+        );
         let input = indoc! {"
             2024/08/01 Sample
               Account 1              = 1200 JPY
-              Account 2
+              Account 2              = 0 JPY
+              Account 3              = 0
+              Account 4
         "};
         let txn = parse_transaction(input);
+
         let got = add_transaction(&mut ctx, &mut bal, &txn).expect("must succeed");
+
         let want = Transaction {
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
             postings: bcc::Vec::from_iter_in(
@@ -455,7 +483,15 @@ mod tests {
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
-                        amount: Amount::from_value(dec!(-200), ctx.commodities.ensure("JPY")),
+                        amount: Amount::from_value(dec!(100), ctx.commodities.ensure("JPY")),
+                    },
+                    Posting {
+                        account: ctx.accounts.ensure("Account 3"),
+                        amount: Amount::from_value(dec!(150), ctx.commodities.ensure("JPY")),
+                    },
+                    Posting {
+                        account: ctx.accounts.ensure("Account 4"),
+                        amount: Amount::from_value(dec!(-450), ctx.commodities.ensure("JPY")),
                     },
                 ],
                 &arena,
