@@ -34,5 +34,5 @@ jobs:
           summary-always: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Push benchmark result
-        run: git push 'https://you:${{ secrets.GITHUB_TOKEN }}@github.com/you/repo-name.git' gh-pages:gh-pages
+        run: git push 'https://xkikeg:${{ secrets.GITHUB_TOKEN }}@github.com/xkikeg/okane.git' gh-pages:gh-pages
         if: github.event_name != 'pull_request'
