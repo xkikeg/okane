@@ -113,6 +113,12 @@ impl Txn {
     }
 
     pub fn add_rate(&mut self, key: CommodityPair, rate: Decimal) -> Result<&mut Txn, ImportError> {
+        if key.source == key.target {
+            return Err(ImportError::Other(format!(
+                "cannot handle rate with the same commodity {}",
+                key.source
+            )));
+        }
         match self.rates.insert(
             key.target.clone(),
             OwnedAmount {
