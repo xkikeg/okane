@@ -111,6 +111,7 @@ impl TryFrom<ConfigFragment> for ConfigEntry {
 /// One flagment of config corresponding to particular path prefix.
 /// It'll be merged into `ConfigEntry`.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 struct ConfigFragment {
     /// Path pattern which file the entry will match against.
     pub path: String,
@@ -268,6 +269,7 @@ impl From<AccountCommodityConfig> for AccountCommoditySpec {
 
 /// FormatSpec describes the several format used in import target.
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct FormatSpec {
     /// Specify the date format, in [chrono::format::strftime] compatible format.
     #[serde(default)]
@@ -289,6 +291,7 @@ pub struct FormatSpec {
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
+#[serde(deny_unknown_fields)]
 pub struct SkipSpec {
     /// The number of lines skipped at head.
     /// Only supported for CSV.
@@ -304,6 +307,7 @@ pub enum RowOrder {
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct CommodityFormatSpec {
     pub precision: u8,
 }
@@ -408,12 +412,14 @@ impl<'de> de::Visitor<'de> for FieldPosVisitor {
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct TemplateField {
     pub template: String,
 }
 
 /// RewriteRule specifies the rewrite rule matched against transaction.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct RewriteRule {
     /// matcher for the rewrite.
     pub matcher: RewriteMatcher,
@@ -450,6 +456,8 @@ pub struct CommodityConversionSpec {
     pub commodity: Option<String>,
     /// Decides `rate` meaning.
     pub rate: ConversionRateMode,
+    /// Disable all conversions.
+    pub disabled: bool,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
@@ -503,6 +511,7 @@ pub enum RewriteField {
     RemittanceUnstructuredInfo,
     AdditionalEntryInfo,
     AdditionalTransactionInfo,
+    SecondaryCommodity,
     Category,
     Payee,
 }
@@ -913,6 +922,7 @@ mod tests {
                 amount: ConversionAmountMode::Extract,
                 commodity: None,
                 rate: ConversionRateMode::PriceOfPrimary,
+                disabled: false,
             }),
         };
         assert_eq!(matcher, RewriteRule::deserialize(de).unwrap());

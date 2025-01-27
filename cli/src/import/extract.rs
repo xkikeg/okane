@@ -61,7 +61,7 @@ impl std::ops::AddAssign for Fragment<'_> {
         self.account = other.account.or(self.account);
         self.code = other.code.or(self.code);
         if let Some(c) = other.conversion {
-            let _ = self.conversion.insert(c);
+            self.conversion = Some(c);
         }
     }
 }
