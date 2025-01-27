@@ -98,6 +98,7 @@ pub fn import<R: std::io::Read>(
         let fragment = extractor.extract(Record {
             payee: &original_payee,
             category: category.as_deref(),
+            secondary_commodity: secondary_commodity.as_deref(),
         });
         let payee = fragment.payee.unwrap_or(&original_payee);
         if fragment.account.is_none() {
@@ -150,7 +151,10 @@ pub fn import<R: std::io::Read>(
             } else {
                 None
             };
-        let conversion = fragment.conversion.or(default_conversion);
+        let conversion = fragment
+            .conversion
+            .or(default_conversion)
+            .filter(|x| !x.disabled);
         if let Some(conv) = conversion {
             let rate = rate.ok_or_else(|| {
                 ImportError::Other(format!(
@@ -406,12 +410,14 @@ impl FieldMap {
 struct Record<'a> {
     payee: &'a str,
     category: Option<&'a str>,
+    secondary_commodity: Option<&'a str>,
 }
 
 #[derive(Debug)]
 enum MatchField {
     Payee,
     Category,
+    SecondaryCommodity,
 }
 
 /// Matcher for CSV.
@@ -432,6 +438,7 @@ impl TryFrom<(config::RewriteField, &str)> for CsvMatcher {
         let field = match field {
             config::RewriteField::Payee => Ok(MatchField::Payee),
             config::RewriteField::Category => Ok(MatchField::Category),
+            config::RewriteField::SecondaryCommodity => Ok(MatchField::SecondaryCommodity),
             _ => Err(ImportError::InvalidConfig(
                 "CSV only supports payee or category matcher.",
             )),
@@ -454,6 +461,10 @@ impl extract::EntityMatcher for CsvMatcher {
             }
             MatchField::Category => entity
                 .category
+                .and_then(|c| self.pattern.captures(c))
+                .and(Some(extract::Matched::default())),
+            MatchField::SecondaryCommodity => entity
+                .secondary_commodity
                 .and_then(|c| self.pattern.captures(c))
                 .and(Some(extract::Matched::default())),
         }
