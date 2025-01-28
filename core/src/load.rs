@@ -87,7 +87,7 @@ impl<F: FileSystem> Loader<F> {
             .filesystem
             .file_content_utf8(&path)
             .map_err(LoadError::IO)?;
-        for parsed in parse_options.parse_ledger(&content) {
+        for parsed in parse::parse_ledger(parse_options, &content) {
             let (ctx, entry) =
                 parsed.map_err(|e| LoadError::Parse(e, path.clone().into_owned()))?;
             match entry {
@@ -224,24 +224,22 @@ impl FileSystem for FakeFileSystem {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::{borrow::Borrow, path::Path, vec::Vec};
 
     use indoc::indoc;
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
 
-    use crate::parse::{self, ParseOptions};
-
-    use super::*;
-
     fn parse_static_ledger_entry(
         input: &[(&Path, &'static str)],
     ) -> Result<Vec<(PathBuf, syntax::plain::LedgerEntry<'static>)>, Box<parse::ParseError>> {
-        let opts = ParseOptions::default();
+        let opts = parse::ParseOptions::default();
         input
             .iter()
             .flat_map(|(p, content)| {
-                opts.parse_ledger(content)
+                parse::parse_ledger(&opts, content)
                     .map(|elem| elem.map(|(_ctx, entry)| (p.to_path_buf(), entry)))
             })
             .collect()

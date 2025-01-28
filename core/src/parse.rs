@@ -1,6 +1,7 @@
 //! Defines parser for the Ledger format.
 //! Currently only the parser for the entire file format is provieded as public.
 
+mod adaptor;
 mod character;
 mod combinator;
 mod directive;
@@ -15,152 +16,27 @@ pub(crate) mod transaction;
 #[cfg(test)]
 pub(crate) mod testing;
 
-use std::{
-    cmp::{max, min},
-    marker::PhantomData,
-    ops::Range,
-};
-
+pub use adaptor::{ParseOptions, ParsedContext, ParsedSpan};
 pub use error::ParseError;
 
 use winnow::{
     combinator::{alt, cut_err, dispatch, fail, peek, preceded, trace},
     error::StrContext,
     stream::{Stream, StreamIsPartial},
-    token::{any, literal, take_while},
-    LocatingSlice, PResult, Parser,
+    token::{any, literal},
+    PResult, Parser,
 };
 
 use crate::syntax::{self, decoration::Decoration};
 
-/// Parses single ledger syntax entry [syntax::LedgerEntry] with consuming whitespace.
-/// To control the behavior precisely, use [ParseOptions::parse_ledger].
+/// Parses Ledger `str` containing a list of [`syntax::LedgerEntry`] into iterator.
+/// See [`ParseOptions`] to control its behavior.
 pub fn parse_ledger<'i, Deco: 'i + Decoration>(
+    options: &ParseOptions,
     input: &'i str,
 ) -> impl Iterator<Item = Result<(ParsedContext<'i>, syntax::LedgerEntry<'i, Deco>), Box<ParseError>>>
 {
-    ParseOptions::default().parse_ledger(input)
-}
-
-/// Options to control parse behavior.
-pub struct ParseOptions {
-    error_style: annotate_snippets::Renderer,
-}
-
-impl Default for ParseOptions {
-    fn default() -> Self {
-        Self {
-            error_style: annotate_snippets::Renderer::plain(),
-        }
-    }
-}
-
-impl ParseOptions {
-    /// Sets the given [annotate_snippets::Renderer].
-    pub fn with_error_style(mut self, error_style: annotate_snippets::Renderer) -> Self {
-        self.error_style = error_style;
-        self
-    }
-
-    pub fn parse_ledger<'i, Deco: Decoration + 'static>(
-        &self,
-        input: &'i str,
-    ) -> impl Iterator<
-        Item = Result<(ParsedContext<'i>, syntax::LedgerEntry<'i, Deco>), Box<ParseError>>,
-    > + 'i {
-        ParsedIter {
-            initial: input,
-            input: LocatingSlice::new(input),
-            renderer: self.error_style.clone(),
-            _phantom: PhantomData,
-        }
-    }
-}
-
-/// Context information carrying the metadata of the entry.
-#[derive(Debug, PartialEq, Eq)]
-pub struct ParsedContext<'i> {
-    initial: &'i str,
-    span: Range<usize>,
-}
-
-impl ParsedContext<'_> {
-    /// Computes the starting line number from this context.
-    /// Note this function is O(N), not a cheap function.
-    pub fn compute_line_start(&self) -> usize {
-        error::compute_line_number(self.initial, self.span.start)
-    }
-
-    /// Returns the [`str`] slice corresponding to this context.
-    pub fn as_str(&self) -> &str {
-        self.initial
-            .get(self.span.clone())
-            .expect("ParsedContext::span must be a valid UTF-8 boundary")
-    }
-
-    /// Returns the position of the parsed string within the original `&str`,
-    /// which can be used to find the position of the [`Tracked`][syntax::tracked::Tracked] item.
-    pub fn span(&self) -> ParsedSpan {
-        ParsedSpan(self.span.clone())
-    }
-}
-
-/// Range parsed with the given parser within the original input `&str`.
-#[derive(Debug)]
-pub struct ParsedSpan(Range<usize>);
-
-impl ParsedSpan {
-    /// Returns the span of the given span relative to this span.
-    pub fn resolve(&self, span: &syntax::tracked::TrackedSpan) -> Range<usize> {
-        let target = span.as_range();
-        clip(self.0.clone(), target)
-    }
-}
-
-fn clip(parent: Range<usize>, child: Range<usize>) -> Range<usize> {
-    let start = max(parent.start, child.start) - parent.start;
-    let end = min(parent.end, child.end) - parent.start;
-    start..end
-}
-
-/// Iterator to return parsed ledger entry one-by-one.
-struct ParsedIter<'i, Deco> {
-    initial: &'i str,
-    input: LocatingSlice<&'i str>,
-    renderer: annotate_snippets::Renderer,
-    _phantom: PhantomData<Deco>,
-}
-
-impl<'i, Deco: Decoration + 'static> Iterator for ParsedIter<'i, Deco> {
-    type Item = Result<(ParsedContext<'i>, syntax::LedgerEntry<'i, Deco>), Box<ParseError>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let start = self.input.checkpoint();
-        (|| {
-            take_while(0.., b"\r\n").parse_next(&mut self.input)?;
-            if self.input.is_empty() {
-                return Ok(None);
-            }
-            let (entry, span) = parse_ledger_entry.with_span().parse_next(&mut self.input)?;
-            Ok(Some((
-                ParsedContext {
-                    initial: self.initial,
-                    span,
-                },
-                entry,
-            )))
-        })()
-        .map_err(|e| {
-            Box::new(ParseError::new(
-                self.renderer.clone(),
-                self.initial,
-                self.input,
-                start,
-                e,
-            ))
-        })
-        .transpose()
-    }
+    options.parse_repeated(parse_ledger_entry, character::newlines.void(), input)
 }
 
 /// Parses given `input` into [syntax::LedgerEntry].
@@ -212,7 +88,7 @@ mod tests {
 
     fn parse_ledger_into(input: &str) -> Vec<(ParsedContext, LedgerEntry)> {
         let r: Result<Vec<(ParsedContext, LedgerEntry)>, Box<ParseError>> =
-            ParseOptions::default().parse_ledger(input).collect();
+            parse_ledger(&ParseOptions::default(), input).collect();
         match r {
             Ok(x) => x,
             Err(e) => panic!("failed to parse:\n{}", e),
