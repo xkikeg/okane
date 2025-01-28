@@ -1,7 +1,7 @@
 //! format functionalities of Ledger format files.
 
 use crate::{
-    parse::{parse_ledger, ParseError},
+    parse::{parse_ledger, ParseError, ParseOptions},
     syntax::{self, display::DisplayContext},
 };
 
@@ -53,7 +53,7 @@ impl FormatOptions {
         r.read_to_string(&mut buf)?;
         // TODO: Grab DisplayContext externally, or from LedgerEntry.
         let ctx = DisplayContext::default();
-        for parsed in parse_ledger(&buf) {
+        for parsed in parse_ledger(&ParseOptions::default(), &buf) {
             let (_, entry): (_, syntax::plain::LedgerEntry) = parsed?;
             writeln!(w, "{}", ctx.as_display(&entry))?;
         }

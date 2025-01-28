@@ -5,7 +5,7 @@ use winnow::{
     combinator::{alt, delimited, eof, trace},
     error::ParserError,
     stream::{AsChar, Compare, Stream, StreamIsPartial},
-    token::{one_of, take_till},
+    token::{one_of, take_till, take_while},
     PResult, Parser,
 };
 
@@ -48,6 +48,16 @@ where
     trace("character::line_ending_or_eof", alt((eof, line_ending)))
         .void()
         .parse_next(input)
+}
+
+/// Consume all newlines.
+pub fn newlines<I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
+where
+    I: Stream + StreamIsPartial + winnow::stream::Compare<&'static str>,
+    <I as Stream>::Token: AsChar,
+    E: ParserError<I>,
+{
+    trace("character::newlines", take_while(0.., b"\r\n")).parse_next(input)
 }
 
 /// Parses unnested string in paren.
