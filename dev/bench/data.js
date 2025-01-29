@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1738137243286,
+  "lastUpdate": 1738173082699,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Criterion.rs Benchmark": [
@@ -173,6 +173,66 @@ window.BENCHMARK_DATA = {
             "name": "query-posting-one-account",
             "value": 3117359,
             "range": "± 13439",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-default",
+            "value": 2,
+            "range": "± 0",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "9a81535e0a1162dc6d4a55de3f5c30d5ea5a8ecc",
+          "message": "Change Evaluable::eval to eval_mut, as it accepts mut context.\n\nLater we can prepare eval() method as well,\nwhich will treat context as immutable, better once report::process\ncompletes.",
+          "timestamp": "2025-01-29T18:48:38+01:00",
+          "tree_id": "49b8c8225a091047779a8ea440ff9ec3f8218773",
+          "url": "https://github.com/xkikeg/okane/commit/9a81535e0a1162dc6d4a55de3f5c30d5ea5a8ecc"
+        },
+        "date": 1738173082385,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse plain",
+            "value": 26,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse comma",
+            "value": 27,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load-with-counter",
+            "value": 139808326,
+            "range": "± 4190115",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process",
+            "value": 210447815,
+            "range": "± 1785316",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-posting-one-account",
+            "value": 3134187,
+            "range": "± 15027",
             "unit": "ns/iter"
           },
           {
