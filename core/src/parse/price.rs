@@ -11,10 +11,23 @@ use winnow::{
 
 use crate::syntax;
 
-use super::{expr, primitive};
+use super::{
+    adaptor::{ParseOptions, ParsedContext},
+    character,
+    error::ParseError,
+    expr, primitive,
+};
+
+/// Parses a price DB content.
+pub fn parse_price_db<'i>(
+    options: &ParseOptions,
+    input: &'i str,
+) -> impl Iterator<Item = Result<(ParsedContext<'i>, syntax::PriceDBEntry<'i>), ParseError>> + 'i {
+    options.parse_repeated(price_db_entry, character::newlines, input)
+}
 
 /// Parses a price DB entry line.
-pub fn price_db_entry<'i, I>(input: &mut I) -> PResult<syntax::PriceDBEntry<'i>>
+fn price_db_entry<'i, I>(input: &mut I) -> PResult<syntax::PriceDBEntry<'i>>
 where
     I: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial

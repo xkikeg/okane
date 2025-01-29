@@ -6,7 +6,7 @@ use winnow::{
         alt, delimited, dispatch, opt, peek, permutation, preceded, separated_foldl1, terminated,
         trace,
     },
-    error::{ContextError, FromExternalError, ParseError, ParserError},
+    error::{FromExternalError, ParserError},
     stream::{AsChar, Stream, StreamIsPartial},
     token::{any, one_of},
     PResult, Parser,
@@ -14,7 +14,7 @@ use winnow::{
 
 use crate::syntax::{expr, pretty_decimal};
 
-use super::{character::paren, primitive};
+use super::{adaptor::ParseOptions, character::paren, error, primitive};
 
 /// Parses value expression.
 pub fn value_expr<'i, I, E>(input: &mut I) -> PResult<expr::ValueExpr<'i>, E>
@@ -34,10 +34,12 @@ where
 }
 
 impl<'i> TryFrom<&'i str> for expr::ValueExpr<'i> {
-    type Error = ParseError<&'i str, ContextError>;
+    type Error = error::ParseError;
 
     fn try_from(value: &'i str) -> Result<Self, Self::Error> {
-        value_expr.parse(value)
+        ParseOptions::default()
+            .parse_single(value_expr, value)
+            .map(|x| x.1)
     }
 }
 
@@ -153,10 +155,12 @@ where
 }
 
 impl<'i> TryFrom<&'i str> for expr::Amount<'i> {
-    type Error = ParseError<&'i str, ContextError>;
+    type Error = error::ParseError;
 
     fn try_from(value: &'i str) -> Result<Self, Self::Error> {
-        unary_amount.parse(value)
+        ParseOptions::default()
+            .parse_single(unary_amount, value)
+            .map(|x| x.1)
     }
 }
 

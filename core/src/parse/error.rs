@@ -5,7 +5,7 @@ use std::{
 
 use annotate_snippets::{Level, Renderer, Snippet};
 use winnow::{
-    error::{ContextError, ErrMode, StrContext},
+    error::{ContextError, StrContext},
     stream::{Location, Offset, Stream},
     LocatingSlice,
 };
@@ -30,12 +30,11 @@ impl ParseError {
         initial: &'i str,
         mut input: LocatingSlice<&'i str>,
         start: <LocatingSlice<&'i str> as Stream>::Checkpoint,
-        error: ErrMode<ContextError<StrContext>>,
+        error: ContextError<StrContext>,
     ) -> Self {
         let offset = input.offset_from(&start);
         input.reset(&start);
         let line_start = compute_line_number(initial, input.location());
-        let error = error.into_inner().expect("partial input can't be used");
         // Assume the error span is only for the first `char`.
         // When we'll implement
         let end = (offset + 1..)
