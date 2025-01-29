@@ -59,7 +59,7 @@ impl<'ctx> From<Amount<'ctx>> for Evaluated<'ctx> {
 }
 
 impl<'ctx> Evaluated<'ctx> {
-    /// Creates Evaluated from [expr::Amount].
+    /// Creates [`Evaluated`] from [`expr::Amount`].
     pub(super) fn from_expr_amount(
         ctx: &mut ReportContext<'ctx>,
         amount: &expr::Amount,
