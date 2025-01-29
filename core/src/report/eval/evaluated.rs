@@ -2,7 +2,10 @@ use std::fmt::Display;
 
 use rust_decimal::Decimal;
 
-use crate::{report::ReportContext, syntax::expr};
+use crate::{
+    report::{commodity::OwnedCommodity, ReportContext},
+    syntax::expr,
+};
 
 use super::{
     amount::{Amount, PostingAmount, SingleAmount},
@@ -59,8 +62,9 @@ impl<'ctx> From<Amount<'ctx>> for Evaluated<'ctx> {
 }
 
 impl<'ctx> Evaluated<'ctx> {
-    /// Creates [`Evaluated`] from [`expr::Amount`].
-    pub(super) fn from_expr_amount(
+    /// Creates [`Evaluated`] from [`expr::Amount`],
+    /// with registering the commodity.
+    pub(super) fn from_expr_amount_mut(
         ctx: &mut ReportContext<'ctx>,
         amount: &expr::Amount,
     ) -> Evaluated<'ctx> {

@@ -1,6 +1,6 @@
 //! Defines commodity and its related types.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use bumpalo::Bump;
 
@@ -26,6 +26,40 @@ impl<'arena> Commodity<'arena> {
     /// Returns the `&str`.
     pub fn as_str(&self) -> &'arena str {
         self.0.as_str()
+    }
+}
+
+/// Owned [`Commodity`], which is just [`String`].
+/// Useful to store in the error.
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub struct OwnedCommodity(String);
+
+impl OwnedCommodity {
+    /// Creates a new [`OwnedCommodity`] instance.
+    pub fn from_string(v: String) -> Self {
+        Self(v)
+    }
+
+    /// Returns the underlying [`&str`].
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    /// Returns the underlying [`String`].
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl From<Commodity<'_>> for OwnedCommodity {
+    fn from(value: Commodity<'_>) -> Self {
+        Self(value.as_str().to_string())
+    }
+}
+
+impl Display for OwnedCommodity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
