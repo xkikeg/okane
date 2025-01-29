@@ -1,10 +1,12 @@
+use crate::report::commodity::OwnedCommodity;
+
 /// Errors specific to expression evaluation.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum EvalError {
     #[error("operator can't be applied to unmatched types")]
     UnmatchingOperation,
     #[error("unmatching commodities {0} and {1}")]
-    UnmatchingCommodities(String, String),
+    UnmatchingCommodities(OwnedCommodity, OwnedCommodity),
     #[error("cannot divide by zero")]
     DivideByZero,
     #[error("overflow happened")]

@@ -202,8 +202,8 @@ impl<'ctx> SingleAmount<'ctx> {
     pub fn check_add(self, rhs: Self) -> Result<Self, EvalError> {
         if self.commodity != rhs.commodity {
             Err(EvalError::UnmatchingCommodities(
-                self.commodity.as_str().to_string(),
-                rhs.commodity.as_str().to_string(),
+                self.commodity.into(),
+                rhs.commodity.into(),
             ))
         } else {
             Ok(Self {

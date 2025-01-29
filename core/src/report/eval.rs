@@ -20,7 +20,7 @@ pub(crate) trait Evaluable {
 
     /// Evaluate the self with mutable `ctx`, which allows unknown commodities in the expressions to be registered.
     fn eval_mut<'ctx>(&self, ctx: &mut ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError> {
-        self.eval_visit(&mut |amount| Ok(Evaluated::from_expr_amount(ctx, amount)))
+        self.eval_visit(&mut |amount| Ok(Evaluated::from_expr_amount_mut(ctx, amount)))
     }
 }
 
