@@ -191,8 +191,10 @@ fn add_transaction<'ctx>(
                 }
                 // posting with `Account   = X`.
                 (None, Some(balance_constraints)) => {
-                    let current: PostingAmount =
-                        balance_constraints.as_undecorated().eval(ctx)?.try_into()?;
+                    let current: PostingAmount = balance_constraints
+                        .as_undecorated()
+                        .eval_mut(ctx)?
+                        .try_into()?;
                     let prev: PostingAmount = bal.set_partial(account, current)?;
                     let amount = current.check_sub(prev)?;
                     Ok((amount, amount))
@@ -202,7 +204,7 @@ fn add_transaction<'ctx>(
                     let computed = compute_posting_amount(ctx, syntax_amount)?;
                     let expected_balance: Option<PostingAmount> = balance_constraints
                         .as_ref()
-                        .map(|x| x.as_undecorated().eval(ctx))
+                        .map(|x| x.as_undecorated().eval_mut(ctx))
                         .transpose()?
                         .map(|x| x.try_into())
                         .transpose()?;
@@ -262,11 +264,11 @@ impl<'ctx> Exchange<'ctx> {
     ) -> Result<Exchange<'ctx>, BookKeepError> {
         let (rate_commodity, rate) = match exchange.as_undecorated() {
             syntax::Exchange::Rate(rate) => {
-                let rate: SingleAmount<'ctx> = rate.eval(ctx)?.try_into()?;
+                let rate: SingleAmount<'ctx> = rate.eval_mut(ctx)?.try_into()?;
                 (rate.commodity, Exchange::Rate(rate))
             }
             syntax::Exchange::Total(rate) => {
-                let rate: SingleAmount<'ctx> = rate.eval(ctx)?.try_into()?;
+                let rate: SingleAmount<'ctx> = rate.eval_mut(ctx)?.try_into()?;
                 (rate.commodity, Exchange::Total(rate))
             }
         };
@@ -302,7 +304,7 @@ fn compute_posting_amount<'ctx>(
     let amount: PostingAmount = syntax_amount
         .amount
         .as_undecorated()
-        .eval(ctx)?
+        .eval_mut(ctx)?
         .try_into()?;
     let cost = posting_cost_exchange(syntax_amount)
         .map(|exchange| Exchange::try_from_syntax(ctx, syntax_amount, &amount, exchange))

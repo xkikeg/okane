@@ -11,35 +11,52 @@ pub use evaluated::Evaluated;
 use super::context::ReportContext;
 use crate::syntax::expr;
 
-// TODO: Consider if this is ok to be private or needs to be pub.
+// Provides evaluation to syntax expressions.
 pub(crate) trait Evaluable {
-    fn eval<'ctx>(&self, ctx: &mut ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError>;
+    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError>>(
+        &self,
+        evaluator: &mut F,
+    ) -> Result<Evaluated<'ctx>, EvalError>;
+
+    /// Evaluate the self with mutable `ctx`, which allows unknown commodities in the expressions to be registered.
+    fn eval_mut<'ctx>(&self, ctx: &mut ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError> {
+        self.eval_visit(&mut |amount| Ok(Evaluated::from_expr_amount(ctx, amount)))
+    }
 }
 
 impl Evaluable for expr::ValueExpr<'_> {
-    fn eval<'ctx>(&self, ctx: &mut ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError> {
+    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError>>(
+        &self,
+        evaluator: &mut F,
+    ) -> Result<Evaluated<'ctx>, EvalError> {
         match self {
-            expr::ValueExpr::Paren(x) => x.eval(ctx),
-            expr::ValueExpr::Amount(x) => Ok(Evaluated::from_expr_amount(ctx, x)),
+            expr::ValueExpr::Paren(x) => x.eval_visit(evaluator),
+            expr::ValueExpr::Amount(x) => evaluator(x),
         }
     }
 }
 
 impl Evaluable for expr::Expr<'_> {
-    fn eval<'ctx>(&self, ctx: &mut ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError> {
+    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError>>(
+        &self,
+        evaluator: &mut F,
+    ) -> Result<Evaluated<'ctx>, EvalError> {
         match self {
-            expr::Expr::Unary(e) => e.eval(ctx),
-            expr::Expr::Binary(e) => e.eval(ctx),
-            expr::Expr::Value(e) => e.eval(ctx),
+            expr::Expr::Unary(e) => e.eval_visit(evaluator),
+            expr::Expr::Binary(e) => e.eval_visit(evaluator),
+            expr::Expr::Value(e) => e.eval_visit(evaluator),
         }
     }
 }
 
 impl Evaluable for expr::UnaryOpExpr<'_> {
-    fn eval<'ctx>(&self, ctx: &mut ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError> {
+    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError>>(
+        &self,
+        evaluator: &mut F,
+    ) -> Result<Evaluated<'ctx>, EvalError> {
         match self.op {
             expr::UnaryOp::Negate => {
-                let val = self.expr.eval(ctx)?;
+                let val = self.expr.eval_visit(evaluator)?;
                 Ok(val.negate())
             }
         }
@@ -47,9 +64,12 @@ impl Evaluable for expr::UnaryOpExpr<'_> {
 }
 
 impl Evaluable for expr::BinaryOpExpr<'_> {
-    fn eval<'ctx>(&self, ctx: &mut ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError> {
-        let lhs = self.lhs.eval(ctx)?;
-        let rhs = self.rhs.eval(ctx)?;
+    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError>>(
+        &self,
+        evaluator: &mut F,
+    ) -> Result<Evaluated<'ctx>, EvalError> {
+        let lhs = self.lhs.eval_visit(evaluator)?;
+        let rhs = self.rhs.eval_visit(evaluator)?;
         match self.op {
             expr::BinaryOp::Add => lhs.check_add(rhs),
             expr::BinaryOp::Sub => lhs.check_sub(rhs),
@@ -78,7 +98,7 @@ mod tests {
         });
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
-        let got = input.eval(&mut ctx).unwrap();
+        let got = input.eval_mut(&mut ctx).unwrap();
         let got: Amount<'_> = got.try_into().expect("not an amount");
         assert_eq!(
             hashmap! {
@@ -94,7 +114,7 @@ mod tests {
         let input: expr::ValueExpr<'static> = input.try_into().expect("must succeed to parse");
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
-        let got = input.eval(&mut ctx).unwrap();
+        let got = input.eval_mut(&mut ctx).unwrap();
         let got: Amount<'_> = got.try_into().expect("not an amount");
         assert_eq!(
             hashmap! {
@@ -112,7 +132,7 @@ mod tests {
         let input: expr::ValueExpr = input.try_into().expect("must not fail to parse");
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
-        let got = input.eval(&mut ctx).unwrap();
+        let got = input.eval_mut(&mut ctx).unwrap();
         let got: Amount<'_> = got.try_into().expect("not an amount");
         assert_eq!(
             hashmap! {
