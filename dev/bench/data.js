@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1737990009760,
+  "lastUpdate": 1738137243286,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Criterion.rs Benchmark": [
@@ -113,6 +113,66 @@ window.BENCHMARK_DATA = {
             "name": "query-posting-one-account",
             "value": 3104741,
             "range": "± 14669",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-default",
+            "value": 2,
+            "range": "± 0",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "30be292a0c904fa4602c9561e87b39564753007c",
+          "message": "Uses parse::adaptor implementation for all parse users.",
+          "timestamp": "2025-01-29T08:51:31+01:00",
+          "tree_id": "c776871d0843384765210f44717f1be115396481",
+          "url": "https://github.com/xkikeg/okane/commit/30be292a0c904fa4602c9561e87b39564753007c"
+        },
+        "date": 1738137242894,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse plain",
+            "value": 26,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse comma",
+            "value": 27,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load-with-counter",
+            "value": 142335552,
+            "range": "± 678354",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process",
+            "value": 210736576,
+            "range": "± 2930614",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-posting-one-account",
+            "value": 3117359,
+            "range": "± 13439",
             "unit": "ns/iter"
           },
           {
