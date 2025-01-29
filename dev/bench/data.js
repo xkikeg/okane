@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1738173082699,
+  "lastUpdate": 1738173601252,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Criterion.rs Benchmark": [
@@ -233,6 +233,66 @@ window.BENCHMARK_DATA = {
             "name": "query-posting-one-account",
             "value": 3134187,
             "range": "± 15027",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-default",
+            "value": 2,
+            "range": "± 0",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "37e63741d3ba8a546ff496d69b956c021353f983",
+          "message": "Provide eval command to resolve historical rate.\n\nWith --exchange and --price-db flags, users can convert the\ngiven value expression into the given commodity.",
+          "timestamp": "2025-01-29T18:57:19+01:00",
+          "tree_id": "ae844a7a3309b823bd84e34ea78d1c875ea8d46a",
+          "url": "https://github.com/xkikeg/okane/commit/37e63741d3ba8a546ff496d69b956c021353f983"
+        },
+        "date": 1738173600974,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse plain",
+            "value": 26,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse comma",
+            "value": 27,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load-with-counter",
+            "value": 141068684,
+            "range": "± 5218111",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process",
+            "value": 213774508,
+            "range": "± 1250643",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-posting-one-account",
+            "value": 2915148,
+            "range": "± 23148",
             "unit": "ns/iter"
           },
           {
