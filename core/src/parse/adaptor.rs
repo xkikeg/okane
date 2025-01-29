@@ -2,7 +2,10 @@
 
 use std::{marker::PhantomData, ops::Range};
 
-use winnow::{LocatingSlice, Parser};
+use winnow::{
+    error::{ContextError, ErrMode},
+    LocatingSlice, Parser,
+};
 
 use crate::syntax;
 
@@ -27,6 +30,31 @@ impl ParseOptions {
     pub fn with_error_style(mut self, error_style: annotate_snippets::Renderer) -> Self {
         self.error_style = error_style;
         self
+    }
+
+    pub(super) fn parse_single<'i, Out, P>(
+        &self,
+        parser: P,
+        input: &'i str,
+    ) -> Result<(ParsedContext<'i>, Out), ParseError>
+    where
+        Out: 'i,
+        P: Parser<LocatingSlice<&'i str>, Out, winnow::error::ContextError> + 'i,
+    {
+        use winnow::stream::Stream as _;
+        let initial = input;
+        let input = LocatingSlice::new(input);
+        let start = input.checkpoint();
+        match parser.with_span().parse(input) {
+            Err(e) => Err(ParseError::new(
+                self.error_style.clone(),
+                initial,
+                input,
+                start,
+                e.into_inner(),
+            )),
+            Ok((entry, span)) => Ok((ParsedContext { initial, span }, entry)),
+        }
     }
 
     /// Parses the given `parser` object, separated with `separator`.
@@ -119,25 +147,42 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         use winnow::stream::Stream as _;
         let start = self.input.checkpoint();
-        (|| {
-            self.separator.parse_next(&mut self.input)?;
-            if self.input.is_empty() {
-                return Ok(None);
-            }
-            let (entry, span) = self
-                .parser
-                .by_ref()
-                .with_span()
-                .parse_next(&mut self.input)?;
-            Ok(Some((
-                ParsedContext {
-                    initial: self.initial,
-                    span,
-                },
-                entry,
-            )))
-        })()
-        .map_err(|e| ParseError::new(self.renderer.clone(), self.initial, self.input, start, e))
-        .transpose()
+        self.next_impl()
+            .map_err(|e| {
+                ParseError::new(
+                    self.renderer.clone(),
+                    self.initial,
+                    self.input,
+                    start,
+                    e.into_inner()
+                        .expect("ParseIter doesn't work with streaming parse yet"),
+                )
+            })
+            .transpose()
+    }
+}
+
+impl<'i, Out, Sep, P, Q> ParsedIter<'i, Out, Sep, P, Q>
+where
+    P: Parser<LocatingSlice<&'i str>, Out, winnow::error::ContextError>,
+    Q: Parser<LocatingSlice<&'i str>, Sep, winnow::error::ContextError>,
+{
+    fn next_impl(&mut self) -> Result<Option<(ParsedContext<'i>, Out)>, ErrMode<ContextError>> {
+        self.separator.parse_next(&mut self.input)?;
+        if self.input.is_empty() {
+            return Ok(None);
+        }
+        let (entry, span) = self
+            .parser
+            .by_ref()
+            .with_span()
+            .parse_next(&mut self.input)?;
+        Ok(Some((
+            ParsedContext {
+                initial: self.initial,
+                span,
+            },
+            entry,
+        )))
     }
 }

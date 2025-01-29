@@ -1,13 +1,13 @@
 use std::path::Path;
 
-use winnow::Parser as _;
+use crate::parse;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PriceDBError {
     #[error("failed to perform IO")]
     IO(#[from] std::io::Error),
     #[error("failed to parse price DB entry: {0}")]
-    Parse(String),
+    Parse(#[from] parse::ParseError),
 }
 
 /// Loads PriceDB information from the given file.
@@ -16,21 +16,13 @@ pub fn load_price_db(path: &Path) -> Result<(), PriceDBError> {
     // still it's much easier to load everything into memory.
     let before = chrono::Local::now();
     let content = std::fs::read_to_string(path)?;
-    let input: &str = &content;
-    let result: Vec<_> = winnow::combinator::preceded(
-        winnow::ascii::space0,
-        winnow::combinator::repeat(
-            0..,
-            winnow::combinator::terminated(
-                crate::parse::price::price_db_entry,
-                winnow::ascii::space0,
-            ),
-        ),
-    )
-    .parse(input)
-    .map_err(|x| PriceDBError::Parse(format!("{}", x)))?;
+    let mut num = 0;
+    for entry in parse::price::parse_price_db(&parse::ParseOptions::default(), &content) {
+        entry?;
+        num += 1;
+    }
     let after = chrono::Local::now();
-    log::info!("TODO: use this for DB: {} entries", result.len());
+    log::info!("TODO: use this for DB: {} entries", num);
     let time_spent = after - before;
     log::info!(
         "Took {} seconds to load price DB",
