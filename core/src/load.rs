@@ -15,7 +15,7 @@ pub enum LoadError {
     #[error("failed to perform IO")]
     IO(#[from] std::io::Error),
     #[error("failed to parse file {1}")]
-    Parse(#[source] Box<parse::ParseError>, PathBuf),
+    Parse(#[source] parse::ParseError, PathBuf),
     #[error("loading file path {0} doesn't have parent, maybe filesystem root is passed")]
     RootLoadingPath(PathBuf),
     #[error("invalid Unicode path is not supported: {0}")]
@@ -234,7 +234,7 @@ mod tests {
 
     fn parse_static_ledger_entry(
         input: &[(&Path, &'static str)],
-    ) -> Result<Vec<(PathBuf, syntax::plain::LedgerEntry<'static>)>, Box<parse::ParseError>> {
+    ) -> Result<Vec<(PathBuf, syntax::plain::LedgerEntry<'static>)>, parse::ParseError> {
         let opts = parse::ParseOptions::default();
         input
             .iter()

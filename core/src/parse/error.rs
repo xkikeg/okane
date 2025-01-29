@@ -10,8 +10,12 @@ use winnow::{
     LocatingSlice,
 };
 
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct ParseError(Box<ParseErrorImpl>);
+
 #[derive(Debug)]
-pub struct ParseError {
+pub struct ParseErrorImpl {
     renderer: Renderer,
     error_span: Range<usize>,
     input: String,
@@ -37,17 +41,17 @@ impl ParseError {
         let end = (offset + 1..)
             .find(|e| input.is_char_boundary(*e))
             .unwrap_or(offset);
-        Self {
+        Self(Box::new(ParseErrorImpl {
             renderer,
             error_span: offset..end,
             input: input.deref().to_string(),
             line_start,
             winnow_error: error,
-        }
+        }))
     }
 }
 
-impl Display for ParseError {
+impl Display for ParseErrorImpl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let message = self.winnow_error.to_string();
         let message = Level::Error.title(&message).snippet(
@@ -61,7 +65,7 @@ impl Display for ParseError {
     }
 }
 
-impl std::error::Error for ParseError {
+impl std::error::Error for ParseErrorImpl {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         self.winnow_error
             .cause()
