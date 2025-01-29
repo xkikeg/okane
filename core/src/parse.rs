@@ -34,8 +34,7 @@ use crate::syntax::{self, decoration::Decoration};
 pub fn parse_ledger<'i, Deco: 'i + Decoration>(
     options: &ParseOptions,
     input: &'i str,
-) -> impl Iterator<Item = Result<(ParsedContext<'i>, syntax::LedgerEntry<'i, Deco>), Box<ParseError>>>
-{
+) -> impl Iterator<Item = Result<(ParsedContext<'i>, syntax::LedgerEntry<'i, Deco>), ParseError>> {
     options.parse_repeated(parse_ledger_entry, character::newlines.void(), input)
 }
 
@@ -87,7 +86,7 @@ mod tests {
     use syntax::plain::LedgerEntry;
 
     fn parse_ledger_into(input: &str) -> Vec<(ParsedContext, LedgerEntry)> {
-        let r: Result<Vec<(ParsedContext, LedgerEntry)>, Box<ParseError>> =
+        let r: Result<Vec<(ParsedContext, LedgerEntry)>, ParseError> =
             parse_ledger(&ParseOptions::default(), input).collect();
         match r {
             Ok(x) => x,

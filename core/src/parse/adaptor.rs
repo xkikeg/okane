@@ -35,7 +35,7 @@ impl ParseOptions {
         parser: P,
         separator: Q,
         input: &'i str,
-    ) -> impl Iterator<Item = Result<(ParsedContext<'i>, Out), Box<ParseError>>> + 'i
+    ) -> impl Iterator<Item = Result<(ParsedContext<'i>, Out), ParseError>> + 'i
     where
         Out: 'i,
         Sep: 'i,
@@ -114,7 +114,7 @@ where
     P: Parser<LocatingSlice<&'i str>, Out, winnow::error::ContextError>,
     Q: Parser<LocatingSlice<&'i str>, Sep, winnow::error::ContextError>,
 {
-    type Item = Result<(ParsedContext<'i>, Out), Box<ParseError>>;
+    type Item = Result<(ParsedContext<'i>, Out), ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         use winnow::stream::Stream as _;
@@ -137,15 +137,7 @@ where
                 entry,
             )))
         })()
-        .map_err(|e| {
-            Box::new(ParseError::new(
-                self.renderer.clone(),
-                self.initial,
-                self.input,
-                start,
-                e,
-            ))
-        })
+        .map_err(|e| ParseError::new(self.renderer.clone(), self.initial, self.input, start, e))
         .transpose()
     }
 }

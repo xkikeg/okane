@@ -13,7 +13,7 @@ pub enum FormatError {
     #[error("failed to perform IO")]
     IO(#[from] std::io::Error),
     #[error("failed to parse the file")]
-    Parse(#[from] Box<ParseError>),
+    Parse(#[from] ParseError),
     // TODO: Remove this once supported.
     #[error("recursive format isn't supported yet")]
     UnsupportedRecursiveFormat,
