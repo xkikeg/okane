@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1738173601252,
+  "lastUpdate": 1738228192662,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Criterion.rs Benchmark": [
@@ -293,6 +293,66 @@ window.BENCHMARK_DATA = {
             "name": "query-posting-one-account",
             "value": 2915148,
             "range": "± 23148",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-default",
+            "value": 2,
+            "range": "± 0",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "73477b3a312f77f98872eb1e8894aee3d0bea263",
+          "message": "Added coverage CI workflow.\n\nThis also adds caching to cargo.",
+          "timestamp": "2025-01-30T10:07:11+01:00",
+          "tree_id": "14a07c10578b5a7d2b7ffdcddad1ea511a8e9fc6",
+          "url": "https://github.com/xkikeg/okane/commit/73477b3a312f77f98872eb1e8894aee3d0bea263"
+        },
+        "date": 1738228191904,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse plain",
+            "value": 26,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse comma",
+            "value": 27,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load-with-counter",
+            "value": 141774567,
+            "range": "± 4080176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process",
+            "value": 211166695,
+            "range": "± 1384006",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-posting-one-account",
+            "value": 2911264,
+            "range": "± 23346",
             "unit": "ns/iter"
           },
           {
