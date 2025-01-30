@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn load_valid_input_real_file() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("testdata/root.ledger")
+            .join("testdata/recursive.ledger")
             .canonicalize()
             .unwrap();
         let child1 = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -286,6 +286,8 @@ mod tests {
             (
                 &root,
                 indoc! {"
+            ; Demonstrates include feature including glob, parent dir, ...
+
             account Expenses:Grocery
                 note スーパーマーケットで買ったやつ全部
                 ; comment
