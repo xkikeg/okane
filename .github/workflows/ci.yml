@@ -1,0 +1,69 @@
+name: CI
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  deployments: write
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          target: x86_64-unknown-linux-gnu
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo llvm-cov clean --workspace
+      - name: Collect coverage on okane-core
+        run: |
+          cargo llvm-cov --no-report --all-features -p okane-core
+      - name: Collect coverage on okane CLI
+        run: |
+          cargo llvm-cov --no-report --all-features -p okane \
+             --ignore-filename-regex /core/
+      - name: Report collected coverage
+        run: cargo llvm-cov report --lcov --output-path lcov.info
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+  benchmark:
+    name: Run report bench
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          target: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+      - name: Run benchmark
+        run: cargo bench --bench decimal_bench --bench report_bench -- --output-format bencher | tee output.txt
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Criterion.rs Benchmark
+          tool: 'cargo'
+          output-file-path: output.txt
+          auto-push: false
+          alert-threshold: '200%'
+          comment-on-alert: true
+          fail-on-alert: true
+          alert-comment-cc-users: '@xkikeg'
+          summary-always: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push benchmark result
+        run: git push 'https://xkikeg:${{ secrets.GITHUB_TOKEN }}@github.com/xkikeg/okane.git' gh-pages:gh-pages
+        if: github.event_name != 'pull_request'
