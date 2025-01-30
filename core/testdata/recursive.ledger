@@ -1,3 +1,5 @@
+; Demonstrates include feature including glob, parent dir, ...
+
 account Expenses:Grocery
     note スーパーマーケットで買ったやつ全部
     ; comment
