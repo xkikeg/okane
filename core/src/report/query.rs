@@ -82,6 +82,7 @@ impl<'ctx> Ledger<'ctx> {
         Cow::Borrowed(&self.raw_balance)
     }
 
+    /// Evals given `expression` with the given condition.
     pub fn eval(
         &mut self,
         ctx: &ReportContext<'ctx>,
@@ -139,5 +140,100 @@ impl<'ctx> AccountFilter<'ctx> {
             AccountFilter::Any => true,
             AccountFilter::Set(targets) => targets.contains(account),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::path::PathBuf;
+
+    use bumpalo::Bump;
+    use indoc::indoc;
+    use maplit::hashmap;
+    use pretty_assertions::assert_eq;
+    use rust_decimal_macros::dec;
+
+    use crate::{load, report};
+
+    fn fake_loader() -> load::Loader<load::FakeFileSystem> {
+        let content = indoc! {"
+            2024/01/01 Initial
+                Assets:J 銀行               100,000 JPY
+                Assets:CH Bank             2,000.00 CHF
+                Liabilities:EUR Card        -300.00 EUR
+                Equity
+        "};
+        let fake = hashmap! {
+            PathBuf::from("/path/to/file.ledger") => content.as_bytes().to_vec(),
+        };
+        load::Loader::new(PathBuf::from("/path/to/file.ledger"), fake.into())
+    }
+
+    fn create_ledger<'ctx>(
+        arena: &'ctx Bump,
+    ) -> Result<(ReportContext<'ctx>, Ledger<'ctx>), report::ReportError> {
+        let mut ctx = ReportContext::new(&arena);
+        let ledger = report::process(&mut ctx, fake_loader(), &report::ProcessOptions::default())?;
+        Ok((ctx, ledger))
+    }
+
+    #[test]
+    fn balance_default() {
+        let arena = Bump::new();
+        let (ctx, ledger) = create_ledger(&arena).unwrap();
+
+        let got = ledger.balance();
+
+        log::info!("all_accounts: {:?}", ctx.all_accounts());
+
+        let want: Balance = [
+            (
+                ctx.account("Assets:J 銀行").unwrap(),
+                Amount::from_value(dec!(100000), ctx.commodities.resolve("JPY").unwrap()),
+            ),
+            (
+                ctx.account("Assets:CH Bank").unwrap(),
+                Amount::from_value(dec!(2000.00), ctx.commodities.resolve("CHF").unwrap()),
+            ),
+            (
+                ctx.account("Liabilities:EUR Card").unwrap(),
+                Amount::from_value(dec!(-300.00), ctx.commodities.resolve("EUR").unwrap()),
+            ),
+            (
+                ctx.account("Equity").unwrap(),
+                Amount::from_values([
+                    (dec!(-100000), ctx.commodities.resolve("JPY").unwrap()),
+                    (dec!(-2000.00), ctx.commodities.resolve("CHF").unwrap()),
+                    (dec!(300.00), ctx.commodities.resolve("EUR").unwrap()),
+                ]),
+            ),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(Cow::Borrowed(&want), got);
+    }
+
+    #[test]
+    fn eval_default_context() {
+        let arena = Bump::new();
+        let (ctx, mut ledger) = create_ledger(&arena).unwrap();
+
+        let evaluated = ledger
+            .eval(
+                &ctx,
+                "1 JPY",
+                &EvalContext {
+                    date: NaiveDate::from_ymd_opt(2024, 10, 1).unwrap(),
+                    exchange: None,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            Amount::from_value(dec!(1), ctx.commodities.resolve("JPY").unwrap()),
+            evaluated
+        );
     }
 }

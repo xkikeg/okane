@@ -7,3 +7,12 @@ pub mod load;
 pub mod parse;
 pub mod report;
 pub mod syntax;
+
+#[cfg(test)]
+#[ctor::ctor]
+fn unit_test_logger() {
+    let _ = env_logger::builder()
+        .is_test(true)
+        .filter_level(log::LevelFilter::max())
+        .try_init();
+}
