@@ -5,11 +5,12 @@ use std::borrow::Cow;
 use winnow::{
     ascii::{line_ending, space1},
     combinator::{seq, trace},
+    error::{ContextError, FromExternalError, ParserError},
     stream::{AsChar, Stream, StreamIsPartial},
-    ModalResult, Parser as _,
+    Parser as _,
 };
 
-use crate::syntax;
+use crate::syntax::{self, pretty_decimal};
 
 use super::{
     adaptor::{ParseOptions, ParsedContext},
@@ -23,11 +24,15 @@ pub fn parse_price_db<'i>(
     options: &ParseOptions,
     input: &'i str,
 ) -> impl Iterator<Item = Result<(ParsedContext<'i>, syntax::PriceDBEntry<'i>), ParseError>> + 'i {
-    options.parse_repeated(price_db_entry, character::newlines, input)
+    options.parse_repeated(
+        price_db_entry::<_, ContextError>,
+        character::newlines,
+        input,
+    )
 }
 
 /// Parses a price DB entry line.
-fn price_db_entry<'i, I>(input: &mut I) -> ModalResult<syntax::PriceDBEntry<'i>>
+fn price_db_entry<'i, I, E>(input: &mut I) -> winnow::Result<syntax::PriceDBEntry<'i>, E>
 where
     I: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -35,6 +40,9 @@ where
         + winnow::stream::FindSlice<(char, char)>
         + Clone,
     <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I>
+        + FromExternalError<I, pretty_decimal::Error>
+        + FromExternalError<I, chrono::ParseError>,
 {
     trace(
         "price::price_db_entry",
