@@ -1,20 +1,20 @@
 //! Parser about ledger postings.
 
-use std::cmp::min;
-
 use winnow::{
     ascii::space0,
-    combinator::{cond, delimited, fail, opt, peek, preceded, terminated, trace},
+    combinator::{
+        alt, cond, delimited, eof, fail, opt, peek, preceded, repeat_till, terminated, trace,
+    },
     error::StrContext,
-    stream::{AsChar, Stream, StreamIsPartial},
-    token::{literal, one_of, take, take_till},
+    stream::{AsChar, Compare, Stream, StreamIsPartial},
+    token::{literal, one_of, take_till},
     PResult, Parser,
 };
 
 use crate::syntax;
 use crate::{
     parse::{
-        character::{line_ending_or_semi, paren, till_line_ending_or_semi},
+        character::{line_ending_or_semi, paren},
         combinator::{cond_else, has_peek},
         expr, metadata, primitive,
     },
@@ -73,20 +73,29 @@ where
 /// Parses the posting account name, and consumes the trailing spaces and tabs.
 fn posting_account<'i, Input>(input: &mut Input) -> PResult<<Input as Stream>::Slice>
 where
-    Input: Stream<Slice = &'i str> + StreamIsPartial + Clone,
-    <Input as Stream>::Token: AsChar,
+    Input: Stream<Slice = &'i str> + StreamIsPartial + Compare<&'static str>,
+    <Input as Stream>::Token: AsChar + Clone,
 {
-    let (_, line) = till_line_ending_or_semi.parse_peek(input.clone())?;
-    let space = line.find("  ");
-    let tab = line.find('\t');
-    let length = match (space, tab) {
-        (Some(x), Some(y)) => min(x, y),
-        (Some(x), None) => x,
-        (None, Some(x)) => x,
-        _ => line.len(),
-    };
-    // Note space may be zero for the case amount / balance is omitted.
-    terminated(take(length), space0).parse_next(input)
+    trace(
+        "posting::posting",
+        terminated(
+            repeat_till(
+                1..,
+                (opt(" "), take_till(1.., b"\n\r; \t")),
+                peek(alt((
+                    "  ",
+                    (opt(" "), one_of(('\t', ';', '\r', '\n'))).take(),
+                    eof,
+                ))),
+            )
+            // let repeat_till accumulated into () (unit)
+            .map(|((), _)| ())
+            .take(),
+            space0,
+        ),
+    )
+    .map(str::trim_start)
+    .parse_next(input)
 }
 
 fn posting_amount<'i, Input, Deco>(input: &mut Input) -> PResult<syntax::PostingAmount<'i, Deco>>
@@ -359,27 +368,67 @@ mod tests {
     fn posting_account_returns_minimal() {
         let input = indoc! {"
             Account Value     ;
-            Next Account Value
+            next_token
         "};
         assert_eq!(
             expect_parse_ok(posting_account, input),
-            (";\nNext Account Value\n", "Account Value")
+            (";\nnext_token\n", "Account Value")
         );
         let input = indoc! {"
             Account Value\t\t
-            Next Account Value
+            next_token
         "};
         assert_eq!(
             expect_parse_ok(posting_account, input),
-            ("\nNext Account Value\n", "Account Value")
+            ("\nnext_token\n", "Account Value")
         );
         let input = indoc! {"
             Account Value
-            Next Account Value
+            next_token
         "};
         assert_eq!(
             expect_parse_ok(posting_account, input),
-            ("\nNext Account Value\n", "Account Value")
+            ("\nnext_token\n", "Account Value")
+        );
+    }
+
+    #[test]
+    fn posting_account_unicode() {
+        // ends with double spaces
+        let input = indoc! {"
+            資産:銀行     ;
+            next_token
+        "};
+        assert_eq!(
+            expect_parse_ok(posting_account, input),
+            (";\nnext_token\n", "資産:銀行")
+        );
+
+        // ends with tab
+        let input = indoc! {"
+            負債:クレカ\t
+            next_token
+        "};
+        assert_eq!(
+            expect_parse_ok(posting_account, input),
+            ("\nnext_token\n", "負債:クレカ")
+        );
+
+        // end with the newline
+        let input = indoc! {"
+            ピカチュウ
+            next_token
+        "};
+        assert_eq!(
+            expect_parse_ok(posting_account, input),
+            ("\nnext_token\n", "ピカチュウ")
+        );
+
+        // end with the semi-colon
+        let input = "ピカチュウ ;next_token";
+        assert_eq!(
+            expect_parse_ok(posting_account, input),
+            (";next_token", "ピカチュウ")
         );
     }
 
