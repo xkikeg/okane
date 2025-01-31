@@ -208,13 +208,14 @@ impl EvalCmd {
             load::new_loader(self.source),
             &self.eval_options.to_process_options(),
         )?;
-        let mut expression: String = "(".to_string();
+        let mut expression: String = '('.to_string();
         for term in &self.expression {
-            expression.push_str(&term);
+            expression.push_str(term);
+            expression.push(' ');
         }
-        expression.push_str(")");
+        expression.push(')');
         let result = ledger.eval(
-            &mut ctx,
+            &ctx,
             &expression,
             &report::query::EvalContext {
                 date: self.date,

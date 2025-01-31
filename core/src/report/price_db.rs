@@ -261,7 +261,7 @@ impl<'ctx> NaivePriceRepository<'ctx> {
         let rate = self
             .compute_price_table(commodity_with, date)
             .get(&value.commodity)
-            .map(|x| x.1.clone());
+            .map(|x| x.1);
         match rate {
             Some(rate) => Ok(SingleAmount::from_value(value.value * rate, commodity_with)),
             None => Err(value),
