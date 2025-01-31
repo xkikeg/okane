@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1738353157407,
+  "lastUpdate": 1738353328361,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Criterion.rs Benchmark": [
@@ -533,6 +533,66 @@ window.BENCHMARK_DATA = {
             "name": "query-posting-one-account",
             "value": 2944523,
             "range": "± 15724",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-default",
+            "value": 2,
+            "range": "± 0",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "5494389d64fc474d362ccf20666e93cab1adc9fa",
+          "message": "Corrected clippy findings.",
+          "timestamp": "2025-01-31T20:53:03+01:00",
+          "tree_id": "af752216881ec8f7265d8ed254fd72dd7ef1532d",
+          "url": "https://github.com/xkikeg/okane/commit/5494389d64fc474d362ccf20666e93cab1adc9fa"
+        },
+        "date": 1738353327524,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse plain",
+            "value": 26,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse comma",
+            "value": 27,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load-with-counter",
+            "value": 145136185,
+            "range": "± 1096647",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process",
+            "value": 216972522,
+            "range": "± 1530856",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-posting-one-account",
+            "value": 3037949,
+            "range": "± 70958",
             "unit": "ns/iter"
           },
           {
