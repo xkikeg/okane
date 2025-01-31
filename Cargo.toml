@@ -22,7 +22,7 @@ chrono = "0.4.38"
 log = "0.4"
 rust_decimal = "1.36"
 thiserror = "2.0"
-winnow = "0.6.18"
+winnow = "0.7.0"
 
 # middle
 env_logger = "0.11"

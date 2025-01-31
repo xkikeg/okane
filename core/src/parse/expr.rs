@@ -9,7 +9,7 @@ use winnow::{
     error::{FromExternalError, ParserError},
     stream::{AsChar, Stream, StreamIsPartial},
     token::{any, one_of},
-    PResult, Parser,
+    ModalResult, Parser,
 };
 
 use crate::syntax::{expr, pretty_decimal};
@@ -17,7 +17,7 @@ use crate::syntax::{expr, pretty_decimal};
 use super::{adaptor::ParseOptions, character::paren, error, primitive};
 
 /// Parses value expression.
-pub fn value_expr<'i, I, E>(input: &mut I) -> PResult<expr::ValueExpr<'i>, E>
+pub fn value_expr<'i, I, E>(input: &mut I) -> ModalResult<expr::ValueExpr<'i>, E>
 where
     I: Stream<Token = char, Slice = &'i str> + StreamIsPartial + Clone,
     E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
@@ -43,7 +43,7 @@ impl<'i> TryFrom<&'i str> for expr::ValueExpr<'i> {
     }
 }
 
-fn paren_expr<'i, I, E>(input: &mut I) -> PResult<expr::ValueExpr<'i>, E>
+fn paren_expr<'i, I, E>(input: &mut I) -> ModalResult<expr::ValueExpr<'i>, E>
 where
     I: Stream<Token = char, Slice = &'i str> + StreamIsPartial + Clone,
     E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
@@ -56,7 +56,7 @@ where
     .parse_next(input)
 }
 
-fn add_expr<'i, I, E>(input: &mut I) -> PResult<expr::Expr<'i>, E>
+fn add_expr<'i, I, E>(input: &mut I) -> ModalResult<expr::Expr<'i>, E>
 where
     I: Stream<Token = char, Slice = &'i str> + StreamIsPartial + Clone,
     E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
@@ -65,7 +65,7 @@ where
     trace("expr::add_expr", infixl(add_op, mul_expr)).parse_next(input)
 }
 
-fn add_op<I, E>(input: &mut I) -> PResult<expr::BinaryOp, E>
+fn add_op<I, E>(input: &mut I) -> ModalResult<expr::BinaryOp, E>
 where
     I: Stream + StreamIsPartial + Clone,
     E: ParserError<I>,
@@ -81,7 +81,7 @@ where
     .parse_next(input)
 }
 
-fn mul_expr<'i, I, E>(input: &mut I) -> PResult<expr::Expr<'i>, E>
+fn mul_expr<'i, I, E>(input: &mut I) -> ModalResult<expr::Expr<'i>, E>
 where
     I: Stream<Token = char, Slice = &'i str> + StreamIsPartial + Clone,
     E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
@@ -90,7 +90,7 @@ where
     trace("expr::mul_expr", infixl(mul_op, unary_expr)).parse_next(input)
 }
 
-fn mul_op<I, E>(input: &mut I) -> PResult<expr::BinaryOp, E>
+fn mul_op<I, E>(input: &mut I) -> ModalResult<expr::BinaryOp, E>
 where
     I: Stream + StreamIsPartial + Clone,
     E: ParserError<I>,
@@ -106,7 +106,7 @@ where
     .parse_next(input)
 }
 
-fn unary_expr<'i, I, E>(input: &mut I) -> PResult<expr::Expr<'i>, E>
+fn unary_expr<'i, I, E>(input: &mut I) -> ModalResult<expr::Expr<'i>, E>
 where
     I: Stream<Token = char, Slice = &'i str> + StreamIsPartial + Clone,
     E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
@@ -124,7 +124,7 @@ where
 
 /// Parses amount expression, possibly with negative op.
 // Only used for [`Amount`] `TryFrom<&'str>` implementation.
-fn unary_amount<'i, I, E>(input: &mut I) -> PResult<expr::Amount<'i>, E>
+fn unary_amount<'i, I, E>(input: &mut I) -> ModalResult<expr::Amount<'i>, E>
 where
     I: Stream<Slice = &'i str> + StreamIsPartial,
     E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
@@ -165,7 +165,7 @@ impl<'i> TryFrom<&'i str> for expr::Amount<'i> {
     }
 }
 
-fn negate_expr<'i, I, E>(input: &mut I) -> PResult<expr::Expr<'i>, E>
+fn negate_expr<'i, I, E>(input: &mut I) -> ModalResult<expr::Expr<'i>, E>
 where
     I: Stream<Token = char, Slice = &'i str> + StreamIsPartial + Clone,
     E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
@@ -184,7 +184,7 @@ where
 }
 
 /// Parses amount expression.
-pub fn amount<'i, I, E>(input: &mut I) -> PResult<expr::Amount<'i>, E>
+pub fn amount<'i, I, E>(input: &mut I) -> ModalResult<expr::Amount<'i>, E>
 where
     I: Stream<Slice = &'i str> + StreamIsPartial,
     E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,

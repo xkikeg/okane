@@ -9,11 +9,11 @@ use winnow::{
     error::{FromExternalError, ParserError},
     stream::{AsChar, Stream, StreamIsPartial},
     token::{one_of, take_till, take_while},
-    PResult, Parser,
+    ModalResult, Parser,
 };
 
 /// Parses comma separated decimal.
-pub fn pretty_decimal<'a, I, E>(input: &mut I) -> PResult<PrettyDecimal, E>
+pub fn pretty_decimal<'a, I, E>(input: &mut I) -> ModalResult<PrettyDecimal, E>
 where
     I: Stream<Slice = &'a str> + StreamIsPartial,
     E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
@@ -34,7 +34,7 @@ const NON_COMMODITY_CHARS: &[u8] = b" \t\r\n0123456789.,;:?!-+*/^&|=<>[](){}@";
 
 /// Parses commodity in greedy manner.
 /// Returns empty string if the upcoming characters are not valid as commodity to support empty commodity.
-pub fn commodity<I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
+pub fn commodity<I, E>(input: &mut I) -> ModalResult<<I as Stream>::Slice, E>
 where
     I: Stream + StreamIsPartial,
     E: ParserError<I>,
@@ -60,7 +60,7 @@ impl DateType {
 }
 
 /// Parses date in yyyy/mm/dd format.
-pub fn date<'a, I, E>(input: &mut I) -> PResult<NaiveDate, E>
+pub fn date<'a, I, E>(input: &mut I) -> ModalResult<NaiveDate, E>
 where
     I: Stream<Slice = &'a str> + StreamIsPartial,
     E: ParserError<I> + FromExternalError<I, chrono::ParseError>,
@@ -84,7 +84,7 @@ mod tests {
 
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
-    use winnow::error::{ErrMode, ErrorKind, InputError};
+    use winnow::error::{ErrMode, InputError};
 
     #[test]
     fn comma_decimal_parses_valid_inputs() {
@@ -106,14 +106,11 @@ mod tests {
     fn comma_decimal_fails_on_invalid_inputs() {
         assert_eq!(
             pretty_decimal.parse_peek("不可能"),
-            Err(ErrMode::Backtrack(InputError::new(
-                "不可能",
-                ErrorKind::Slice
-            )))
+            Err(ErrMode::Backtrack(InputError::at("不可能")))
         );
         assert_eq!(
             pretty_decimal.parse_peek("!"),
-            Err(ErrMode::Backtrack(InputError::new("!", ErrorKind::Slice)))
+            Err(ErrMode::Backtrack(InputError::at("!")))
         );
     }
 
@@ -147,24 +144,15 @@ mod tests {
     fn date_fails_on_invalid_inputs() {
         assert_eq!(
             date.parse_peek("not a date"),
-            Err(ErrMode::Backtrack(InputError::new(
-                "not a date",
-                ErrorKind::Slice
-            )))
+            Err(ErrMode::Backtrack(InputError::at("not a date")))
         );
         assert_eq!(
             date.parse_peek("2022/01"),
-            Err(ErrMode::Backtrack(InputError::new(
-                "/01",
-                ErrorKind::Verify
-            )))
+            Err(ErrMode::Backtrack(InputError::at("/01")))
         );
         assert_eq!(
             date.parse_peek("2022/13/21"),
-            Err(ErrMode::Backtrack(InputError::new(
-                "2022/13/21",
-                ErrorKind::Verify
-            )))
+            Err(ErrMode::Backtrack(InputError::at("2022/13/21")))
         );
     }
 }

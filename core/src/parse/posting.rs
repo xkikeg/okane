@@ -8,7 +8,7 @@ use winnow::{
     error::StrContext,
     stream::{AsChar, Compare, Stream, StreamIsPartial},
     token::{literal, one_of, take_till},
-    PResult, Parser,
+    ModalResult, Parser,
 };
 
 use crate::syntax;
@@ -21,7 +21,7 @@ use crate::{
     syntax::decoration::Decoration,
 };
 
-pub fn posting<'i, Input, Deco>(input: &mut Input) -> PResult<syntax::Posting<'i, Deco>>
+pub fn posting<'i, Input, Deco>(input: &mut Input) -> ModalResult<syntax::Posting<'i, Deco>>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -71,7 +71,7 @@ where
 }
 
 /// Parses the posting account name, and consumes the trailing spaces and tabs.
-fn posting_account<'i, Input>(input: &mut Input) -> PResult<<Input as Stream>::Slice>
+fn posting_account<'i, Input>(input: &mut Input) -> ModalResult<<Input as Stream>::Slice>
 where
     Input: Stream<Slice = &'i str> + StreamIsPartial + Compare<&'static str>,
     <Input as Stream>::Token: AsChar + Clone,
@@ -98,7 +98,9 @@ where
     .parse_next(input)
 }
 
-fn posting_amount<'i, Input, Deco>(input: &mut Input) -> PResult<syntax::PostingAmount<'i, Deco>>
+fn posting_amount<'i, Input, Deco>(
+    input: &mut Input,
+) -> ModalResult<syntax::PostingAmount<'i, Deco>>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -123,7 +125,7 @@ where
     Ok(syntax::PostingAmount { amount, cost, lot })
 }
 
-fn lot<'i, Input, Deco>(input: &mut Input) -> PResult<syntax::Lot<'i, Deco>>
+fn lot<'i, Input, Deco>(input: &mut Input) -> ModalResult<syntax::Lot<'i, Deco>>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -178,7 +180,7 @@ where
     }
 }
 
-fn lot_amount<'i, Input>(input: &mut Input) -> PResult<syntax::Exchange<'i>>
+fn lot_amount<'i, Input>(input: &mut Input) -> ModalResult<syntax::Exchange<'i>>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -206,7 +208,7 @@ where
     }
 }
 
-fn total_cost<'i, Input>(input: &mut Input) -> PResult<syntax::Exchange<'i>>
+fn total_cost<'i, Input>(input: &mut Input) -> ModalResult<syntax::Exchange<'i>>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -219,7 +221,7 @@ where
         .parse_next(input)
 }
 
-fn rate_cost<'i, Input>(input: &mut Input) -> PResult<syntax::Exchange<'i>>
+fn rate_cost<'i, Input>(input: &mut Input) -> ModalResult<syntax::Exchange<'i>>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial

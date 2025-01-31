@@ -10,7 +10,7 @@ use winnow::{
     error::ParserError,
     stream::{AsChar, Stream, StreamIsPartial},
     token::{literal, take_while},
-    PResult, Parser,
+    ModalResult, Parser,
 };
 
 /// Returns true if the given character is comment prefix.
@@ -20,7 +20,7 @@ pub(super) fn is_comment_prefix<C: AsChar>(c: C) -> bool {
 }
 
 /// Parses "account" directive.
-pub fn account_declaration<'i, I>(input: &mut I) -> PResult<syntax::AccountDeclaration<'i>>
+pub fn account_declaration<'i, I>(input: &mut I) -> ModalResult<syntax::AccountDeclaration<'i>>
 where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
@@ -62,7 +62,7 @@ where
 }
 
 /// Parses "commodity" directive.
-pub fn commodity_declaration<'i, I>(input: &mut I) -> PResult<syntax::CommodityDeclaration<'i>>
+pub fn commodity_declaration<'i, I>(input: &mut I) -> ModalResult<syntax::CommodityDeclaration<'i>>
 where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
@@ -112,7 +112,7 @@ where
 }
 
 /// Parses "apply tag" directive.
-pub fn apply_tag<'i, I>(input: &mut I) -> PResult<syntax::ApplyTag<'i>>
+pub fn apply_tag<'i, I>(input: &mut I) -> ModalResult<syntax::ApplyTag<'i>>
 where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
@@ -145,7 +145,7 @@ where
 /// Also comment requires "end" directive.
 /// In the meantime, only "end apply tag" is supported, however,
 /// pretty sure it'd be needed to rename and extend this function.
-pub fn end_apply_tag<I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
+pub fn end_apply_tag<I, E>(input: &mut I) -> ModalResult<<I as Stream>::Slice, E>
 where
     I: Stream + StreamIsPartial + winnow::stream::Compare<&'static str>,
     E: ParserError<I>,
@@ -171,7 +171,7 @@ where
 /// Parses include directive.
 /// Note given we'll always have UTF-8 input,
 /// we're not using PathBuf but String for the path.
-pub fn include<'i, I, E>(input: &mut I) -> PResult<syntax::IncludeFile<'i>, E>
+pub fn include<'i, I, E>(input: &mut I) -> ModalResult<syntax::IncludeFile<'i>, E>
 where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
@@ -194,7 +194,7 @@ where
 
 /// Parses top level comment in the Ledger file format.
 /// Notable difference with block_metadata is, this accepts multiple prefix.
-pub fn top_comment<'i, I, E>(input: &mut I) -> PResult<syntax::TopLevelComment<'i>, E>
+pub fn top_comment<'i, I, E>(input: &mut I) -> ModalResult<syntax::TopLevelComment<'i>, E>
 where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
@@ -240,7 +240,7 @@ mod tests {
 
     use indoc::indoc;
     use pretty_assertions::assert_eq;
-    use winnow::error::{ErrMode, ErrorKind, InputError};
+    use winnow::error::{ErrMode, InputError};
 
     #[test]
     fn account_declaration_without_details() {
@@ -382,25 +382,19 @@ mod tests {
         let input: &str = "end apply tag   following";
         assert_eq!(
             end_apply_tag.parse_peek(input),
-            Err(ErrMode::Backtrack(InputError::new(
-                "following",
-                ErrorKind::Tag
-            )))
+            Err(ErrMode::Backtrack(InputError::at("following")))
         );
 
         let input: &str = "end applytag";
         assert_eq!(
             end_apply_tag.parse_peek(input),
-            Err(ErrMode::Backtrack(InputError::new("tag", ErrorKind::Slice)))
+            Err(ErrMode::Backtrack(InputError::at("tag")))
         );
 
         let input: &str = "endapply tag";
         assert_eq!(
             end_apply_tag.parse_peek(input),
-            Err(ErrMode::Backtrack(InputError::new(
-                "apply tag",
-                ErrorKind::Slice
-            )))
+            Err(ErrMode::Backtrack(InputError::at("apply tag")))
         );
     }
 
