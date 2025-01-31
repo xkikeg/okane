@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1738322850155,
+  "lastUpdate": 1738353157407,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Criterion.rs Benchmark": [
@@ -473,6 +473,66 @@ window.BENCHMARK_DATA = {
             "name": "query-posting-one-account",
             "value": 2901842,
             "range": "± 18306",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-default",
+            "value": 2,
+            "range": "± 0",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "2b47f2d05db08e951f964314cc63ede75d66990d",
+          "message": "Add check about if the include path is the hitting glob.\n\nRaise an error if it hits no files.",
+          "timestamp": "2025-01-31T20:50:38+01:00",
+          "tree_id": "5de8bda411d2eff9bfd5d71deff4ffb6a36ba01c",
+          "url": "https://github.com/xkikeg/okane/commit/2b47f2d05db08e951f964314cc63ede75d66990d"
+        },
+        "date": 1738353157011,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse plain",
+            "value": 26,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse comma",
+            "value": 28,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load-with-counter",
+            "value": 129793058,
+            "range": "± 651625",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process",
+            "value": 204562364,
+            "range": "± 867186",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-posting-one-account",
+            "value": 2944523,
+            "range": "± 15724",
             "unit": "ns/iter"
           },
           {
