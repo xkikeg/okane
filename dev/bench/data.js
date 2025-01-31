@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1738317525795,
+  "lastUpdate": 1738322850155,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Criterion.rs Benchmark": [
@@ -413,6 +413,66 @@ window.BENCHMARK_DATA = {
             "name": "query-posting-one-account",
             "value": 2932200,
             "range": "± 107590",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-default",
+            "value": 2,
+            "range": "± 0",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "d5af8db2be1330212fbca5d4f3199184e3165f9d",
+          "message": "Add tests for report::query methods.",
+          "timestamp": "2025-01-31T12:25:27+01:00",
+          "tree_id": "7a677d410852ef1554fb0345648c815cfe220aff",
+          "url": "https://github.com/xkikeg/okane/commit/d5af8db2be1330212fbca5d4f3199184e3165f9d"
+        },
+        "date": 1738322849758,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse plain",
+            "value": 26,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse comma",
+            "value": 28,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load-with-counter",
+            "value": 134294454,
+            "range": "± 1226347",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process",
+            "value": 205387522,
+            "range": "± 1362404",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-posting-one-account",
+            "value": 2901842,
+            "range": "± 18306",
             "unit": "ns/iter"
           },
           {
