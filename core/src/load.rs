@@ -104,6 +104,13 @@ impl<F: FileSystem> Loader<F> {
                             LoadError::InvalidUnicodePath(format!("{}", PathBuf::from(x).display()))
                         })?;
                     let mut paths: Vec<PathBuf> = self.filesystem.glob(&target)?;
+                    if paths.is_empty() {
+                        return Err(LoadError::IO(std::io::Error::new(
+                            std::io::ErrorKind::NotFound,
+                            format!("glob {} does not hit any files", target),
+                        ))
+                        .into());
+                    }
                     paths.sort_unstable();
                     for path in &paths {
                         self.load_impl(parse_options, path, callback)?;
@@ -378,5 +385,53 @@ mod tests {
         ))
         .expect("parse failed");
         assert_eq!(want, got);
+    }
+
+    #[test]
+    fn load_non_existing_file() {
+        let fake = hashmap! {
+            PathBuf::from("/path/to/root.ledger") => indoc! {"
+                ; foo
+            "}.as_bytes().to_vec(),
+        };
+
+        let got_err = parse_into_vec(Loader::new(
+            PathBuf::from("/path/to/not_found.ledger"),
+            FakeFileSystem::from(fake),
+        ))
+        .unwrap_err();
+
+        match got_err {
+            LoadError::IO(e) => assert!(
+                e.kind() == std::io::ErrorKind::NotFound,
+                "should cause NotFound IO error: got {:?}",
+                e
+            ),
+            _ => panic!("unexpected error: {:?}", got_err),
+        }
+    }
+
+    #[test]
+    fn load_include_non_existing_file() {
+        let fake = hashmap! {
+            PathBuf::from("/path/to/root.ledger") => indoc! {"
+                include non_existing.ledger
+            "}.as_bytes().to_vec(),
+        };
+
+        let got_err = parse_into_vec(Loader::new(
+            PathBuf::from("/path/to/root.ledger"),
+            FakeFileSystem::from(fake),
+        ))
+        .expect_err("parse failed");
+
+        match got_err {
+            LoadError::IO(e) => assert!(
+                e.kind() == std::io::ErrorKind::NotFound,
+                "should cause NotFound IO error: got {:?}",
+                e
+            ),
+            _ => panic!("unexpected error: {:?}", got_err),
+        }
     }
 }
