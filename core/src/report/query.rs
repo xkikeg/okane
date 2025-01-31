@@ -93,14 +93,14 @@ impl<'ctx> Ledger<'ctx> {
             .exchange
             .as_ref()
             .map(|x| {
-                ctx.commodities.resolve(&x).ok_or_else(|| {
+                ctx.commodities.resolve(x).ok_or_else(|| {
                     QueryError::CommodityNotFound(OwnedCommodity::from_string(x.to_owned()))
                 })
             })
             .transpose()?;
         let parsed: syntax::expr::ValueExpr = expression
             .try_into()
-            .map_err(|err| QueryError::ParseFailed(err))?;
+            .map_err(QueryError::ParseFailed)?;
         let evaled: Amount<'ctx> = parsed.eval(ctx)?.try_into()?;
         let evaled = match exchange {
             None => evaled,
@@ -171,10 +171,10 @@ mod tests {
         load::Loader::new(PathBuf::from("/path/to/file.ledger"), fake.into())
     }
 
-    fn create_ledger<'ctx>(
-        arena: &'ctx Bump,
-    ) -> Result<(ReportContext<'ctx>, Ledger<'ctx>), report::ReportError> {
-        let mut ctx = ReportContext::new(&arena);
+    fn create_ledger(
+        arena: &Bump,
+    ) -> Result<(ReportContext<'_>, Ledger<'_>), report::ReportError> {
+        let mut ctx = ReportContext::new(arena);
         let ledger = report::process(&mut ctx, fake_loader(), &report::ProcessOptions::default())?;
         Ok((ctx, ledger))
     }

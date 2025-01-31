@@ -312,7 +312,7 @@ impl<'ctx> Amount<'ctx> {
 
     /// Returns iterator over its amount.
     pub fn iter(&self) -> impl Iterator<Item = SingleAmount<'ctx>> + '_ {
-        return AmountIter(self.values.iter());
+        AmountIter(self.values.iter())
     }
 
     /// Returns an objectt to print the amount as inline.
