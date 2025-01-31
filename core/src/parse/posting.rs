@@ -5,13 +5,13 @@ use winnow::{
     combinator::{
         alt, cond, delimited, eof, fail, opt, peek, preceded, repeat_till, terminated, trace,
     },
-    error::StrContext,
+    error::{AddContext, FromExternalError, ParserError, StrContext},
     stream::{AsChar, Compare, Stream, StreamIsPartial},
     token::{literal, one_of, take_till},
-    ModalResult, Parser,
+    Parser,
 };
 
-use crate::syntax;
+use crate::syntax::{self, pretty_decimal};
 use crate::{
     parse::{
         character::{line_ending_or_semi, paren},
@@ -21,8 +21,11 @@ use crate::{
     syntax::decoration::Decoration,
 };
 
-pub fn posting<'i, Input, Deco>(input: &mut Input) -> ModalResult<syntax::Posting<'i, Deco>>
+pub fn posting<'i, Deco, Input, E>(
+    input: &mut Input,
+) -> winnow::Result<syntax::Posting<'i, Deco>, E>
 where
+    Deco: Decoration,
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
         + winnow::stream::Location
@@ -30,7 +33,10 @@ where
         + winnow::stream::FindSlice<(char, char)>
         + Clone,
     <Input as Stream>::Token: AsChar + Clone,
-    Deco: Decoration,
+    E: ParserError<Input>
+        + AddContext<Input, StrContext>
+        + FromExternalError<Input, pretty_decimal::Error>
+        + FromExternalError<Input, chrono::ParseError>,
 {
     trace("posting::posting", move |input: &mut Input| {
         let clear_state = preceded(space0, metadata::clear_state).parse_next(input)?;
@@ -71,10 +77,11 @@ where
 }
 
 /// Parses the posting account name, and consumes the trailing spaces and tabs.
-fn posting_account<'i, Input>(input: &mut Input) -> ModalResult<<Input as Stream>::Slice>
+fn posting_account<'i, Input, E>(input: &mut Input) -> winnow::Result<<Input as Stream>::Slice, E>
 where
     Input: Stream<Slice = &'i str> + StreamIsPartial + Compare<&'static str>,
     <Input as Stream>::Token: AsChar + Clone,
+    E: ParserError<Input>,
 {
     trace(
         "posting::posting",
@@ -98,17 +105,21 @@ where
     .parse_next(input)
 }
 
-fn posting_amount<'i, Input, Deco>(
+fn posting_amount<'i, Deco, Input, E>(
     input: &mut Input,
-) -> ModalResult<syntax::PostingAmount<'i, Deco>>
+) -> winnow::Result<syntax::PostingAmount<'i, Deco>, E>
 where
+    Deco: Decoration,
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
         + winnow::stream::Location
         + winnow::stream::Compare<&'static str>
         + std::clone::Clone,
     <Input as Stream>::Token: AsChar + Clone,
-    Deco: Decoration,
+    E: ParserError<Input>
+        + AddContext<Input, StrContext>
+        + FromExternalError<Input, pretty_decimal::Error>
+        + FromExternalError<Input, chrono::ParseError>,
 {
     let amount = terminated(Deco::decorate_parser(expr::value_expr), space0).parse_next(input)?;
     let lot = lot(input)?;
@@ -125,15 +136,19 @@ where
     Ok(syntax::PostingAmount { amount, cost, lot })
 }
 
-fn lot<'i, Input, Deco>(input: &mut Input) -> ModalResult<syntax::Lot<'i, Deco>>
+fn lot<'i, Deco, Input, E>(input: &mut Input) -> winnow::Result<syntax::Lot<'i, Deco>, E>
 where
+    Deco: Decoration,
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
         + winnow::stream::Location
         + winnow::stream::Compare<&'static str>
         + Clone,
     <Input as Stream>::Token: AsChar + Clone,
-    Deco: Decoration,
+    E: ParserError<Input>
+        + AddContext<Input, StrContext>
+        + FromExternalError<Input, pretty_decimal::Error>
+        + FromExternalError<Input, chrono::ParseError>,
 {
     space0.void().parse_next(input)?;
     let mut lot = syntax::Lot::default();
@@ -180,13 +195,14 @@ where
     }
 }
 
-fn lot_amount<'i, Input>(input: &mut Input) -> ModalResult<syntax::Exchange<'i>>
+fn lot_amount<'i, Input, E>(input: &mut Input) -> winnow::Result<syntax::Exchange<'i>, E>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
         + winnow::stream::Compare<&'static str>
         + Clone,
     <Input as Stream>::Token: AsChar + Clone,
+    E: ParserError<Input> + FromExternalError<Input, pretty_decimal::Error>,
 {
     let is_total = has_peek(literal("{{")).parse_next(input)?;
     if is_total {
@@ -208,26 +224,28 @@ where
     }
 }
 
-fn total_cost<'i, Input>(input: &mut Input) -> ModalResult<syntax::Exchange<'i>>
+fn total_cost<'i, Input, E>(input: &mut Input) -> winnow::Result<syntax::Exchange<'i>, E>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
         + winnow::stream::Compare<&'static str>
         + Clone,
     <Input as Stream>::Token: AsChar + Clone,
+    E: ParserError<Input> + FromExternalError<Input, pretty_decimal::Error>,
 {
     preceded((literal("@@"), space0), expr::value_expr)
         .map(syntax::Exchange::Total)
         .parse_next(input)
 }
 
-fn rate_cost<'i, Input>(input: &mut Input) -> ModalResult<syntax::Exchange<'i>>
+fn rate_cost<'i, Input, E>(input: &mut Input) -> winnow::Result<syntax::Exchange<'i>, E>
 where
     Input: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
         + winnow::stream::Compare<&'static str>
         + Clone,
     <Input as Stream>::Token: AsChar + Clone,
+    E: ParserError<Input> + FromExternalError<Input, pretty_decimal::Error>,
 {
     preceded((literal("@"), space0), expr::value_expr)
         .map(syntax::Exchange::Rate)
@@ -243,7 +261,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
     use syntax::plain;
-    use winnow::LocatingSlice;
+    use winnow::{error::ContextError, LocatingSlice};
 
     use crate::{
         parse::testing::expect_parse_ok,
@@ -443,7 +461,7 @@ mod tests {
                     let want_fail = i == j || j == k || i == k;
                     let input = format!("{}{}{}", segment[i], segment[j], segment[k]);
                     if want_fail {
-                        preceded(space0, lot::<_, plain::Ident>)
+                        preceded(space0, lot::<plain::Ident, _, ContextError<_>>)
                             .parse_peek(LocatingSlice::new(input.as_str()))
                             .expect_err("should fail");
                     } else {

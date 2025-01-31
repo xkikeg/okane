@@ -1,4 +1,4 @@
-use crate::syntax;
+use crate::syntax::{self, pretty_decimal};
 
 use super::{character::line_ending_or_eof, expr, metadata};
 
@@ -7,10 +7,10 @@ use std::borrow::Cow;
 use winnow::{
     ascii::{space0, space1, till_line_ending},
     combinator::{alt, delimited, opt, preceded, repeat, terminated, trace},
-    error::ParserError,
+    error::{FromExternalError, ParserError},
     stream::{AsChar, Stream, StreamIsPartial},
     token::{literal, take_while},
-    ModalResult, Parser,
+    Parser,
 };
 
 /// Returns true if the given character is comment prefix.
@@ -20,7 +20,9 @@ pub(super) fn is_comment_prefix<C: AsChar>(c: C) -> bool {
 }
 
 /// Parses "account" directive.
-pub fn account_declaration<'i, I>(input: &mut I) -> ModalResult<syntax::AccountDeclaration<'i>>
+pub fn account_declaration<'i, I, E>(
+    input: &mut I,
+) -> winnow::Result<syntax::AccountDeclaration<'i>, E>
 where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
@@ -28,6 +30,7 @@ where
         + winnow::stream::Compare<&'static str>
         + winnow::stream::FindSlice<(char, char)>,
     <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I>,
 {
     (
         delimited(
@@ -62,13 +65,14 @@ where
 }
 
 /// Parses "commodity" directive.
-pub fn commodity_declaration<'i, I>(input: &mut I) -> ModalResult<syntax::CommodityDeclaration<'i>>
+pub fn commodity_declaration<'i, I, E>(input: &mut I) -> Result<syntax::CommodityDeclaration<'i>, E>
 where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
         + winnow::stream::Compare<&'static str>
         + winnow::stream::FindSlice<(char, char)>,
     <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
 {
     (
         delimited(
@@ -112,13 +116,14 @@ where
 }
 
 /// Parses "apply tag" directive.
-pub fn apply_tag<'i, I>(input: &mut I) -> ModalResult<syntax::ApplyTag<'i>>
+pub fn apply_tag<'i, I, E>(input: &mut I) -> winnow::Result<syntax::ApplyTag<'i>, E>
 where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
         + winnow::stream::Compare<&'static str>
         + winnow::stream::FindSlice<(char, char)>,
     <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I>,
 {
     // TODO: value needs to be supported.
     trace(
@@ -145,11 +150,11 @@ where
 /// Also comment requires "end" directive.
 /// In the meantime, only "end apply tag" is supported, however,
 /// pretty sure it'd be needed to rename and extend this function.
-pub fn end_apply_tag<I, E>(input: &mut I) -> ModalResult<<I as Stream>::Slice, E>
+pub fn end_apply_tag<I, E>(input: &mut I) -> winnow::Result<<I as Stream>::Slice, E>
 where
     I: Stream + StreamIsPartial + winnow::stream::Compare<&'static str>,
-    E: ParserError<I>,
     <I as Stream>::Token: AsChar,
+    E: ParserError<I>,
 {
     trace(
         "directive::end_apply_tag",
@@ -171,7 +176,7 @@ where
 /// Parses include directive.
 /// Note given we'll always have UTF-8 input,
 /// we're not using PathBuf but String for the path.
-pub fn include<'i, I, E>(input: &mut I) -> ModalResult<syntax::IncludeFile<'i>, E>
+pub fn include<'i, I, E>(input: &mut I) -> winnow::Result<syntax::IncludeFile<'i>, E>
 where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
@@ -194,14 +199,14 @@ where
 
 /// Parses top level comment in the Ledger file format.
 /// Notable difference with block_metadata is, this accepts multiple prefix.
-pub fn top_comment<'i, I, E>(input: &mut I) -> ModalResult<syntax::TopLevelComment<'i>, E>
+pub fn top_comment<'i, I, E>(input: &mut I) -> winnow::Result<syntax::TopLevelComment<'i>, E>
 where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
         + winnow::stream::Compare<&'static str>
         + winnow::stream::FindSlice<(char, char)>,
-    E: ParserError<I>,
     <I as Stream>::Token: AsChar + Clone,
+    E: ParserError<I>,
 {
     trace(
         "directive::top_comment",

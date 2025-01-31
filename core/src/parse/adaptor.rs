@@ -29,15 +29,14 @@ impl ParseOptions {
         self
     }
 
-    pub(super) fn parse_single<'i, Out, P, E>(
+    pub(super) fn parse_single<'i, Out, P>(
         &self,
         parser: P,
         input: &'i str,
     ) -> Result<(ParsedContext<'i>, Out), ParseError>
     where
         Out: 'i,
-        P: Parser<LocatingSlice<&'i str>, Out, E> + 'i,
-        E: winnow::error::ParserError<LocatingSlice<&'i str>, Inner = ContextError> + 'i,
+        P: Parser<LocatingSlice<&'i str>, Out, ContextError> + 'i,
     {
         use winnow::stream::Stream as _;
         let initial = input;

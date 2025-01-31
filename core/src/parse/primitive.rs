@@ -9,11 +9,11 @@ use winnow::{
     error::{FromExternalError, ParserError},
     stream::{AsChar, Stream, StreamIsPartial},
     token::{one_of, take_till, take_while},
-    ModalResult, Parser,
+    Parser,
 };
 
 /// Parses comma separated decimal.
-pub fn pretty_decimal<'a, I, E>(input: &mut I) -> ModalResult<PrettyDecimal, E>
+pub fn pretty_decimal<'a, I, E>(input: &mut I) -> winnow::Result<PrettyDecimal, E>
 where
     I: Stream<Slice = &'a str> + StreamIsPartial,
     E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
@@ -34,7 +34,7 @@ const NON_COMMODITY_CHARS: &[u8] = b" \t\r\n0123456789.,;:?!-+*/^&|=<>[](){}@";
 
 /// Parses commodity in greedy manner.
 /// Returns empty string if the upcoming characters are not valid as commodity to support empty commodity.
-pub fn commodity<I, E>(input: &mut I) -> ModalResult<<I as Stream>::Slice, E>
+pub fn commodity<I, E>(input: &mut I) -> winnow::Result<<I as Stream>::Slice, E>
 where
     I: Stream + StreamIsPartial,
     E: ParserError<I>,
@@ -60,7 +60,7 @@ impl DateType {
 }
 
 /// Parses date in yyyy/mm/dd format.
-pub fn date<'a, I, E>(input: &mut I) -> ModalResult<NaiveDate, E>
+pub fn date<'a, I, E>(input: &mut I) -> winnow::Result<NaiveDate, E>
 where
     I: Stream<Slice = &'a str> + StreamIsPartial,
     E: ParserError<I> + FromExternalError<I, chrono::ParseError>,
