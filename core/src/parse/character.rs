@@ -6,26 +6,22 @@ use winnow::{
     error::ParserError,
     stream::{AsChar, Compare, Stream, StreamIsPartial},
     token::{one_of, take_till, take_while},
-    PResult, Parser,
+    Parser,
 };
 
 /// Semicolon or line ending.
-pub fn line_ending_or_semi<I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
+pub fn line_ending_or_semi<I, E>(input: &mut I) -> winnow::Result<<I as Stream>::Slice, E>
 where
     I: StreamIsPartial + Stream,
     I: Compare<&'static str>,
     <I as Stream>::Token: AsChar + Clone,
     E: ParserError<I>,
 {
-    trace(
-        "character::line_ending_or_semi",
-        alt((one_of(';').take(), line_ending)),
-    )
-    .parse_next(input)
+    trace("character::line_ending_or_semi", alt((line_ending, ";"))).parse_next(input)
 }
 
 /// Parses non-zero string until line_ending or comma appears.
-pub fn till_line_ending_or_semi<I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
+pub fn till_line_ending_or_semi<I, E>(input: &mut I) -> winnow::Result<<I as Stream>::Slice, E>
 where
     I: Stream + StreamIsPartial,
     E: ParserError<I>,
@@ -39,19 +35,19 @@ where
 }
 
 /// Line ending or EOF.
-pub fn line_ending_or_eof<I, E>(input: &mut I) -> PResult<(), E>
+pub fn line_ending_or_eof<I, E>(input: &mut I) -> winnow::Result<(), E>
 where
     I: Stream + StreamIsPartial + winnow::stream::Compare<&'static str>,
     <I as Stream>::Token: AsChar,
     E: ParserError<I>,
 {
-    trace("character::line_ending_or_eof", alt((eof, line_ending)))
+    trace("character::line_ending_or_eof", alt((line_ending, eof)))
         .void()
         .parse_next(input)
 }
 
 /// Consume all newlines.
-pub fn newlines<I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
+pub fn newlines<I, E>(input: &mut I) -> winnow::Result<<I as Stream>::Slice, E>
 where
     I: Stream + StreamIsPartial + winnow::stream::Compare<&'static str>,
     <I as Stream>::Token: AsChar,
@@ -61,7 +57,7 @@ where
 }
 
 /// Parses unnested string in paren.
-pub fn paren_str<I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
+pub fn paren_str<I, E>(input: &mut I) -> winnow::Result<<I as Stream>::Slice, E>
 where
     I: Stream + StreamIsPartial,
     E: ParserError<I>,

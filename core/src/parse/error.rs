@@ -34,7 +34,7 @@ impl ParseError {
     ) -> Self {
         let offset = input.offset_from(&start);
         input.reset(&start);
-        let line_start = compute_line_number(initial, input.location());
+        let line_start = compute_line_number(initial, input.current_token_start());
         // Assume the error span is only for the first `char`.
         // When we'll implement
         let end = (offset + 1..)

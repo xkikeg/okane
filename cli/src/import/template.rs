@@ -103,7 +103,7 @@ impl FromStr for Template {
             0..,
             alt((
                 delimited(
-                    one_of('{'),
+                    one_of::<_, _, ContextError>('{'),
                     take_till(1.., b"{}").try_map(template_key_from_str),
                     one_of('}'),
                 )

@@ -11,14 +11,14 @@ use winnow::{
     error::ParserError,
     stream::{AsChar, Stream, StreamIsPartial},
     token::{any, literal, one_of, take_till},
-    PResult, Parser,
+    ModalResult, Parser,
 };
 
 use crate::parse::character;
 use crate::syntax;
 
 /// Parses a ClearState.
-pub fn clear_state<I, E>(input: &mut I) -> PResult<syntax::ClearState, E>
+pub fn clear_state<I, E>(input: &mut I) -> ModalResult<syntax::ClearState, E>
 where
     I: Stream + StreamIsPartial,
     E: ParserError<I>,
@@ -40,7 +40,7 @@ where
 
 /// Parses block of metadata including the last line_end.
 /// Note this consumes at least one line_ending regardless of Metadata existence.
-pub fn block_metadata<'i, I, E>(input: &mut I) -> PResult<Vec<syntax::Metadata<'i>>, E>
+pub fn block_metadata<'i, I, E>(input: &mut I) -> ModalResult<Vec<syntax::Metadata<'i>>, E>
 where
     I: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -60,7 +60,7 @@ where
     .parse_next(input)
 }
 
-fn line_metadata<'i, I, E>(input: &mut I) -> PResult<syntax::Metadata<'i>, E>
+fn line_metadata<'i, I, E>(input: &mut I) -> ModalResult<syntax::Metadata<'i>, E>
 where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
@@ -89,7 +89,7 @@ where
     .parse_next(input)
 }
 
-fn metadata_tags<'i, I, E>(input: &mut I) -> PResult<syntax::Metadata<'i>, E>
+fn metadata_tags<'i, I, E>(input: &mut I) -> ModalResult<syntax::Metadata<'i>, E>
 where
     I: Stream<Slice = &'i str> + StreamIsPartial,
     E: ParserError<I>,
@@ -107,7 +107,7 @@ where
     .parse_next(input)
 }
 
-fn metadata_kv<'i, I, E>(input: &mut I) -> PResult<syntax::Metadata<'i>, E>
+fn metadata_kv<'i, I, E>(input: &mut I) -> ModalResult<syntax::Metadata<'i>, E>
 where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
@@ -129,7 +129,7 @@ where
 }
 
 /// Parses metadata value with `:` or `::` prefix.
-pub fn metadata_value<'i, I, E>(input: &mut I) -> PResult<syntax::MetadataValue<'i>, E>
+pub fn metadata_value<'i, I, E>(input: &mut I) -> ModalResult<syntax::MetadataValue<'i>, E>
 where
     I: Stream<Slice = &'i str>
         + StreamIsPartial
@@ -146,7 +146,7 @@ where
 }
 
 /// Parses metadata tag.
-pub fn tag_key<I, E>(input: &mut I) -> PResult<<I as Stream>::Slice, E>
+pub fn tag_key<I, E>(input: &mut I) -> ModalResult<<I as Stream>::Slice, E>
 where
     I: Stream + StreamIsPartial,
     E: ParserError<I>,

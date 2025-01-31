@@ -1,11 +1,8 @@
 //! Provides utilities to use winnow parser easily with [`ParseError`].
 
-use std::{marker::PhantomData, ops::Range};
+use std::{fmt::Debug, marker::PhantomData, ops::Range};
 
-use winnow::{
-    error::{ContextError, ErrMode},
-    LocatingSlice, Parser,
-};
+use winnow::{error::ContextError, LocatingSlice, Parser};
 
 use crate::syntax;
 
@@ -32,14 +29,15 @@ impl ParseOptions {
         self
     }
 
-    pub(super) fn parse_single<'i, Out, P>(
+    pub(super) fn parse_single<'i, Out, P, E>(
         &self,
         parser: P,
         input: &'i str,
     ) -> Result<(ParsedContext<'i>, Out), ParseError>
     where
         Out: 'i,
-        P: Parser<LocatingSlice<&'i str>, Out, winnow::error::ContextError> + 'i,
+        P: Parser<LocatingSlice<&'i str>, Out, E> + 'i,
+        E: winnow::error::ParserError<LocatingSlice<&'i str>, Inner = ContextError> + 'i,
     {
         use winnow::stream::Stream as _;
         let initial = input;
@@ -58,7 +56,7 @@ impl ParseOptions {
     }
 
     /// Parses the given `parser` object, separated with `separator`.
-    pub(super) fn parse_repeated<'i, Out, Sep, P, Q>(
+    pub(super) fn parse_repeated<'i, Out, Sep, P, Q, E>(
         &self,
         parser: P,
         separator: Q,
@@ -67,8 +65,9 @@ impl ParseOptions {
     where
         Out: 'i,
         Sep: 'i,
-        P: Parser<LocatingSlice<&'i str>, Out, winnow::error::ContextError> + 'i,
-        Q: Parser<LocatingSlice<&'i str>, Sep, winnow::error::ContextError> + 'i,
+        P: Parser<LocatingSlice<&'i str>, Out, E> + 'i,
+        Q: Parser<LocatingSlice<&'i str>, Sep, E> + 'i,
+        E: winnow::error::ParserError<&'i str, Inner = ContextError> + Debug + 'i,
     {
         ParsedIter {
             parser,
@@ -128,19 +127,20 @@ fn clip(parent: Range<usize>, child: Range<usize>) -> Range<usize> {
 }
 
 /// Iterator to return parsed ledger entry one-by-one.
-struct ParsedIter<'i, Out, Sep, P, Q> {
+struct ParsedIter<'i, Out, Sep, P, Q, E> {
     parser: P,
     separator: Q,
     initial: &'i str,
     input: LocatingSlice<&'i str>,
     renderer: annotate_snippets::Renderer,
-    _phantom: PhantomData<(Out, Sep)>,
+    _phantom: PhantomData<(Out, Sep, E)>,
 }
 
-impl<'i, Out, Sep, P, Q> Iterator for ParsedIter<'i, Out, Sep, P, Q>
+impl<'i, Out, Sep, P, Q, E> Iterator for ParsedIter<'i, Out, Sep, P, Q, E>
 where
-    P: Parser<LocatingSlice<&'i str>, Out, winnow::error::ContextError>,
-    Q: Parser<LocatingSlice<&'i str>, Sep, winnow::error::ContextError>,
+    P: Parser<LocatingSlice<&'i str>, Out, E>,
+    Q: Parser<LocatingSlice<&'i str>, Sep, E>,
+    E: winnow::error::ParserError<&'i str, Inner = ContextError> + Debug + 'i,
 {
     type Item = Result<(ParsedContext<'i>, Out), ParseError>;
 
@@ -162,12 +162,13 @@ where
     }
 }
 
-impl<'i, Out, Sep, P, Q> ParsedIter<'i, Out, Sep, P, Q>
+impl<'i, Out, Sep, P, Q, E> ParsedIter<'i, Out, Sep, P, Q, E>
 where
-    P: Parser<LocatingSlice<&'i str>, Out, winnow::error::ContextError>,
-    Q: Parser<LocatingSlice<&'i str>, Sep, winnow::error::ContextError>,
+    P: Parser<LocatingSlice<&'i str>, Out, E>,
+    Q: Parser<LocatingSlice<&'i str>, Sep, E>,
+    E: winnow::error::ParserError<&'i str> + 'i,
 {
-    fn next_impl(&mut self) -> Result<Option<(ParsedContext<'i>, Out)>, ErrMode<ContextError>> {
+    fn next_impl(&mut self) -> Result<Option<(ParsedContext<'i>, Out)>, E> {
         self.separator.parse_next(&mut self.input)?;
         if self.input.is_empty() {
             return Ok(None);

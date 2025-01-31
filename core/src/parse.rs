@@ -24,7 +24,7 @@ use winnow::{
     error::StrContext,
     stream::{Stream, StreamIsPartial},
     token::{any, literal},
-    PResult, Parser,
+    ModalResult, Parser,
 };
 
 use crate::syntax::{self, decoration::Decoration};
@@ -39,7 +39,7 @@ pub fn parse_ledger<'i, Deco: 'i + Decoration>(
 }
 
 /// Parses given `input` into [syntax::LedgerEntry].
-fn parse_ledger_entry<'i, I, Deco>(input: &mut I) -> PResult<syntax::LedgerEntry<'i, Deco>>
+fn parse_ledger_entry<'i, I, Deco>(input: &mut I) -> ModalResult<syntax::LedgerEntry<'i, Deco>>
 where
     I: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial

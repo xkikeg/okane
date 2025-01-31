@@ -8,7 +8,7 @@ use winnow::{
     error::StrContext,
     stream::{AsChar, Stream, StreamIsPartial},
     token::{one_of, take_while},
-    PResult, Parser,
+    ModalResult, Parser,
 };
 
 use crate::{
@@ -17,7 +17,7 @@ use crate::{
 };
 
 /// Parses a transaction from given string.
-pub fn transaction<'i, I, Deco>(input: &mut I) -> PResult<syntax::Transaction<'i, Deco>>
+pub fn transaction<'i, I, Deco>(input: &mut I) -> ModalResult<syntax::Transaction<'i, Deco>>
 where
     I: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial

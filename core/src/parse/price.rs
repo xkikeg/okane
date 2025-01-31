@@ -6,7 +6,7 @@ use winnow::{
     ascii::{line_ending, space1},
     combinator::{seq, trace},
     stream::{AsChar, Stream, StreamIsPartial},
-    PResult, Parser as _,
+    ModalResult, Parser as _,
 };
 
 use crate::syntax;
@@ -27,7 +27,7 @@ pub fn parse_price_db<'i>(
 }
 
 /// Parses a price DB entry line.
-fn price_db_entry<'i, I>(input: &mut I) -> PResult<syntax::PriceDBEntry<'i>>
+fn price_db_entry<'i, I>(input: &mut I) -> ModalResult<syntax::PriceDBEntry<'i>>
 where
     I: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
