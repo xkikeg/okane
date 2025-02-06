@@ -36,7 +36,7 @@ impl Display for PostingAmount<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PostingAmount::Zero => write!(f, "0"),
-            PostingAmount::Single(single) => write!(f, "{}", single),
+            PostingAmount::Single(single) => single.fmt(f),
         }
     }
 }
@@ -51,17 +51,6 @@ impl Neg for PostingAmount<'_> {
         }
     }
 }
-
-// impl Mul<Decimal> for PostingAmount<'_> {
-//     type Output = Self;
-
-//     fn mul(self, rhs: Decimal) -> Self::Output {
-//         match self {
-//             PostingAmount::Zero => PostingAmount::Zero,
-//             PostingAmount::Single(single) => PostingAmount::Single(single * rhs),
-//         }
-//     }
-// }
 
 impl PostingAmount<'_> {
     /// Returns absolute zero.
@@ -94,5 +83,53 @@ impl<'ctx> PostingAmount<'ctx> {
         commodity: crate::report::commodity::Commodity<'ctx>,
     ) -> Self {
         PostingAmount::Single(SingleAmount::from_value(value, commodity))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use bumpalo::Bump;
+    use pretty_assertions::assert_eq;
+    use rust_decimal_macros::dec;
+
+    use crate::report::ReportContext;
+
+    #[test]
+    fn neg_test() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+
+        let jpy = ctx.commodities.insert_canonical("JPY").unwrap();
+
+        assert_eq!(PostingAmount::Zero, -PostingAmount::zero());
+
+        assert_eq!(
+            PostingAmount::from_value(dec!(5), jpy),
+            -PostingAmount::from_value(dec!(-5), jpy),
+        );
+    }
+
+    #[test]
+    fn check_add() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+
+        let jpy = ctx.commodities.insert_canonical("JPY").unwrap();
+
+        assert_eq!(
+            PostingAmount::from_value(dec!(5), jpy),
+            PostingAmount::from_value(dec!(5), jpy)
+                .check_add(PostingAmount::zero())
+                .unwrap(),
+        );
+
+        assert_eq!(
+            PostingAmount::from_value(dec!(5), jpy),
+            PostingAmount::zero()
+                .check_add(PostingAmount::from_value(dec!(5), jpy))
+                .unwrap(),
+        );
     }
 }
