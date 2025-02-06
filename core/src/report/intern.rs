@@ -1,6 +1,6 @@
 //! `intern` gives the String intern library combined with Bump allocator.
 
-use std::{collections::HashMap, fmt::Debug, hash::Hash, marker::PhantomData};
+use std::{collections::HashMap, fmt::Debug, hash::Hash, iter::FusedIterator, marker::PhantomData};
 
 use bumpalo::Bump;
 
@@ -219,6 +219,9 @@ where
         })
     }
 }
+
+impl<'arena, T> FusedIterator for Iter<'arena, '_, T> where T: FromInterned<'arena> {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

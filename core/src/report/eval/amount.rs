@@ -1,6 +1,7 @@
 use std::{
     collections::{hash_map, HashMap},
     fmt::Display,
+    iter::FusedIterator,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
@@ -436,6 +437,8 @@ impl<'ctx> Iterator for AmountIter<'_, 'ctx> {
         self.0.next().map(|(c, v)| SingleAmount::from_value(*v, *c))
     }
 }
+
+impl FusedIterator for AmountIter<'_, '_> {}
 
 #[derive(Debug)]
 struct InlinePrintAmount<'a, 'ctx>(&'a Amount<'ctx>);
