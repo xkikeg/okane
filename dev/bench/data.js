@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1738353328361,
+  "lastUpdate": 1738866493949,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Criterion.rs Benchmark": [
@@ -593,6 +593,66 @@ window.BENCHMARK_DATA = {
             "name": "query-posting-one-account",
             "value": 3037949,
             "range": "± 70958",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-default",
+            "value": 2,
+            "range": "± 0",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "863bd4f001a65667d04198db0d3fc679fada6246",
+          "message": "Added more unit tests to PostingAmount and SingleAmount.",
+          "timestamp": "2025-02-06T19:26:19+01:00",
+          "tree_id": "eb11a16c2ffd93f808bb92f4a7da8b9bdeeaf7b2",
+          "url": "https://github.com/xkikeg/okane/commit/863bd4f001a65667d04198db0d3fc679fada6246"
+        },
+        "date": 1738866493655,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse plain",
+            "value": 26,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse comma",
+            "value": 27,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load-with-counter",
+            "value": 144082568,
+            "range": "± 1255281",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process",
+            "value": 215684022,
+            "range": "± 1287360",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-posting-one-account",
+            "value": 2979576,
+            "range": "± 27167",
             "unit": "ns/iter"
           },
           {
