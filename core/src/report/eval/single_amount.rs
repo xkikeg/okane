@@ -91,21 +91,148 @@ impl<'ctx> SingleAmount<'ctx> {
     }
 
     /// Returns a new instance with having the same sign with given SingleAmount.
-    pub(crate) fn with_sign_of(self, rhs: Self) -> Self {
-        let value = if rhs.value.is_sign_positive() {
-            self.value
-        } else {
-            self.value.neg()
-        };
-        Self {
-            value,
-            commodity: self.commodity,
-        }
+    pub(crate) fn with_sign_of(mut self, sign: Self) -> Self {
+        self.value.set_sign_positive(sign.value.is_sign_positive());
+        self
     }
 }
 
 impl Display for SingleAmount<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {}", self.value, self.commodity.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use bumpalo::Bump;
+    use pretty_assertions::assert_eq;
+    use rust_decimal_macros::dec;
+
+    use crate::report::ReportContext;
+
+    #[test]
+    fn neg_returns_negative_value() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+
+        let jpy = ctx.commodities.insert_canonical("JPY").unwrap();
+
+        assert_eq!(
+            SingleAmount::from_value(dec!(-5), jpy),
+            -SingleAmount::from_value(dec!(5), jpy)
+        );
+    }
+
+    #[test]
+    fn check_add_fails_different_commodity() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+
+        let jpy = ctx.commodities.insert_canonical("JPY").unwrap();
+        let chf = ctx.commodities.insert_canonical("CHF").unwrap();
+
+        assert_eq!(
+            Err(EvalError::UnmatchingCommodities(jpy.into(), chf.into())),
+            SingleAmount::from_value(dec!(10), jpy)
+                .check_add(SingleAmount::from_value(dec!(20), chf))
+        );
+    }
+
+    #[test]
+    fn check_add_succeeds() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+
+        let jpy = ctx.commodities.insert_canonical("JPY").unwrap();
+
+        assert_eq!(
+            SingleAmount::from_value(dec!(-10), jpy),
+            SingleAmount::from_value(dec!(10), jpy)
+                .check_add(SingleAmount::from_value(dec!(-20), jpy))
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn check_sub_fails_different_commodity() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+
+        let jpy = ctx.commodities.insert_canonical("JPY").unwrap();
+        let chf = ctx.commodities.insert_canonical("CHF").unwrap();
+
+        assert_eq!(
+            Err(EvalError::UnmatchingCommodities(jpy.into(), chf.into())),
+            SingleAmount::from_value(dec!(10), jpy)
+                .check_sub(SingleAmount::from_value(dec!(0), chf))
+        );
+    }
+
+    #[test]
+    fn check_sub_succeeds() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+
+        let jpy = ctx.commodities.insert_canonical("JPY").unwrap();
+
+        assert_eq!(
+            SingleAmount::from_value(dec!(5), jpy),
+            SingleAmount::from_value(dec!(10), jpy)
+                .check_sub(SingleAmount::from_value(dec!(5), jpy))
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn single_amount_to_string() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+
+        let usd = ctx.commodities.insert_canonical("USD").unwrap();
+
+        assert_eq!(
+            "1.20 USD".to_string(),
+            SingleAmount::from_value(dec!(1.20), usd).to_string()
+        );
+    }
+
+    #[test]
+    fn with_sign_negative() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+
+        let jpy = ctx.commodities.insert_canonical("JPY").unwrap();
+        let eur = ctx.commodities.insert_canonical("EUR").unwrap();
+
+        let positive = SingleAmount::from_value(dec!(1000), jpy);
+        assert_eq!(
+            SingleAmount::from_value(dec!(15), eur),
+            SingleAmount::from_value(dec!(15), eur).with_sign_of(positive)
+        );
+        assert_eq!(
+            SingleAmount::from_value(dec!(0), eur),
+            SingleAmount::from_value(dec!(0), eur).with_sign_of(positive)
+        );
+        assert_eq!(
+            SingleAmount::from_value(dec!(15), eur),
+            SingleAmount::from_value(dec!(-15), eur).with_sign_of(positive)
+        );
+
+        let negative = SingleAmount::from_value(dec!(-1000), jpy);
+        assert_eq!(
+            SingleAmount::from_value(dec!(-15), eur),
+            SingleAmount::from_value(dec!(15), eur).with_sign_of(negative)
+        );
+        assert_eq!(
+            SingleAmount::from_value(dec!(0), eur),
+            SingleAmount::from_value(dec!(0), eur).with_sign_of(negative)
+        );
+        assert_eq!(
+            SingleAmount::from_value(dec!(-15), eur),
+            SingleAmount::from_value(dec!(-15), eur).with_sign_of(negative)
+        );
     }
 }
