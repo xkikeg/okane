@@ -7,10 +7,7 @@ use crate::{
     syntax::expr,
 };
 
-use super::{
-    amount::{Amount, PostingAmount, SingleAmount},
-    error::EvalError,
-};
+use super::{error::EvalError, Amount, PostingAmount, SingleAmount};
 
 /// Represents any evaluated value.
 #[derive(Debug, PartialEq, Eq)]

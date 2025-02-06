@@ -9,26 +9,15 @@ use rust_decimal::Decimal;
 
 use crate::report::commodity::Commodity;
 
-use super::error::EvalError;
+use super::{error::EvalError, PostingAmount, SingleAmount};
 
-/// Amount with only one commodity.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct SingleAmount<'ctx> {
-    pub(crate) value: Decimal,
-    pub(crate) commodity: Commodity<'ctx>,
-}
-
-/// Amount with only one commodity, or total zero.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub(crate) enum PostingAmount<'ctx> {
-    Zero,
-    Single(SingleAmount<'ctx>),
-}
-
-impl Default for PostingAmount<'_> {
-    fn default() -> Self {
-        Self::Zero
-    }
+/// Amount with multiple commodities, or simple zero.
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+pub struct Amount<'ctx> {
+    // if values.len == zero, then it'll be completely zero.
+    // TODO: Consider optimizing for small number of commodities,
+    // as most of the case it needs to be just a few elements.
+    values: HashMap<Commodity<'ctx>, Decimal>,
 }
 
 impl<'ctx> TryFrom<Amount<'ctx>> for SingleAmount<'ctx> {
@@ -94,192 +83,10 @@ impl<'ctx> From<PostingAmount<'ctx>> for Amount<'ctx> {
     }
 }
 
-impl<'ctx> TryFrom<PostingAmount<'ctx>> for SingleAmount<'ctx> {
-    type Error = EvalError;
-
-    fn try_from(amount: PostingAmount<'ctx>) -> Result<Self, Self::Error> {
-        match amount {
-            PostingAmount::Single(single) => Ok(single),
-            PostingAmount::Zero => Err(EvalError::SingleAmountRequired),
-        }
-    }
-}
-
-impl<'ctx> From<SingleAmount<'ctx>> for PostingAmount<'ctx> {
-    fn from(amount: SingleAmount<'ctx>) -> Self {
-        PostingAmount::Single(amount)
-    }
-}
-
 impl<'ctx> From<SingleAmount<'ctx>> for Amount<'ctx> {
     fn from(value: SingleAmount<'ctx>) -> Self {
         Amount::from_value(value.value, value.commodity)
     }
-}
-
-impl Neg for PostingAmount<'_> {
-    type Output = Self;
-
-    fn neg(self) -> Self::Output {
-        match self {
-            PostingAmount::Zero => PostingAmount::Zero,
-            PostingAmount::Single(amount) => PostingAmount::Single(-amount),
-        }
-    }
-}
-
-impl Neg for SingleAmount<'_> {
-    type Output = Self;
-
-    fn neg(self) -> Self::Output {
-        SingleAmount {
-            value: -self.value,
-            commodity: self.commodity,
-        }
-    }
-}
-
-impl Mul<Decimal> for PostingAmount<'_> {
-    type Output = Self;
-
-    fn mul(self, rhs: Decimal) -> Self::Output {
-        match self {
-            PostingAmount::Zero => PostingAmount::Zero,
-            PostingAmount::Single(single) => PostingAmount::Single(single * rhs),
-        }
-    }
-}
-
-impl Mul<Decimal> for SingleAmount<'_> {
-    type Output = Self;
-
-    fn mul(self, rhs: Decimal) -> Self::Output {
-        Self {
-            value: self.value * rhs,
-            commodity: self.commodity,
-        }
-    }
-}
-
-impl PostingAmount<'_> {
-    /// Returns absolute zero.
-    pub fn zero() -> Self {
-        Self::default()
-    }
-
-    /// Adds the amount with keeping commodity single.
-    pub fn check_add(self, rhs: Self) -> Result<Self, EvalError> {
-        match (self, rhs) {
-            (PostingAmount::Zero, _) => Ok(rhs),
-            (_, PostingAmount::Zero) => Ok(self),
-            (PostingAmount::Single(lhs), PostingAmount::Single(rhs)) => {
-                lhs.check_add(rhs).map(Self::Single)
-            }
-        }
-    }
-
-    /// Subtracts the amount with keeping the commodity single.
-    pub fn check_sub(self, rhs: Self) -> Result<Self, EvalError> {
-        self.check_add(-rhs)
-    }
-}
-
-#[cfg(test)]
-impl<'ctx> PostingAmount<'ctx> {
-    /// Constructs an instance with single commodity.
-    pub(crate) fn from_value(value: Decimal, commodity: Commodity<'ctx>) -> Self {
-        PostingAmount::Single(SingleAmount::from_value(value, commodity))
-    }
-}
-
-impl<'ctx> SingleAmount<'ctx> {
-    /// Constructs an instance with single commodity.
-    #[inline]
-    pub fn from_value(value: Decimal, commodity: Commodity<'ctx>) -> Self {
-        Self { value, commodity }
-    }
-
-    /// Adds the amount with keeping commodity single.
-    pub fn check_add(self, rhs: Self) -> Result<Self, EvalError> {
-        if self.commodity != rhs.commodity {
-            Err(EvalError::UnmatchingCommodities(
-                self.commodity.into(),
-                rhs.commodity.into(),
-            ))
-        } else {
-            Ok(Self {
-                value: self
-                    .value
-                    .checked_add(rhs.value)
-                    .ok_or(EvalError::NumberOverflow)?,
-                commodity: self.commodity,
-            })
-        }
-    }
-
-    /// Subtracts the amount with keeping the commodity single.
-    pub fn check_sub(self, rhs: Self) -> Result<Self, EvalError> {
-        self.check_add(-rhs)
-    }
-
-    /// Divides by given Decimal.
-    pub fn check_div(self, rhs: Decimal) -> Result<Self, EvalError> {
-        if rhs.is_zero() {
-            return Err(EvalError::DivideByZero);
-        }
-        Ok(Self {
-            value: self
-                .value
-                .checked_div(rhs)
-                .ok_or(EvalError::NumberOverflow)?,
-            commodity: self.commodity,
-        })
-    }
-
-    /// Returns an absolute value of the current value.
-    pub fn abs(self) -> Self {
-        Self {
-            value: self.value.abs(),
-            commodity: self.commodity,
-        }
-    }
-
-    /// Returns a new instance with having the same sign with given SingleAmount.
-    pub fn with_sign_of(self, rhs: Self) -> Self {
-        let value = if rhs.value.is_sign_positive() {
-            self.value
-        } else {
-            self.value.neg()
-        };
-        Self {
-            value,
-            commodity: self.commodity,
-        }
-    }
-}
-
-impl Display for PostingAmount<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PostingAmount::Zero => write!(f, "0"),
-            PostingAmount::Single(single) => write!(f, "{}", single),
-        }
-    }
-}
-
-impl Display for SingleAmount<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.value, self.commodity.as_str())
-    }
-}
-
-/// Amount with multiple commodities, or simple zero.
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
-pub struct Amount<'ctx> {
-    // if values.len == zero, then it'll be completely zero.
-    // TODO: Consider optimizing for small number of commodities,
-    // as most of the case it needs to be just a few elements.
-    values: HashMap<Commodity<'ctx>, Decimal>,
 }
 
 impl<'ctx> Amount<'ctx> {

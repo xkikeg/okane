@@ -3,11 +3,14 @@
 mod amount;
 mod error;
 mod evaluated;
+mod posting_amount;
+mod single_amount;
 
-pub(super) use amount::PostingAmount;
-pub use amount::{Amount, SingleAmount};
+pub use amount::Amount;
 pub use error::EvalError;
 pub use evaluated::Evaluated;
+pub(super) use posting_amount::PostingAmount;
+pub use single_amount::SingleAmount;
 
 use super::context::ReportContext;
 use crate::syntax::expr;
