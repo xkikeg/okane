@@ -8,7 +8,7 @@ use crate::{parse, syntax};
 
 use super::{
     balance::Balance,
-    commodity::OwnedCommodity,
+    commodity::{Commodity, OwnedCommodity},
     context::{Account, ReportContext},
     eval::{Amount, EvalError, Evaluable},
     price_db::{self, PriceRepository},
@@ -47,6 +47,74 @@ pub struct PostingQuery {
     pub account: Option<String>,
 }
 
+/// Specifies the conversion strategy.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ConversionStrategy {
+    /// Converts the amount on the date of transaction.
+    Historical,
+    /// Converts the amount on the up-to-date date.
+    /// Not implemented for register report.
+    UpToDate {
+        /// Date for the conversion to be _up-to-date_.
+        now: NaiveDate,
+    },
+}
+
+/// Instruction about commodity conversion.
+#[derive(Debug)]
+// TODO: non_exhaustive
+pub struct Conversion<'ctx> {
+    pub strategy: ConversionStrategy,
+    pub target: Commodity<'ctx>,
+}
+
+/// Half-open range of the date for the query result.
+/// If any of `start` or `end` is set as [`None`],
+/// those are treated as -infinity, +infinity respectively.
+#[derive(Debug, Default)]
+pub struct DateRange {
+    /// Start of the range (inclusive), if exists.
+    pub start: Option<NaiveDate>,
+    /// End of the range (exclusive), if exists.
+    pub end: Option<NaiveDate>,
+}
+
+impl DateRange {
+    fn is_bypass(&self) -> bool {
+        self.start.is_none() && self.end.is_none()
+    }
+
+    fn contains(&self, date: NaiveDate) -> bool {
+        match (self.start, self.end) {
+            (Some(start), _) if date < start => false,
+            (_, Some(end)) if end <= date => false,
+            _ => true,
+        }
+    }
+}
+
+/// Query for [`Ledger::balance()`].
+#[derive(Debug, Default)]
+// TODO: non_exhaustive
+pub struct BalanceQuery<'ctx> {
+    pub conversion: Option<Conversion<'ctx>>,
+    pub date_range: DateRange,
+}
+
+impl BalanceQuery<'_> {
+    fn require_recompute(&self) -> bool {
+        if !self.date_range.is_bypass() {
+            return true;
+        }
+        if matches!(&self.conversion, Some(conv) if conv.strategy == ConversionStrategy::Historical)
+        {
+            return true;
+        }
+        // at this case, we can reuse the balance for the whole range data.
+        false
+    }
+}
+
 /// Context passed to [`Ledger::eval()`].
 #[derive(Debug)]
 // TODO: non_exhaustive
@@ -82,8 +150,76 @@ impl<'ctx> Ledger<'ctx> {
     /// Returns a balance matching the given query.
     /// Note that currently we don't have the query,
     /// that will be added soon.
-    pub fn balance(&self) -> Cow<'_, Balance<'ctx>> {
-        Cow::Borrowed(&self.raw_balance)
+    pub fn balance(
+        &mut self,
+        ctx: &ReportContext<'ctx>,
+        query: &BalanceQuery<'ctx>,
+    ) -> Result<Cow<'_, Balance<'ctx>>, QueryError> {
+        let balance = if !query.require_recompute() {
+            Cow::Borrowed(&self.raw_balance)
+        } else {
+            let mut bal = Balance::default();
+            for (txn, posting) in self.transactions.iter().flat_map(|txn| {
+                txn.postings.iter().filter_map(move |posting| {
+                    if !query.date_range.contains(txn.date) {
+                        return None;
+                    }
+                    Some((txn, posting))
+                })
+            }) {
+                let delta = match query.conversion {
+                    Some(Conversion {
+                        strategy: ConversionStrategy::Historical,
+                        target,
+                    }) => Cow::Owned(
+                        price_db::convert_amount(
+                            &mut self.price_repos,
+                            &posting.amount,
+                            target,
+                            txn.date,
+                        )
+                        // TODO: do we need this round, or just at the end?
+                        // .map(|amount| amount.round(ctx))
+                        .map_err(|err| QueryError::CommodityConversionFailure(err.to_string()))?,
+                    ),
+                    None
+                    | Some(Conversion {
+                        strategy: ConversionStrategy::UpToDate { .. },
+                        ..
+                    }) => Cow::Borrowed(&posting.amount),
+                };
+                bal.add_amount(posting.account, delta.into_owned());
+            }
+            bal.round(ctx);
+            Cow::Owned(bal)
+        };
+        match query.conversion {
+            None
+            | Some(Conversion {
+                strategy: ConversionStrategy::Historical,
+                ..
+            }) => Ok(balance),
+            Some(Conversion {
+                strategy: ConversionStrategy::UpToDate { now },
+                target,
+            }) => {
+                let mut converted = Balance::default();
+                for (account, original_amount) in balance.iter() {
+                    converted.add_amount(
+                        *account,
+                        price_db::convert_amount(
+                            &mut self.price_repos,
+                            original_amount,
+                            target,
+                            now,
+                        )
+                        .map_err(|err| QueryError::CommodityConversionFailure(err.to_string()))?,
+                    );
+                }
+                converted.round(ctx);
+                Ok(Cow::Owned(converted))
+            }
+        }
     }
 
     /// Evals given `expression` with the given condition.
@@ -158,15 +294,41 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
-    use crate::{load, report};
+    use crate::{load, report, testing::recursive_print};
 
     fn fake_loader() -> load::Loader<load::FakeFileSystem> {
         let content = indoc! {"
+            commodity JPY
+                format 1,000 JPY
+
+            2023/12/31 rate
+                Equity                         0.00 CHF @ 168.24 JPY
+                Equity                         0.00 EUR @ 157.12 JPY
+
             2024/01/01 Initial
-                Assets:J 銀行               100,000 JPY
+                Assets:J 銀行             1,000,000 JPY
                 Assets:CH Bank             2,000.00 CHF
                 Liabilities:EUR Card        -300.00 EUR
+                Assets:Broker            5,000.0000 OKANE {80 JPY}
                 Equity
+
+            2024/01/05 Shopping
+                Expenses:Grocery             100.00 CHF @ 171.50 JPY
+                Assets:J 銀行               -17,150 JPY
+
+            2024/01/09 Buy Stock
+                Assets:Broker               23.0000 OKANE {120 JPY}
+                Assets:J 銀行                -2,760 JPY
+
+            2024/01/15 Sell Stock
+                Assets:Broker                12,300 JPY
+                Assets:Broker             -100.0000 OKANE {80 JPY} @ 100 JPY
+                Assets:Broker              -23.0000 OKANE {120 JPY} @ 100 JPY
+                Income:Capital Gain           -1540 JPY
+
+            2024/01/20 Shopping
+                Expenses:Food                150.00 EUR @ 0.9464 CHF
+                Assets:CH Bank              -141.96 CHF
         "};
         let fake = hashmap! {
             PathBuf::from("/path/to/file.ledger") => content.as_bytes().to_vec(),
@@ -174,52 +336,270 @@ mod tests {
         load::Loader::new(PathBuf::from("/path/to/file.ledger"), fake.into())
     }
 
-    fn create_ledger(arena: &Bump) -> Result<(ReportContext<'_>, Ledger<'_>), report::ReportError> {
+    fn create_ledger(arena: &Bump) -> (ReportContext<'_>, Ledger<'_>) {
         let mut ctx = ReportContext::new(arena);
-        let ledger = report::process(&mut ctx, fake_loader(), &report::ProcessOptions::default())?;
-        Ok((ctx, ledger))
+        let ledger =
+            match report::process(&mut ctx, fake_loader(), &report::ProcessOptions::default()) {
+                Ok(v) => v,
+                Err(err) => panic!(
+                    "failed to create the testing Ledger: {}",
+                    recursive_print(err),
+                ),
+            };
+        (ctx, ledger)
     }
 
     #[test]
     fn balance_default() {
         let arena = Bump::new();
-        let (ctx, ledger) = create_ledger(&arena).unwrap();
-
-        let got = ledger.balance();
+        let (ctx, mut ledger) = create_ledger(&arena);
 
         log::info!("all_accounts: {:?}", ctx.all_accounts());
+        let chf = ctx.commodities.resolve("CHF").unwrap();
+        let eur = ctx.commodities.resolve("EUR").unwrap();
+        let jpy = ctx.commodities.resolve("JPY").unwrap();
+        let okane = ctx.commodities.resolve("OKANE").unwrap();
+
+        let got = ledger.balance(&ctx, &BalanceQuery::default()).unwrap();
 
         let want: Balance = [
             (
-                ctx.account("Assets:J 銀行").unwrap(),
-                Amount::from_value(dec!(100000), ctx.commodities.resolve("JPY").unwrap()),
+                ctx.account("Assets:CH Bank").unwrap(),
+                Amount::from_value(dec!(1858.04), chf),
             ),
             (
-                ctx.account("Assets:CH Bank").unwrap(),
-                Amount::from_value(dec!(2000.00), ctx.commodities.resolve("CHF").unwrap()),
+                ctx.account("Assets:Broker").unwrap(),
+                Amount::from_values([(dec!(4900.0000), okane), (dec!(12300), jpy)]),
+            ),
+            (
+                ctx.account("Assets:J 銀行").unwrap(),
+                Amount::from_value(dec!(980090), jpy),
             ),
             (
                 ctx.account("Liabilities:EUR Card").unwrap(),
-                Amount::from_value(dec!(-300.00), ctx.commodities.resolve("EUR").unwrap()),
+                Amount::from_value(dec!(-300.00), eur),
+            ),
+            (
+                ctx.account("Income:Capital Gain").unwrap(),
+                Amount::from_value(dec!(-1540), jpy),
+            ),
+            (
+                ctx.account("Expenses:Food").unwrap(),
+                Amount::from_value(dec!(150.00), eur),
+            ),
+            (
+                ctx.account("Expenses:Grocery").unwrap(),
+                Amount::from_value(dec!(100.00), chf),
             ),
             (
                 ctx.account("Equity").unwrap(),
                 Amount::from_values([
-                    (dec!(-100000), ctx.commodities.resolve("JPY").unwrap()),
-                    (dec!(-2000.00), ctx.commodities.resolve("CHF").unwrap()),
-                    (dec!(300.00), ctx.commodities.resolve("EUR").unwrap()),
+                    (dec!(-1_400_000), jpy),
+                    (dec!(-2000.00), chf),
+                    (dec!(300.00), eur),
                 ]),
             ),
         ]
         .into_iter()
         .collect();
-        assert_eq!(Cow::Borrowed(&want), got);
+
+        assert_eq!(want.into_vec(), got.into_owned().into_vec());
+    }
+
+    #[test]
+    fn balance_conversion_historical() {
+        // actually it doesn't quite make sense to have balance with
+        // either --historical or --up-to-date,
+        // because up-to-date makes sense for Assets & Liabilities
+        // while historical does for Income / Expenses.
+        let arena = Bump::new();
+        let (ctx, mut ledger) = create_ledger(&arena);
+
+        let jpy = ctx.commodities.resolve("JPY").unwrap();
+
+        let got = ledger
+            .balance(
+                &ctx,
+                &BalanceQuery {
+                    conversion: Some(Conversion {
+                        strategy: ConversionStrategy::Historical,
+                        target: jpy,
+                    }),
+                    date_range: DateRange::default(),
+                },
+            )
+            .unwrap();
+
+        let want: Balance = [
+            (
+                ctx.account("Assets:CH Bank").unwrap(),
+                // 2000.00 * 168.24 - 141.96 * 171.50
+                Amount::from_value(dec!(312_134), jpy),
+            ),
+            (
+                ctx.account("Assets:Broker").unwrap(),
+                // 5_000 * 80 = 400_000
+                // 23 * 120 = 2_760
+                // -100 * 100 = -10_000
+                // -23 * 100 = -2_300
+                Amount::from_values([
+                    (dec!(400_000), jpy),
+                    (dec!(2_760), jpy),
+                    (dec!(-10_000), jpy),
+                    (dec!(-2_300), jpy),
+                    (dec!(12_300), jpy),
+                ]),
+            ),
+            (
+                ctx.account("Assets:J 銀行").unwrap(),
+                Amount::from_value(dec!(980090), jpy),
+            ),
+            (
+                ctx.account("Liabilities:EUR Card").unwrap(),
+                Amount::from_value(dec!(-47_136), jpy),
+            ),
+            (
+                ctx.account("Income:Capital Gain").unwrap(),
+                Amount::from_value(dec!(-1_540), jpy),
+            ),
+            (
+                ctx.account("Expenses:Grocery").unwrap(),
+                Amount::from_value(dec!(17_150), jpy),
+            ),
+            (
+                ctx.account("Expenses:Food").unwrap(),
+                Amount::from_value(dec!(23_568), jpy),
+            ),
+            (
+                ctx.account("Equity").unwrap(),
+                Amount::from_values([
+                    (dec!(-1_400_000), jpy),
+                    // -2000 * 168.24, historical rate.
+                    (dec!(-336_480), jpy),
+                    // 300 * 157.12
+                    (dec!(47_136), jpy),
+                ]),
+            ),
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(want.into_vec(), got.into_owned().into_vec());
+    }
+
+    #[test]
+    fn balance_conversion_up_to_date() {
+        let arena = Bump::new();
+        let (ctx, mut ledger) = create_ledger(&arena);
+
+        let jpy = ctx.commodities.resolve("JPY").unwrap();
+
+        let got = ledger
+            .balance(
+                &ctx,
+                &BalanceQuery {
+                    conversion: Some(Conversion {
+                        strategy: ConversionStrategy::UpToDate {
+                            now: NaiveDate::from_ymd_opt(2024, 1, 16).unwrap(),
+                        },
+                        target: jpy,
+                    }),
+                    date_range: DateRange::default(),
+                },
+            )
+            .unwrap();
+
+        let want: Balance = [
+            (
+                ctx.account("Assets:CH Bank").unwrap(),
+                // 1858.04 * 171.50
+                Amount::from_value(dec!(318_654), jpy),
+            ),
+            (
+                ctx.account("Assets:Broker").unwrap(),
+                Amount::from_value(dec!(502_300), jpy),
+            ),
+            (
+                ctx.account("Assets:J 銀行").unwrap(),
+                Amount::from_value(dec!(980090), jpy),
+            ),
+            (
+                ctx.account("Liabilities:EUR Card").unwrap(),
+                // -300 * 157.12, EUR/JPY rate won't use EUR/CHF CHF/JPY.
+                Amount::from_value(dec!(-47_136), jpy),
+            ),
+            (
+                ctx.account("Income:Capital Gain").unwrap(),
+                Amount::from_value(dec!(-1540), jpy),
+            ),
+            (
+                ctx.account("Expenses:Food").unwrap(),
+                // 150.00 EUR * 157.12
+                Amount::from_value(dec!(23_568), jpy),
+            ),
+            (
+                ctx.account("Expenses:Grocery").unwrap(),
+                Amount::from_value(dec!(17_150), jpy),
+            ),
+            (
+                ctx.account("Equity").unwrap(),
+                Amount::from_values([
+                    (dec!(-1_400_000), jpy),
+                    // -2000 CHF * 171.50
+                    (dec!(-343_000), jpy),
+                    // 300 EUR * 157.12
+                    (dec!(47_136), jpy),
+                ]),
+            ),
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(want.into_vec(), got.into_owned().into_vec());
+    }
+
+    #[test]
+    fn balance_date_range() {
+        let arena = Bump::new();
+        let (ctx, mut ledger) = create_ledger(&arena);
+
+        log::info!("all_accounts: {:?}", ctx.all_accounts());
+        let chf = ctx.commodities.resolve("CHF").unwrap();
+        let jpy = ctx.commodities.resolve("JPY").unwrap();
+
+        let got = ledger
+            .balance(
+                &ctx,
+                &BalanceQuery {
+                    conversion: None,
+                    date_range: DateRange {
+                        start: Some(NaiveDate::from_ymd_opt(2024, 1, 5).unwrap()),
+                        end: Some(NaiveDate::from_ymd_opt(2024, 1, 9).unwrap()),
+                    },
+                },
+            )
+            .unwrap();
+
+        let want: Balance = [
+            (
+                ctx.account("Assets:J 銀行").unwrap(),
+                Amount::from_value(dec!(-17150), jpy),
+            ),
+            (
+                ctx.account("Expenses:Grocery").unwrap(),
+                Amount::from_value(dec!(100.00), chf),
+            ),
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(want.into_vec(), got.into_owned().into_vec());
     }
 
     #[test]
     fn eval_default_context() {
         let arena = Bump::new();
-        let (ctx, mut ledger) = create_ledger(&arena).unwrap();
+        let (ctx, mut ledger) = create_ledger(&arena);
 
         let evaluated = ledger
             .eval(

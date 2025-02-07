@@ -20,7 +20,7 @@ fn print_err<E: Display>(x: E) -> E {
 #[rstest]
 fn balance_default(
     #[base_dir = "../testdata/report"]
-    #[files("*.ledger")]
+    #[files("single_commodity.ledger")]
     input: PathBuf,
 ) {
     let mut golden_path = input.clone();
@@ -37,6 +37,68 @@ fn balance_default(
     let golden = testing::Golden::new(golden_path).unwrap();
 
     let args = shlex::split(&format!("binary balance {}", input.display())).unwrap();
+
+    let cli = cmd::Cli::try_parse_from(&args).map_err(print_err).unwrap();
+    let mut got: Vec<u8> = Vec::new();
+
+    cli.run(&mut got).map_err(print_err).unwrap();
+
+    golden.assert(str::from_utf8(&got).unwrap());
+}
+
+#[rstest]
+fn balance_in_jpy_up_to_date(
+    #[base_dir = "../testdata/report"]
+    #[files("multi_commodity.ledger")]
+    input: PathBuf,
+) {
+    let mut golden_path = input.clone();
+    let filename = golden_path.file_name().unwrap().to_owned();
+    assert!(golden_path.pop());
+    golden_path.push("golden");
+    golden_path.push(filename);
+    assert!(
+        golden_path.set_extension("golden.balance.in_jpy_up_to_date.txt"),
+        "failed to set extension .ledger to input {}",
+        input.display()
+    );
+    log::info!("golden_path: {}", golden_path.display());
+    let golden = testing::Golden::new(golden_path).unwrap();
+
+    let args = shlex::split(&format!("binary balance {} -X JPY", input.display())).unwrap();
+
+    let cli = cmd::Cli::try_parse_from(&args).map_err(print_err).unwrap();
+    let mut got: Vec<u8> = Vec::new();
+
+    cli.run(&mut got).map_err(print_err).unwrap();
+
+    golden.assert(str::from_utf8(&got).unwrap());
+}
+
+#[rstest]
+fn balance_in_usd_historical(
+    #[base_dir = "../testdata/report"]
+    #[files("multi_commodity.ledger")]
+    input: PathBuf,
+) {
+    let mut golden_path = input.clone();
+    let filename = golden_path.file_name().unwrap().to_owned();
+    assert!(golden_path.pop());
+    golden_path.push("golden");
+    golden_path.push(filename);
+    assert!(
+        golden_path.set_extension("golden.balance.in_usd_historical.txt"),
+        "failed to set extension .ledger to input {}",
+        input.display()
+    );
+    log::info!("golden_path: {}", golden_path.display());
+    let golden = testing::Golden::new(golden_path).unwrap();
+
+    let args = shlex::split(&format!(
+        "binary balance {} -X USD --historical",
+        input.display()
+    ))
+    .unwrap();
 
     let cli = cmd::Cli::try_parse_from(&args).map_err(print_err).unwrap();
     let mut got: Vec<u8> = Vec::new();

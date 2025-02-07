@@ -1,0 +1,12 @@
+Assets:Banks:Swiss Bank: 48343.14 USD
+Assets:Banks:あおによし: 639.67 USD
+Assets:Brokers:US Broker: 37650.00 USD
+Assets:Wire:US Broker: 0
+Equity:Initial: -73385.63 USD
+Expenses:Cash: 551.18 USD
+Expenses:Comissions: 11.06 USD
+Expenses:Tax:Income: 2296.21 USD
+Income:Capital Gain: -400.00 USD
+Income:Salary: -9758.90 USD
+Liabilities:My Card: 0
+Liabilities:Study Loan: -6396.72 USD
