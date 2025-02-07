@@ -8,6 +8,7 @@ use chrono::NaiveDate;
 use clap::{Args, Subcommand};
 use encoding_rs_io::DecodeReaderBytesBuilder;
 
+use okane_core::report::query;
 use okane_core::syntax::display::DisplayContext;
 use okane_core::syntax::plain::LedgerEntry;
 use okane_core::{load, report, syntax};
@@ -28,7 +29,7 @@ pub enum Error {
     #[error("failed to report")]
     Report(#[from] report::ReportError),
     #[error("failed to query")]
-    Query(#[from] report::query::QueryError),
+    Query(#[from] query::QueryError),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -243,7 +244,7 @@ impl EvalCmd {
         let result = ledger.eval(
             &ctx,
             &expression,
-            &report::query::EvalContext {
+            &query::EvalContext {
                 date: self.date,
                 exchange: self.eval_options.exchange,
             },
@@ -289,12 +290,16 @@ impl BalanceCmd {
     {
         let arena = Bump::new();
         let mut ctx = report::ReportContext::new(&arena);
-        let ledger = report::process(
+        let mut ledger = report::process(
             &mut ctx,
             load::new_loader(self.source),
             &self.eval_options.to_process_options(),
         )?;
-        for (account, amount) in ledger.balance().into_owned().into_vec() {
+        let query = query::BalanceQuery {
+            conversion: self.eval_options.to_conversion(&ctx)?,
+            date_range: self.eval_options.to_date_range(),
+        };
+        for (account, amount) in ledger.balance(&ctx, &query)?.into_owned().into_vec() {
             writeln!(w, "{}: {}", account.as_str(), amount.as_inline_display())?;
         }
         Ok(())
@@ -327,7 +332,7 @@ impl RegisterCmd {
         )?;
         let postings = ledger.postings(
             &ctx,
-            &report::query::PostingQuery {
+            &query::PostingQuery {
                 account: self.account.clone(),
             },
         );
@@ -358,6 +363,29 @@ pub struct EvalOptions {
     /// all values in other commmodities are converted to FOO.
     #[arg(short = 'X', long)]
     exchange: Option<String>,
+
+    /// Use historical rate for exchange.
+    ///
+    /// Option `--historical` to evaluate exchange rate at the date of transaction.
+    /// This is useful for evaluating income and expense,
+    /// while it's pointless for assets and liabilities.
+    #[arg(long, default_value_t)]
+    historical: bool,
+
+    #[arg(long, default_value_t = chrono::Local::now().date_naive())]
+    now: NaiveDate,
+
+    /// Beginning of date range (inclusive).
+    ///
+    /// If specified, only transaction with the date equals/after `--start` is considered.
+    #[arg(long, visible_alias("begin"))]
+    start: Option<NaiveDate>,
+
+    /// End of date range (exclusive).
+    ///
+    /// If specified, only transaction with the date before `--end` is considered.
+    #[arg(long)]
+    end: Option<NaiveDate>,
 }
 
 impl EvalOptions {
@@ -365,8 +393,34 @@ impl EvalOptions {
         report::ProcessOptions {
             price_db_path: self.price_db.clone(),
         }
-        // that will go into query.
-        // conversion: self.exchange.clone(),
+    }
+
+    fn to_date_range(&self) -> query::DateRange {
+        query::DateRange {
+            start: self.start,
+            end: self.end,
+        }
+    }
+
+    fn to_conversion<'ctx>(
+        &self,
+        ctx: &report::ReportContext<'ctx>,
+    ) -> Result<Option<query::Conversion<'ctx>>, query::QueryError> {
+        let ex = match &self.exchange {
+            None => return Ok(None),
+            Some(ex) => ex,
+        };
+        let target = ctx
+            .commodity(ex)
+            .ok_or(query::QueryError::CommodityNotFound(
+                report::OwnedCommodity::from_string(ex.clone()),
+            ))?;
+        let strategy = if self.historical {
+            query::ConversionStrategy::Historical
+        } else {
+            query::ConversionStrategy::UpToDate { now: self.now }
+        };
+        Ok(Some(query::Conversion { strategy, target }))
     }
 }
 

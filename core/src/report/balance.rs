@@ -84,6 +84,11 @@ impl<'ctx> Balance<'ctx> {
         self.accounts.get(account)
     }
 
+    /// Returns unordered iterator for the account and the amount.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&Account<'ctx>, &Amount<'ctx>)> {
+        self.accounts.iter()
+    }
+
     /// Constructs sorted vec of account and commodity tuple.
     pub fn into_vec(self) -> Vec<(Account<'ctx>, Amount<'ctx>)> {
         let mut ret: Vec<(Account<'ctx>, Amount<'ctx>)> = self.accounts.into_iter().collect();
