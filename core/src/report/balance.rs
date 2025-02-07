@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use super::{
     context::Account,
     eval::{Amount, EvalError, PostingAmount},
+    ReportContext,
 };
 
 /// Error related to [Balance] operations.
@@ -82,6 +83,18 @@ impl<'ctx> Balance<'ctx> {
     /// Gets the balance of the given account.
     pub fn get(&self, account: &Account<'ctx>) -> Option<&Amount<'ctx>> {
         self.accounts.get(account)
+    }
+
+    /// Rounds the balance following the context.
+    pub fn round(&mut self, ctx: &ReportContext<'ctx>) {
+        for amount in self.accounts.values_mut() {
+            amount.round_mut(ctx);
+        }
+    }
+
+    /// Returns unordered iterator for the account and the amount.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&Account<'ctx>, &Amount<'ctx>)> {
+        self.accounts.iter()
     }
 
     /// Constructs sorted vec of account and commodity tuple.

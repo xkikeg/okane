@@ -1,0 +1,60 @@
+; Example of Ledger format, with multiple commodities.
+
+commodity CHF
+    format 1,000.00 CHF
+
+commodity JPY
+    format 1,000 JPY
+
+commodity USD
+    format 1,000.00 USD
+
+2024/01/26 * Rate
+    Equity:Initial                                 0 USD @ 156.33 JPY
+    Equity:Initial                                 0 CHF @ 172.33 JPY
+
+2024/01/26 * Initial with deduced amount
+    Assets:Banks:あおによし                  100,000 JPY
+    Assets:Banks:Swiss Bank                50,000.00 CHF
+    Assets:Brokers:US Broker                1,000.00 USD
+    Assets:Brokers:US Broker                400.0000 OKANE {60 USD}
+    Assets:Brokers:US Broker                  12.300 GOLD {100 USD}
+    Liabilities:Study Loan                -1,000,000 JPY
+    Liabilities:My Card                    -2,000.00 CHF
+    Equity:Initial
+
+2024/01/27 * payment
+    Liabilities:My Card                     2,000.00 CHF = 0
+    Assets:Banks:Swiss Bank                -2,000.00 CHF
+
+2024/02/02 * convert to EUR
+    Expenses:Cash                             538.39 EUR @ 0.9287 CHF
+    Assets:Banks:Swiss Bank                  -500.00 CHF
+
+2024/02/05 * wire
+    Assets:Wire:US Broker                   11481.06 USD @ 0.8710 CHF
+    Assets:Banks:Swiss Bank               -10,000.00 CHF
+
+2024/02/07 wire company
+    Assets:Brokers:US Broker                11470.00 USD = 12470.00 USD
+    Expenses:Comissions                        11.06 USD
+    Assets:Wire:US Broker                  -11481.06 USD = 0
+
+2024/02/09 Buy stock
+    Assets:Brokers:US Broker                 30.0000 OKANE {80 USD}
+    Assets:Brokers:US Broker               -2,400.00 USD
+
+2024/02/09 Sell stock
+    Assets:Brokers:US Broker                1,500.00 USD
+    Assets:Brokers:US Broker                -20.0000 OKANE {60 USD} @ 75 USD
+    Income:Capital Gain                      -300.00 USD
+
+2024/02/09 Sell stock
+    Assets:Brokers:US Broker                1,700.00 USD
+    Assets:Brokers:US Broker                -20.0000 OKANE {80 USD} @ 85 USD
+    Income:Capital Gain                      -100.00 USD
+
+2024/02/25 ! salary
+    Assets:Banks:Swiss Bank                  6500.00 CHF
+    Income:Salary                           -8500.00 CHF
+    Expenses:Tax:Income                      2000.00 CHF

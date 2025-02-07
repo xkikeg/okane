@@ -7,6 +7,7 @@ pub mod load;
 pub mod parse;
 pub mod report;
 pub mod syntax;
+pub(crate) mod testing;
 
 #[cfg(test)]
 #[ctor::ctor]
