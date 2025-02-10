@@ -117,11 +117,13 @@ impl<'arena> CommodityStore<'arena> {
         self.intern.insert_alias(value, canonical)
     }
 
-    pub fn get_decimal_point(&self, commodity: Commodity<'arena>) -> Option<u32> {
+    #[inline]
+    pub(super) fn get_decimal_point(&self, commodity: Commodity<'arena>) -> Option<u32> {
         self.formatting.get(&commodity).map(|x| x.value.scale())
     }
 
-    pub fn set_format(&mut self, commodity: Commodity<'arena>, format: PrettyDecimal) {
+    #[inline]
+    pub(super) fn set_format(&mut self, commodity: Commodity<'arena>, format: PrettyDecimal) {
         self.formatting.insert(commodity, format);
     }
 }
