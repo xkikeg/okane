@@ -1,34 +1,34 @@
 2020/07/23=2020/07/24 * Your payment - Thank you
-    Assets:Wire                             -1803.05 CHF
     Liabilities:Okane Card                   1803.05 CHF
+    Assets:Wire                             -1803.05 CHF
 
 2020/08/04=2020/08/05 * certain, phone company CH
-    Liabilities:Okane Card                     -5.00 CHF
     Expenses:Telecom                            5.00 CHF
+    Liabilities:Okane Card                     -5.00 CHF
 
 2020/08/10=2020/08/11 * Europe Gas AT
-    Liabilities:Okane Card                    -52.10 CHF
     ! Expenses:Car:Gas                         46.88 EUR @ 1.092432 CHF
     Expenses:Commissions                        0.90 CHF
     ; Payee: Okane Card (fee)
+    Liabilities:Okane Card                    -52.10 CHF
 
 2020/08/11=2020/08/12 * GOOGLE *YouTubePremium, g.co/helppay# GB
-    Liabilities:Okane Card                    -23.90 CHF
     Expenses:Amusement                         23.90 CHF
+    Liabilities:Okane Card                    -23.90 CHF
 
 2020/12/13=2020/12/15 * PAYPAL *STEAM GAMES, 35314369001 GB
-    Liabilities:Okane Card                    -19.35 CHF
     ! Expenses:Unknown                         19.00 CHF
     Expenses:Commissions                        0.35 CHF
     ; Payee: Okane Card (fee)
+    Liabilities:Okane Card                    -19.35 CHF
 
 2021/03/05=2021/02/24 * HM.COM, NEUENDORF CH
-    ! Income:Unknown                          -92.90 CHF
     Liabilities:Okane Card                     92.90 CHF
+    ! Income:Unknown                          -92.90 CHF
 
 2022/08/11=2022/07/23 * AMZNPRIME DE AMZN.DE/I, Luxembourg LU
-    ! Income:Unknown                           -7.99 EUR @ 0.988364 CHF
     Liabilities:Okane Card                      8.05 CHF
     Expenses:Commissions                       -0.15 CHF
     ; Payee: Okane Card (fee)
+    ! Income:Unknown                           -7.99 EUR @ 0.988364 CHF
 

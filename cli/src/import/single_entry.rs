@@ -214,45 +214,49 @@ impl Txn {
             Some(_) => syntax::ClearState::Uncleared,
             None => syntax::ClearState::Pending,
         });
+        let add_charges = |posts: &mut Vec<syntax::plain::Posting<'a>>| {
+            for chrg in &self.charges {
+                posts.push(syntax::Posting {
+                    clear_state: syntax::ClearState::Uncleared,
+                    amount: Some(self.to_posting_amount(chrg.amount.into_borrowed())),
+                    balance: None,
+                    metadata: vec![syntax::Metadata::KeyValueTag {
+                        key: Cow::Borrowed("Payee"),
+                        value: syntax::MetadataValue::Text(chrg.payee.as_str().into()),
+                    }],
+                    ..syntax::Posting::new("Expenses:Commissions")
+                });
+            }
+        };
         if self.amount.value.is_sign_positive() {
+            posts.push(syntax::Posting {
+                clear_state: syntax::ClearState::Uncleared,
+                amount: Some(self.amount()),
+                balance: self.balance.as_ref().map(|x| as_syntax_amount(x).into()),
+                ..syntax::Posting::new(src_account)
+            });
+            add_charges(&mut posts);
             posts.push(syntax::Posting {
                 clear_state: post_clear,
                 amount: Some(self.dest_amount()),
                 ..syntax::Posting::new(self.dest_account.as_deref().unwrap_or("Income:Unknown"))
             });
-            posts.push(syntax::Posting {
-                clear_state: syntax::ClearState::Uncleared,
-                amount: Some(self.amount()),
-                balance: self.balance.as_ref().map(|x| as_syntax_amount(x).into()),
-                ..syntax::Posting::new(src_account)
-            });
         } else if self.amount.value.is_sign_negative() {
-            posts.push(syntax::Posting {
-                clear_state: syntax::ClearState::Uncleared,
-                amount: Some(self.amount()),
-                balance: self.balance.as_ref().map(|x| as_syntax_amount(x).into()),
-                ..syntax::Posting::new(src_account)
-            });
             posts.push(syntax::Posting {
                 clear_state: post_clear,
                 amount: Some(self.dest_amount()),
                 ..syntax::Posting::new(self.dest_account.as_deref().unwrap_or("Expenses:Unknown"))
             });
+            add_charges(&mut posts);
+            posts.push(syntax::Posting {
+                clear_state: syntax::ClearState::Uncleared,
+                amount: Some(self.amount()),
+                balance: self.balance.as_ref().map(|x| as_syntax_amount(x).into()),
+                ..syntax::Posting::new(src_account)
+            });
         } else {
             // warning log or error?
             return Err(ImportError::Other("credit and debit both zero".to_string()));
-        }
-        for chrg in &self.charges {
-            posts.push(syntax::Posting {
-                clear_state: syntax::ClearState::Uncleared,
-                amount: Some(self.to_posting_amount(chrg.amount.into_borrowed())),
-                balance: None,
-                metadata: vec![syntax::Metadata::KeyValueTag {
-                    key: Cow::Borrowed("Payee"),
-                    value: syntax::MetadataValue::Text(chrg.payee.as_str().into()),
-                }],
-                ..syntax::Posting::new("Expenses:Commissions")
-            });
         }
         let metadata = self
             .comments
