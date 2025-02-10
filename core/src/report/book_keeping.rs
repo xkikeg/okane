@@ -185,77 +185,212 @@ fn add_transaction<'ctx>(
         let posting_span = posting.span();
         let posting = posting.as_undecorated();
         let account = ctx.accounts.ensure(&posting.account);
-        // amount stored in the posting, and balance delta.
-        let (posting_value, balance_delta): (PostingAmount, PostingAmount) =
-            match (&posting.amount, &posting.balance) {
-                // posting with just `Account`, we need to deduce from other postings.
-                (None, None) => {
-                    if let Some(first) = unfilled.replace(Tracked::new(i, posting_span.clone())) {
-                        Err(BookKeepError::UndeduciblePostingAmount(
-                            first,
-                            Tracked::new(i, posting_span.clone()),
-                        ))
-                    } else {
-                        // placeholder which will be replaced later.
-                        // balance_delta is also zero as we don't know the value yet.
-                        Ok((PostingAmount::zero(), PostingAmount::zero()))
-                    }
+        let (evaluated, price_event) = match process_posting(ctx, bal, txn.date, account, posting)?
+        {
+            (Some(x), y) => (x, y),
+            (None, y) => {
+                if let Some(first) = unfilled.replace(Tracked::new(i, posting_span.clone())) {
+                    return Err(BookKeepError::UndeduciblePostingAmount(
+                        first,
+                        Tracked::new(i, posting_span.clone()),
+                    ));
+                } else {
+                    // placeholder which will be replaced later.
+                    // balance_delta is also zero as we don't know the value yet.
+                    (
+                        EvaluatedPosting {
+                            amount: PostingAmount::zero(),
+                            converted_amount: None,
+                            balance_delta: PostingAmount::zero(),
+                        },
+                        y,
+                    )
                 }
-                // posting with `Account   = X`.
-                (None, Some(balance_constraints)) => {
-                    let current: PostingAmount = balance_constraints
-                        .as_undecorated()
-                        .eval_mut(ctx)?
-                        .try_into()?;
-                    let prev: PostingAmount = bal.set_partial(account, current)?;
-                    let amount = current.check_sub(prev)?;
-                    Ok((amount, amount))
-                }
-                // regular posting with `Account    X`, optionally with balance.
-                (Some(syntax_amount), balance_constraints) => {
-                    let computed = compute_posting_amount(ctx, syntax_amount)?;
-                    // we uses transaction date, maybe good to provide an option to use effective date.
-                    if let Some(event) = posting_price_event(txn.date, &computed)? {
-                        price_repos.insert_price(PriceSource::Ledger, event);
-                    }
-                    let expected_balance: Option<PostingAmount> = balance_constraints
-                        .as_ref()
-                        .map(|x| x.as_undecorated().eval_mut(ctx))
-                        .transpose()?
-                        .map(|x| x.try_into())
-                        .transpose()?;
-                    let current = bal.add_posting_amount(account, computed.amount);
-                    if let Some(expected) = expected_balance {
-                        if !current.is_consistent(&expected) {
-                            return Err(BookKeepError::BalanceAssertionFailure(
-                                format!("{}", current.as_inline_display()),
-                                format!("{}", expected),
-                            ));
-                        }
-                    }
-                    let balance_amount = calculate_balance_amount(syntax_amount, &computed)?;
-                    Ok((computed.amount, balance_amount))
-                }
-            }?;
-        balance += balance_delta;
+            }
+        };
+        if let Some(event) = price_event {
+            price_repos.insert_price(PriceSource::Ledger, event);
+        }
+        balance += evaluated.balance_delta;
         postings.push(Posting {
             account,
-            amount: posting_value.into(),
+            amount: evaluated.amount.into(),
+            converted_amount: evaluated.converted_amount,
         });
     }
     if let Some(u) = unfilled {
         let u = *u.as_undecorated();
         // Note that deduced amount can be multi-commodity, neither SingleAmount nor PostingAmount.
-        let deduced: Amount = balance.clone().negate();
+        let deduced: Amount = balance.negate();
         postings[u].amount = deduced.clone();
         bal.add_amount(postings[u].account, deduced);
     } else {
-        check_balance(ctx, price_repos, txn.date, balance)?;
+        check_balance(ctx, price_repos, &mut postings, txn.date, balance)?;
     }
     Ok(Transaction {
         date: txn.date,
         postings: postings.into_boxed_slice(),
     })
+}
+
+/// Computed amount of [`Posting`],
+struct EvaluatedPosting<'ctx> {
+    /// Amount of the transaction.
+    amount: PostingAmount<'ctx>,
+
+    /// Converted amount, provided only when cost / lot annotation given.
+    converted_amount: Option<SingleAmount<'ctx>>,
+
+    /// Delta of balance within the transaction.
+    balance_delta: PostingAmount<'ctx>,
+}
+
+fn process_posting<'ctx>(
+    ctx: &mut ReportContext<'ctx>,
+    bal: &mut Balance<'ctx>,
+    date: NaiveDate,
+    account: super::Account<'ctx>,
+    posting: &syntax::tracked::Posting,
+) -> Result<(Option<EvaluatedPosting<'ctx>>, Option<PriceEvent<'ctx>>), BookKeepError> {
+    match (&posting.amount, &posting.balance) {
+        // posting with just `Account`, we need to deduce from other postings.
+        (None, None) => Ok((None, None)),
+        // posting with `Account   = X`.
+        (None, Some(balance_constraints)) => {
+            let current: PostingAmount = balance_constraints
+                .as_undecorated()
+                .eval_mut(ctx)?
+                .try_into()?;
+            let prev: PostingAmount = bal.set_partial(account, current)?;
+            let amount = current.check_sub(prev)?;
+            Ok((
+                Some(EvaluatedPosting {
+                    amount,
+                    converted_amount: None,
+                    balance_delta: amount,
+                }),
+                None,
+            ))
+        }
+        // regular posting with `Account    X`, optionally with balance.
+        (Some(syntax_amount), balance_constraints) => {
+            let computed = ComputedPosting::compute_from_syntax(ctx, syntax_amount)?;
+            // we uses transaction date, maybe good to provide an option to use effective date.
+            let expected_balance: Option<PostingAmount> = balance_constraints
+                .as_ref()
+                .map(|x| x.as_undecorated().eval_mut(ctx))
+                .transpose()?
+                .map(|x| x.try_into())
+                .transpose()?;
+            let current = bal.add_posting_amount(account, computed.amount);
+            if let Some(expected) = expected_balance {
+                if !current.is_consistent(&expected) {
+                    return Err(BookKeepError::BalanceAssertionFailure(
+                        format!("{}", current.as_inline_display()),
+                        format!("{}", expected),
+                    ));
+                }
+            }
+            let balance_delta = computed.calculate_balance_amount(ctx)?;
+            Ok((
+                Some(EvaluatedPosting {
+                    amount: computed.amount,
+                    converted_amount: computed.calculate_converted_amount(ctx)?,
+                    balance_delta,
+                }),
+                posting_price_event(date, &computed)?,
+            ))
+        }
+    }
+}
+
+/// Pre-computed [syntax::Posting].
+struct ComputedPosting<'ctx> {
+    amount: PostingAmount<'ctx>,
+    cost: Option<Exchange<'ctx>>,
+    lot: Option<Exchange<'ctx>>,
+}
+
+impl<'ctx> ComputedPosting<'ctx> {
+    /// Computes the given [`syntax::tracked::PostingAmount`] and creates an instance.
+    fn compute_from_syntax(
+        ctx: &mut ReportContext<'ctx>,
+        syntax_amount: &syntax::tracked::PostingAmount<'_>,
+    ) -> Result<Self, BookKeepError> {
+        let amount: PostingAmount = syntax_amount
+            .amount
+            .as_undecorated()
+            .eval_mut(ctx)?
+            .try_into()?;
+        let cost = posting_cost_exchange(syntax_amount)
+            .map(|exchange| Exchange::try_from_syntax(ctx, syntax_amount, &amount, exchange))
+            .transpose()?;
+        let lot = posting_lot_exchange(syntax_amount)
+            .map(|exchange| Exchange::try_from_syntax(ctx, syntax_amount, &amount, exchange))
+            .transpose()?;
+        Ok(ComputedPosting { amount, cost, lot })
+    }
+
+    fn calculate_converted_amount(
+        &self,
+        ctx: &ReportContext<'ctx>,
+    ) -> Result<Option<SingleAmount<'ctx>>, BookKeepError> {
+        self.cost
+            .as_ref()
+            .or(self.lot.as_ref())
+            .map(|x| Ok(x.exchange(ctx, self.amount.try_into()?)))
+            .transpose()
+    }
+
+    /// Returns the amount which sums up to the balance within the transaction.
+    fn calculate_balance_amount(
+        &self,
+        ctx: &ReportContext<'ctx>,
+    ) -> Result<PostingAmount<'ctx>, BookKeepError> {
+        // Actually, there's no point to compute cost if lot price is provided.
+        // Example: if you sell a X with cost p Y lot q Y.
+        //   Broker          -a X {{q Y}} @@ p Y
+        //   Broker           p Y
+        //   Income   (-(p - q) Y)
+        //
+        // if you set the first posting amount t,
+        // t + p Y - (p - q) Y = 0
+        // t = -q Y
+        // so actually cost is pointless in this case.
+        match self.lot.as_ref().or(self.cost.as_ref()) {
+            Some(x) => Ok(x.exchange(ctx, self.amount.try_into()?).into()),
+            None => Ok(self.amount),
+        }
+    }
+}
+
+/// Adds the price of the commodity in the posting into PriceRepositoryBuilder.
+fn posting_price_event<'ctx>(
+    date: NaiveDate,
+    computed: &ComputedPosting<'ctx>,
+) -> Result<Option<PriceEvent<'ctx>>, BookKeepError> {
+    let exchange = match computed.cost.as_ref().or(computed.lot.as_ref()) {
+        None => return Ok(None),
+        Some(exchange) => exchange,
+    };
+    Ok(Some(match computed.amount {
+        // TODO: here we can record --market commodities.
+        PostingAmount::Zero => {
+            unreachable!("Given Exchange is set None, this must be SingleAmount.")
+        }
+        PostingAmount::Single(amount) => match exchange {
+            Exchange::Rate(rate) => PriceEvent {
+                price_x: SingleAmount::from_value(Decimal::ONE, amount.commodity),
+                price_y: *rate,
+                date,
+            },
+            Exchange::Total(total) => PriceEvent {
+                price_x: amount.abs(),
+                price_y: *total,
+                date,
+            },
+        },
+    }))
 }
 
 /// Pre-copmuted syntax::Exchange.
@@ -305,65 +440,27 @@ impl<'ctx> Exchange<'ctx> {
             }
         }
     }
-}
 
-struct ComputedPosting<'ctx> {
-    amount: PostingAmount<'ctx>,
-    cost: Option<Exchange<'ctx>>,
-    lot: Option<Exchange<'ctx>>,
-}
-
-fn compute_posting_amount<'ctx>(
-    ctx: &mut ReportContext<'ctx>,
-    syntax_amount: &syntax::tracked::PostingAmount<'_>,
-) -> Result<ComputedPosting<'ctx>, BookKeepError> {
-    let amount: PostingAmount = syntax_amount
-        .amount
-        .as_undecorated()
-        .eval_mut(ctx)?
-        .try_into()?;
-    let cost = posting_cost_exchange(syntax_amount)
-        .map(|exchange| Exchange::try_from_syntax(ctx, syntax_amount, &amount, exchange))
-        .transpose()?;
-    let lot = posting_lot_exchange(syntax_amount)
-        .map(|exchange| Exchange::try_from_syntax(ctx, syntax_amount, &amount, exchange))
-        .transpose()?;
-    Ok(ComputedPosting { amount, cost, lot })
-}
-
-/// Adds the price of the commodity in the posting into PriceRepositoryBuilder.
-fn posting_price_event<'ctx>(
-    date: NaiveDate,
-    computed: &ComputedPosting<'ctx>,
-) -> Result<Option<PriceEvent<'ctx>>, BookKeepError> {
-    let exchange = match computed.cost.as_ref().or(computed.lot.as_ref()) {
-        None => return Ok(None),
-        Some(exchange) => exchange,
-    };
-    Ok(Some(match computed.amount {
-        // TODO: here we can record --market commodities.
-        PostingAmount::Zero => {
-            unreachable!("Given Exchange is set None, this must be SingleAmount.")
-        }
-        PostingAmount::Single(amount) => match exchange {
-            Exchange::Rate(rate) => PriceEvent {
-                price_x: SingleAmount::from_value(Decimal::ONE, amount.commodity),
-                price_y: *rate,
-                date,
-            },
-            Exchange::Total(total) => PriceEvent {
-                price_x: amount.abs(),
-                price_y: *total,
-                date,
-            },
-        },
-    }))
+    /// Given the exchange rate and the amount, returns the converted amount.
+    /// This purely relies on syntax written posting with lot or cost information.
+    fn exchange(
+        &self,
+        ctx: &ReportContext<'ctx>,
+        amount: SingleAmount<'ctx>,
+    ) -> SingleAmount<'ctx> {
+        let exchanged: SingleAmount = match self {
+            Exchange::Rate(rate) => *rate * amount.value,
+            Exchange::Total(abs) => abs.with_sign_of(amount),
+        };
+        exchanged.round(ctx)
+    }
 }
 
 /// Checks if the posting amounts sum to zero.
 fn check_balance<'ctx>(
     ctx: &ReportContext<'ctx>,
     price_repos: &mut PriceRepositoryBuilder<'ctx>,
+    postings: &mut bcc::Vec<'ctx, Posting<'ctx>>,
     date: NaiveDate,
     balance: Amount<'ctx>,
 ) -> Result<(), BookKeepError> {
@@ -372,6 +469,25 @@ fn check_balance<'ctx>(
         return Ok(());
     }
     if let Some((a1, a2)) = balance.maybe_pair() {
+        // fill in converted amount.
+        for p in postings.iter_mut() {
+            let amount: Result<SingleAmount<'_>, _> = (&p.amount).try_into();
+            if let Ok(amount) = amount {
+                // amount can be PostingAmount::Zero, or even multi commodities (in rare cases).
+                // so we ignore the error.
+                if a1.commodity == amount.commodity {
+                    p.converted_amount = Some(SingleAmount::from_value(
+                        (a2.value / a1.value).abs() * amount.value,
+                        a2.commodity,
+                    ));
+                } else if a2.commodity == amount.commodity {
+                    p.converted_amount = Some(SingleAmount::from_value(
+                        (a1.value / a2.value).abs() * amount.value,
+                        a1.commodity,
+                    ));
+                }
+            }
+        }
         // deduced price is logged to price repository.
         price_repos.insert_price(
             PriceSource::Ledger,
@@ -392,30 +508,6 @@ fn check_balance<'ctx>(
     Ok(())
 }
 
-/// Returns the amount which sums up to the balance within the transaction.
-fn calculate_balance_amount<'ctx>(
-    _posting_amount: &syntax::tracked::PostingAmount,
-    computed: &ComputedPosting<'ctx>,
-) -> Result<PostingAmount<'ctx>, BookKeepError> {
-    // Actually, there's no point to compute cost if lot price is provided.
-    // Example: if you sell a X with cost p Y lot q Y.
-    //   Broker          -a X {{q Y}} @@ p Y
-    //   Broker           p Y
-    //   Income   (-(p - q) Y)
-    //
-    // if you set the first posting amount t,
-    // t + p Y - (p - q) Y = 0
-    // t = -q Y
-    // so actually cost is pointless in this case.
-    match computed.lot.as_ref().or(computed.cost.as_ref()) {
-        Some(x) => {
-            let exchanged = calculate_exchanged_amount(x, computed.amount.try_into()?)?;
-            Ok(exchanged.into())
-        }
-        None => Ok(computed.amount),
-    }
-}
-
 /// Returns cost Exchange of the posting.
 #[inline]
 fn posting_cost_exchange<'a, 'ctx>(
@@ -430,20 +522,6 @@ fn posting_lot_exchange<'a, 'ctx>(
     posting_amount: &'a syntax::tracked::PostingAmount<'ctx>,
 ) -> Option<&'a syntax::tracked::Tracked<syntax::Exchange<'ctx>>> {
     posting_amount.lot.price.as_ref()
-}
-
-/// Given the exchange rate and the amount, returns the converted amount.
-/// Note we don't need [`PriceRepository`][super::price_db::PriceRepository],
-/// as we only tries to convert the posting with cost / lot information.
-fn calculate_exchanged_amount<'ctx>(
-    cost: &Exchange<'ctx>,
-    amount: SingleAmount<'ctx>,
-) -> Result<SingleAmount<'ctx>, BookKeepError> {
-    let exchanged: Result<SingleAmount, EvalError> = match cost {
-        Exchange::Rate(rate) => Ok(*rate * amount.value),
-        Exchange::Total(abs) => Ok(abs.with_sign_of(amount)),
-    };
-    Ok(exchanged?)
 }
 
 #[cfg(test)]
@@ -550,14 +628,17 @@ mod tests {
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
                         amount: Amount::from_value(dec!(200), ctx.commodities.ensure("JPY")),
+                        converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
                         amount: Amount::from_value(dec!(-100), ctx.commodities.ensure("JPY")),
+                        converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
                         amount: Amount::from_value(dec!(-100), ctx.commodities.ensure("JPY")),
+                        converted_amount: None,
                     },
                 ],
                 &arena,
@@ -612,18 +693,22 @@ mod tests {
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
                         amount: Amount::from_value(dec!(200), ctx.commodities.ensure("JPY")),
+                        converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
                         amount: Amount::from_value(dec!(100), ctx.commodities.ensure("JPY")),
+                        converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 3"),
                         amount: Amount::from_value(dec!(150), ctx.commodities.ensure("JPY")),
+                        converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 4"),
                         amount: Amount::from_value(dec!(-450), ctx.commodities.ensure("JPY")),
+                        converted_amount: None,
                     },
                 ],
                 &arena,
@@ -656,14 +741,17 @@ mod tests {
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
                         amount: Amount::from_value(dec!(1200), ctx.commodities.ensure("JPY")),
+                        converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
                         amount: Amount::from_value(dec!(234), ctx.commodities.ensure("EUR")),
+                        converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 3"),
                         amount: Amount::from_value(dec!(34.56), ctx.commodities.ensure("CHF")),
+                        converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 4"),
@@ -672,6 +760,7 @@ mod tests {
                             (dec!(-234), ctx.commodities.ensure("EUR")),
                             (dec!(-34.56), ctx.commodities.ensure("CHF")),
                         ]),
+                        converted_amount: None,
                     },
                 ],
                 &arena,
@@ -753,10 +842,12 @@ mod tests {
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
                         amount: Amount::from_value(dec!(12), okane),
+                        converted_amount: Some(SingleAmount::from_value(dec!(1200), jpy)),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
                         amount: Amount::from_value(dec!(-1200), jpy),
+                        converted_amount: None,
                     },
                 ],
                 &arena,
@@ -787,7 +878,7 @@ mod tests {
         let mut bal = Balance::default();
         let input = indoc! {"
             2024/08/01 Sample
-              Account 1             12 OKANE @ (1 * 100 JPY)
+              Account 1             12 OKANE @@ (12 * 100 JPY)
               Account 2         -1,200 JPY
         "};
         let txn = parse_transaction(input);
@@ -801,10 +892,15 @@ mod tests {
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
                         amount: Amount::from_value(dec!(12), ctx.commodities.ensure("OKANE")),
+                        converted_amount: Some(SingleAmount::from_value(
+                            dec!(1200),
+                            ctx.commodities.ensure("JPY"),
+                        )),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
                         amount: Amount::from_value(dec!(-1200), ctx.commodities.ensure("JPY")),
+                        converted_amount: None,
                     },
                 ],
                 &arena,
@@ -841,14 +937,17 @@ mod tests {
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
                         amount: Amount::from_value(dec!(-12), okane),
+                        converted_amount: Some(SingleAmount::from_value(dec!(-1440), jpy)),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
                         amount: Amount::from_value(dec!(1440), jpy),
+                        converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Income"),
                         amount: Amount::from_value(dec!(-240), jpy),
+                        converted_amount: None,
                     },
                 ],
                 &arena,
@@ -899,14 +998,23 @@ mod tests {
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
                         amount: Amount::from_value(dec!(-12), okane),
+                        converted_amount: Some(SingleAmount::from_value(dec!(-1440), jpy)),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
                         amount: Amount::from_value(dec!(1000), jpy),
+                        converted_amount: Some(SingleAmount::from_value(
+                            dec!(8.333333333333333333333333300),
+                            okane,
+                        )),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 3"),
                         amount: Amount::from_value(dec!(440), jpy),
+                        converted_amount: Some(SingleAmount::from_value(
+                            dec!(3.6666666666666666666666666520),
+                            okane,
+                        )),
                     },
                 ],
                 &arena,
@@ -957,10 +1065,12 @@ mod tests {
                     Posting {
                         account: ctx.accounts.ensure("Expenses"),
                         amount: Amount::from_value(dec!(300), eur),
+                        converted_amount: Some(SingleAmount::from_value(dec!(284.68), chf)),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Liabilities"),
                         amount: Amount::from_value(dec!(-284.68), chf),
+                        converted_amount: None,
                     },
                 ],
                 &arena,

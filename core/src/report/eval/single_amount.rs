@@ -5,7 +5,7 @@ use std::{
 
 use rust_decimal::Decimal;
 
-use crate::report::commodity::Commodity;
+use crate::report::{commodity::Commodity, ReportContext};
 
 use super::error::EvalError;
 
@@ -90,6 +90,20 @@ impl<'ctx> SingleAmount<'ctx> {
         }
     }
 
+    /// Rounds the Amount with the given context provided precision.
+    pub fn round(self, ctx: &ReportContext) -> Self {
+        match ctx.commodities.get_decimal_point(self.commodity) {
+            None => self,
+            Some(dp) => Self {
+                value: self.value.round_dp_with_strategy(
+                    dp,
+                    rust_decimal::RoundingStrategy::MidpointNearestEven,
+                ),
+                commodity: self.commodity,
+            },
+        }
+    }
+
     /// Returns a new instance with having the same sign with given SingleAmount.
     pub(crate) fn with_sign_of(mut self, sign: Self) -> Self {
         self.value.set_sign_positive(sign.value.is_sign_positive());
@@ -111,7 +125,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
-    use crate::report::ReportContext;
+    use crate::{report::ReportContext, syntax::pretty_decimal::PrettyDecimal};
 
     #[test]
     fn neg_returns_negative_value() {
@@ -196,6 +210,49 @@ mod tests {
         assert_eq!(
             "1.20 USD".to_string(),
             SingleAmount::from_value(dec!(1.20), usd).to_string()
+        );
+    }
+
+    #[test]
+    fn single_amount_round() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let jpy = ctx.commodities.ensure("JPY");
+        let eur = ctx.commodities.ensure("EUR");
+        let chf = ctx.commodities.ensure("CHF");
+
+        ctx.commodities
+            .set_format(jpy, PrettyDecimal::comma3dot(dec!(12345)));
+        ctx.commodities
+            .set_format(eur, PrettyDecimal::plain(dec!(123.45)));
+        ctx.commodities
+            .set_format(chf, PrettyDecimal::comma3dot(dec!(123.450)));
+
+        // as-is
+        assert_eq!(
+            SingleAmount::from_value(dec!(812), jpy),
+            SingleAmount::from_value(dec!(812), jpy).round(&ctx),
+        );
+        assert_eq!(
+            SingleAmount::from_value(dec!(-100.00), eur),
+            SingleAmount::from_value(dec!(-100.0), eur).round(&ctx),
+        );
+        assert_eq!(
+            SingleAmount::from_value(dec!(6.660), chf),
+            SingleAmount::from_value(dec!(6.66), chf).round(&ctx),
+        );
+
+        assert_eq!(
+            SingleAmount::from_value(dec!(812), jpy),
+            SingleAmount::from_value(dec!(812.5), jpy).round(&ctx),
+        );
+        assert_eq!(
+            SingleAmount::from_value(dec!(-100.02), eur),
+            SingleAmount::from_value(dec!(-100.015), eur).round(&ctx),
+        );
+        assert_eq!(
+            SingleAmount::from_value(dec!(6.666), chf),
+            SingleAmount::from_value(dec!(6.6665), chf).round(&ctx),
         );
     }
 
