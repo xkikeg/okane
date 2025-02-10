@@ -546,6 +546,58 @@ mod tests {
     }
 
     #[test]
+    fn add_transaction_fails_with_inconsistent_balance() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let mut bal = Balance::default();
+        bal.add_posting_amount(
+            ctx.accounts.ensure("Account 1"),
+            PostingAmount::from_value(dec!(1000), ctx.commodities.ensure("JPY")),
+        );
+        let input = indoc! {"
+            2024/08/01 Sample
+              Account 2
+              Account 1      200 JPY = 1300 JPY
+        "};
+        let txn = parse_transaction(input);
+        let mut price_repos = PriceRepositoryBuilder::default();
+
+        let got_err = add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).unwrap_err();
+
+        assert!(
+            matches!(got_err, BookKeepError::BalanceAssertionFailure(_, _)),
+            "unexpected got_err: {:?}",
+            got_err
+        );
+    }
+
+    #[test]
+    fn add_transaction_fails_with_inconsistent_absolute_zero_balance() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let mut bal = Balance::default();
+        bal.add_posting_amount(
+            ctx.accounts.ensure("Account 1"),
+            PostingAmount::from_value(dec!(1000), ctx.commodities.ensure("JPY")),
+        );
+        let input = indoc! {"
+            2024/08/01 Sample
+              Account 2
+              Account 1      0 CHF = 0 ; must fail because of 1000 JPY
+        "};
+        let txn = parse_transaction(input);
+        let mut price_repos = PriceRepositoryBuilder::default();
+
+        let got_err = add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).unwrap_err();
+
+        assert!(
+            matches!(got_err, BookKeepError::BalanceAssertionFailure(_, _)),
+            "unexpected got_err: {:?}",
+            got_err
+        );
+    }
+
+    #[test]
     fn add_transaction_maintains_balance() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
