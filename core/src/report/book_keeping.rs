@@ -365,9 +365,9 @@ fn check_balance<'ctx>(
     ctx: &ReportContext<'ctx>,
     price_repos: &mut PriceRepositoryBuilder<'ctx>,
     date: NaiveDate,
-    mut balance: Amount<'ctx>,
+    balance: Amount<'ctx>,
 ) -> Result<(), BookKeepError> {
-    balance.round(|commodity| ctx.commodities.get_decimal_point(commodity));
+    let balance = balance.round(ctx);
     if balance.is_zero() {
         return Ok(());
     }
