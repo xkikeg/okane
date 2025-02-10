@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1739196289026,
+  "lastUpdate": 1739210861867,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Criterion.rs Benchmark": [
@@ -713,6 +713,66 @@ window.BENCHMARK_DATA = {
             "name": "query-posting-one-account",
             "value": 2988306,
             "range": "± 12820",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-default",
+            "value": 2,
+            "range": "± 0",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "62a41f079150910958b7c92c48f99bf259274146",
+          "message": "Add test to cover balance failure.",
+          "timestamp": "2025-02-10T19:05:44+01:00",
+          "tree_id": "514bb288336fba79ad42e3ca273cb7d766919934",
+          "url": "https://github.com/xkikeg/okane/commit/62a41f079150910958b7c92c48f99bf259274146"
+        },
+        "date": 1739210861562,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse plain",
+            "value": 26,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse comma",
+            "value": 27,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load-with-counter",
+            "value": 146033021,
+            "range": "± 1402766",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process",
+            "value": 221390755,
+            "range": "± 1089287",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-posting-one-account",
+            "value": 3013497,
+            "range": "± 22064",
             "unit": "ns/iter"
           },
           {
