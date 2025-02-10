@@ -1,12 +1,12 @@
 2021/09/01 * 五反田ATM
-    Assets:Cash                                -5000 JPY
     Assets:Okane Bank                           5000 JPY = 12345 JPY
+    Assets:Cash                                -5000 JPY
 
 2021/09/02 * (31415) Migros
-    Assets:Okane Bank                          -2800 JPY = 9545 JPY
     Expenses:Grocery                            2800 JPY
+    Assets:Okane Bank                          -2800 JPY = 9545 JPY
 
 2021/09/03 * (14142) FooBar
-    Assets:Okane Bank                           -145 JPY = 9400 JPY
     ! Expenses:Unknown                           145 JPY
+    Assets:Okane Bank                           -145 JPY = 9400 JPY
 
