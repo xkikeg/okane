@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1738866493949,
+  "lastUpdate": 1739196289026,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Criterion.rs Benchmark": [
@@ -653,6 +653,66 @@ window.BENCHMARK_DATA = {
             "name": "query-posting-one-account",
             "value": 2979576,
             "range": "± 27167",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-default",
+            "value": 2,
+            "range": "± 0",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "f7bae80216fc0cea15614cf49431ef1d90683878",
+          "message": "In `import` CLI, put debits earlier than credits.\n\nUsually 借方 / debits comes earlier than 貸方 / credits.",
+          "timestamp": "2025-02-10T15:02:45+01:00",
+          "tree_id": "e5085029629684ae44de49d7a1f684cba0ee5b85",
+          "url": "https://github.com/xkikeg/okane/commit/f7bae80216fc0cea15614cf49431ef1d90683878"
+        },
+        "date": 1739196288762,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse plain",
+            "value": 26,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse comma",
+            "value": 27,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load-with-counter",
+            "value": 144001622,
+            "range": "± 1711031",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process",
+            "value": 215384251,
+            "range": "± 3752542",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-posting-one-account",
+            "value": 2988306,
+            "range": "± 12820",
             "unit": "ns/iter"
           },
           {
