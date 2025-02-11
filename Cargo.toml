@@ -33,6 +33,7 @@ ctor = "0.2.9"
 indoc = "2.0"
 maplit = "1.0"
 pretty_assertions = "1.4"
+rstest = "0.24"
 rust_decimal_macros = "1.36"
 
 [profile.bench]

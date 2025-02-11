@@ -1,4 +1,4 @@
-path: testdata/index_amount.csv
+path: index_amount.csv
 encoding: UTF-8
 account: "Liabilities:Okane Card"
 account_type: liability
@@ -21,7 +21,7 @@ rewrite:
       payee: MIGROS
     account: Expenses:Grocery
 ---
-path: testdata/label_credit_debit.csv
+path: label_credit_debit.csv
 encoding: UTF-8
 account: Assets:Okane Bank
 account_type: asset
@@ -44,7 +44,7 @@ rewrite:
       payee: Migros
     account: Expenses:Grocery
 ---
-path: testdata/csv_multi_currency.csv
+path: csv_multi_currency.csv
 encoding: UTF-8
 account: Assets:Okane Bank
 account_type: asset
@@ -98,7 +98,7 @@ rewrite:
       payee: Hamachi Super
     account: Expenses:Grocery
 ---
-path: testdata/csv_template.csv
+path: csv_template.csv
 encoding: UTF-8
 account: Assets:Brokers:Schrank
 account_type: asset
@@ -142,7 +142,7 @@ rewrite:
     matcher:
     - category: NRA Tax Adj
 ---
-path: testdata/iso_camt.
+path: iso_camt.
 encoding: UTF-8
 account_type: asset
 operator: Okane Bank (fee)
@@ -181,7 +181,7 @@ rewrite:
     account: Income:Salary
     payee: Taro and Jiro
 ---
-path: testdata/iso_camt.xml
+path: iso_camt.xml
 account: Assets:Okane Bank
 rewrite:
   - matcher:
@@ -196,7 +196,7 @@ rewrite:
       - payee: 山田商店
     account: Expenses:Grocery
 ---
-path: testdata/viseca.txt
+path: viseca.txt
 encoding: UTF-8
 account: Liabilities:Okane Card
 account_type: liability
