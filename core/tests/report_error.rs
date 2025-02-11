@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::{
+    ffi::OsStr,
+    path::{Component, Path, PathBuf},
+};
 
 use bumpalo::Bump;
 use maplit::hashmap;
@@ -15,30 +18,40 @@ fn init() {
         .init();
 }
 
-fn new_loader(input: &str) -> Result<load::Loader<load::FakeFileSystem>, std::io::Error> {
-    let src = testing::read_as_utf8(input)?;
+fn as_test_filepath(input: &Path) -> Result<PathBuf, std::io::Error> {
+    let mut ret = PathBuf::from("/okane");
+    input
+        .components()
+        .skip_while(|c| !matches!(c, Component::Normal(x) if *x == OsStr::new("testdata")))
+        .for_each(|c| ret.push(c.as_os_str()));
+    Ok(ret)
+}
+
+fn new_loader(input: PathBuf) -> Result<load::Loader<load::FakeFileSystem>, std::io::Error> {
+    let src = testing::read_as_utf8(&input)?;
+    let filepath = as_test_filepath(&input)?;
     let fs = hashmap! {
-        PathBuf::from("/path/to/").join(input) => src.into_bytes(),
+        filepath.clone() => src.into_bytes(),
     };
     let fs: load::FakeFileSystem = fs.into();
-    Ok(
-        load::Loader::new(PathBuf::from("/path/to/").join(input), fs)
-            .with_error_renderer(annotate_snippets::Renderer::plain()),
-    )
+    Ok(load::Loader::new(filepath, fs).with_error_renderer(annotate_snippets::Renderer::plain()))
 }
 
 #[rstest]
-#[case("error/same_commodity_cost.ledger")]
-#[case("error/undeducible.ledger")]
-#[case("error/zero_cost.ledger")]
-#[case("error/zero_lot.ledger")]
-#[case("error/zero_posting_with_lot.ledger")]
-fn report_error_string(#[case] input: &str) {
-    let mut golden = input.to_string();
-    golden.push_str(".error.txt");
+fn report_error_string(
+    #[base_dir = "../"]
+    #[files("testdata/error/*.ledger")]
+    input: PathBuf,
+) {
+    let mut golden = input.clone();
+    assert!(
+        golden.set_extension("ledger.error.txt"),
+        "failed to add extension to golden file {}",
+        golden.display()
+    );
     let arena = Bump::new();
     let mut ctx = report::ReportContext::new(&arena);
-    let golden = testing::Golden::new(&golden).unwrap();
+    let golden = testing::Golden::new(golden).unwrap();
 
     let got_err = report::process(
         &mut ctx,

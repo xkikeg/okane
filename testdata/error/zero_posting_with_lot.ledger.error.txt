@@ -1,5 +1,5 @@
 error: posting without commodity should not have exchange
- --> /path/to/error/zero_posting_with_lot.ledger:4:54
+ --> /okane/testdata/error/zero_posting_with_lot.ledger:4:54
   |
 3 | 2024/09/01 Shop
 4 |     Expenses                                       0 { 1 USD }

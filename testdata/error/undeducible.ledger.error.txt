@@ -1,5 +1,5 @@
 error: transaction cannot have multiple postings without constraints
- --> /path/to/error/undeducible.ledger:5:5
+ --> /okane/testdata/error/undeducible.ledger:5:5
   |
 3 | 2024/09/01 Shopping with point
 4 |     Expenses                                     100 CHF
