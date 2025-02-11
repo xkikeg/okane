@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1739292516324,
+  "lastUpdate": 1739316164517,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Criterion.rs Benchmark": [
@@ -833,6 +833,66 @@ window.BENCHMARK_DATA = {
             "name": "query-posting-one-account",
             "value": 3000167,
             "range": "± 31481",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-default",
+            "value": 2,
+            "range": "± 0",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "8706bcf3dba05e21509fadc21e98cacc2974be7c",
+          "message": "Change test_import to use rstest fixture as well.",
+          "timestamp": "2025-02-12T00:20:36+01:00",
+          "tree_id": "c4182bcb5b592973f14d6862c08842723404556c",
+          "url": "https://github.com/xkikeg/okane/commit/8706bcf3dba05e21509fadc21e98cacc2974be7c"
+        },
+        "date": 1739316163686,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse plain",
+            "value": 26,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse comma",
+            "value": 27,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load-with-counter",
+            "value": 140390537,
+            "range": "± 1147722",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process",
+            "value": 215807347,
+            "range": "± 590390",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-posting-one-account",
+            "value": 2994311,
+            "range": "± 22305",
             "unit": "ns/iter"
           },
           {
