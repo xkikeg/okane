@@ -26,6 +26,7 @@ winnow = "0.7.0"
 
 # middle
 env_logger = "0.11"
+lazy_static = "1.5"
 
 # dev-dependencies
 ctor = "0.2.9"

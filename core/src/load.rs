@@ -48,9 +48,17 @@ impl<F: FileSystem> Loader<F> {
     pub fn new(source: PathBuf, filesystem: F) -> Self {
         Self {
             source,
-            // TODO: use plain by default.
             error_style: annotate_snippets::Renderer::styled(),
             filesystem,
+        }
+    }
+
+    /// Create a new instance with the given `renderer`.
+    pub fn with_error_renderer(self, renderer: annotate_snippets::Renderer) -> Self {
+        Self {
+            source: self.source,
+            error_style: renderer,
+            filesystem: self.filesystem,
         }
     }
 

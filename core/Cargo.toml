@@ -16,6 +16,7 @@ bumpalo.workspace = true
 chrono.workspace = true
 derive-where = "1.2"
 glob = "0.3.2"
+lazy_static.workspace = true
 log.workspace = true
 rust_decimal.workspace = true
 strum = { version = "0.26", features = ["derive"] }
@@ -30,6 +31,7 @@ env_logger.workspace = true
 indoc.workspace = true
 maplit.workspace = true
 pretty_assertions.workspace = true
+rstest = "0.24"
 rust_decimal_macros.workspace = true
 criterion = {version = "0.5", features = ["html_reports"]}
 
