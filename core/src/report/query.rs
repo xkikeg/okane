@@ -16,6 +16,7 @@ use super::{
 };
 
 /// Contains processed transactions, so that users can query information.
+#[derive(Debug)]
 pub struct Ledger<'ctx> {
     pub(super) transactions: Vec<Transaction<'ctx>>,
     pub(super) raw_balance: Balance<'ctx>,
