@@ -25,6 +25,7 @@ pub struct Ledger<'ctx> {
 
 /// Error type for [`Ledger`] methods.
 // TODO: Organize errors.
+// TODO: non_exhaustive
 #[derive(Debug, thiserror::Error)]
 pub enum QueryError {
     #[error("failed to parse the given value")]
@@ -38,6 +39,7 @@ pub enum QueryError {
 }
 
 /// Query to list postings matching the criteria.
+// TODO: non_exhaustive
 #[derive(Debug)]
 pub struct PostingQuery {
     /// Select the specified account if specified.
@@ -47,6 +49,7 @@ pub struct PostingQuery {
 
 /// Context passed to [`Ledger::eval()`].
 #[derive(Debug)]
+// TODO: non_exhaustive
 pub struct EvalContext {
     pub date: NaiveDate,
     pub exchange: Option<String>,
@@ -99,9 +102,8 @@ impl<'ctx> Ledger<'ctx> {
                 })
             })
             .transpose()?;
-        let parsed: syntax::expr::ValueExpr = expression
-            .try_into()
-            .map_err(QueryError::ParseFailed)?;
+        let parsed: syntax::expr::ValueExpr =
+            expression.try_into().map_err(QueryError::ParseFailed)?;
         let evaled: Amount<'ctx> = parsed.eval(ctx)?.try_into()?;
         let evaled = match exchange {
             None => evaled,
@@ -172,9 +174,7 @@ mod tests {
         load::Loader::new(PathBuf::from("/path/to/file.ledger"), fake.into())
     }
 
-    fn create_ledger(
-        arena: &Bump,
-    ) -> Result<(ReportContext<'_>, Ledger<'_>), report::ReportError> {
+    fn create_ledger(arena: &Bump) -> Result<(ReportContext<'_>, Ledger<'_>), report::ReportError> {
         let mut ctx = ReportContext::new(arena);
         let ledger = report::process(&mut ctx, fake_loader(), &report::ProcessOptions::default())?;
         Ok((ctx, ledger))
