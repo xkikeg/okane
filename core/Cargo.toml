@@ -16,7 +16,6 @@ bumpalo.workspace = true
 chrono.workspace = true
 derive-where = "1.2"
 glob = "0.3.2"
-lazy_static.workspace = true
 log.workspace = true
 rust_decimal.workspace = true
 strum = { version = "0.26", features = ["derive"] }

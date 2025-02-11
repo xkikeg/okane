@@ -904,7 +904,6 @@ dependencies = [
  "env_logger",
  "glob",
  "indoc",
- "lazy_static",
  "log",
  "maplit",
  "pretty_assertions",

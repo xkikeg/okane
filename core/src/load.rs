@@ -277,24 +277,25 @@ mod tests {
 
     #[test]
     fn load_valid_input_real_file() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("testdata/recursive.ledger")
+        let mut testdata_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        assert!(
+            testdata_dir.pop(),
+            "CARGO_MANIFEST_DIR={} must have parent dir",
+            testdata_dir.display()
+        );
+        testdata_dir.push("testdata");
+        let root = testdata_dir
+            .join("recursive.ledger")
             .canonicalize()
             .unwrap();
-        let child1 = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("testdata/child1.ledger")
+        let child1 = testdata_dir.join("child1.ledger").canonicalize().unwrap();
+        let child2 = testdata_dir
+            .join("sub/child2.ledger")
             .canonicalize()
             .unwrap();
-        let child2 = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("testdata/sub/child2.ledger")
-            .canonicalize()
-            .unwrap();
-        let child3 = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("testdata/child3.ledger")
-            .canonicalize()
-            .unwrap();
-        let child4 = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("testdata/sub/child4.ledger")
+        let child3 = testdata_dir.join("child3.ledger").canonicalize().unwrap();
+        let child4 = testdata_dir
+            .join("sub/child4.ledger")
             .canonicalize()
             .unwrap();
         let want = parse_static_ledger_entry(&[
