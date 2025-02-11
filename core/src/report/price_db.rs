@@ -196,6 +196,7 @@ pub fn convert_amount<'ctx>(
 }
 
 /// Repository which user can query the conversion rate with.
+#[derive(Debug)]
 pub struct PriceRepository<'ctx> {
     inner: NaivePriceRepository<'ctx>,
     // TODO: add price_with as a key, otherwise it's wrong.
