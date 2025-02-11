@@ -41,4 +41,5 @@ ctor.workspace = true
 indoc.workspace = true
 maplit.workspace = true
 pretty_assertions.workspace = true
+rstest.workspace = true
 rust_decimal_macros.workspace = true

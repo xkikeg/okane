@@ -1,9 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use std::fs;
-
 use lazy_static::lazy_static;
-use log::warn;
 use pretty_assertions::assert_str_eq;
 
 lazy_static! {
@@ -14,10 +11,10 @@ lazy_static! {
 }
 
 /// Returns content of testdata directory, as UTF-8.
-pub fn read_as_utf8(filename: &str) -> std::io::Result<String> {
-    // Needs to replace CRLF to LF for Windows, as all files will have CRLF
-    // due to git config core.autocrlf.
-    fs::read_to_string(TESTDATA_DIR.join(filename)).map(|s| s.replace("\r\n", "\n"))
+pub fn read_as_utf8(filename: &Path) -> std::io::Result<String> {
+    // Needs to replace CRLF to LF for Windows, as all files may have CRLF
+    // depending on the git config core.autocrlf.
+    std::fs::read_to_string(filename).map(|s| s.replace("\r\n", "\n"))
 }
 
 /// Golden file, which maintains the expected content and assert over that.
@@ -34,14 +31,13 @@ fn is_update_golden() -> bool {
 
 impl Golden {
     /// Returns a new instance.
-    pub fn new(filename: &str) -> Result<Self, std::io::Error> {
-        let path = TESTDATA_DIR.join(filename);
-        let content = read_as_utf8(filename).or_else(|e| {
+    pub fn new(path: PathBuf) -> Result<Self, std::io::Error> {
+        let content = read_as_utf8(&path).or_else(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 if is_update_golden() {
                     Ok(String::new())
                 } else {
-                    warn!("Golden not found: pass UPDATE_GOLDEN=1");
+                    log::warn!("Golden not found: pass UPDATE_GOLDEN=1");
                     Err(e)
                 }
             } else {

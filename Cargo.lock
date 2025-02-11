@@ -880,6 +880,7 @@ dependencies = [
  "pretty_assertions",
  "quick-xml",
  "regex",
+ "rstest",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
