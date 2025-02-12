@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1739316164517,
+  "lastUpdate": 1739395942019,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Criterion.rs Benchmark": [
@@ -893,6 +893,66 @@ window.BENCHMARK_DATA = {
             "name": "query-posting-one-account",
             "value": 2994311,
             "range": "± 22305",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-default",
+            "value": 2,
+            "range": "± 0",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "3e7d768d6906bb08d5c46d9bf572a76792f88d22",
+          "message": "Add golden test for balance command.\n\nThis allows testing conversion feature for balance later.",
+          "timestamp": "2025-02-12T22:30:20+01:00",
+          "tree_id": "c964f1ec572eed5c3676892a11a996c1fea31784",
+          "url": "https://github.com/xkikeg/okane/commit/3e7d768d6906bb08d5c46d9bf572a76792f88d22"
+        },
+        "date": 1739395941170,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse plain",
+            "value": 26,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse comma",
+            "value": 27,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load-with-counter",
+            "value": 137862329,
+            "range": "± 1538841",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process",
+            "value": 216857062,
+            "range": "± 758752",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-posting-one-account",
+            "value": 2979417,
+            "range": "± 24825",
             "unit": "ns/iter"
           },
           {
