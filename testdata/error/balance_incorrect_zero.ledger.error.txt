@@ -1,0 +1,8 @@
+error: balance assertion failed: got 1000 CHF but expected 0
+  --> /okane/testdata/error/balance_incorrect_zero.ledger:8:1
+   |
+ 8 | / 2024/01/20 * Shop
+ 9 | |     Assets:Bank                             -100,000 JPY = 0
+10 | |     Expenses:Cash                            100,000 JPY
+   | |_________________________________________________________^ error occured
+   |

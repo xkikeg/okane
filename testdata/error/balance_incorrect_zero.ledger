@@ -1,0 +1,10 @@
+; Example of Ledger with incorrect balance absolute zero
+
+2024/01/20 * Initial
+    Assets:Bank                              100,000 JPY
+    Assets:Bank                                1,000 CHF
+    Equity
+
+2024/01/20 * Shop
+    Assets:Bank                             -100,000 JPY = 0
+    Expenses:Cash                            100,000 JPY
