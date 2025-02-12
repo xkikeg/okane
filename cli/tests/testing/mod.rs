@@ -29,19 +29,28 @@ fn is_update_golden() -> bool {
         .is_empty()
 }
 
+fn rewrap(e: std::io::Error, path: &Path) -> std::io::Error {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        std::io::Error::new(
+            e.kind(),
+            format!(
+                "Golden {} not found, pass UPDATE_GOLDEN=1 env",
+                path.display()
+            ),
+        )
+    } else {
+        e
+    }
+}
+
 impl Golden {
     /// Returns a new instance.
     pub fn new(path: PathBuf) -> Result<Self, std::io::Error> {
         let content = read_as_utf8(&path).or_else(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                if is_update_golden() {
-                    Ok(String::new())
-                } else {
-                    log::warn!("Golden not found: pass UPDATE_GOLDEN=1");
-                    Err(e)
-                }
+            if e.kind() == std::io::ErrorKind::NotFound && is_update_golden() {
+                Ok(String::new())
             } else {
-                Err(e)
+                Err(rewrap(e, &path))
             }
         })?;
         Ok(Self { path, content })

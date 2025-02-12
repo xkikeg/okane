@@ -1,0 +1,23 @@
+; Example of Ledger format, just with single commodity.
+
+2024/01/29 * Initial with deduced amount
+    Assets:Banks:あおによし                  100,000 JPY
+    Liabilities:Cards:Card X                  -1,000 JPY
+    Equity:Initial
+
+2024/02/03 * explicit posting
+    Expenses:Cash                             10,000 JPY
+    Assets:Banks:あおによし                  -10,000 JPY
+
+2024/02/15 deduce from amount
+    Expenses:Cash                              3,000 JPY
+    Assets:Banks:あおによし                              = 87,000 JPY
+
+2024/02/20 * payment
+    Liabilities:Cards:Card X                   1,000 JPY = 0
+    Assets:Banks:Foo                          -1,000 JPY
+
+2024/02/25 ! salary
+    Assets:Banks:あおによし                  230,000 JPY
+    Income:Salary                           -300,000 JPY
+    Expenses:Tax:Income                       70,000 JPY

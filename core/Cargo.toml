@@ -18,7 +18,7 @@ derive-where = "1.2"
 glob = "0.3.2"
 log.workspace = true
 rust_decimal.workspace = true
-strum = { version = "0.26", features = ["derive"] }
+strum.workspace = true
 thiserror.workspace = true
 unicode-width = "0.2"
 winnow.workspace = true

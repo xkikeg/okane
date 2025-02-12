@@ -21,6 +21,7 @@ bumpalo = {version = "3.17", features = ["collections", "boxed"]}
 chrono = "0.4.39"
 log = "0.4"
 rust_decimal = "1.36"
+strum = { version = "0.26", features = ["derive"] }
 thiserror = "2.0"
 winnow = "0.7.2"
 

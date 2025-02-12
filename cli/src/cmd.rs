@@ -31,6 +31,23 @@ pub enum Error {
     Query(#[from] report::query::QueryError),
 }
 
+#[derive(clap::Parser, Debug)]
+#[clap(about, version, author)]
+#[command(infer_subcommands = true)]
+pub struct Cli {
+    #[clap(subcommand)]
+    command: Command,
+}
+
+impl Cli {
+    pub fn run<W>(self, w: &mut W) -> Result<(), Error>
+    where
+        W: std::io::Write,
+    {
+        self.command.run(w)
+    }
+}
+
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Import other format into ledger.
@@ -48,14 +65,17 @@ pub enum Command {
 }
 
 impl Command {
-    pub fn run(self) -> Result<(), Error> {
+    pub fn run<W>(self, w: &mut W) -> Result<(), Error>
+    where
+        W: std::io::Write,
+    {
         match self {
-            Command::Import(cmd) => cmd.run(&mut std::io::stdout().lock()),
-            Command::Format(cmd) => cmd.run(&mut std::io::stdout().lock()),
-            Command::Accounts(cmd) => cmd.run(&mut std::io::stdout().lock()),
-            Command::Balance(cmd) => cmd.run(&mut std::io::stdout().lock()),
-            Command::Register(cmd) => cmd.run(&mut std::io::stdout().lock()),
-            Command::Primitive(cmd) => cmd.run(),
+            Command::Import(cmd) => cmd.run(w),
+            Command::Format(cmd) => cmd.run(w),
+            Command::Accounts(cmd) => cmd.run(w),
+            Command::Balance(cmd) => cmd.run(w),
+            Command::Register(cmd) => cmd.run(w),
+            Command::Primitive(cmd) => cmd.run(w),
         }
     }
 }
@@ -132,8 +152,11 @@ pub struct Primitives {
 }
 
 impl Primitives {
-    fn run(self) -> Result<(), Error> {
-        self.command.run()
+    fn run<W>(self, w: &mut W) -> Result<(), Error>
+    where
+        W: std::io::Write,
+    {
+        self.command.run(w)
     }
 }
 
@@ -148,11 +171,14 @@ enum PrimitiveCmd {
 }
 
 impl PrimitiveCmd {
-    fn run(self) -> Result<(), Error> {
+    fn run<W>(self, w: &mut W) -> Result<(), Error>
+    where
+        W: std::io::Write,
+    {
         match self {
-            PrimitiveCmd::Format(cmd) => cmd.run(&mut std::io::stdout().lock()),
-            PrimitiveCmd::Flatten(cmd) => cmd.run(&mut std::io::stdout().lock()),
-            PrimitiveCmd::Eval(cmd) => cmd.run(&mut std::io::stdout().lock()),
+            PrimitiveCmd::Format(cmd) => cmd.run(w),
+            PrimitiveCmd::Flatten(cmd) => cmd.run(w),
+            PrimitiveCmd::Eval(cmd) => cmd.run(w),
         }
     }
 }
@@ -341,5 +367,16 @@ impl EvalOptions {
         }
         // that will go into query.
         // conversion: self.exchange.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verify_command() {
+        use clap::CommandFactory;
+        Cli::command().debug_assert();
     }
 }
