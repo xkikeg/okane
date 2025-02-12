@@ -283,7 +283,7 @@ mod tests {
             "CARGO_MANIFEST_DIR={} must have parent dir",
             testdata_dir.display()
         );
-        testdata_dir.push("testdata");
+        testdata_dir.push("testdata/load");
         let root = testdata_dir
             .join("recursive.ledger")
             .canonicalize()
