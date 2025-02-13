@@ -8,7 +8,7 @@ use crate::{parse, syntax};
 
 use super::{
     balance::Balance,
-    commodity::OwnedCommodity,
+    commodity::{Commodity, OwnedCommodity},
     context::{Account, ReportContext},
     eval::{Amount, EvalError, Evaluable},
     price_db::{self, PriceRepository},
@@ -25,6 +25,7 @@ pub struct Ledger<'ctx> {
 
 /// Error type for [`Ledger`] methods.
 // TODO: Organize errors.
+// TODO: non_exhaustive
 #[derive(Debug, thiserror::Error)]
 pub enum QueryError {
     #[error("failed to parse the given value")]
@@ -38,6 +39,7 @@ pub enum QueryError {
 }
 
 /// Query to list postings matching the criteria.
+// TODO: non_exhaustive
 #[derive(Debug)]
 pub struct PostingQuery {
     /// Select the specified account if specified.
@@ -45,8 +47,77 @@ pub struct PostingQuery {
     pub account: Option<String>,
 }
 
+/// Specifies the conversion strategy.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ConversionStrategy {
+    /// Converts the amount on the date of transaction.
+    Historical,
+    /// Converts the amount on the up-to-date date.
+    /// Not implemented for register report.
+    UpToDate {
+        /// Date for the conversion to be _up-to-date_.
+        now: NaiveDate,
+    },
+}
+
+/// Instruction about commodity conversion.
+#[derive(Debug)]
+// TODO: non_exhaustive
+pub struct Conversion<'ctx> {
+    pub strategy: ConversionStrategy,
+    pub target: Commodity<'ctx>,
+}
+
+/// Half-open range of the date for the query result.
+/// If any of `start` or `end` is set as [`None`],
+/// those are treated as -infinity, +infinity respectively.
+#[derive(Debug, Default)]
+pub struct DateRange {
+    /// Start of the range (inclusive), if exists.
+    pub start: Option<NaiveDate>,
+    /// End of the range (exclusive), if exists.
+    pub end: Option<NaiveDate>,
+}
+
+impl DateRange {
+    fn is_bypass(&self) -> bool {
+        self.start.is_none() && self.end.is_none()
+    }
+
+    fn contains(&self, date: NaiveDate) -> bool {
+        match (self.start, self.end) {
+            (Some(start), _) if date < start => false,
+            (_, Some(end)) if end <= date => false,
+            _ => true,
+        }
+    }
+}
+
+/// Query for [`Ledger::balance()`].
+#[derive(Debug, Default)]
+// TODO: non_exhaustive
+pub struct BalanceQuery<'ctx> {
+    pub conversion: Option<Conversion<'ctx>>,
+    pub date_range: DateRange,
+}
+
+impl BalanceQuery<'_> {
+    fn require_recompute(&self) -> bool {
+        if !self.date_range.is_bypass() {
+            return true;
+        }
+        if matches!(&self.conversion, Some(conv) if conv.strategy == ConversionStrategy::Historical)
+        {
+            return true;
+        }
+        // at this case, we can reuse the balance for the whole range data.
+        false
+    }
+}
+
 /// Context passed to [`Ledger::eval()`].
 #[derive(Debug)]
+// TODO: non_exhaustive
 pub struct EvalContext {
     pub date: NaiveDate,
     pub exchange: Option<String>,
@@ -79,8 +150,74 @@ impl<'ctx> Ledger<'ctx> {
     /// Returns a balance matching the given query.
     /// Note that currently we don't have the query,
     /// that will be added soon.
-    pub fn balance(&self) -> Cow<'_, Balance<'ctx>> {
-        Cow::Borrowed(&self.raw_balance)
+    pub fn balance(
+        &mut self,
+        _ctx: &ReportContext<'ctx>,
+        query: &BalanceQuery<'ctx>,
+    ) -> Result<Cow<'_, Balance<'ctx>>, QueryError> {
+        let balance = if !query.require_recompute() {
+            Cow::Borrowed(&self.raw_balance)
+        } else {
+            let mut bal = Balance::default();
+            for (txn, posting) in self.transactions.iter().flat_map(|txn| {
+                txn.postings.iter().filter_map(move |posting| {
+                    if !query.date_range.contains(txn.date) {
+                        return None;
+                    }
+                    Some((txn, posting))
+                })
+            }) {
+                let delta = match query.conversion {
+                    Some(Conversion {
+                        strategy: ConversionStrategy::Historical,
+                        target,
+                    }) => Cow::Owned(
+                        price_db::convert_amount(
+                            &mut self.price_repos,
+                            &posting.amount,
+                            target,
+                            txn.date,
+                        )
+                        // TODO: do we need this round, or just at the end?
+                        // .map(|amount| amount.round(ctx))
+                        .map_err(|err| QueryError::CommodityConversionFailure(err.to_string()))?,
+                    ),
+                    None
+                    | Some(Conversion {
+                        strategy: ConversionStrategy::UpToDate { .. },
+                        ..
+                    }) => Cow::Borrowed(&posting.amount),
+                };
+                bal.add_amount(posting.account, delta.into_owned());
+            }
+            Cow::Owned(bal)
+        };
+        match query.conversion {
+            None
+            | Some(Conversion {
+                strategy: ConversionStrategy::Historical,
+                ..
+            }) => Ok(balance),
+            Some(Conversion {
+                strategy: ConversionStrategy::UpToDate { now },
+                target,
+            }) => {
+                let mut converted = Balance::default();
+                for (account, original_amount) in balance.iter() {
+                    converted.add_amount(
+                        *account,
+                        price_db::convert_amount(
+                            &mut self.price_repos,
+                            original_amount,
+                            target,
+                            now,
+                        )
+                        .map_err(|err| QueryError::CommodityConversionFailure(err.to_string()))?,
+                    );
+                }
+                Ok(Cow::Owned(converted))
+            }
+        }
     }
 
     /// Evals given `expression` with the given condition.
@@ -99,9 +236,8 @@ impl<'ctx> Ledger<'ctx> {
                 })
             })
             .transpose()?;
-        let parsed: syntax::expr::ValueExpr = expression
-            .try_into()
-            .map_err(QueryError::ParseFailed)?;
+        let parsed: syntax::expr::ValueExpr =
+            expression.try_into().map_err(QueryError::ParseFailed)?;
         let evaled: Amount<'ctx> = parsed.eval(ctx)?.try_into()?;
         let evaled = match exchange {
             None => evaled,
@@ -172,9 +308,7 @@ mod tests {
         load::Loader::new(PathBuf::from("/path/to/file.ledger"), fake.into())
     }
 
-    fn create_ledger(
-        arena: &Bump,
-    ) -> Result<(ReportContext<'_>, Ledger<'_>), report::ReportError> {
+    fn create_ledger(arena: &Bump) -> Result<(ReportContext<'_>, Ledger<'_>), report::ReportError> {
         let mut ctx = ReportContext::new(arena);
         let ledger = report::process(&mut ctx, fake_loader(), &report::ProcessOptions::default())?;
         Ok((ctx, ledger))
@@ -183,9 +317,9 @@ mod tests {
     #[test]
     fn balance_default() {
         let arena = Bump::new();
-        let (ctx, ledger) = create_ledger(&arena).unwrap();
+        let (ctx, mut ledger) = create_ledger(&arena).unwrap();
 
-        let got = ledger.balance();
+        let got = ledger.balance(&ctx, &BalanceQuery::default()).unwrap();
 
         log::info!("all_accounts: {:?}", ctx.all_accounts());
 
@@ -214,6 +348,11 @@ mod tests {
         .into_iter()
         .collect();
         assert_eq!(Cow::Borrowed(&want), got);
+    }
+
+    #[test]
+    fn balance_date_limit() {
+        // TODO: Add tests.
     }
 
     #[test]

@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use bumpalo::Bump;
+use chrono::NaiveDate;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use okane_core::{
     load::{self, LoadError},
@@ -70,7 +71,7 @@ fn query_balance(c: &mut Criterion) {
     let arena = Bump::new();
     let mut ctx = report::ReportContext::new(&arena);
     let opts = report::ProcessOptions::default();
-    let ledger = report::process(
+    let mut ledger = report::process(
         &mut ctx,
         load::new_loader(input.rootpath().to_owned()),
         &opts,
@@ -79,7 +80,56 @@ fn query_balance(c: &mut Criterion) {
 
     c.bench_function("query-balance-default", |b| {
         b.iter(|| {
-            black_box(ledger.balance());
+            black_box(
+                ledger
+                    .balance(&ctx, &report::query::BalanceQuery::default())
+                    .unwrap(),
+            );
+        })
+    });
+
+    let query = report::query::BalanceQuery {
+        date_range: report::query::DateRange {
+            start: Some(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+            end: Some(NaiveDate::from_ymd_opt(2025, 1, 1).unwrap()),
+        },
+        conversion: None,
+    };
+    c.bench_function("query-balance-conversion-date", |b| {
+        b.iter(|| {
+            black_box(ledger.balance(&ctx, &query).unwrap());
+        })
+    });
+
+    let usd = ctx.commodity("USD").unwrap();
+
+    let query = report::query::BalanceQuery {
+        date_range: report::query::DateRange::default(),
+        conversion: Some(report::query::Conversion {
+            strategy: report::query::ConversionStrategy::UpToDate {
+                now: NaiveDate::from_ymd_opt(2025, 12, 31).unwrap(),
+            },
+            target: usd,
+        }),
+    };
+    c.bench_function("query-balance-conversion-up-to-date", |b| {
+        b.iter(|| {
+            black_box(ledger.balance(&ctx, &query).unwrap());
+        })
+    });
+
+    let chf = ctx.commodity("CHF").unwrap();
+
+    let query = report::query::BalanceQuery {
+        date_range: report::query::DateRange::default(),
+        conversion: Some(report::query::Conversion {
+            strategy: report::query::ConversionStrategy::Historical,
+            target: chf,
+        }),
+    };
+    c.bench_function("query-balance-conversion-historical", |b| {
+        b.iter(|| {
+            black_box(ledger.balance(&ctx, &query).unwrap());
         })
     });
 }

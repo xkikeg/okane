@@ -60,6 +60,7 @@ pub enum BookKeepError {
 
 /// Options to control process behavior.
 #[derive(Debug, Default)]
+// TODO: non_exhaustive
 pub struct ProcessOptions {
     /// Path to the price DB file.
     pub price_db_path: Option<PathBuf>,

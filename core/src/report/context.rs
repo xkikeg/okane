@@ -1,7 +1,7 @@
 use bumpalo::Bump;
 
 use super::{
-    commodity::CommodityStore,
+    commodity::{Commodity, CommodityStore},
     intern::{FromInterned, InternStore, InternedStr, StoredValue},
 };
 
@@ -65,6 +65,11 @@ impl<'ctx> ReportContext<'ctx> {
     /// Returns the given account, or `None` if not found.
     pub fn account(&self, value: &str) -> Option<Account<'ctx>> {
         self.accounts.resolve(value)
+    }
+
+    /// Returns the given commmodity, or `None` if not found.
+    pub fn commodity(&self, value: &str) -> Option<Commodity<'ctx>> {
+        self.commodities.resolve(value)
     }
 }
 
