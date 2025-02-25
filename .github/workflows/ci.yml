@@ -61,7 +61,7 @@ jobs:
           auto-push: false
           alert-threshold: '200%'
           comment-on-alert: true
-          fail-on-alert: true
+          fail-on-alert: ${{ github.event_name == 'pull_request' }}
           alert-comment-cc-users: '@xkikeg'
           summary-always: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
