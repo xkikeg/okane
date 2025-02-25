@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1739395942019,
+  "lastUpdate": 1740476453168,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Criterion.rs Benchmark": [
@@ -959,6 +959,84 @@ window.BENCHMARK_DATA = {
             "name": "query-balance-default",
             "value": 2,
             "range": "± 0",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "44451d7e36814fe3451c2a30919b72791d8d1d36",
+          "message": "Don't fail on benchmark regression for continuous run.\n\nOtherwise we won't track the main branch results.",
+          "timestamp": "2025-02-25T10:37:19+01:00",
+          "tree_id": "f0e4ecd32a9360dec71be58ed9a54b50086c041a",
+          "url": "https://github.com/xkikeg/okane/commit/44451d7e36814fe3451c2a30919b72791d8d1d36"
+        },
+        "date": 1740476452904,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse plain",
+            "value": 27,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse comma",
+            "value": 28,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load-with-counter",
+            "value": 146923396,
+            "range": "± 2864420",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process",
+            "value": 220434568,
+            "range": "± 3599391",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-posting-one-account",
+            "value": 3131764,
+            "range": "± 110661",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-default",
+            "value": 14,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-conversion-date",
+            "value": 1619654,
+            "range": "± 23436",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-conversion-up-to-date",
+            "value": 9768,
+            "range": "± 86",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-conversion-historical",
+            "value": 46370620,
+            "range": "± 932701",
             "unit": "ns/iter"
           }
         ]
