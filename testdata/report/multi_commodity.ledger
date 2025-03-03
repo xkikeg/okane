@@ -28,8 +28,12 @@ commodity USD
     Assets:Banks:Swiss Bank                -2,000.00 CHF
 
 2024/02/02 * convert to EUR
-    Expenses:Cash                             538.39 EUR @ 0.9287 CHF
-    Assets:Banks:Swiss Bank                  -500.00 CHF
+    ; this is 474.5657 CHF
+    Expenses:Cash                             511.00 EUR @ 0.9287 CHF
+    ; this is 6.96525 CHF
+    Expenses:Commissions                        7.50 EUR @ 0.9287 CHF
+    ; sum are 481.53095 CHF, ~ 481.53 CHF
+    Assets:Banks:Swiss Bank                  -481.53 CHF
 
 2024/02/05 * wire
     Assets:Wire:US Broker                   11481.06 USD @ 0.8710 CHF
