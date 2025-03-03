@@ -292,11 +292,11 @@ fn process_posting<'ctx>(
                     ));
                 }
             }
-            let balance_delta = computed.calculate_balance_amount(ctx)?;
+            let balance_delta = computed.calculate_balance_amount()?;
             Ok((
                 Some(EvaluatedPosting {
                     amount: computed.amount,
-                    converted_amount: computed.calculate_converted_amount(ctx)?,
+                    converted_amount: computed.calculate_converted_amount()?,
                     balance_delta,
                 }),
                 posting_price_event(date, &computed)?,
@@ -332,22 +332,16 @@ impl<'ctx> ComputedPosting<'ctx> {
         Ok(ComputedPosting { amount, cost, lot })
     }
 
-    fn calculate_converted_amount(
-        &self,
-        ctx: &ReportContext<'ctx>,
-    ) -> Result<Option<SingleAmount<'ctx>>, BookKeepError> {
+    fn calculate_converted_amount(&self) -> Result<Option<SingleAmount<'ctx>>, BookKeepError> {
         self.cost
             .as_ref()
             .or(self.lot.as_ref())
-            .map(|x| Ok(x.exchange(ctx, self.amount.try_into()?)))
+            .map(|x| Ok(x.exchange(self.amount.try_into()?)))
             .transpose()
     }
 
     /// Returns the amount which sums up to the balance within the transaction.
-    fn calculate_balance_amount(
-        &self,
-        ctx: &ReportContext<'ctx>,
-    ) -> Result<PostingAmount<'ctx>, BookKeepError> {
+    fn calculate_balance_amount(&self) -> Result<PostingAmount<'ctx>, BookKeepError> {
         // Actually, there's no point to compute cost if lot price is provided.
         // Example: if you sell a X with cost p Y lot q Y.
         //   Broker          -a X {{q Y}} @@ p Y
@@ -359,7 +353,7 @@ impl<'ctx> ComputedPosting<'ctx> {
         // t = -q Y
         // so actually cost is pointless in this case.
         match self.lot.as_ref().or(self.cost.as_ref()) {
-            Some(x) => Ok(x.exchange(ctx, self.amount.try_into()?).into()),
+            Some(x) => Ok(x.exchange(self.amount.try_into()?).into()),
             None => Ok(self.amount),
         }
     }
@@ -444,16 +438,11 @@ impl<'ctx> Exchange<'ctx> {
 
     /// Given the exchange rate and the amount, returns the converted amount.
     /// This purely relies on syntax written posting with lot or cost information.
-    fn exchange(
-        &self,
-        ctx: &ReportContext<'ctx>,
-        amount: SingleAmount<'ctx>,
-    ) -> SingleAmount<'ctx> {
-        let exchanged: SingleAmount = match self {
+    fn exchange(&self, amount: SingleAmount<'ctx>) -> SingleAmount<'ctx> {
+        match self {
             Exchange::Rate(rate) => *rate * amount.value,
             Exchange::Total(abs) => abs.with_sign_of(amount),
-        };
-        exchanged.round(ctx)
+        }
     }
 }
 
@@ -465,6 +454,7 @@ fn check_balance<'ctx>(
     date: NaiveDate,
     balance: Amount<'ctx>,
 ) -> Result<(), BookKeepError> {
+    log::info!("balance: {}", balance.as_inline_display());
     let balance = balance.round(ctx);
     if balance.is_zero() {
         return Ok(());
@@ -921,7 +911,7 @@ mod tests {
                 price_y: SingleAmount::from_value(dec!(100), jpy),
             },
         ];
-        assert_eq!(price_repos.into_events(), want_prices);
+        assert_eq!(want_prices, price_repos.into_events());
     }
 
     #[test]
@@ -1021,7 +1011,7 @@ mod tests {
                 price_y: SingleAmount::from_value(dec!(120), jpy),
             },
         ];
-        assert_eq!(price_repos.into_events(), want_prices);
+        assert_eq!(want_prices, price_repos.into_events());
     }
 
     #[test]
@@ -1088,7 +1078,7 @@ mod tests {
                 price_y: SingleAmount::from_value(dec!(120), jpy),
             },
         ];
-        assert_eq!(price_repos.into_events(), want_prices);
+        assert_eq!(want_prices, price_repos.into_events());
     }
 
     #[test]
@@ -1100,11 +1090,14 @@ mod tests {
             .set_format(chf, "20,000.00".parse().unwrap());
         let mut bal = Balance::default();
         let input = indoc! {"
-            2024/08/01 Sample
-              Expenses               300 EUR @ (1 / 1.0538 CHF)
-              Liabilities        -284.68 CHF
+            2020/08/08 Petrol Station
+              Expenses:Travel:Petrol       30.33 EUR @ 1.0902 CHF
+              Expenses:Commissions          1.50 CHF  ; Payee: Bank
+              Expenses:Commissions          0.06 EUR @ 1.0902 CHF  ; Payee: Bank
+              Expenses:Commissions          0.07 CHF  ; Payee: Bank
+              Assets:Banks                -34.70 CHF
         "};
-        let date = NaiveDate::from_ymd_opt(2024, 8, 1).unwrap();
+        let date = NaiveDate::from_ymd_opt(2020, 8, 8).unwrap();
         let txn = parse_transaction(input);
         let mut price_repos = PriceRepositoryBuilder::default();
 
@@ -1116,13 +1109,28 @@ mod tests {
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
-                        account: ctx.accounts.ensure("Expenses"),
-                        amount: Amount::from_value(dec!(300), eur),
-                        converted_amount: Some(SingleAmount::from_value(dec!(284.68), chf)),
+                        account: ctx.accounts.ensure("Expenses:Travel:Petrol"),
+                        amount: Amount::from_value(dec!(30.33), eur),
+                        converted_amount: Some(SingleAmount::from_value(dec!(33.065766), chf)),
                     },
                     Posting {
-                        account: ctx.accounts.ensure("Liabilities"),
-                        amount: Amount::from_value(dec!(-284.68), chf),
+                        account: ctx.accounts.ensure("Expenses:Commissions"),
+                        amount: Amount::from_value(dec!(1.50), chf),
+                        converted_amount: None,
+                    },
+                    Posting {
+                        account: ctx.accounts.ensure("Expenses:Commissions"),
+                        amount: Amount::from_value(dec!(0.06), eur),
+                        converted_amount: Some(SingleAmount::from_value(dec!(0.065412), chf)),
+                    },
+                    Posting {
+                        account: ctx.accounts.ensure("Expenses:Commissions"),
+                        amount: Amount::from_value(dec!(0.07), chf),
+                        converted_amount: None,
+                    },
+                    Posting {
+                        account: ctx.accounts.ensure("Assets:Banks"),
+                        amount: Amount::from_value(dec!(-34.70), chf),
                         converted_amount: None,
                     },
                 ],
@@ -1136,14 +1144,24 @@ mod tests {
             PriceEvent {
                 date,
                 price_x: SingleAmount::from_value(dec!(1), chf),
-                price_y: SingleAmount::from_value(dec!(1.0538), eur),
+                price_y: SingleAmount::from_value(Decimal::ONE / dec!(1.0902), eur),
+            },
+            PriceEvent {
+                date,
+                price_x: SingleAmount::from_value(dec!(1), chf),
+                price_y: SingleAmount::from_value(Decimal::ONE / dec!(1.0902), eur),
             },
             PriceEvent {
                 date,
                 price_x: SingleAmount::from_value(dec!(1), eur),
-                price_y: SingleAmount::from_value(dec!(1) / dec!(1.0538), chf),
+                price_y: SingleAmount::from_value(dec!(1.0902), chf),
+            },
+            PriceEvent {
+                date,
+                price_x: SingleAmount::from_value(dec!(1), eur),
+                price_y: SingleAmount::from_value(dec!(1.0902), chf),
             },
         ];
-        assert_eq!(price_repos.into_events(), want_prices);
+        assert_eq!(want_prices, price_repos.into_events());
     }
 }
