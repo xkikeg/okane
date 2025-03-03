@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1740476453168,
+  "lastUpdate": 1741025114223,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Criterion.rs Benchmark": [
@@ -1037,6 +1037,84 @@ window.BENCHMARK_DATA = {
             "name": "query-balance-conversion-historical",
             "value": 46370620,
             "range": "± 932701",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "f9df1410f438b812d539752f1306c35c8de3a3ec",
+          "message": "Don't round the amount on each-posting basis.\n\nIf we have conversion at each posting, often we'll have remainder.\nHowever, we should not round those at each posting. Why?\nAssume the following situation.\n\n```\n   Expense        1 CHF @ 100.5 JPY\n   Expense        1 CHF @ 100.5 JPY\n   Asset       -201 JPY\n```\n\nThis is totally legit, however, if you apply banker's round,\ntwo expenses are evaluated as 100 JPY and there will be 1 JPY\nunbalanced.",
+          "timestamp": "2025-03-03T19:02:33+01:00",
+          "tree_id": "895c0db00a9001c2cb79ec9f3345e3b746079a90",
+          "url": "https://github.com/xkikeg/okane/commit/f9df1410f438b812d539752f1306c35c8de3a3ec"
+        },
+        "date": 1741025113406,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse plain",
+            "value": 26,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse comma",
+            "value": 27,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load-with-counter",
+            "value": 138474455,
+            "range": "± 2806341",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process",
+            "value": 216152934,
+            "range": "± 1250903",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-posting-one-account",
+            "value": 3182360,
+            "range": "± 19925",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-default",
+            "value": 14,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-conversion-date",
+            "value": 1595366,
+            "range": "± 42818",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-conversion-up-to-date",
+            "value": 9938,
+            "range": "± 193",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-conversion-historical",
+            "value": 46328040,
+            "range": "± 303267",
             "unit": "ns/iter"
           }
         ]
