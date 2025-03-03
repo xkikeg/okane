@@ -12,8 +12,8 @@ use crate::{parse, syntax};
 /// Error caused by [Loader::load].
 #[derive(thiserror::Error, Debug)]
 pub enum LoadError {
-    #[error("failed to perform IO")]
-    IO(#[from] std::io::Error),
+    #[error("failed to perform IO on file {1}")]
+    IO(#[source] std::io::Error, PathBuf),
     #[error("failed to parse file {1}")]
     Parse(#[source] parse::ParseError, PathBuf),
     #[error("loading file path {0} doesn't have parent, maybe filesystem root is passed")]
@@ -94,7 +94,7 @@ impl<F: FileSystem> Loader<F> {
         let content = self
             .filesystem
             .file_content_utf8(&path)
-            .map_err(LoadError::IO)?;
+            .map_err(|err| LoadError::IO(err, path.clone().into_owned()))?;
         for parsed in parse::parse_ledger(parse_options, &content) {
             let (ctx, entry) =
                 parsed.map_err(|e| LoadError::Parse(e, path.clone().into_owned()))?;
@@ -113,10 +113,13 @@ impl<F: FileSystem> Loader<F> {
                         })?;
                     let mut paths: Vec<PathBuf> = self.filesystem.glob(&target)?;
                     if paths.is_empty() {
-                        return Err(LoadError::IO(std::io::Error::new(
-                            std::io::ErrorKind::NotFound,
-                            format!("glob {} does not hit any files", target),
-                        ))
+                        return Err(LoadError::IO(
+                            std::io::Error::new(
+                                std::io::ErrorKind::NotFound,
+                                format!("glob {} does not hit any files", target),
+                            ),
+                            PathBuf::from(target),
+                        )
                         .into());
                     }
                     paths.sort_unstable();
@@ -411,7 +414,7 @@ mod tests {
         .unwrap_err();
 
         match got_err {
-            LoadError::IO(e) => assert!(
+            LoadError::IO(e, _) => assert!(
                 e.kind() == std::io::ErrorKind::NotFound,
                 "should cause NotFound IO error: got {:?}",
                 e
@@ -435,7 +438,7 @@ mod tests {
         .expect_err("parse failed");
 
         match got_err {
-            LoadError::IO(e) => assert!(
+            LoadError::IO(e, _) => assert!(
                 e.kind() == std::io::ErrorKind::NotFound,
                 "should cause NotFound IO error: got {:?}",
                 e
