@@ -177,9 +177,17 @@ impl FileSystem for ProdFileSystem {
     }
 
     fn glob(&self, pattern: &str) -> Result<Vec<PathBuf>, LoadError> {
-        let paths: Vec<PathBuf> =
-            glob::glob(pattern)?.collect::<Result<Vec<_>, glob::GlobError>>()?;
+        let paths: Vec<PathBuf> = glob::glob_with(pattern, glob_match_options())?
+            .collect::<Result<Vec<_>, glob::GlobError>>()?;
         Ok(paths)
+    }
+}
+
+const fn glob_match_options() -> glob::MatchOptions {
+    glob::MatchOptions {
+        case_sensitive: true,
+        require_literal_separator: true,
+        require_literal_leading_dot: true,
     }
 }
 
@@ -232,7 +240,7 @@ impl FileSystem for FakeFileSystem {
         let mut paths: Vec<PathBuf> = self
             .0
             .keys()
-            .filter(|x| pattern.matches_path(x))
+            .filter(|x| pattern.matches_path_with(x, glob_match_options()))
             .cloned()
             .collect();
         paths.sort_by(|x, y| y.cmp(x));
@@ -375,15 +383,17 @@ mod tests {
                 include child1.ledger
             "}.as_bytes().to_vec(),
             PathBuf::from("/path/to/child1.ledger") => indoc! {"
-                include sub/child2.ledger
+                include sub/*.ledger
             "}.as_bytes().to_vec(),
-            PathBuf::from("/path/to/sub/child2.ledger") => indoc! {"
-                include child3.ledger
-            "}.as_bytes().to_vec(),
+            PathBuf::from("/path/to/sub/child2.ledger") => "".as_bytes().to_vec(),
             PathBuf::from("/path/to/sub/child3.ledger") => indoc! {"
                 ; comment here
             "}.as_bytes().to_vec(),
+            PathBuf::from("/path/to/sub/.unloaded.ledger") => indoc! {"
+                completely invalid file, should not be loaded
+            "}.as_bytes().to_vec(),
         };
+
         let want = parse_static_ledger_entry(&[(
             Path::new("/path/to/sub/child3.ledger"),
             indoc! {"
@@ -391,6 +401,7 @@ mod tests {
             "},
         )])
         .expect("test input parse must not fail");
+
         let got = parse_into_vec(Loader::new(
             PathBuf::from("/path/to/root.ledger"),
             FakeFileSystem::from(fake),
