@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1741025114223,
+  "lastUpdate": 1741248512216,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Criterion.rs Benchmark": [
@@ -1115,6 +1115,84 @@ window.BENCHMARK_DATA = {
             "name": "query-balance-conversion-historical",
             "value": 46328040,
             "range": "± 303267",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "bc37f3b4c86656b01584a0cfbf9ce0adc54bddc0",
+          "message": "Avoid including files starting with dot on glob.\n\nUnless the include glob pattern as explicit dot,\nwe won't read it.\nThis helps when Emacs create temprary files.",
+          "timestamp": "2025-03-06T09:05:48+01:00",
+          "tree_id": "5aaeb0e72bea2f5a9e26c2a0420c6d949fc85294",
+          "url": "https://github.com/xkikeg/okane/commit/bc37f3b4c86656b01584a0cfbf9ce0adc54bddc0"
+        },
+        "date": 1741248511868,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse plain",
+            "value": 26,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse comma",
+            "value": 27,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load-with-counter",
+            "value": 139928315,
+            "range": "± 1518750",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process",
+            "value": 214023467,
+            "range": "± 938030",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-posting-one-account",
+            "value": 3206785,
+            "range": "± 69088",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-default",
+            "value": 15,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-conversion-date",
+            "value": 1600617,
+            "range": "± 25473",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-conversion-up-to-date",
+            "value": 9679,
+            "range": "± 67",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-balance-conversion-historical",
+            "value": 46503022,
+            "range": "± 273976",
             "unit": "ns/iter"
           }
         ]
