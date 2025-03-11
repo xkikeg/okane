@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    fmt::Display,
     fs::{self, File},
     io::{self, BufWriter, Write},
     path::{Path, PathBuf},
@@ -15,6 +16,7 @@ pub struct ExampleInput<T: FileSink> {
     rootfile: PathBuf,
     cleanup: bool,
     sink: T,
+    params: InputParams,
 }
 
 impl<T: FileSink> Drop for ExampleInput<T> {
@@ -22,7 +24,7 @@ impl<T: FileSink> Drop for ExampleInput<T> {
         if self.cleanup {
             self.sink.cleanup(&self.rootdir);
         } else {
-            log::info!("{} is not set, leave the test data as-is", CLEANUP_KEY);
+            log::debug!("{} is not set, leave the test data as-is", CLEANUP_KEY);
         }
     }
 }
@@ -39,19 +41,67 @@ pub enum ExampleInputError {
 const CLEANUP_KEY: &str = "OKANE_BENCH_CLEANUP";
 
 const YEAR_BEGIN: i32 = 2015;
-const YEAR_END: i32 = 2025;
-const NUM_SUB_FILES: usize = 16;
 const NUM_THREADS: usize = 2;
-const NUM_TRANSACTIONS_PER_FILE: usize = 500;
 
-pub fn num_transactions() -> u64 {
-    ((YEAR_END - YEAR_BEGIN) as u64) * (NUM_SUB_FILES as u64) * (NUM_TRANSACTIONS_PER_FILE as u64)
+#[derive(Debug, Clone, Copy)]
+pub struct InputParams {
+    pub num_years: i32,
+    pub num_sub_files: usize,
+    pub num_transactions_per_file: usize,
+    pub sample_size: Option<usize>,
 }
 
-pub fn new_example<T: FileSink + Send>(
-    subdir: &Path,
-) -> Result<ExampleInput<T>, ExampleInputError> {
-    ExampleInput::<T>::new(subdir)
+impl Display for InputParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "num_years={},num_sub_files={},num_transactions_per_file={}",
+            self.num_years, self.num_sub_files, self.num_transactions_per_file
+        )
+    }
+}
+
+impl InputParams {
+    pub fn all() -> impl Iterator<Item = Self> {
+        [Self::small(), Self::middle(), Self::large()].into_iter()
+    }
+
+    pub fn small() -> Self {
+        Self {
+            num_years: 5,
+            num_sub_files: 10,
+            num_transactions_per_file: 200,
+            sample_size: None,
+        }
+    }
+
+    pub fn middle() -> Self {
+        Self {
+            num_years: 10,
+            num_sub_files: 16,
+            num_transactions_per_file: 500,
+            sample_size: None,
+        }
+    }
+
+    pub fn large() -> Self {
+        Self {
+            num_years: 30,
+            num_sub_files: 30,
+            num_transactions_per_file: 800,
+            sample_size: Some(20),
+        }
+    }
+
+    pub fn num_transactions(&self) -> u64 {
+        (self.num_years as u64)
+            * (self.num_sub_files as u64)
+            * (self.num_transactions_per_file as u64)
+    }
+
+    fn years(&self) -> impl Iterator<Item = Year> {
+        (YEAR_BEGIN..YEAR_BEGIN + self.num_years).map(Year)
+    }
 }
 
 impl<T: FileSink + Send> ExampleInput<T> {
@@ -60,7 +110,7 @@ impl<T: FileSink + Send> ExampleInput<T> {
     /// If `OKANE_BENCH_CLEANUP` is set,
     /// * Always recreate the input.
     /// * Clean up the created input.
-    pub fn new(subdir: &Path) -> Result<Self, ExampleInputError> {
+    pub fn new(subdir: &Path, params: InputParams) -> Result<Self, ExampleInputError> {
         let cleanup = !std::env::var(CLEANUP_KEY)
             .unwrap_or_else(|err| match err {
                 std::env::VarError::NotPresent => "".to_string(),
@@ -79,43 +129,34 @@ impl<T: FileSink + Send> ExampleInput<T> {
                 rootfile,
                 cleanup,
                 sink: T::new(),
+                params,
             });
         }
         let before_input = std::time::Instant::now();
-        fs::remove_dir_all(&rootdir).or_else(|e| match e.kind() {
-            io::ErrorKind::NotFound => Ok(()),
-            _ => Err(e),
-        })?;
-        fs::create_dir_all(&rootdir)?;
-        // Assuming you have 50 accounts & 100 years of records.
+        T::initialize(&rootdir)?;
         let mut tasks = Vec::new();
         let (tx, rx) = mpsc::channel();
         for i1 in 0..NUM_THREADS {
             let thread_tx = tx.clone();
             let rootdir = rootdir.clone();
             tasks.push(std::thread::spawn(move || {
-                let mut years = Vec::with_capacity((YEAR_END - YEAR_BEGIN) as usize);
-                for j in YEAR_BEGIN..YEAR_END {
-                    let year = Year(j);
-                    years.push(year);
-                }
-                let years = years.as_slice();
                 let ret = || -> Result<T, io::Error> {
                     let mut sink = T::new();
-                    for i2 in 0..NUM_SUB_FILES / NUM_THREADS {
-                        let i = i1 * NUM_SUB_FILES / NUM_THREADS + i2;
+                    for i2 in 0..params.num_sub_files / NUM_THREADS {
+                        let i = i1 * params.num_sub_files / NUM_THREADS + i2;
                         let dirname = dir_name(i);
                         let subdirpath = rootdir.join(&dirname);
-                        fs::create_dir(&subdirpath)?;
-                        for year in years {
+                        T::create_subdir(&subdirpath)?;
+                        for year in params.years() {
                             prepare_leaf_file(
                                 &mut sink,
-                                &subdirpath.join(leaf_file(*year)),
+                                &subdirpath.join(leaf_file(year)),
+                                &params,
                                 i,
-                                *year,
+                                year,
                             )?;
                         }
-                        prepare_middle_file(&mut sink, &rootdir, &dirname, years)?;
+                        prepare_middle_file(&mut sink, &rootdir, &dirname, &params)?;
                     }
                     Ok(sink)
                 }();
@@ -129,18 +170,19 @@ impl<T: FileSink + Send> ExampleInput<T> {
                 .expect("Can't wait 150 seconds deadline on the recv task")?;
             sink.merge(another);
         }
-        prepare_root_file(&mut sink, &rootfile, 0..NUM_SUB_FILES)?;
+        prepare_root_file(&mut sink, &rootfile, 0..params.num_sub_files)?;
         for jh in tasks.into_iter() {
             jh.join().expect("thread join must not fail");
         }
         let after_input = std::time::Instant::now();
         let duration = after_input - before_input;
-        log::info!("input creation took {:.3} seconds", duration.as_secs_f64());
+        log::debug!("input creation took {:.3} seconds", duration.as_secs_f64());
         Ok(ExampleInput {
             rootdir,
             rootfile,
             cleanup,
             sink,
+            params,
         })
     }
 
@@ -151,18 +193,29 @@ impl<T: FileSink + Send> ExampleInput<T> {
     pub fn new_loader(&self) -> load::Loader<T::FileSystem> {
         load::Loader::new(self.rootfile.clone(), self.sink.clone_as_filesystem())
     }
+
+    pub fn num_transactions(&self) -> u64 {
+        self.params.num_transactions()
+    }
 }
 
 pub trait FileSink: Send + Sized + 'static {
     type FileSystem: load::FileSystem;
 
-    fn new_example(subdir: &Path) -> Result<ExampleInput<Self>, ExampleInputError> {
-        ExampleInput::<Self>::new(subdir)
+    fn new_example(
+        subdir: &Path,
+        params: InputParams,
+    ) -> Result<ExampleInput<Self>, ExampleInputError> {
+        ExampleInput::<Self>::new(subdir, params)
     }
 
     fn new() -> Self;
 
     fn clone_as_filesystem(&self) -> Self::FileSystem;
+
+    fn initialize(rootdir: &Path) -> Result<(), std::io::Error>;
+
+    fn create_subdir(subdir: &Path) -> Result<(), std::io::Error>;
 
     fn shortcut(rootfile: &Path) -> bool;
 
@@ -203,6 +256,18 @@ impl FileSink for RealFileSink {
             }
             Ok(_) => true,
         }
+    }
+
+    fn initialize(rootdir: &Path) -> Result<(), std::io::Error> {
+        fs::remove_dir_all(&rootdir).or_else(|e| match e.kind() {
+            io::ErrorKind::NotFound => Ok(()),
+            _ => Err(e),
+        })?;
+        fs::create_dir_all(&rootdir)
+    }
+
+    fn create_subdir(subdir: &Path) -> Result<(), std::io::Error> {
+        fs::create_dir(subdir)
     }
 
     fn merge(&mut self, _other: Self) {}
@@ -246,6 +311,14 @@ impl FileSink for FakeFileSink {
         false
     }
 
+    fn initialize(_rootdir: &Path) -> Result<(), std::io::Error> {
+        Ok(())
+    }
+
+    fn create_subdir(_subdir: &Path) -> Result<(), std::io::Error> {
+        Ok(())
+    }
+
     fn merge(&mut self, other: Self) {
         for (k, v) in other.files {
             self.files.insert(k, v);
@@ -278,13 +351,13 @@ fn prepare_middle_file<T: FileSink>(
     sink: &mut T,
     rootdir: &Path,
     dirname: &str,
-    years: &[Year],
+    params: &InputParams,
 ) -> Result<(), std::io::Error> {
     let mut target = PathBuf::from(rootdir);
     target.push(format!("{}.ledger", dirname));
     let mut w = sink.writer(&target)?;
-    for year in years {
-        let leaf = leaf_file(*year);
+    for year in params.years() {
+        let leaf = leaf_file(year);
         writeln!(w, "include {dirname}/{leaf}")?;
     }
     Ok(())
@@ -300,12 +373,13 @@ fn payee(dir: usize, year: Year, i: usize) -> String {
 fn prepare_leaf_file<T: FileSink>(
     sink: &mut T,
     target: &Path,
+    params: &InputParams,
     dir: usize,
     year: Year,
 ) -> Result<(), std::io::Error> {
     let mut w = sink.writer(&target)?;
-    for i in 0..NUM_TRANSACTIONS_PER_FILE {
-        let ordinal = (i * 365 / NUM_TRANSACTIONS_PER_FILE + 1) as u32;
+    for i in 0..params.num_transactions_per_file {
+        let ordinal = (i * 365 / params.num_transactions_per_file + 1) as u32;
         let date = NaiveDate::from_yo_opt(year.0, ordinal)
             .expect("must be a valid date")
             .format("%Y/%m/%d");

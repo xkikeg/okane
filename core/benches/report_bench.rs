@@ -2,7 +2,11 @@ use std::path::Path;
 
 use bumpalo::Bump;
 use chrono::NaiveDate;
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::measurement::Measurement as _;
+use criterion::{
+    black_box, criterion_group, criterion_main, measurement::WallTime, BatchSize, BenchmarkId,
+    Criterion,
+};
 use log::LevelFilter;
 use okane_core::{
     load::LoadError,
@@ -10,67 +14,101 @@ use okane_core::{
     syntax,
 };
 use pretty_assertions::assert_eq;
-use testing::{ExampleInput, FakeFileSink, FileSink, RealFileSink};
+use testing::{ExampleInput, FakeFileSink, FileSink, InputParams, RealFileSink};
 
 pub mod testing;
 
 fn load_benchmark(c: &mut Criterion) {
-    let input = FakeFileSink::new_example(Path::new("report_bench")).unwrap();
+    let mut group = c.benchmark_group("load");
+    group.warm_up_time(std::time::Duration::from_secs(7));
+
+    let params = InputParams::middle();
+    let input = RealFileSink::new_example(Path::new("report_bench"), params).unwrap();
 
     basic_asserts(&input);
 
-    c.bench_function("load-on-memory", |b| {
-        b.iter(|| {
-            let mut count = 0;
-            input
-                .new_loader()
-                .load(|_, _, _: &syntax::tracked::LedgerEntry| {
-                    count += 1;
-                    Ok::<(), LoadError>(())
-                })
-                .unwrap();
-            black_box(());
-            black_box(count)
-        })
-    });
+    group.bench_with_input(
+        BenchmarkId::new("on-file", params),
+        &params,
+        |b, _params| {
+            b.iter(|| {
+                let mut count = 0;
+                input
+                    .new_loader()
+                    .load(|_, _, _: &syntax::tracked::LedgerEntry| {
+                        count += 1;
+                        Ok::<(), LoadError>(())
+                    })
+                    .unwrap();
+                black_box(count)
+            })
+        },
+    );
 
-    let input = RealFileSink::new_example(Path::new("report_bench")).unwrap();
+    for params in InputParams::all() {
+        if let Some(samples) = params.sample_size {
+            group.sample_size(samples);
+        }
+        group.bench_with_input(
+            BenchmarkId::new("on-memory", params),
+            &params,
+            |b, params| {
+                let input = FakeFileSink::new_example(Path::new("report_bench"), *params).unwrap();
 
-    basic_asserts(&input);
+                basic_asserts(&input);
 
-    c.bench_function("load-on-file", |b| {
-        b.iter(|| {
-            let mut count = 0;
-            input
-                .new_loader()
-                .load(|_, _, _: &syntax::tracked::LedgerEntry| {
-                    count += 1;
-                    Ok::<(), LoadError>(())
-                })
-                .unwrap();
-            black_box(());
-            black_box(count)
-        })
-    });
+                b.iter_batched(
+                    || input.new_loader(),
+                    |loader| {
+                        let mut count = 0;
+                        loader
+                            .load(|_, _, _: &syntax::tracked::LedgerEntry| {
+                                count += 1;
+                                Ok::<(), LoadError>(())
+                            })
+                            .unwrap();
+                        black_box(count)
+                    },
+                    BatchSize::LargeInput,
+                );
+            },
+        );
+    }
+    group.finish();
 }
 
 fn report_process_benchmark(c: &mut Criterion) {
-    let input = FakeFileSink::new_example(Path::new("report_bench")).unwrap();
-    let opts = report::ProcessOptions::default();
+    let mut group = c.benchmark_group("process");
+    group.warm_up_time(std::time::Duration::from_secs(7));
+    for params in InputParams::all() {
+        if let Some(samples) = params.sample_size {
+            group.sample_size(samples);
+        }
+        group.bench_with_input(BenchmarkId::from_parameter(params), &params, |b, params| {
+            let input = FakeFileSink::new_example(Path::new("report_bench"), *params).unwrap();
+            let opts = report::ProcessOptions::default();
 
-    c.bench_function("process", |b| {
-        b.iter(|| {
-            let arena = Bump::new();
-            let mut ctx = report::ReportContext::new(&arena);
-            let ret = report::process(&mut ctx, input.new_loader(), &opts)
-                .expect("report::process must succeed");
-            black_box(ret);
-        })
-    });
+            b.iter_custom(|iters| {
+                let walltime = WallTime;
+                let mut total = walltime.zero();
+                for _i in 0..iters {
+                    let arena = Bump::new();
+                    let loader = input.new_loader();
+                    let mut ctx = report::ReportContext::new(&arena);
+                    let start = walltime.start();
+                    report::process(&mut ctx, loader, &opts).expect("report::process must succeed");
+                    total = walltime.add(&total, &walltime.end(start));
+                }
+                total
+            });
+        });
+    }
+    group.finish();
 }
 
 fn query_postings(c: &mut Criterion) {
-    let input = FakeFileSink::new_example(Path::new("report_bench")).unwrap();
+    let input =
+        FakeFileSink::new_example(Path::new("report_bench"), InputParams::middle()).unwrap();
     let arena = Bump::new();
     let mut ctx = report::ReportContext::new(&arena);
     let opts = report::ProcessOptions::default();
@@ -78,7 +116,7 @@ fn query_postings(c: &mut Criterion) {
         report::process(&mut ctx, input.new_loader(), &opts).expect("report::process must succeed");
 
     c.bench_function("query-posting-one-account", |b| {
-        b.iter(|| {
+        b.iter_with_large_drop(|| {
             let query = report::query::PostingQuery {
                 account: Some("Assets:Account02".to_string()),
             };
@@ -87,7 +125,8 @@ fn query_postings(c: &mut Criterion) {
     });
 }
 fn query_balance(c: &mut Criterion) {
-    let input = FakeFileSink::new_example(Path::new("report_bench")).unwrap();
+    let input =
+        FakeFileSink::new_example(Path::new("report_bench"), InputParams::middle()).unwrap();
     let arena = Bump::new();
     let mut ctx = report::ReportContext::new(&arena);
     let opts = report::ProcessOptions::default();
@@ -158,7 +197,7 @@ fn basic_asserts<T: FileSink>(input: &ExampleInput<T>) {
         report::process(&mut ctx, input.new_loader(), &opts).expect("report::process must succeed");
     let num_txns = ledger.transactions().count();
 
-    assert_eq!(testing::num_transactions(), num_txns as u64);
+    assert_eq!(input.num_transactions(), num_txns as u64);
 }
 
 #[ctor::ctor]
