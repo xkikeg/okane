@@ -125,68 +125,88 @@ fn query_postings(c: &mut Criterion) {
     });
 }
 fn query_balance(c: &mut Criterion) {
-    let input =
-        FakeFileSink::new_example(Path::new("report_bench"), InputParams::middle()).unwrap();
-    let arena = Bump::new();
-    let mut ctx = report::ReportContext::new(&arena);
-    let opts = report::ProcessOptions::default();
-    let mut ledger =
-        report::process(&mut ctx, input.new_loader(), &opts).expect("report::process must succeed");
+    let mut group = c.benchmark_group("query::balance");
 
-    c.bench_function("query-balance-default", |b| {
-        b.iter(|| {
-            black_box(
-                ledger
-                    .balance(&ctx, &report::query::BalanceQuery::default())
-                    .unwrap(),
-            );
-        })
-    });
+    for params in InputParams::all() {
+        let input = FakeFileSink::new_example(Path::new("report_bench"), params).unwrap();
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let opts = report::ProcessOptions::default();
+        let mut ledger = report::process(&mut ctx, input.new_loader(), &opts)
+            .expect("report::process must succeed");
 
-    let query = report::query::BalanceQuery {
-        date_range: report::query::DateRange {
-            start: Some(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
-            end: Some(NaiveDate::from_ymd_opt(2025, 1, 1).unwrap()),
-        },
-        conversion: None,
-    };
-    c.bench_function("query-balance-conversion-date", |b| {
-        b.iter(|| {
-            black_box(ledger.balance(&ctx, &query).unwrap());
-        })
-    });
-
-    let usd = ctx.commodity("USD").unwrap();
-
-    let query = report::query::BalanceQuery {
-        date_range: report::query::DateRange::default(),
-        conversion: Some(report::query::Conversion {
-            strategy: report::query::ConversionStrategy::UpToDate {
-                now: NaiveDate::from_ymd_opt(2025, 12, 31).unwrap(),
+        group.bench_with_input(
+            BenchmarkId::new("default", &params),
+            &params,
+            |b, _params| {
+                b.iter_with_large_drop(|| {
+                    black_box(
+                        ledger
+                            .balance(&ctx, &report::query::BalanceQuery::default())
+                            .unwrap(),
+                    );
+                })
             },
-            target: usd,
-        }),
-    };
-    c.bench_function("query-balance-conversion-up-to-date", |b| {
-        b.iter(|| {
-            black_box(ledger.balance(&ctx, &query).unwrap());
-        })
-    });
+        );
 
-    let chf = ctx.commodity("CHF").unwrap();
+        let query = report::query::BalanceQuery {
+            date_range: report::query::DateRange {
+                start: Some(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+                end: Some(NaiveDate::from_ymd_opt(2025, 1, 1).unwrap()),
+            },
+            conversion: None,
+        };
+        group.bench_with_input(
+            BenchmarkId::new("date-range", &params),
+            &params,
+            |b, _params| {
+                b.iter_with_large_drop(|| {
+                    black_box(ledger.balance(&ctx, &query).unwrap());
+                })
+            },
+        );
 
-    let query = report::query::BalanceQuery {
-        date_range: report::query::DateRange::default(),
-        conversion: Some(report::query::Conversion {
-            strategy: report::query::ConversionStrategy::Historical,
-            target: chf,
-        }),
-    };
-    c.bench_function("query-balance-conversion-historical", |b| {
-        b.iter(|| {
-            black_box(ledger.balance(&ctx, &query).unwrap());
-        })
-    });
+        let usd = ctx.commodity("USD").unwrap();
+
+        let query = report::query::BalanceQuery {
+            date_range: report::query::DateRange::default(),
+            conversion: Some(report::query::Conversion {
+                strategy: report::query::ConversionStrategy::UpToDate {
+                    now: NaiveDate::from_ymd_opt(2025, 12, 31).unwrap(),
+                },
+                target: usd,
+            }),
+        };
+        group.bench_with_input(
+            BenchmarkId::new("conversion-up-to-date", &params),
+            &params,
+            |b, _params| {
+                b.iter_with_large_drop(|| {
+                    black_box(ledger.balance(&ctx, &query).unwrap());
+                })
+            },
+        );
+
+        let chf = ctx.commodity("CHF").unwrap();
+
+        let query = report::query::BalanceQuery {
+            date_range: report::query::DateRange::default(),
+            conversion: Some(report::query::Conversion {
+                strategy: report::query::ConversionStrategy::Historical,
+                target: chf,
+            }),
+        };
+        group.bench_with_input(
+            BenchmarkId::new("conversion-historical", &params),
+            &params,
+            |b, _params| {
+                b.iter_with_large_drop(|| {
+                    black_box(ledger.balance(&ctx, &query).unwrap());
+                })
+            },
+        );
+    }
+    group.finish();
 }
 
 fn basic_asserts<T: FileSink>(input: &ExampleInput<T>) {
