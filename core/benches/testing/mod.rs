@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::HashMap,
     fmt::Display,
     fs::{self, File},
@@ -8,7 +9,8 @@ use std::{
 };
 
 use chrono::NaiveDate;
-use okane_core::load;
+use okane_core::{load, syntax::pretty_decimal::PrettyDecimal};
+use rust_decimal_macros::dec;
 
 /// Metadata containing the reference to the generated input.
 pub struct ExampleInput<T: FileSink> {
@@ -39,57 +41,92 @@ pub enum ExampleInputError {
 }
 
 const CLEANUP_KEY: &str = "OKANE_BENCH_CLEANUP";
+const BENCH_TARGET_KEY: &str = "OKANE_BENCH_TARGET";
 
 const YEAR_BEGIN: i32 = 2015;
 const NUM_THREADS: usize = 2;
 
 #[derive(Debug, Clone, Copy)]
 pub struct InputParams {
+    pub name: &'static str,
     pub num_years: i32,
     pub num_sub_files: usize,
     pub num_transactions_per_file: usize,
     pub sample_size: Option<usize>,
+    pub more_commodity: bool,
 }
 
 impl Display for InputParams {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "num_years={},num_sub_files={},num_transactions_per_file={}",
-            self.num_years, self.num_sub_files, self.num_transactions_per_file
-        )
+        write!(f, "{0}", self.name)
     }
 }
 
 impl InputParams {
-    pub fn all() -> impl Iterator<Item = Self> {
-        [Self::small(), Self::middle(), Self::large()].into_iter()
+    pub fn params_from_env() -> impl Iterator<Item = Self> {
+        let mut target = std::env::var(BENCH_TARGET_KEY).unwrap_or_default();
+        if target == "" {
+            target = Self::middle_more_commodity().name.to_string();
+        }
+        [
+            Self::small(),
+            Self::middle(),
+            Self::middle_more_commodity(),
+            Self::large(),
+        ]
+        .into_iter()
+        .scan(false, move |done, item| {
+            if *done {
+                return None;
+            }
+            if item.name == &target {
+                *done = true;
+            }
+            Some(item)
+        })
     }
 
     pub fn small() -> Self {
         Self {
+            name: "small_5y10a200t",
             num_years: 5,
             num_sub_files: 10,
             num_transactions_per_file: 200,
             sample_size: None,
+            more_commodity: false,
         }
     }
 
     pub fn middle() -> Self {
         Self {
+            name: "middle_10y16a500t",
             num_years: 10,
             num_sub_files: 16,
             num_transactions_per_file: 500,
             sample_size: None,
+            more_commodity: false,
+        }
+    }
+
+    pub fn middle_more_commodity() -> Self {
+        Self {
+            name: "middle_more_commodity_10y16a500t",
+            num_years: 10,
+            num_sub_files: 16,
+            num_transactions_per_file: 500,
+            sample_size: None,
+            more_commodity: true,
         }
     }
 
     pub fn large() -> Self {
         Self {
-            num_years: 30,
+            name: "large_20y30a800t",
+            num_years: 20,
             num_sub_files: 30,
             num_transactions_per_file: 800,
             sample_size: Some(20),
+            more_commodity: false,
         }
     }
 
@@ -370,6 +407,14 @@ fn payee(dir: usize, year: Year, i: usize) -> String {
     )
 }
 
+struct Amount<'a>(PrettyDecimal, Cow<'a, str>);
+
+impl<'a> Display for Amount<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{0} {1}", self.0, self.1)
+    }
+}
+
 fn prepare_leaf_file<T: FileSink>(
     sink: &mut T,
     target: &Path,
@@ -385,22 +430,54 @@ fn prepare_leaf_file<T: FileSink>(
             .format("%Y/%m/%d");
         let payee = payee(dir, year, i);
         let pseudo = ((dir as i32) * 31 + year.0 * 17 + (i as i32) * 7) % 13;
-        let (other_account, other_amount, amount) = match pseudo {
-            0..=10 => (
-                format!("Expenses:Type{}", pseudo),
-                "1,234 JPY",
-                "-1,234 JPY",
+        let (other_account, other_amount, amount): (Cow<str>, _, _) = match pseudo {
+            0..=10 => {
+                if pseudo >= 9 && params.more_commodity {
+                    let pseudo2 = ((dir as i32) * 31 + year.0 * 17 + (i as i32) * 7) % 26;
+                    let pseudo3 = ((dir as i32) * 31 + year.0 * 17 + (i as i32) * 7) / 26 % 26;
+                    let commodity = format!(
+                        "COMMODITY_{}{}",
+                        nth_alphabet(pseudo2),
+                        nth_alphabet(pseudo3)
+                    );
+                    (
+                        format!("Expenses:Type{}", pseudo).into(),
+                        Amount(PrettyDecimal::comma3dot(dec!(100)), commodity.into()),
+                        Amount(PrettyDecimal::comma3dot(dec!(-3000)), "JPY".into()),
+                    )
+                } else {
+                    (
+                        format!("Expenses:Type{}", pseudo).into(),
+                        Amount(PrettyDecimal::comma3dot(dec!(1234)), "JPY".into()),
+                        Amount(PrettyDecimal::comma3dot(dec!(-1234)), "JPY".into()),
+                    )
+                }
+            }
+            11 => (
+                "Income:Salary".into(),
+                Amount(
+                    PrettyDecimal::comma3dot(dec!(-3000.00)),
+                    Cow::Borrowed("USD"),
+                ),
+                Amount(PrettyDecimal::comma3dot(dec!(400000)), "JPY".into()),
             ),
-            11 => ("Income:Salary".to_owned(), "-3,000.00 USD", "400,000 JPY"),
-            12 => ("Assets:Account99".to_owned(), "100.00 CHF", "-14,000 JPY"),
+            12 => (
+                "Assets:Account99".into(),
+                Amount(PrettyDecimal::comma3dot(dec!(100.00)), "CHF".into()),
+                Amount(PrettyDecimal::comma3dot(dec!(-14000)), "JPY".into()),
+            ),
             _ => unreachable!("this can't happen"),
         };
-        write!(
-            w,
-            "{date} {payee}\n  Assets:Account{dir:02}  {amount}\n  {other_account}  {other_amount}\n\n",
-        )?;
+        writeln!(w, "{date} {payee}",)?;
+        writeln!(w, "  Assets:Account{dir:02}  {amount}",)?;
+        writeln!(w, "  {other_account}  {other_amount}",)?;
+        writeln!(w, "")?;
     }
     Ok(())
+}
+
+fn nth_alphabet(i: i32) -> char {
+    char::from_u32('a' as u32 + i as u32 % 26).unwrap()
 }
 
 fn dir_name(i: usize) -> String {

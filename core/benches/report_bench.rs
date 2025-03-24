@@ -45,7 +45,7 @@ fn load_benchmark(c: &mut Criterion) {
         },
     );
 
-    for params in InputParams::all() {
+    for params in InputParams::params_from_env() {
         if let Some(samples) = params.sample_size {
             group.sample_size(samples);
         }
@@ -80,7 +80,7 @@ fn load_benchmark(c: &mut Criterion) {
 fn report_process_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("process");
     group.warm_up_time(std::time::Duration::from_secs(7));
-    for params in InputParams::all() {
+    for params in InputParams::params_from_env() {
         if let Some(samples) = params.sample_size {
             group.sample_size(samples);
         }
@@ -127,7 +127,7 @@ fn query_postings(c: &mut Criterion) {
 fn query_balance(c: &mut Criterion) {
     let mut group = c.benchmark_group("query::balance");
 
-    for params in InputParams::all() {
+    for params in InputParams::params_from_env() {
         let input = FakeFileSink::new_example(Path::new("report_bench"), params).unwrap();
         let arena = Bump::new();
         let mut ctx = report::ReportContext::new(&arena);
