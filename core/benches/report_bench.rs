@@ -148,6 +148,15 @@ fn query_balance(c: &mut Criterion) {
                 })
             },
         );
+    }
+
+    for params in InputParams::params_from_env() {
+        let input = FakeFileSink::new_example(Path::new("report_bench"), params).unwrap();
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let opts = report::ProcessOptions::default();
+        let mut ledger = report::process(&mut ctx, input.new_loader(), &opts)
+            .expect("report::process must succeed");
 
         let query = report::query::BalanceQuery {
             date_range: report::query::DateRange {
@@ -165,6 +174,15 @@ fn query_balance(c: &mut Criterion) {
                 })
             },
         );
+    }
+
+    for params in InputParams::params_from_env() {
+        let input = FakeFileSink::new_example(Path::new("report_bench"), params).unwrap();
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let opts = report::ProcessOptions::default();
+        let mut ledger = report::process(&mut ctx, input.new_loader(), &opts)
+            .expect("report::process must succeed");
 
         let usd = ctx.commodity("USD").unwrap();
 
@@ -186,7 +204,15 @@ fn query_balance(c: &mut Criterion) {
                 })
             },
         );
+    }
 
+    for params in InputParams::params_from_env() {
+        let input = FakeFileSink::new_example(Path::new("report_bench"), params).unwrap();
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let opts = report::ProcessOptions::default();
+        let mut ledger = report::process(&mut ctx, input.new_loader(), &opts)
+            .expect("report::process must succeed");
         let chf = ctx.commodity("CHF").unwrap();
 
         let query = report::query::BalanceQuery {
