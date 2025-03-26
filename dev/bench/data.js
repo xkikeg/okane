@@ -38,13 +38,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 141729613,
             "range": "± 1458794",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 213849868,
             "range": "± 973641",
             "unit": "ns/iter"
@@ -56,7 +56,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 2,
             "range": "± 0",
             "unit": "ns/iter"
@@ -98,13 +98,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 141047079,
             "range": "± 2884112",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 206940667,
             "range": "± 2191703",
             "unit": "ns/iter"
@@ -116,7 +116,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 2,
             "range": "± 0",
             "unit": "ns/iter"
@@ -158,13 +158,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 142335552,
             "range": "± 678354",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 210736576,
             "range": "± 2930614",
             "unit": "ns/iter"
@@ -176,7 +176,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 2,
             "range": "± 0",
             "unit": "ns/iter"
@@ -218,13 +218,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 139808326,
             "range": "± 4190115",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 210447815,
             "range": "± 1785316",
             "unit": "ns/iter"
@@ -236,7 +236,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 2,
             "range": "± 0",
             "unit": "ns/iter"
@@ -278,13 +278,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 141068684,
             "range": "± 5218111",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 213774508,
             "range": "± 1250643",
             "unit": "ns/iter"
@@ -296,7 +296,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 2,
             "range": "± 0",
             "unit": "ns/iter"
@@ -338,13 +338,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 141774567,
             "range": "± 4080176",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 211166695,
             "range": "± 1384006",
             "unit": "ns/iter"
@@ -356,7 +356,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 2,
             "range": "± 0",
             "unit": "ns/iter"
@@ -398,13 +398,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 134485789,
             "range": "± 1161262",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 205044499,
             "range": "± 3144818",
             "unit": "ns/iter"
@@ -416,7 +416,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 2,
             "range": "± 0",
             "unit": "ns/iter"
@@ -458,13 +458,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 134294454,
             "range": "± 1226347",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 205387522,
             "range": "± 1362404",
             "unit": "ns/iter"
@@ -476,7 +476,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 2,
             "range": "± 0",
             "unit": "ns/iter"
@@ -518,13 +518,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 129793058,
             "range": "± 651625",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 204562364,
             "range": "± 867186",
             "unit": "ns/iter"
@@ -536,7 +536,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 2,
             "range": "± 0",
             "unit": "ns/iter"
@@ -578,13 +578,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 145136185,
             "range": "± 1096647",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 216972522,
             "range": "± 1530856",
             "unit": "ns/iter"
@@ -596,7 +596,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 2,
             "range": "± 0",
             "unit": "ns/iter"
@@ -638,13 +638,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 144082568,
             "range": "± 1255281",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 215684022,
             "range": "± 1287360",
             "unit": "ns/iter"
@@ -656,7 +656,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 2,
             "range": "± 0",
             "unit": "ns/iter"
@@ -698,13 +698,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 144001622,
             "range": "± 1711031",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 215384251,
             "range": "± 3752542",
             "unit": "ns/iter"
@@ -716,7 +716,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 2,
             "range": "± 0",
             "unit": "ns/iter"
@@ -758,13 +758,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 146033021,
             "range": "± 1402766",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 221390755,
             "range": "± 1089287",
             "unit": "ns/iter"
@@ -776,7 +776,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 2,
             "range": "± 0",
             "unit": "ns/iter"
@@ -818,13 +818,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 137789843,
             "range": "± 1698106",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 212805821,
             "range": "± 1188877",
             "unit": "ns/iter"
@@ -836,7 +836,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 2,
             "range": "± 0",
             "unit": "ns/iter"
@@ -878,13 +878,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 140390537,
             "range": "± 1147722",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 215807347,
             "range": "± 590390",
             "unit": "ns/iter"
@@ -896,7 +896,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 2,
             "range": "± 0",
             "unit": "ns/iter"
@@ -938,13 +938,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 137862329,
             "range": "± 1538841",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 216857062,
             "range": "± 758752",
             "unit": "ns/iter"
@@ -956,7 +956,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 2,
             "range": "± 0",
             "unit": "ns/iter"
@@ -998,13 +998,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 146923396,
             "range": "± 2864420",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 220434568,
             "range": "± 3599391",
             "unit": "ns/iter"
@@ -1016,25 +1016,25 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 14,
             "range": "± 0",
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-conversion-date",
+            "name": "query::balance/date-range/small_5y10a200t",
             "value": 1619654,
             "range": "± 23436",
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-conversion-up-to-date",
+            "name": "query::balance/conversion-up-to-date/middle_10y16a500t",
             "value": 9768,
             "range": "± 86",
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-conversion-historical",
+            "name": "query::balance/conversion-historical/middle_10y16a500t",
             "value": 46370620,
             "range": "± 932701",
             "unit": "ns/iter"
@@ -1076,13 +1076,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 138474455,
             "range": "± 2806341",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 216152934,
             "range": "± 1250903",
             "unit": "ns/iter"
@@ -1094,25 +1094,25 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 14,
             "range": "± 0",
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-conversion-date",
+            "name": "query::balance/date-range/small_5y10a200t",
             "value": 1595366,
             "range": "± 42818",
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-conversion-up-to-date",
+            "name": "query::balance/conversion-up-to-date/middle_10y16a500t",
             "value": 9938,
             "range": "± 193",
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-conversion-historical",
+            "name": "query::balance/conversion-historical/middle_10y16a500t",
             "value": 46328040,
             "range": "± 303267",
             "unit": "ns/iter"
@@ -1154,13 +1154,13 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "load-with-counter",
+            "name": "load/on-file/middle_10y16a500t",
             "value": 139928315,
             "range": "± 1518750",
             "unit": "ns/iter"
           },
           {
-            "name": "process",
+            "name": "process/middle_10y16a500t",
             "value": 214023467,
             "range": "± 938030",
             "unit": "ns/iter"
@@ -1172,25 +1172,25 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-default",
+            "name": "query::balance/default/middle_10y16a500t",
             "value": 15,
             "range": "± 0",
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-conversion-date",
+            "name": "query::balance/date-range/small_5y10a200t",
             "value": 1600617,
             "range": "± 25473",
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-conversion-up-to-date",
+            "name": "query::balance/conversion-up-to-date/middle_10y16a500t",
             "value": 9679,
             "range": "± 67",
             "unit": "ns/iter"
           },
           {
-            "name": "query-balance-conversion-historical",
+            "name": "query::balance/conversion-historical/middle_10y16a500t",
             "value": 46503022,
             "range": "± 273976",
             "unit": "ns/iter"
