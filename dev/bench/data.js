@@ -1022,7 +1022,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query::balance/date-range/small_5y10a200t",
+            "name": "query::balance/date-range/middle_10y16a500t",
             "value": 1619654,
             "range": "± 23436",
             "unit": "ns/iter"
@@ -1100,7 +1100,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query::balance/date-range/small_5y10a200t",
+            "name": "query::balance/date-range/middle_10y16a500t",
             "value": 1595366,
             "range": "± 42818",
             "unit": "ns/iter"
@@ -1178,7 +1178,7 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query::balance/date-range/small_5y10a200t",
+            "name": "query::balance/date-range/middle_10y16a500t",
             "value": 1600617,
             "range": "± 25473",
             "unit": "ns/iter"
