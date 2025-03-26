@@ -454,7 +454,10 @@ fn check_balance<'ctx>(
     date: NaiveDate,
     balance: Amount<'ctx>,
 ) -> Result<(), BookKeepError> {
-    log::info!("balance: {}", balance.as_inline_display());
+    log::trace!(
+        "balance before rounding in txn: {}",
+        balance.as_inline_display()
+    );
     let balance = balance.round(ctx);
     if balance.is_zero() {
         return Ok(());
