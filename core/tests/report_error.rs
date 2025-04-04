@@ -9,8 +9,6 @@ use rstest::rstest;
 
 use okane_core::{load, report};
 
-pub mod testing;
-
 #[ctor::ctor]
 fn init() {
     env_logger::builder()
@@ -28,7 +26,7 @@ fn as_test_filepath(input: &Path) -> Result<PathBuf, std::io::Error> {
 }
 
 fn new_loader(input: PathBuf) -> Result<load::Loader<load::FakeFileSystem>, std::io::Error> {
-    let src = testing::read_as_utf8(&input)?;
+    let src = okane_golden::read_as_utf8(&input)?;
     let filepath = as_test_filepath(&input)?;
     let fs = hashmap! {
         filepath.clone() => src.into_bytes(),
@@ -51,7 +49,7 @@ fn report_error_string(
     );
     let arena = Bump::new();
     let mut ctx = report::ReportContext::new(&arena);
-    let golden = testing::Golden::new(golden).unwrap();
+    let golden = okane_golden::Golden::new(golden).unwrap();
 
     let got_err = report::process(
         &mut ctx,

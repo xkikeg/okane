@@ -24,6 +24,8 @@ unicode-width = "0.2"
 winnow.workspace = true
 
 [dev-dependencies]
+okane-golden = { version = "0.1.0", path = "../golden" }
+
 annotate-snippets = { version = "0.11", features = ["testing-colors"] }
 ctor.workspace = true
 env_logger.workspace = true

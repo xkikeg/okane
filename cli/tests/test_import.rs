@@ -24,7 +24,7 @@ fn test_import_with_lib(
         "failed to set extension .ledger to input {}",
         input.display()
     );
-    let golden = testing::Golden::new(golden_path.clone()).expect(&format!(
+    let golden = okane_golden::Golden::new(golden_path.clone()).expect(&format!(
         "cannot create golden on {}",
         golden_path.display()
     ));
@@ -56,7 +56,7 @@ fn test_import_with_cli(
         "failed to set extension .ledger to input {}",
         input.display()
     );
-    let want = testing::read_as_utf8(&golden_path).unwrap();
+    let want = okane_golden::read_as_utf8(&golden_path).unwrap();
 
     let result = assert_cmd::Command::new(&*testing::BIN_PATH)
         .args([
