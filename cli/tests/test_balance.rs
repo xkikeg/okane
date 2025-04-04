@@ -34,7 +34,7 @@ fn balance_default(
         input.display()
     );
     log::info!("golden_path: {}", golden_path.display());
-    let golden = testing::Golden::new(golden_path).unwrap();
+    let golden = okane_golden::Golden::new(golden_path).unwrap();
 
     let args = shlex::split(&format!("binary balance {}", input.display())).unwrap();
 
@@ -63,7 +63,7 @@ fn balance_in_jpy_up_to_date(
         input.display()
     );
     log::info!("golden_path: {}", golden_path.display());
-    let golden = testing::Golden::new(golden_path).unwrap();
+    let golden = okane_golden::Golden::new(golden_path).unwrap();
 
     let args = shlex::split(&format!("binary balance {} -X JPY", input.display())).unwrap();
 
@@ -92,7 +92,7 @@ fn balance_in_usd_historical(
         input.display()
     );
     log::info!("golden_path: {}", golden_path.display());
-    let golden = testing::Golden::new(golden_path).unwrap();
+    let golden = okane_golden::Golden::new(golden_path).unwrap();
 
     let args = shlex::split(&format!(
         "binary balance {} -X USD --historical",
