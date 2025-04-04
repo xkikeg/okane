@@ -1,7 +1,7 @@
 [package]
 name = "okane-golden"
 description = "simple library supporting Golden Testing"
-version = "0.1.0"
+version = "0.1.1"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,4 +14,4 @@ pretty_assertions.workspace = true
 [dev-dependencies]
 regex.workspace = true
 temp-env = "0.3.6"
-test-temp-dir = "0.3.3"
+tempfile = "3.19"

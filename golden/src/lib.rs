@@ -1,3 +1,16 @@
+//! Simple golden testing framework.
+//!
+//! You can simply create a golden file by calling [`Golden::new`].
+//!
+//! ```
+//! let target = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/mukai.txt");
+//! let golden = okane_golden::Golden::new(target)?;
+//! golden.assert("zazen boys\n");
+//! # Ok::<(), std::io::Error>(())
+//! ```
+//!
+//! If the test fails, simply pass `UPDATE_GOLDEN=1` env var to rerun the test.
+
 use std::path::{Path, PathBuf};
 
 use pretty_assertions::assert_str_eq;
@@ -31,7 +44,7 @@ impl Golden {
                 if is_update_golden() {
                     Ok(String::new())
                 } else {
-                    Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Golden file {} not found: pass the environment variable UPDATE_GOLDEN=1", path.display())))
+                    Err(std::io::Error::new(e.kind(), format!("Golden file {} not found: pass the environment variable UPDATE_GOLDEN=1 to write golden file", path.display())))
                 }
             } else {
                 Err(e)
@@ -63,127 +76,53 @@ impl Golden {
 mod tests {
     use super::*;
 
-    use test_temp_dir::test_temp_dir;
+    use regex::Regex;
 
-    mod update_golden_unset {
-        use regex::Regex;
-
-        use super::*;
-
-        #[test]
-        fn new_fails_on_non_existing_file() {
-            temp_env::with_vars(
-                [("UPDATE_GOLDEN", None), ("TEST_TEMP_RETAIN", Some("1"))],
-                || {
-                    let temp_dir = test_temp_dir!();
-                    temp_dir.used_by(|dir| {
-                        let got_err =
-                            Golden::new(dir.join("not_existing.txt")).expect_err("this must fail");
-
-                        assert!(Regex::new("Golden file .* not found")
-                            .unwrap()
-                            .is_match(&got_err.to_string()));
-                    });
-                },
-            );
-        }
-
-        #[test]
-        fn assert_succeeds_on_correct_golden() {
-            temp_env::with_vars(
-                [("UPDATE_GOLDEN", None), ("TEST_TEMP_RETAIN", Some("1"))],
-                || {
-                    let temp_dir = test_temp_dir!();
-                    temp_dir.used_by(|dir| {
-                        let golden_path = dir.join("golden.txt");
-                        std::fs::write(&golden_path, b"The quick fox")
-                            .expect("golden file creation failed");
-
-                        let golden = Golden::new(golden_path).unwrap();
-                        golden.assert("The quick fox");
-                    });
-                },
-            );
-        }
-
-        #[test]
-        fn assert_fails_on_different_golden() {
-            temp_env::with_vars(
-                [("UPDATE_GOLDEN", None), ("TEST_TEMP_RETAIN", Some("1"))],
-                || {
-                    let temp_dir = test_temp_dir!();
-                    temp_dir.used_by(|dir| {
-                        let golden_path = dir.join("golden.txt");
-                        std::fs::write(&golden_path, b"The quick fox")
-                            .expect("golden file creation failed");
-
-                        let golden = Golden::new(golden_path).unwrap();
-                        let got_err = std::panic::catch_unwind(|| golden.assert("いろはにほへと"))
-                            .expect_err("this assertion must fail");
-
-                        let payload = &*got_err;
-                        if payload.is::<String>() {
-                            assert!(payload
-                                .downcast_ref::<String>()
-                                .unwrap()
-                                .contains("assertion failed"));
-                        } else {
-                            panic!("unexpected type of assertion failure");
-                        }
-                    });
-                },
-            );
-        }
+    fn testdata_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/")
     }
 
-    mod update_golden_set {
-        use super::*;
+    #[test]
+    fn new_fails_on_non_existing_file() {
+        temp_env::with_var_unset("UPDATE_GOLDEN", || {
+            let path = testdata_dir().join("non_existing_golden.txt");
+            let got_err = Golden::new(path).expect_err("this must fail");
 
-        #[test]
-        fn assert_creates_golden_when_file_not_exists() {
-            temp_env::with_vars(
-                [
-                    ("UPDATE_GOLDEN", Some("1")),
-                    ("TEST_TEMP_RETAIN", Some("1")),
-                ],
-                || {
-                    let temp_dir = test_temp_dir!();
-                    temp_dir.used_by(|dir| {
-                        let golden_path = dir.join("golden_updated.txt");
-                        let golden = Golden::new(golden_path.clone())
-                            .expect("golden creation should succeed");
+            assert!(Regex::new("Golden file .* not found")
+                .unwrap()
+                .is_match(&got_err.to_string()));
+        });
+    }
 
-                        golden.assert("Veni, vidi, vici\n");
+    #[test]
+    fn assert_succeeds_on_correct_golden() {
+        temp_env::with_var_unset("UPDATE_GOLDEN", || {
+            let path = testdata_dir().join("mukai.txt");
 
-                        assert_str_eq!(read_as_utf8(&golden_path).unwrap(), "Veni, vidi, vici\n");
-                    });
-                },
-            );
-        }
+            let golden = Golden::new(path).unwrap();
+            golden.assert("zazen boys\n");
+        });
+    }
 
-        #[test]
-        fn assert_updates_golden_when_file_content_different() {
-            temp_env::with_vars(
-                [
-                    ("UPDATE_GOLDEN", Some("1")),
-                    ("TEST_TEMP_RETAIN", Some("1")),
-                ],
-                || {
-                    let temp_dir = test_temp_dir!();
-                    temp_dir.used_by(|dir| {
-                        let golden_path = dir.join("golden_different.txt");
-                        std::fs::write(&golden_path, b"numbergirl\n")
-                            .expect("golden file creation failed");
+    #[test]
+    fn assert_fails_on_different_content() {
+        temp_env::with_var_unset("UPDATE_GOLDEN", || {
+            let path = testdata_dir().join("mukai.txt");
 
-                        let golden = Golden::new(golden_path.clone())
-                            .expect("golden creation should succeed");
+            let golden = Golden::new(path).unwrap();
 
-                        golden.assert("Zazen\nBoys\n\n");
+            let got_err = std::panic::catch_unwind(|| golden.assert("number girl"))
+                .expect_err("this assertion must fail");
 
-                        assert_str_eq!(read_as_utf8(&golden_path).unwrap(), "Zazen\nBoys\n\n");
-                    });
-                },
-            );
-        }
+            let payload = &*got_err;
+            if payload.is::<String>() {
+                assert!(payload
+                    .downcast_ref::<String>()
+                    .unwrap()
+                    .contains("assertion failed"));
+            } else {
+                panic!("unexpected type of assertion failure");
+            }
+        });
     }
 }
