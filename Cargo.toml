@@ -19,25 +19,25 @@ repository = "https://github.com/xkikeg/okane"
 [workspace.dependencies]
 # dependencies
 bumpalo = {version = "3.17", features = ["collections", "boxed"]}
-chrono = "0.4.39"
+chrono = "0.4.40"
 log = "0.4"
-regex = "1.1"
-rust_decimal = "1.36"
-strum = { version = "0.26", features = ["derive"] }
+regex = "1.11"
+rust_decimal = "1.37"
+strum = { version = "0.27", features = ["derive"] }
 thiserror = "2.0"
-winnow = "0.7.2"
+winnow = "0.7.6"
 
 # middle
 env_logger = "0.11"
 lazy_static = "1.5"
 
 # dev-dependencies
-ctor = "0.2.9"
+ctor = "0.4"
 indoc = "2.0"
 maplit = "1.0"
 pretty_assertions = "1.4"
-rstest = "0.24"
-rust_decimal_macros = "1.36"
+rstest = "0.25"
+rust_decimal_macros = "1.37"
 
 [profile.bench]
 debug = "limited"
