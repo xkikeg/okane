@@ -8,6 +8,33 @@
 
 ### Fixed
 
+## [0.14.0] - ReleaseDate
+
+### Added
+
+* `balance` supports commodity conversion.
+    * https://github.com/xkikeg/okane/pull/201
+    * and a few other PRs.
+* `eval` command to try commodity conversion (https://github.com/xkikeg/okane/pull/210).
+* Tool supports glob include.
+    * https://github.com/xkikeg/okane/pull/205
+    * https://github.com/xkikeg/okane/pull/224
+    * https://github.com/xkikeg/okane/pull/237
+
+### Changed
+
+* Print some errors in more friendly manner (https://github.com/xkikeg/okane/pull/213).
+* `import` emits debits earlier than credits (https://github.com/xkikeg/okane/pull/228).
+* `import` applies commodity conversion by default under certain conditions (https://github.com/xkikeg/okane/pull/199).
+* `import` supports more variants for ISO Camt053 files (https://github.com/xkikeg/okane/pull/197).
+* `import` emits Ledger comment out of CSV note field (https://github.com/xkikeg/okane/pull/192).
+
+### Fixed
+
+* Fixed the issue with non ASCII accounts (https://github.com/xkikeg/okane/pull/221).
+* Rejects the commodity rate the same as the main amount (https://github.com/xkikeg/okane/pull/217).
+* `import` correctly emits exchange rate for the charges (https://github.com/xkikeg/okane/pull/198).
+
 ## [0.13.0] - 2024-10-28
 
 ### Added
