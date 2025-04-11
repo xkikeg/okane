@@ -184,13 +184,15 @@ impl<T: FileSink + Send> ExampleInput<T> {
                         let dirname = dir_name(i);
                         let subdirpath = rootdir.join(&dirname);
                         T::create_subdir(&subdirpath)?;
+                        let mut total: i64 = 0;
                         for year in params.years() {
-                            prepare_leaf_file(
+                            total = prepare_leaf_file(
                                 &mut sink,
                                 &subdirpath.join(leaf_file(year)),
                                 &params,
                                 i,
                                 year,
+                                total,
                             )?;
                         }
                         prepare_middle_file(&mut sink, &rootdir, &dirname, &params)?;
@@ -415,13 +417,15 @@ impl<'a> Display for Amount<'a> {
     }
 }
 
+/// Creates the leaf file, returns the total amount of the asset.
 fn prepare_leaf_file<T: FileSink>(
     sink: &mut T,
     target: &Path,
     params: &InputParams,
     dir: usize,
     year: Year,
-) -> Result<(), std::io::Error> {
+    mut total: i64,
+) -> Result<i64, std::io::Error> {
     let mut w = sink.writer(&target)?;
     for i in 0..params.num_transactions_per_file {
         let ordinal = (i * 365 / params.num_transactions_per_file + 1) as u32;
@@ -440,12 +444,14 @@ fn prepare_leaf_file<T: FileSink>(
                         nth_alphabet(pseudo2),
                         nth_alphabet(pseudo3)
                     );
+                    total -= 3000;
                     (
                         format!("Expenses:Type{}", pseudo).into(),
                         Amount(PrettyDecimal::comma3dot(dec!(100)), commodity.into()),
                         Amount(PrettyDecimal::comma3dot(dec!(-3000)), "JPY".into()),
                     )
                 } else {
+                    total -= 1234;
                     (
                         format!("Expenses:Type{}", pseudo).into(),
                         Amount(PrettyDecimal::comma3dot(dec!(1234)), "JPY".into()),
@@ -453,27 +459,33 @@ fn prepare_leaf_file<T: FileSink>(
                     )
                 }
             }
-            11 => (
-                "Income:Salary".into(),
-                Amount(
-                    PrettyDecimal::comma3dot(dec!(-3000.00)),
-                    Cow::Borrowed("USD"),
-                ),
-                Amount(PrettyDecimal::comma3dot(dec!(400000)), "JPY".into()),
-            ),
-            12 => (
-                "Assets:Account99".into(),
-                Amount(PrettyDecimal::comma3dot(dec!(100.00)), "CHF".into()),
-                Amount(PrettyDecimal::comma3dot(dec!(-14000)), "JPY".into()),
-            ),
+            11 => {
+                total += 400000;
+                (
+                    "Income:Salary".into(),
+                    Amount(
+                        PrettyDecimal::comma3dot(dec!(-3000.00)),
+                        Cow::Borrowed("USD"),
+                    ),
+                    Amount(PrettyDecimal::comma3dot(dec!(400000)), "JPY".into()),
+                )
+            }
+            12 => {
+                total -= 14000;
+                (
+                    "Assets:Account99".into(),
+                    Amount(PrettyDecimal::comma3dot(dec!(100.00)), "CHF".into()),
+                    Amount(PrettyDecimal::comma3dot(dec!(-14000)), "JPY".into()),
+                )
+            }
             _ => unreachable!("this can't happen"),
         };
         writeln!(w, "{date} {payee}",)?;
-        writeln!(w, "  Assets:Account{dir:02}  {amount}",)?;
-        writeln!(w, "  {other_account}  {other_amount}",)?;
+        writeln!(w, "  Assets:Account{dir:02}     {amount} = {total} JPY",)?;
+        writeln!(w, "  {other_account}     {other_amount}",)?;
         writeln!(w, "")?;
     }
-    Ok(())
+    Ok(total)
 }
 
 fn nth_alphabet(i: i32) -> char {
