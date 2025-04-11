@@ -187,9 +187,9 @@ impl<Deco: Decoration> fmt::Display for WithContext<'_, Posting<'_, Deco>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let post = self.value;
         let post_clear = print_clear_state(post.clear_state);
-        write!(f, "    {}{}", post_clear, post.account)?;
-        let account_width =
-            UnicodeWidthStr::width_cjk(post.account.as_ref()) + UnicodeWidthStr::width(post_clear);
+        write!(f, "    {}{}", post_clear, post.account.as_undecorated())?;
+        let account_width = UnicodeWidthStr::width_cjk(post.account.as_undecorated().as_ref())
+            + UnicodeWidthStr::width(post_clear);
         if let Some(amount) = &post.amount {
             let mut amount_str = String::new();
             let alignment = self
@@ -502,7 +502,7 @@ mod tests {
                 },
             }),
             balance: Some(amount(1, "USD")),
-            ..Posting::new("Account")
+            ..Posting::new_untracked("Account")
         };
         let costbalance = Posting {
             amount: Some(PostingAmount {
@@ -511,7 +511,7 @@ mod tests {
                 lot: plain::Lot::default(),
             }),
             balance: Some(amount(1, "USD")),
-            ..Posting::new("Account")
+            ..Posting::new_untracked("Account")
         };
         let total = Posting {
             amount: Some(PostingAmount {
@@ -519,7 +519,7 @@ mod tests {
                 cost: Some(Exchange::Total(amount(100, "JPY"))),
                 lot: plain::Lot::default(),
             }),
-            ..Posting::new("Account")
+            ..Posting::new_untracked("Account")
         };
         let nocost = Posting {
             amount: Some(PostingAmount {
@@ -528,17 +528,17 @@ mod tests {
                 lot: plain::Lot::default(),
             }),
             balance: Some(amount(1, "USD")),
-            ..Posting::new("Account")
+            ..Posting::new_untracked("Account")
         };
         let noamount = plain::Posting {
             amount: None,
             balance: Some(amount(1, "USD")),
-            ..Posting::new("Account")
+            ..Posting::new_untracked("Account")
         };
         let zerobalance = plain::Posting {
             amount: None,
             balance: Some(amount(0, "")),
-            ..Posting::new("Account")
+            ..Posting::new_untracked("Account")
         };
 
         assert_eq!(

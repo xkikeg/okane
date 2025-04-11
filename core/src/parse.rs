@@ -131,7 +131,7 @@ mod tests {
                         span: 0..38
                     },
                     syntax::LedgerEntry::Txn(syntax::Transaction {
-                        posts: vec![syntax::Posting::new("Expenses:Grocery")],
+                        posts: vec![syntax::Posting::new_untracked("Expenses:Grocery")],
                         ..syntax::Transaction::new(
                             NaiveDate::from_ymd_opt(2024, 4, 10).unwrap(),
                             "Migros",
@@ -144,7 +144,7 @@ mod tests {
                         span: 38..74
                     },
                     syntax::LedgerEntry::Txn(syntax::Transaction {
-                        posts: vec![syntax::Posting::new("Expenses:Grocery")],
+                        posts: vec![syntax::Posting::new_untracked("Expenses:Grocery")],
                         ..syntax::Transaction::new(
                             NaiveDate::from_ymd_opt(2024, 4, 20).unwrap(),
                             "Coop"

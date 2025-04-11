@@ -1,12 +1,14 @@
 //! Parser about ledger postings.
 
+use std::borrow::Cow;
+
 use winnow::{
     ascii::space0,
     combinator::{
         alt, cond, delimited, eof, fail, opt, peek, preceded, repeat_till, terminated, trace,
     },
     error::{AddContext, FromExternalError, ParserError, StrContext},
-    stream::{AsChar, Compare, Stream, StreamIsPartial},
+    stream::{AsChar, Stream, StreamIsPartial},
     token::{literal, one_of, take_till},
     Parser,
 };
@@ -40,7 +42,7 @@ where
 {
     trace("posting::posting", move |input: &mut Input| {
         let clear_state = preceded(space0, metadata::clear_state).parse_next(input)?;
-        let account = posting_account
+        let account = posting_account::<Deco, _, _>
             .context(StrContext::Label("account of the posting"))
             .parse_next(input)?;
         let shortcut_amount = has_peek(line_ending_or_semi).parse_next(input)?;
@@ -76,32 +78,43 @@ where
     .parse_next(input)
 }
 
-/// Parses the posting account name, and consumes the trailing spaces and tabs.
-fn posting_account<'i, Input, E>(input: &mut Input) -> winnow::Result<<Input as Stream>::Slice, E>
+/// Parses the posting account name.
+fn posting_account<'i, Deco, Input, E>(
+    input: &mut Input,
+) -> winnow::Result<Deco::Decorated<Cow<'i, str>>, E>
 where
-    Input: Stream<Slice = &'i str> + StreamIsPartial + Compare<&'static str>,
+    Deco: Decoration,
+    Input: Stream<Slice = &'i str>
+        + StreamIsPartial
+        + winnow::stream::Location
+        + winnow::stream::Compare<&'static str>,
     <Input as Stream>::Token: AsChar + Clone,
     E: ParserError<Input>,
 {
     trace(
         "posting::posting",
         terminated(
-            repeat_till(
-                1..,
-                (opt(" "), take_till(1.., b"\n\r; \t")),
-                peek(alt((
-                    "  ",
-                    (opt(" "), one_of(('\t', ';', '\r', '\n'))).take(),
-                    eof,
-                ))),
-            )
-            // let repeat_till accumulated into () (unit)
-            .map(|((), _)| ())
-            .take(),
+            Deco::decorate_parser(
+                repeat_till(
+                    1..,
+                    // at most one space, followed by account capable chars.
+                    (opt(" "), take_till(1.., b"\n\r; \t")),
+                    // stop when you can see double space, or terminate char.
+                    // you need opt(" ") for the case like ` \t`.
+                    peek(alt((
+                        "  ",
+                        (opt(" "), one_of(('\t', ';', '\r', '\n'))).take(),
+                        eof,
+                    ))),
+                )
+                // let repeat_till accumulated into () (unit)
+                .map(|((), _)| ())
+                .take()
+                .map(|x: &str| Cow::Borrowed(x.trim_start())),
+            ),
             space0,
         ),
     )
-    .map(str::trim_start)
     .parse_next(input)
 }
 
@@ -340,7 +353,7 @@ mod tests {
                         syntax::Metadata::Comment("My card took commission".into()),
                         syntax::Metadata::WordTags(vec!["financial".into(), "経済".into(),],),
                     ],
-                    ..Posting::new("Expenses:Commissions")
+                    ..Posting::new_untracked("Expenses:Commissions")
                 }
             )
         )
@@ -355,7 +368,7 @@ mod tests {
                 "",
                 Posting {
                     clear_state: syntax::ClearState::Pending,
-                    ..Posting::new("Expenses")
+                    ..Posting::new_untracked("Expenses")
                 }
             )
         );
@@ -378,10 +391,17 @@ mod tests {
                         cost: None,
                         lot: Lot::default()
                     }),
-                    ..Posting::new("Expenses")
+                    ..Posting::new_untracked("Expenses")
                 }
             )
         );
+    }
+
+    fn posting_account<'a, E>(input: &mut LocatingSlice<&'a str>) -> winnow::Result<Cow<'a, str>, E>
+    where
+        E: ParserError<LocatingSlice<&'a str>>,
+    {
+        super::posting_account::<plain::Ident, _, E>(input)
     }
 
     #[test]
@@ -392,7 +412,7 @@ mod tests {
         "};
         assert_eq!(
             expect_parse_ok(posting_account, input),
-            (";\nnext_token\n", "Account Value")
+            (";\nnext_token\n", Cow::Borrowed("Account Value"))
         );
         let input = indoc! {"
             Account Value\t\t
@@ -400,7 +420,7 @@ mod tests {
         "};
         assert_eq!(
             expect_parse_ok(posting_account, input),
-            ("\nnext_token\n", "Account Value")
+            ("\nnext_token\n", Cow::Borrowed("Account Value"))
         );
         let input = indoc! {"
             Account Value
@@ -408,7 +428,7 @@ mod tests {
         "};
         assert_eq!(
             expect_parse_ok(posting_account, input),
-            ("\nnext_token\n", "Account Value")
+            ("\nnext_token\n", Cow::Borrowed("Account Value"))
         );
     }
 
@@ -421,7 +441,7 @@ mod tests {
         "};
         assert_eq!(
             expect_parse_ok(posting_account, input),
-            (";\nnext_token\n", "資産:銀行")
+            (";\nnext_token\n", Cow::Borrowed("資産:銀行"))
         );
 
         // ends with tab
@@ -431,7 +451,7 @@ mod tests {
         "};
         assert_eq!(
             expect_parse_ok(posting_account, input),
-            ("\nnext_token\n", "負債:クレカ")
+            ("\nnext_token\n", Cow::Borrowed("負債:クレカ"))
         );
 
         // end with the newline
@@ -441,14 +461,14 @@ mod tests {
         "};
         assert_eq!(
             expect_parse_ok(posting_account, input),
-            ("\nnext_token\n", "ピカチュウ")
+            ("\nnext_token\n", Cow::Borrowed("ピカチュウ"))
         );
 
         // end with the semi-colon
         let input = "ピカチュウ ;next_token";
         assert_eq!(
             expect_parse_ok(posting_account, input),
-            (";next_token", "ピカチュウ")
+            (";next_token", Cow::Borrowed("ピカチュウ"))
         );
     }
 

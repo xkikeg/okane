@@ -1,7 +1,7 @@
 //! Module decoration defines the trait,
 //! which describes the extra information attached to [crate::syntax] data.
 
-use std::fmt::Debug;
+use std::{borrow::Cow, fmt::Debug};
 
 /// `AsUndecorated<T>` is equivalent to [AsRef], with specific meaning.
 /// AsRef can be too generic and not suitable for use case.
@@ -35,6 +35,8 @@ macro_rules! define_as_undecorated {
     };
 }
 
+define_as_undecorated!(['i], Cow<'i, str>);
+define_as_undecorated!(['i], &'i str);
 define_as_undecorated!(['i, Deco: Decoration], super::LedgerEntry<'i, Deco>);
 define_as_undecorated!(['i, Deco: Decoration], super::Transaction<'i, Deco>);
 define_as_undecorated!(['i, Deco: Decoration], super::Posting<'i, Deco>);

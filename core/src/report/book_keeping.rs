@@ -185,7 +185,7 @@ fn add_transaction<'ctx>(
     for (i, posting) in txn.posts.iter().enumerate() {
         let posting_span = posting.span();
         let posting = posting.as_undecorated();
-        let account = ctx.accounts.ensure(&posting.account);
+        let account = ctx.accounts.ensure(posting.account.as_undecorated());
         let (evaluated, price_event) = match process_posting(ctx, bal, txn.date, account, posting)?
         {
             (Some(x), y) => (x, y),
