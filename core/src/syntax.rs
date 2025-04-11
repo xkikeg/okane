@@ -173,7 +173,7 @@ impl<'i, Deco: Decoration> Transaction<'i, Deco> {
 /// Posting in a transaction to represent a particular account amount increase / decrease.
 pub struct Posting<'i, Deco: Decoration> {
     /// Account of the post target.
-    pub account: Cow<'i, str>,
+    pub account: Deco::Decorated<Cow<'i, str>>,
     /// Posting specific ClearState.
     pub clear_state: ClearState,
     /// Amount of the posting.
@@ -197,10 +197,25 @@ impl Posting<'_, plain::Ident> {
     }
 }
 
-impl<'i, Deco: Decoration> Posting<'i, Deco> {
-    pub fn new<T: Into<Cow<'i, str>>>(account: T) -> Self {
+impl<'i> Posting<'i, plain::Ident> {
+    pub fn new_untracked<T>(account: T) -> Self
+    where
+        T: Into<Cow<'i, str>>,
+    {
         Posting {
             account: account.into(),
+            clear_state: ClearState::default(),
+            amount: None,
+            balance: None,
+            metadata: Vec::new(),
+        }
+    }
+}
+
+impl<'i, Deco: Decoration> Posting<'i, Deco> {
+    pub fn new(account: Deco::Decorated<Cow<'i, str>>) -> Self {
+        Posting {
+            account,
             clear_state: ClearState::default(),
             amount: None,
             balance: None,

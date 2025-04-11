@@ -224,7 +224,7 @@ impl Txn {
                         key: Cow::Borrowed("Payee"),
                         value: syntax::MetadataValue::Text(chrg.payee.as_str().into()),
                     }],
-                    ..syntax::Posting::new("Expenses:Commissions")
+                    ..syntax::Posting::new_untracked("Expenses:Commissions")
                 });
             }
         };
@@ -233,26 +233,30 @@ impl Txn {
                 clear_state: syntax::ClearState::Uncleared,
                 amount: Some(self.amount()),
                 balance: self.balance.as_ref().map(|x| as_syntax_amount(x).into()),
-                ..syntax::Posting::new(src_account)
+                ..syntax::Posting::new_untracked(src_account)
             });
             add_charges(&mut posts);
             posts.push(syntax::Posting {
                 clear_state: post_clear,
                 amount: Some(self.dest_amount()),
-                ..syntax::Posting::new(self.dest_account.as_deref().unwrap_or("Income:Unknown"))
+                ..syntax::Posting::new_untracked(
+                    self.dest_account.as_deref().unwrap_or("Income:Unknown"),
+                )
             });
         } else if self.amount.value.is_sign_negative() {
             posts.push(syntax::Posting {
                 clear_state: post_clear,
                 amount: Some(self.dest_amount()),
-                ..syntax::Posting::new(self.dest_account.as_deref().unwrap_or("Expenses:Unknown"))
+                ..syntax::Posting::new_untracked(
+                    self.dest_account.as_deref().unwrap_or("Expenses:Unknown"),
+                )
             });
             add_charges(&mut posts);
             posts.push(syntax::Posting {
                 clear_state: syntax::ClearState::Uncleared,
                 amount: Some(self.amount()),
                 balance: self.balance.as_ref().map(|x| as_syntax_amount(x).into()),
-                ..syntax::Posting::new(src_account)
+                ..syntax::Posting::new_untracked(src_account)
             });
         } else {
             // warning log or error?
