@@ -122,9 +122,9 @@ mod tests {
                                 cost: None,
                                 lot: syntax::Lot::default(),
                             }),
-                            ..Posting::new("Expense A")
+                            ..Posting::new_untracked("Expense A")
                         },
-                        Posting::new("Liabilities B")
+                        Posting::new_untracked("Liabilities B")
                     ],
                     ..Transaction::new(NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(), "")
                 }
@@ -174,7 +174,7 @@ mod tests {
                                     value: syntax::MetadataValue::Text(Cow::Borrowed("Bar"))
                                 },
                             ],
-                            ..Posting::new("Expense A")
+                            ..Posting::new_untracked("Expense A")
                         },
                         Posting {
                             amount: Some(PostingAmount {
@@ -193,7 +193,7 @@ mod tests {
                                 Cow::Borrowed("tag1"),
                                 Cow::Borrowed("他のタグ")
                             ]),],
-                            ..Posting::new("Liabilities B")
+                            ..Posting::new_untracked("Liabilities B")
                         },
                         Posting {
                             balance: Some(syntax::expr::ValueExpr::Amount(syntax::expr::Amount {
@@ -205,7 +205,7 @@ mod tests {
                                 syntax::Metadata::Comment(Cow::Borrowed("これなんだっけ")),
                             ],
 
-                            ..Posting::new("Assets C")
+                            ..Posting::new_untracked("Assets C")
                         }
                     ],
                     ..Transaction::new(NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(), "")
