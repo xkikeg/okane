@@ -3,6 +3,7 @@
 use std::{fmt::Display, path::PathBuf};
 
 use annotate_snippets::{Annotation, Level, Snippet};
+use bumpalo::Bump;
 
 use crate::{
     load,
@@ -46,6 +47,7 @@ impl ErrorContext {
     fn print(&self, f: &mut std::fmt::Formatter<'_>, err: &BookKeepError) -> std::fmt::Result {
         let message = err.to_string();
         let path = self.path.to_string_lossy();
+        let bump = Bump::new();
         let annotations: Vec<Annotation> = match err {
             BookKeepError::UndeduciblePostingAmount(first, second) => vec![
                 Level::Warning
@@ -55,6 +57,25 @@ impl ErrorContext {
                     .span(self.parsed_span.resolve(&second.span()))
                     .label("cannot deduce this posting"),
             ],
+            BookKeepError::BalanceAssertionFailure {
+                balance_span,
+                account_span,
+                computed,
+                ..
+            } => {
+                let msg = bumpalo::format!(
+                    in &bump,
+                    "computed balance: {}", computed,
+                );
+                vec![
+                    Level::Error
+                        .span(self.parsed_span.resolve(balance_span))
+                        .label("not match the computed balance"),
+                    Level::Warning
+                        .span(self.parsed_span.resolve(account_span))
+                        .label(msg.into_bump_str()),
+                ]
+            }
             BookKeepError::ZeroAmountWithExchange(exchange) => vec![Level::Error
                 .span(self.parsed_span.resolve(exchange))
                 .label("absolute zero posting should not have exchange")],
