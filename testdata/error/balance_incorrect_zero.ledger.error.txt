@@ -1,8 +1,8 @@
-error: balance assertion failed: got 1000 CHF but expected 0
-  --> /okane/testdata/error/balance_incorrect_zero.ledger:8:1
+error: balance assertion off by -1000 CHF, computed balance is 1000 CHF
+  --> /okane/testdata/error/balance_incorrect_zero.ledger:9:58
    |
- 8 | / 2024/01/20 * Shop
- 9 | |     Assets:Bank                             -100,000 JPY = 0
-10 | |     Expenses:Cash                            100,000 JPY
-   | |_________________________________________________________^ error occured
+ 8 | 2024/01/20 * Shop
+ 9 |     Assets:Bank                             -100,000 JPY = 0
+   |     ----------- computed balance: 1000 CHF               ^^^ not match the computed balance
+10 |     Expenses:Cash                            100,000 JPY
    |

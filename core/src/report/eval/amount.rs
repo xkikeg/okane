@@ -222,16 +222,31 @@ impl<'ctx> Amount<'ctx> {
         Ok(self)
     }
 
-    /// Checks if the amount is consistent with the given [PostingAmount].
+    /// Checks if the amount is matching with the given [`PostingAmount`] balance,
+    /// Returns the diff (expected - actual), or None if those are consistent.
+    ///
     /// Consistent means
     ///
-    /// *   If the [PostingAmount] is zero, then the amount must be zero.
-    /// *   If the [PostingAmount] is a value with commodity,
+    /// *   If the given balance is zero, then the amount must be zero.
+    /// *   If the given balance is a value with commodity,
     ///     then the amount should be equal to given value only on the commodity.
-    pub(crate) fn is_consistent(&self, rhs: &PostingAmount<'ctx>) -> bool {
-        match rhs {
-            PostingAmount::Zero => self.is_zero(),
-            PostingAmount::Single(single) => self.get_part(single.commodity) == single.value,
+    pub(crate) fn assert_balance(&self, expected: &PostingAmount<'ctx>) -> Self {
+        match expected {
+            PostingAmount::Zero => {
+                if self.is_zero() {
+                    Self::zero()
+                } else {
+                    -self.clone()
+                }
+            }
+            PostingAmount::Single(single) => {
+                let diff = single.value - self.get_part(single.commodity);
+                if diff.is_zero() {
+                    Self::zero()
+                } else {
+                    Self::from_value(diff, single.commodity)
+                }
+            }
         }
     }
 }

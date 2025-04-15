@@ -41,8 +41,13 @@ pub enum BookKeepError {
     UndeduciblePostingAmount(Tracked<usize>, Tracked<usize>),
     #[error("transaction cannot have unbalanced postings: {0}")]
     UnbalancedPostings(String),
-    #[error("balance assertion failed: got {0} but expected {1}")]
-    BalanceAssertionFailure(String, String),
+    #[error("balance assertion off by {diff}, computed balance is {computed}")]
+    BalanceAssertionFailure {
+        account_span: TrackedSpan,
+        balance_span: TrackedSpan,
+        computed: String,
+        diff: String,
+    },
     #[error("failed to register account: {0}")]
     InvalidAccount(#[source] InternError),
     #[error("failed to register commodity: {0}")]
@@ -276,20 +281,20 @@ fn process_posting<'ctx>(
         // regular posting with `Account    X`, optionally with balance.
         (Some(syntax_amount), balance_constraints) => {
             let computed = ComputedPosting::compute_from_syntax(ctx, syntax_amount)?;
-            // we uses transaction date, maybe good to provide an option to use effective date.
-            let expected_balance: Option<PostingAmount> = balance_constraints
-                .as_ref()
-                .map(|x| x.as_undecorated().eval_mut(ctx))
-                .transpose()?
-                .map(|x| x.try_into())
-                .transpose()?;
             let current = bal.add_posting_amount(account, computed.amount);
-            if let Some(expected) = expected_balance {
-                if !current.is_consistent(&expected) {
-                    return Err(BookKeepError::BalanceAssertionFailure(
-                        format!("{}", current.as_inline_display()),
-                        format!("{}", expected),
-                    ));
+            if let Some(balance_constraints) = balance_constraints.as_ref() {
+                let expected: PostingAmount = balance_constraints
+                    .as_undecorated()
+                    .eval_mut(ctx)?
+                    .try_into()?;
+                let diff = current.assert_balance(&expected);
+                if !diff.is_absolute_zero() {
+                    return Err(BookKeepError::BalanceAssertionFailure {
+                        account_span: posting.account.span(),
+                        balance_span: balance_constraints.span(),
+                        computed: format!("{}", current.as_inline_display()),
+                        diff: format!("{}", diff.as_inline_display()),
+                    });
                 }
             }
             let balance_delta = computed.calculate_balance_amount()?;
@@ -559,7 +564,7 @@ mod tests {
         let got_err = add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).unwrap_err();
 
         assert!(
-            matches!(got_err, BookKeepError::BalanceAssertionFailure(_, _)),
+            matches!(got_err, BookKeepError::BalanceAssertionFailure { .. }),
             "unexpected got_err: {:?}",
             got_err
         );
@@ -585,7 +590,7 @@ mod tests {
         let got_err = add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).unwrap_err();
 
         assert!(
-            matches!(got_err, BookKeepError::BalanceAssertionFailure(_, _)),
+            matches!(got_err, BookKeepError::BalanceAssertionFailure { .. }),
             "unexpected got_err: {:?}",
             got_err
         );
