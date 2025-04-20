@@ -90,7 +90,7 @@ impl<F: FileSystem> Loader<F> {
         E: std::error::Error + From<LoadError>,
         Deco: syntax::decoration::Decoration,
     {
-        let path: Cow<'_, Path> = self.filesystem.canonicalize_path(path);
+        let path: Cow<'_, Path> = F::canonicalize_path(path);
         let content = self
             .filesystem
             .file_content_utf8(&path)
@@ -122,6 +122,7 @@ impl<F: FileSystem> Loader<F> {
                         )
                         .into());
                     }
+                    log::debug!("glob {} hit {} files", target, paths.len());
                     paths.sort_unstable();
                     for path in &paths {
                         self.load_impl(parse_options, path, callback)?;
@@ -139,7 +140,7 @@ impl<F: FileSystem> Loader<F> {
 /// Normally you want to use [ProdFileSystem].
 pub trait FileSystem {
     /// canonicalize the given path.
-    fn canonicalize_path<'a>(&self, path: &'a Path) -> Cow<'a, Path>;
+    fn canonicalize_path<'a>(path: &'a Path) -> Cow<'a, Path>;
 
     /// Load the given path and returns it as UTF-8 String.
     fn file_content_utf8<P: AsRef<Path>>(&self, path: P) -> Result<String, std::io::Error>;
@@ -153,7 +154,7 @@ pub trait FileSystem {
 pub struct ProdFileSystem;
 
 impl FileSystem for ProdFileSystem {
-    fn canonicalize_path<'a>(&self, path: &'a Path) -> Cow<'a, Path> {
+    fn canonicalize_path<'a>(path: &'a Path) -> Cow<'a, Path> {
         std::fs::canonicalize(path)
             .map(|x| {
                 if x == path {
@@ -202,23 +203,27 @@ impl From<HashMap<PathBuf, Vec<u8>>> for FakeFileSystem {
 }
 
 impl FileSystem for FakeFileSystem {
-    fn canonicalize_path<'a>(&self, path: &'a Path) -> Cow<'a, Path> {
-        let mut ret = PathBuf::new();
+    fn canonicalize_path<'a>(path: &'a Path) -> Cow<'a, Path> {
+        let mut components = Vec::new();
         for pc in path.components() {
             match pc {
                 path::Component::CurDir => (),
                 path::Component::ParentDir => {
-                    if !ret.pop() {
+                    if components.pop().is_none() {
                         log::warn!(
                             "failed to pop parent, maybe wrong path given: {}",
                             path.display()
                         );
                     }
                 }
-                _ => ret.push(pc),
+                path::Component::RootDir => components.push("/"),
+                path::Component::Prefix(_) => log::info!("ignore prefix: {:?}", pc),
+                path::Component::Normal(pc) => {
+                    components.push(pc.to_str().unwrap_or("invalid-unicode-component"))
+                }
             }
         }
-        Cow::Owned(ret)
+        Cow::Owned(components.join("/").into())
     }
 
     fn file_content_utf8<P: AsRef<Path>>(&self, path: P) -> Result<String, std::io::Error> {
@@ -379,23 +384,23 @@ mod tests {
     #[test]
     fn load_valid_fake() {
         let fake = hashmap! {
-            PathBuf::from("/path/to/root.ledger") => indoc! {"
+            PathBuf::from("path/to/root.ledger") => indoc! {"
                 include child1.ledger
             "}.as_bytes().to_vec(),
-            PathBuf::from("/path/to/child1.ledger") => indoc! {"
+            PathBuf::from("path/to/child1.ledger") => indoc! {"
                 include sub/*.ledger
             "}.as_bytes().to_vec(),
-            PathBuf::from("/path/to/sub/child2.ledger") => "".as_bytes().to_vec(),
-            PathBuf::from("/path/to/sub/child3.ledger") => indoc! {"
+            PathBuf::from("path/to/sub/child2.ledger") => "".as_bytes().to_vec(),
+            PathBuf::from("path/to/sub/child3.ledger") => indoc! {"
                 ; comment here
             "}.as_bytes().to_vec(),
-            PathBuf::from("/path/to/sub/.unloaded.ledger") => indoc! {"
+            PathBuf::from("path/to/sub/.unloaded.ledger") => indoc! {"
                 completely invalid file, should not be loaded
             "}.as_bytes().to_vec(),
         };
 
         let want = parse_static_ledger_entry(&[(
-            Path::new("/path/to/sub/child3.ledger"),
+            Path::new("path/to/sub/child3.ledger"),
             indoc! {"
             ; comment here
             "},
@@ -403,7 +408,7 @@ mod tests {
         .expect("test input parse must not fail");
 
         let got = parse_into_vec(Loader::new(
-            PathBuf::from("/path/to/root.ledger"),
+            PathBuf::from("path/to/root.ledger"),
             FakeFileSystem::from(fake),
         ))
         .expect("parse failed");
@@ -455,6 +460,28 @@ mod tests {
                 e
             ),
             _ => panic!("unexpected error: {:?}", got_err),
+        }
+    }
+
+    mod fake_file_system {
+        use super::*;
+
+        use pretty_assertions::assert_eq;
+
+        #[test]
+        fn canonicalize_simple() {
+            assert_eq!(
+                FakeFileSystem::canonicalize_path(Path::new("path/to/file")),
+                Cow::Owned::<Path>(PathBuf::from("path/to/file")),
+            );
+        }
+
+        #[test]
+        fn canonicalize_up_and_current() {
+            assert_eq!(
+                FakeFileSystem::canonicalize_path(Path::new("path/to/sub/./.././file")),
+                Cow::Owned::<Path>(PathBuf::from("path/to/file")),
+            );
         }
     }
 }
