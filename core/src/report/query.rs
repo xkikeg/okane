@@ -331,9 +331,9 @@ mod tests {
                 Assets:CH Bank              -141.96 CHF
         "};
         let fake = hashmap! {
-            PathBuf::from("/path/to/file.ledger") => content.as_bytes().to_vec(),
+            PathBuf::from("path/to/file.ledger") => content.as_bytes().to_vec(),
         };
-        load::Loader::new(PathBuf::from("/path/to/file.ledger"), fake.into())
+        load::Loader::new(PathBuf::from("path/to/file.ledger"), fake.into())
     }
 
     fn create_ledger(arena: &Bump) -> (ReportContext<'_>, Ledger<'_>) {

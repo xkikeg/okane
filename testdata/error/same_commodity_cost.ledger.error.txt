@@ -1,5 +1,5 @@
 error: cost or lot exchange must have different commodity from the amount commodity
- --> /okane/testdata/error/same_commodity_cost.ledger:4:50
+ --> okane/testdata/error/same_commodity_cost.ledger:4:50
   |
 3 | 2024/09/01 Shop
 4 |     Expenses                                     100 CHF @ 1 CHF

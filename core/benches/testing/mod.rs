@@ -158,7 +158,7 @@ impl<T: FileSink + Send> ExampleInput<T> {
                 }
             })
             .is_empty();
-        let rootdir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(subdir);
+        let rootdir = T::rootdir().join(subdir);
         let rootfile = rootdir.join("root.ledger");
         if !cleanup && T::shortcut(&rootfile) {
             return Ok(Self {
@@ -250,6 +250,8 @@ pub trait FileSink: Send + Sized + 'static {
 
     fn new() -> Self;
 
+    fn rootdir() -> PathBuf;
+
     fn clone_as_filesystem(&self) -> Self::FileSystem;
 
     fn initialize(rootdir: &Path) -> Result<(), std::io::Error>;
@@ -276,6 +278,10 @@ impl FileSink for RealFileSink {
 
     fn new() -> Self {
         RealFileSink
+    }
+
+    fn rootdir() -> PathBuf {
+        PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
     }
 
     fn clone_as_filesystem(&self) -> Self::FileSystem {
@@ -340,6 +346,10 @@ impl FileSink for FakeFileSink {
         Self {
             files: HashMap::default(),
         }
+    }
+
+    fn rootdir() -> PathBuf {
+        PathBuf::from("path/to/")
     }
 
     fn clone_as_filesystem(&self) -> Self::FileSystem {

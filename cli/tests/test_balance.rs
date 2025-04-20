@@ -23,6 +23,7 @@ fn balance_default(
     #[files("single_commodity.ledger")]
     input: PathBuf,
 ) {
+    println!("TODO: Remove this line: {}", input.display());
     let mut golden_path = input.clone();
     let filename = golden_path.file_name().unwrap().to_owned();
     assert!(golden_path.pop());
@@ -36,7 +37,11 @@ fn balance_default(
     log::info!("golden_path: {}", golden_path.display());
     let golden = okane_golden::Golden::new(golden_path).unwrap();
 
-    let args = shlex::split(&format!("binary balance {}", input.display())).unwrap();
+    let args = vec![
+        "binary".to_string(),
+        "balance".to_string(),
+        input.display().to_string(),
+    ];
 
     let cli = cmd::Cli::try_parse_from(&args).map_err(print_err).unwrap();
     let mut got: Vec<u8> = Vec::new();
@@ -65,7 +70,13 @@ fn balance_in_jpy_up_to_date(
     log::info!("golden_path: {}", golden_path.display());
     let golden = okane_golden::Golden::new(golden_path).unwrap();
 
-    let args = shlex::split(&format!("binary balance {} -X JPY", input.display())).unwrap();
+    let args = vec![
+        "binary".to_string(),
+        "balance".to_string(),
+        input.display().to_string(),
+        "-X".to_string(),
+        "JPY".to_string(),
+    ];
 
     let cli = cmd::Cli::try_parse_from(&args).map_err(print_err).unwrap();
     let mut got: Vec<u8> = Vec::new();
@@ -94,11 +105,14 @@ fn balance_in_usd_historical(
     log::info!("golden_path: {}", golden_path.display());
     let golden = okane_golden::Golden::new(golden_path).unwrap();
 
-    let args = shlex::split(&format!(
-        "binary balance {} -X USD --historical",
-        input.display()
-    ))
-    .unwrap();
+    let args = vec![
+        "binary".to_string(),
+        "balance".to_string(),
+        input.display().to_string(),
+        "-X".to_string(),
+        "USD".to_string(),
+        "--historical".to_string(),
+    ];
 
     let cli = cmd::Cli::try_parse_from(&args).map_err(print_err).unwrap();
     let mut got: Vec<u8> = Vec::new();

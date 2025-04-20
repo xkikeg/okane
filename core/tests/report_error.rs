@@ -7,7 +7,10 @@ use bumpalo::Bump;
 use maplit::hashmap;
 use rstest::rstest;
 
-use okane_core::{load, report};
+use okane_core::{
+    load::{self, FileSystem},
+    report,
+};
 
 #[ctor::ctor]
 fn init() {
@@ -17,12 +20,16 @@ fn init() {
 }
 
 fn as_test_filepath(input: &Path) -> Result<PathBuf, std::io::Error> {
-    let mut ret = PathBuf::from("/okane");
-    input
+    // we need to fake file path to avoid having the real full path for golden tests.
+    // also we cannot use /rooted/path because of Unix / Windows difference.
+    let mut result = PathBuf::from("okane");
+    for part in input
         .components()
         .skip_while(|c| !matches!(c, Component::Normal(x) if *x == OsStr::new("testdata")))
-        .for_each(|c| ret.push(c.as_os_str()));
-    Ok(ret)
+    {
+        result.push(part);
+    }
+    Ok(load::FakeFileSystem::canonicalize_path(&result).into_owned())
 }
 
 fn new_loader(input: PathBuf) -> Result<load::Loader<load::FakeFileSystem>, std::io::Error> {

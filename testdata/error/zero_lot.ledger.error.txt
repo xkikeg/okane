@@ -1,5 +1,5 @@
 error: cost or lot exchange must not be zero
- --> /okane/testdata/error/zero_lot.ledger:4:58
+ --> okane/testdata/error/zero_lot.ledger:4:58
   |
 3 | 2024/09/01 Shop
 4 |     Expenses                                     100 CHF { 0 USD }
