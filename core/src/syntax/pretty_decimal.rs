@@ -200,6 +200,8 @@ fn number_of_integral_digits(mut v: Decimal) -> u32 {
 
 impl Display for PrettyDecimal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use std::fmt::Write as _;
+
         match self.format {
             Some(Format::Plain) | None => self.value.fmt(f),
             Some(Format::Comma3Dot) => {
@@ -217,30 +219,30 @@ impl Display for PrettyDecimal {
                     .value
                     .scale()
                     .try_into()
-                    .expect("32-bit or larger bit only");
+                    .expect("32-bit or larger bit system only");
                 let mut remainder = mantissa;
                 // Here we assume mantissa is all ASCII (given it's [0-9.]+)
                 let mut initial_integer = true;
                 // caluclate the first comma position out of the integral portion digits.
-                let mut comma_pos = (integral_width % 3) as usize;
+                let mut comma_pos = (integral_width % 3)
+                    .try_into()
+                    .expect("23-bit or larger bit system only");
                 if comma_pos == 0 {
                     comma_pos = 3;
                 }
                 while remainder.len() > scale {
                     if !initial_integer {
-                        write!(f, ",")?;
+                        f.write_char(',')?;
                     }
                     let section;
                     (section, remainder) = remainder.split_at(comma_pos);
-                    write!(f, "{}", section)?;
+                    f.write_str(section)?;
                     comma_pos = 3;
                     initial_integer = false;
                 }
-                if initial_integer {
-                    write!(f, "0")?;
-                }
                 if !remainder.is_empty() {
-                    write!(f, ".{}", remainder)?;
+                    f.write_char('.')?;
+                    f.write_str(remainder)?;
                 }
                 Ok(())
             }
@@ -354,6 +356,12 @@ mod tests {
         assert_eq!("0.1200", PrettyDecimal::comma3dot(dec!(0.1200)).to_string());
 
         assert_eq!("0.0012", PrettyDecimal::comma3dot(dec!(0.0012)).to_string());
+
+        assert_eq!(
+            // 12345678901234567890
+            "0.000000000000000000001",
+            PrettyDecimal::comma3dot(Decimal::new(1, 21)).to_string()
+        );
 
         assert_eq!(
             "1.234000",
