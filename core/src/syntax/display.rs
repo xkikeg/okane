@@ -591,6 +591,41 @@ mod tests {
     }
 
     #[test]
+    fn fmt_posting_comma_3_dot() {
+        let ctx = DisplayContext::default();
+        let large = plain::Posting {
+            amount: Some(
+                expr::ValueExpr::Amount(expr::Amount {
+                    commodity: Cow::Borrowed("JPY"),
+                    value: PrettyDecimal::comma3dot(dec!(1_234_567)),
+                })
+                .into(),
+            ),
+            ..Posting::new_untracked("Account")
+        };
+        let small = plain::Posting {
+            amount: Some(
+                expr::ValueExpr::Amount(expr::Amount {
+                    commodity: Cow::Borrowed("JPY"),
+                    value: PrettyDecimal::comma3dot(dec!(0.0011)),
+                })
+                .into(),
+            ),
+            ..Posting::new_untracked("Account")
+        };
+
+        assert_eq!(
+            concat!(
+                //       10        20        30        40        50        60        70
+                // 34567890123456789012345678901234567890123456789012345678901234567890
+                "    Account                                1,234,567 JPY\n",
+                "    Account                                   0.0011 JPY\n",
+            ),
+            format!("{}{}", ctx.as_display(&large), ctx.as_display(&small),),
+        );
+    }
+
+    #[test]
     fn fmt_with_alignment_simple_amount_without_commodity() {
         let mut buffer = String::new();
         let alignment = DisplayContext::default()

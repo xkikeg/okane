@@ -177,25 +177,52 @@ fn try_find_char(s: &str, i: usize, chr: u8) -> String {
         .unwrap_or_else(|| format!("{:?}", chr))
 }
 
+/// Returns the number of digits for the integral part.
+///
+/// 12345.0123 => 5
+/// -123 => 3
+/// 0.123456 => 1
+/// 0 => 1
+fn number_of_integral_digits(mut v: Decimal) -> u32 {
+    v = v.abs();
+    if v < Decimal::ONE {
+        return 1;
+    }
+    let mut digits: u32 = 0;
+    while v >= Decimal::ONE {
+        if v.set_scale(v.scale() + 1).is_err() {
+            v /= Decimal::new(10, 0);
+        }
+        digits += 1;
+    }
+    digits
+}
+
 impl Display for PrettyDecimal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.format {
             Some(Format::Plain) | None => self.value.fmt(f),
             Some(Format::Comma3Dot) => {
+                let integral_width = number_of_integral_digits(self.value);
+                if integral_width <= 3 {
+                    // no comma needed.
+                    return self.value.fmt(f);
+                }
                 if self.value.is_sign_negative() {
                     write!(f, "-")?;
                 }
-                let mantissa = self.value.abs().mantissa().to_string();
+                let mut buf = itoa::Buffer::new();
+                let mantissa = buf.format(self.value.abs().mantissa());
                 let scale: usize = self
                     .value
                     .scale()
                     .try_into()
                     .expect("32-bit or larger bit only");
-                let mut remainder = mantissa.as_str();
+                let mut remainder = mantissa;
                 // Here we assume mantissa is all ASCII (given it's [0-9.]+)
                 let mut initial_integer = true;
                 // caluclate the first comma position out of the integral portion digits.
-                let mut comma_pos = (mantissa.len() - scale) % 3;
+                let mut comma_pos = (integral_width % 3) as usize;
                 if comma_pos == 0 {
                     comma_pos = 3;
                 }
@@ -302,6 +329,16 @@ mod tests {
     }
 
     #[test]
+    fn number_of_integral_digits_works() {
+        assert_eq!(number_of_integral_digits(dec!(0)), 1);
+        assert_eq!(number_of_integral_digits(dec!(0.234)), 1);
+        assert_eq!(number_of_integral_digits(dec!(-0.001)), 1);
+        assert_eq!(number_of_integral_digits(dec!(1.234000)), 1);
+        assert_eq!(number_of_integral_digits(dec!(-12.34)), 2);
+        assert_eq!(number_of_integral_digits(dec!(1234567890)), 10);
+    }
+
+    #[test]
     fn display_plain() {
         assert_eq!("1.234000", PrettyDecimal::plain(dec!(1.234000)).to_string());
     }
@@ -315,6 +352,8 @@ mod tests {
         assert_eq!("0", PrettyDecimal::comma3dot(dec!(0)).to_string());
 
         assert_eq!("0.1200", PrettyDecimal::comma3dot(dec!(0.1200)).to_string());
+
+        assert_eq!("0.0012", PrettyDecimal::comma3dot(dec!(0.0012)).to_string());
 
         assert_eq!(
             "1.234000",
