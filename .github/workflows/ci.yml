@@ -13,6 +13,34 @@ permissions:
   pull-requests: write
 
 jobs:
+  test:
+    strategy:
+      matrix:
+        build:
+          - linux-stable
+          - windows-stable
+          - macos-stable
+        include:
+          - build: linux-stable
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - build: windows-stable
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - build: macos-stable
+            os: macos-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --target ${{ matrix.target }}
   coverage:
     runs-on: ubuntu-latest
     env:
