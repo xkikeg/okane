@@ -48,7 +48,10 @@ path: csv_multi_currency.csv
 encoding: UTF-8
 account: Assets:Okane Bank
 account_type: asset
-commodity: JPY
+commodity:
+  primary: JPY
+  rename:
+    ドル: USD
 operator: Okane Bank (commission)
 format:
   date: "%Y/%m/%d"
