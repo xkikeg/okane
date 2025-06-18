@@ -253,6 +253,9 @@ pub struct AccountCommoditySpec {
     /// Default conversion applied to all transaction, if not specified in rewrite rules.
     #[serde(default)]
     pub conversion: CommodityConversionSpec,
+    /// Rename the key commodity into value.
+    #[serde(default)]
+    pub rename: HashMap<String, String>,
 }
 
 impl From<AccountCommodityConfig> for AccountCommoditySpec {
@@ -610,6 +613,14 @@ mod tests {
         );
     }
 
+    fn simple_commodity_spec(primary: String) -> AccountCommoditySpec {
+        AccountCommoditySpec {
+            primary,
+            conversion: CommodityConversionSpec::default(),
+            rename: HashMap::new(),
+        }
+    }
+
     #[test]
     fn test_config_select_merge_match() {
         let config_set = ConfigSet {
@@ -639,10 +650,9 @@ mod tests {
                 ConfigFragment {
                     path: "bank/checking/".to_string(),
                     // Normally commodity won't be overridden by merge.
-                    commodity: Some(AccountCommodityConfig::Spec(AccountCommoditySpec {
-                        primary: "CHF".to_string(),
-                        conversion: CommodityConversionSpec::default(),
-                    })),
+                    commodity: Some(AccountCommodityConfig::Spec(simple_commodity_spec(
+                        "CHF".to_string(),
+                    ))),
                     account: Some("Assets:Banks:Checking".to_string()),
                     rewrite: vec![RewriteRule {
                         matcher: RewriteMatcher::Field(FieldMatcher {
@@ -677,10 +687,7 @@ mod tests {
                 account: "Assets:Banks:Checking".to_string(),
                 account_type: AccountType::Asset,
                 operator: None,
-                commodity: AccountCommoditySpec {
-                    primary: "CHF".to_string(),
-                    conversion: CommodityConversionSpec::default(),
-                },
+                commodity: simple_commodity_spec("CHF".to_string()),
                 format: FormatSpec {
                     date: "%Y/%m/%d".to_string(),
                     ..Default::default()
@@ -756,10 +763,9 @@ mod tests {
         };
         let commodity = || ConfigFragment {
             path: "commodity/".to_string(),
-            commodity: Some(AccountCommodityConfig::Spec(AccountCommoditySpec {
-                primary: "primary commodity".to_string(),
-                conversion: CommodityConversionSpec::default(),
-            })),
+            commodity: Some(AccountCommodityConfig::Spec(simple_commodity_spec(
+                "primary commodity".to_string(),
+            ))),
             ..empty()
         };
         let operator = || ConfigFragment {

@@ -122,8 +122,12 @@ impl ImportCmd {
                 .map(|(k, v)| (k.clone(), v.precision))
                 .collect(),
         };
+        let opts = import::single_entry::Options {
+            commodity_rename: config_entry.commodity.rename.clone(),
+        };
         for xact in xacts {
-            let xact: syntax::plain::Transaction = xact.to_double_entry(&config_entry.account)?;
+            let xact: syntax::plain::Transaction =
+                xact.to_double_entry(&config_entry.account, &opts)?;
             writeln!(w, "{}", ctx.as_display(&xact))?;
         }
         Ok(())

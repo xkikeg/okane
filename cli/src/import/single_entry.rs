@@ -46,6 +46,14 @@ pub struct Txn {
     charges: Vec<Charge>,
 }
 
+/// Optional object to control the output (such as commodity renaming).
+#[derive(Debug, Default)]
+pub struct Options {
+    /// Renames the commodity in the key into the corresponding value.
+    pub commodity_rename: HashMap<String, String>,
+}
+
+/// Represents the charge (commission) in the transaction.
 struct Charge {
     payee: String,
     amount: OwnedAmount,
@@ -136,10 +144,10 @@ impl Txn {
         }
     }
 
-    fn rate(&self, target: &str) -> Option<syntax::Exchange> {
+    fn rate<'a>(&'a self, target: &str, opts: &'a Options) -> Option<syntax::Exchange<'a>> {
         self.rates
             .get(target)
-            .map(|x| syntax::Exchange::Rate(as_syntax_amount(x).into()))
+            .map(|x| syntax::Exchange::Rate(as_syntax_amount(x, opts).into()))
     }
 
     pub fn try_add_charge_not_included<'a>(
@@ -179,25 +187,26 @@ impl Txn {
     fn to_posting_amount<'a>(
         &'a self,
         amount: BorrowedAmount<'a>,
+        opts: &'a Options,
     ) -> syntax::plain::PostingAmount<'a> {
         syntax::PostingAmount {
-            amount: as_syntax_amount(amount).into(),
-            cost: self.rate(amount.commodity),
+            amount: as_syntax_amount(amount, opts).into(),
+            cost: self.rate(amount.commodity, opts),
             lot: syntax::Lot::default(),
         }
     }
 
-    fn amount(&self) -> syntax::plain::PostingAmount {
-        self.to_posting_amount(self.amount.into_borrowed())
+    fn amount<'a>(&'a self, opts: &'a Options) -> syntax::plain::PostingAmount<'a> {
+        self.to_posting_amount(self.amount.into_borrowed(), opts)
     }
 
-    fn dest_amount(&self) -> syntax::plain::PostingAmount {
+    fn dest_amount<'a>(&'a self, opts: &'a Options) -> syntax::plain::PostingAmount<'a> {
         self.transferred_amount
             .as_ref()
             .map(|transferred| {
-                self.to_posting_amount(amount_with_sign(transferred, -self.amount.value))
+                self.to_posting_amount(amount_with_sign(transferred, -self.amount.value), opts)
             })
-            .unwrap_or_else(|| self.to_posting_amount(-self.amount.into_borrowed()))
+            .unwrap_or_else(|| self.to_posting_amount(-self.amount.into_borrowed(), opts))
     }
 
     pub fn balance(&mut self, balance: OwnedAmount) -> &mut Txn {
@@ -208,6 +217,7 @@ impl Txn {
     pub fn to_double_entry<'a>(
         &'a self,
         src_account: &'a str,
+        opts: &'a Options,
     ) -> Result<syntax::plain::Transaction<'a>, ImportError> {
         let mut posts: Vec<syntax::plain::Posting> = Vec::new();
         let post_clear = self.clear_state.unwrap_or(match &self.dest_account {
@@ -218,7 +228,7 @@ impl Txn {
             for chrg in &self.charges {
                 posts.push(syntax::Posting {
                     clear_state: syntax::ClearState::Uncleared,
-                    amount: Some(self.to_posting_amount(chrg.amount.into_borrowed())),
+                    amount: Some(self.to_posting_amount(chrg.amount.into_borrowed(), opts)),
                     balance: None,
                     metadata: vec![syntax::Metadata::KeyValueTag {
                         key: Cow::Borrowed("Payee"),
@@ -231,14 +241,17 @@ impl Txn {
         if self.amount.value.is_sign_positive() {
             posts.push(syntax::Posting {
                 clear_state: syntax::ClearState::Uncleared,
-                amount: Some(self.amount()),
-                balance: self.balance.as_ref().map(|x| as_syntax_amount(x).into()),
+                amount: Some(self.amount(opts)),
+                balance: self
+                    .balance
+                    .as_ref()
+                    .map(|x| as_syntax_amount(x, opts).into()),
                 ..syntax::Posting::new_untracked(src_account)
             });
             add_charges(&mut posts);
             posts.push(syntax::Posting {
                 clear_state: post_clear,
-                amount: Some(self.dest_amount()),
+                amount: Some(self.dest_amount(opts)),
                 ..syntax::Posting::new_untracked(
                     self.dest_account.as_deref().unwrap_or("Income:Unknown"),
                 )
@@ -246,7 +259,7 @@ impl Txn {
         } else if self.amount.value.is_sign_negative() {
             posts.push(syntax::Posting {
                 clear_state: post_clear,
-                amount: Some(self.dest_amount()),
+                amount: Some(self.dest_amount(opts)),
                 ..syntax::Posting::new_untracked(
                     self.dest_account.as_deref().unwrap_or("Expenses:Unknown"),
                 )
@@ -254,8 +267,11 @@ impl Txn {
             add_charges(&mut posts);
             posts.push(syntax::Posting {
                 clear_state: syntax::ClearState::Uncleared,
-                amount: Some(self.amount()),
-                balance: self.balance.as_ref().map(|x| as_syntax_amount(x).into()),
+                amount: Some(self.amount(opts)),
+                balance: self
+                    .balance
+                    .as_ref()
+                    .map(|x| as_syntax_amount(x, opts).into()),
                 ..syntax::Posting::new_untracked(src_account)
             });
         } else {
@@ -285,15 +301,21 @@ pub struct CommodityPair {
     pub target: String,
 }
 
-fn as_syntax_amount<'a, T>(amount: T) -> syntax::expr::Amount<'a>
+fn as_syntax_amount<'a, T>(amount: T, opts: &'a Options) -> syntax::expr::Amount<'a>
 where
     T: AmountRef<'a>,
 {
     let amount = amount.into_borrowed();
+    let commodity = Cow::Borrowed(
+        opts.commodity_rename
+            .get(amount.commodity)
+            .map(String::as_str)
+            .unwrap_or(amount.commodity),
+    );
     syntax::expr::Amount {
         // TODO: pass the right format.
         value: PrettyDecimal::unformatted(amount.value),
-        commodity: Cow::Borrowed(amount.commodity),
+        commodity,
     }
 }
 
@@ -306,6 +328,8 @@ fn amount_with_sign(amount: &OwnedAmount, sign: Decimal) -> BorrowedAmount {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
@@ -366,7 +390,7 @@ mod tests {
         );
 
         assert_eq!(
-            txn.dest_amount(),
+            txn.dest_amount(&Options::default()),
             syntax_amount(PrettyDecimal::unformatted(dec!(-10)), "JPY").into(),
         );
     }
@@ -389,7 +413,43 @@ mod tests {
         txn.transferred_amount(owned_amount(dec!(10.00), "USD"));
 
         assert_eq!(
-            txn.dest_amount(),
+            txn.dest_amount(&Options::default()),
+            syntax::PostingAmount {
+                amount: syntax_amount(PrettyDecimal::unformatted(dec!(-10.00)), "USD"),
+                cost: Some(syntax::Exchange::Rate(syntax_amount(
+                    PrettyDecimal::unformatted(dec!(100)),
+                    "JPY"
+                ))),
+                lot: syntax::Lot::default(),
+            },
+        )
+    }
+
+    #[test]
+    fn dest_amount_aliased() {
+        let mut txn = Txn::new(
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            "foo",
+            owned_amount(dec!(1000), "日本円"),
+        );
+        txn.add_rate(
+            CommodityPair {
+                source: "日本円".to_owned(),
+                target: "米ドル".to_owned(),
+            },
+            dec!(100),
+        )
+        .unwrap();
+        txn.transferred_amount(owned_amount(dec!(10.00), "米ドル"));
+        let options = Options {
+            commodity_rename: hashmap! {
+                "米ドル".to_string() => "USD".to_string(),
+                "日本円".to_string() => "JPY".to_string(),
+            },
+        };
+
+        assert_eq!(
+            txn.dest_amount(&options),
             syntax::PostingAmount {
                 amount: syntax_amount(PrettyDecimal::unformatted(dec!(-10.00)), "USD"),
                 cost: Some(syntax::Exchange::Rate(syntax_amount(
@@ -419,7 +479,7 @@ mod tests {
         txn.transferred_amount(owned_amount(dec!(-10.00), "USD"));
 
         assert_eq!(
-            txn.dest_amount(),
+            txn.dest_amount(&Options::default()),
             syntax::PostingAmount {
                 amount: syntax_amount(PrettyDecimal::unformatted(dec!(-10.00)), "USD"),
                 cost: Some(syntax::Exchange::Rate(syntax_amount(
