@@ -8,6 +8,18 @@
 
 ### Fixed
 
+## [0.15.0] - 2025-06-19
+
+### Added
+
+* Improved error message on `balance` (https://github.com/xkikeg/okane/pull/246).
+* Added `import` option to rename commodity (https://github.com/xkikeg/okane/pull/253).
+
+### Fixed
+
+* Test fix on Windows (https://github.com/xkikeg/okane/pull/247).
+* Fixed a bug in PrettyDecimal crashing in comma3dot mode with fraction (https://github.com/xkikeg/okane/pull/249).
+
 ## [0.14.0] - 2025-04-08
 
 ### Added
