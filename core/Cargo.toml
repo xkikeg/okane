@@ -35,7 +35,7 @@ maplit.workspace = true
 pretty_assertions.workspace = true
 rstest.workspace = true
 rust_decimal_macros.workspace = true
-criterion = {version = "0.5", features = ["html_reports"]}
+criterion = {version = "0.6", features = ["html_reports"]}
 
 [[bench]]
 name = "report_bench"
