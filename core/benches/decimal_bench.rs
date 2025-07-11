@@ -1,9 +1,12 @@
+use std::hint::black_box;
 use std::str::FromStr;
 
-use okane_core::syntax::pretty_decimal::PrettyDecimal;
-
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
+use pretty_decimal::PrettyDecimal;
 use rust_decimal_macros::dec;
+
+// Actually this benchmark is now not needed,
+// however, these metrics are quite stable and good to tell about the noise.
 
 fn parse_benchmark(c: &mut Criterion) {
     c.bench_function("parse plain", |b| {

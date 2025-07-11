@@ -1,9 +1,10 @@
 //! Defines data & functions for displaying syntax types.
 
 use super::*;
-use crate::syntax::pretty_decimal::PrettyDecimal;
 
 use decoration::AsUndecorated;
+
+use pretty_decimal::PrettyDecimal;
 use std::collections::HashMap;
 use unicode_width::UnicodeWidthStr;
 

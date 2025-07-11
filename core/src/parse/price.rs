@@ -10,7 +10,7 @@ use winnow::{
     Parser as _,
 };
 
-use crate::syntax::{self, pretty_decimal};
+use crate::syntax::{self};
 
 use super::{
     adaptor::{ParseOptions, ParsedContext},
@@ -66,11 +66,12 @@ mod tests {
 
     use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
     use pretty_assertions::assert_eq;
+    use pretty_decimal::PrettyDecimal;
     use rust_decimal_macros::dec;
 
     use crate::parse::testing::expect_parse_ok;
 
-    use syntax::{expr::Amount, pretty_decimal::PrettyDecimal, PriceDBEntry};
+    use syntax::{expr::Amount, PriceDBEntry};
 
     #[test]
     fn price_db_parses_valid_with_date() {

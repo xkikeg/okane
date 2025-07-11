@@ -384,9 +384,10 @@ mod tests {
     use bumpalo::Bump;
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
+    use pretty_decimal::PrettyDecimal;
     use rust_decimal_macros::dec;
 
-    use crate::{report::ReportContext, syntax::pretty_decimal::PrettyDecimal};
+    use crate::report::ReportContext;
 
     #[test]
     fn test_default() {

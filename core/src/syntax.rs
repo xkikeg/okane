@@ -4,7 +4,6 @@ pub mod decoration;
 pub mod display;
 pub mod expr;
 pub mod plain;
-pub mod pretty_decimal;
 pub mod tracked;
 
 use std::{borrow::Cow, fmt};

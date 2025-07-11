@@ -12,7 +12,7 @@ use winnow::{
     Parser,
 };
 
-use crate::syntax::{expr, pretty_decimal};
+use crate::syntax::expr;
 
 use super::{adaptor::ParseOptions, character::paren, error, primitive};
 
@@ -239,9 +239,9 @@ mod tests {
     use super::*;
 
     use crate::parse::testing::expect_parse_ok;
-    use crate::syntax::pretty_decimal::PrettyDecimal;
 
     use pretty_assertions::assert_eq;
+    use pretty_decimal::PrettyDecimal;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 

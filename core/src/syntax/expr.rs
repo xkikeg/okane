@@ -5,8 +5,7 @@ use core::fmt;
 use std::borrow::Cow;
 
 use bounded_static::ToStatic;
-
-use super::pretty_decimal::PrettyDecimal;
+use pretty_decimal::PrettyDecimal;
 
 /// Amount, which is a single unit of value with a commodity.
 #[derive(Debug, PartialEq, Eq, Clone, ToStatic)]

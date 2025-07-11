@@ -1,8 +1,7 @@
 //! Defines parser functions for the primitive types used in Ledger format.
 
-use crate::syntax::pretty_decimal::{self, PrettyDecimal};
-
 use chrono::NaiveDate;
+use pretty_decimal::{self, PrettyDecimal};
 use winnow::{
     ascii::digit1,
     combinator::{alt, trace},
