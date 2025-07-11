@@ -3,8 +3,7 @@
 use std::{collections::HashMap, fmt::Display};
 
 use bumpalo::Bump;
-
-use crate::syntax::pretty_decimal::PrettyDecimal;
+use pretty_decimal::PrettyDecimal;
 
 use super::intern::{FromInterned, InternError, InternStore, InternedStr};
 

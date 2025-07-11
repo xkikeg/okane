@@ -24,6 +24,7 @@ env_logger.workspace = true
 lazy_static.workspace = true
 log.workspace = true
 path-slash = "0.2.1"
+pretty_decimal.workspace = true
 quick-xml = { version = "0.37", features = [ "serialize" ] }
 regex.workspace = true
 rust_decimal.workspace = true

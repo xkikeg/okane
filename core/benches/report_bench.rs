@@ -1,11 +1,11 @@
+use std::hint::black_box;
 use std::path::Path;
 
 use bumpalo::Bump;
 use chrono::NaiveDate;
 use criterion::measurement::Measurement as _;
 use criterion::{
-    black_box, criterion_group, criterion_main, measurement::WallTime, BatchSize, BenchmarkId,
-    Criterion,
+    criterion_group, criterion_main, measurement::WallTime, BatchSize, BenchmarkId, Criterion,
 };
 use log::LevelFilter;
 use okane_core::{

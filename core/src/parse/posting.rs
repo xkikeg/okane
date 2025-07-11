@@ -13,14 +13,13 @@ use winnow::{
     Parser,
 };
 
-use crate::syntax::{self, pretty_decimal};
 use crate::{
     parse::{
         character::{line_ending_or_semi, paren},
         combinator::{cond_else, has_peek},
         expr, metadata, primitive,
     },
-    syntax::decoration::Decoration,
+    syntax::{self, decoration::Decoration},
 };
 
 pub fn posting<'i, Deco, Input, E>(
@@ -272,16 +271,14 @@ mod tests {
     use chrono::NaiveDate;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
+    use pretty_decimal::PrettyDecimal;
     use rust_decimal_macros::dec;
     use syntax::plain;
     use winnow::{error::ContextError, LocatingSlice};
 
     use crate::{
         parse::testing::expect_parse_ok,
-        syntax::{
-            plain::{Lot, Posting, PostingAmount},
-            pretty_decimal::PrettyDecimal,
-        },
+        syntax::plain::{Lot, Posting, PostingAmount},
     };
 
     #[test]

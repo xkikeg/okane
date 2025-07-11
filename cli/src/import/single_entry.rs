@@ -1,9 +1,10 @@
 use std::{borrow::Cow, collections::HashMap};
 
 use chrono::NaiveDate;
+use pretty_decimal::PrettyDecimal;
 use rust_decimal::Decimal;
 
-use okane_core::syntax::{self, pretty_decimal::PrettyDecimal};
+use okane_core::syntax::{self};
 
 use super::amount::{AmountRef, BorrowedAmount, OwnedAmount};
 use super::ImportError;

@@ -958,6 +958,7 @@ dependencies = [
  "okane-golden",
  "path-slash",
  "pretty_assertions",
+ "pretty_decimal",
  "quick-xml",
  "regex",
  "rstest",
@@ -991,6 +992,7 @@ dependencies = [
  "maplit",
  "okane-golden",
  "pretty_assertions",
+ "pretty_decimal",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",
@@ -1162,6 +1164,18 @@ checksum = "3ae130e2f271fbc2ac3a40fb1d07180839cdbbe443c7a27e1e3c13c5cac0116d"
 dependencies = [
  "diff",
  "yansi",
+]
+
+[[package]]
+name = "pretty_decimal"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98d7f788b63e47c9c985a3e1f9c394f9f415f16150589116819d46d86b052431"
+dependencies = [
+ "bounded-static",
+ "itoa",
+ "rust_decimal",
+ "thiserror",
 ]
 
 [[package]]

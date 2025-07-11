@@ -1,4 +1,4 @@
-use crate::syntax::{self, pretty_decimal};
+use crate::syntax;
 
 use super::{character::line_ending_or_eof, expr, metadata};
 

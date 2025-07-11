@@ -8,8 +8,10 @@ use std::{
     sync::mpsc,
 };
 
+use okane_core::load;
+
 use chrono::NaiveDate;
-use okane_core::{load, syntax::pretty_decimal::PrettyDecimal};
+use pretty_decimal::PrettyDecimal;
 use rust_decimal_macros::dec;
 
 /// Metadata containing the reference to the generated input.

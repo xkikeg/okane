@@ -74,14 +74,12 @@ mod tests {
     use chrono::NaiveDate;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
+    use pretty_decimal::PrettyDecimal;
     use rust_decimal_macros::dec;
 
     use crate::{
         parse::testing::expect_parse_ok,
-        syntax::{
-            plain::{Posting, PostingAmount, Transaction},
-            pretty_decimal::PrettyDecimal,
-        },
+        syntax::plain::{Posting, PostingAmount, Transaction},
     };
 
     #[test]
