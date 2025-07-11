@@ -1,6 +1,6 @@
 version: 2.1
 orbs:
-  rust: circleci/rust@1.6.0
+  rust: circleci/rust@1.7.0
 workflows:
   production:
     jobs:
