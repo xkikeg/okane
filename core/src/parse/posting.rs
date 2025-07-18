@@ -36,7 +36,7 @@ where
     <Input as Stream>::Token: AsChar + Clone,
     E: ParserError<Input>
         + AddContext<Input, StrContext>
-        + FromExternalError<Input, pretty_decimal::Error>
+        + FromExternalError<Input, pretty_decimal::ParseError>
         + FromExternalError<Input, chrono::ParseError>,
 {
     trace("posting::posting", move |input: &mut Input| {
@@ -130,7 +130,7 @@ where
     <Input as Stream>::Token: AsChar + Clone,
     E: ParserError<Input>
         + AddContext<Input, StrContext>
-        + FromExternalError<Input, pretty_decimal::Error>
+        + FromExternalError<Input, pretty_decimal::ParseError>
         + FromExternalError<Input, chrono::ParseError>,
 {
     let amount = terminated(Deco::decorate_parser(expr::value_expr), space0).parse_next(input)?;
@@ -159,7 +159,7 @@ where
     <Input as Stream>::Token: AsChar + Clone,
     E: ParserError<Input>
         + AddContext<Input, StrContext>
-        + FromExternalError<Input, pretty_decimal::Error>
+        + FromExternalError<Input, pretty_decimal::ParseError>
         + FromExternalError<Input, chrono::ParseError>,
 {
     space0.void().parse_next(input)?;
@@ -214,7 +214,7 @@ where
         + winnow::stream::Compare<&'static str>
         + Clone,
     <Input as Stream>::Token: AsChar + Clone,
-    E: ParserError<Input> + FromExternalError<Input, pretty_decimal::Error>,
+    E: ParserError<Input> + FromExternalError<Input, pretty_decimal::ParseError>,
 {
     let is_total = has_peek(literal("{{")).parse_next(input)?;
     if is_total {
@@ -243,7 +243,7 @@ where
         + winnow::stream::Compare<&'static str>
         + Clone,
     <Input as Stream>::Token: AsChar + Clone,
-    E: ParserError<Input> + FromExternalError<Input, pretty_decimal::Error>,
+    E: ParserError<Input> + FromExternalError<Input, pretty_decimal::ParseError>,
 {
     preceded((literal("@@"), space0), expr::value_expr)
         .map(syntax::Exchange::Total)
@@ -257,7 +257,7 @@ where
         + winnow::stream::Compare<&'static str>
         + Clone,
     <Input as Stream>::Token: AsChar + Clone,
-    E: ParserError<Input> + FromExternalError<Input, pretty_decimal::Error>,
+    E: ParserError<Input> + FromExternalError<Input, pretty_decimal::ParseError>,
 {
     preceded((literal("@"), space0), expr::value_expr)
         .map(syntax::Exchange::Rate)

@@ -1168,10 +1168,11 @@ dependencies = [
 
 [[package]]
 name = "pretty_decimal"
-version = "0.1.2"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2589c90fd6b31c99509e622335c7d8f647dbce13950909a338dd544d5e021c9f"
+checksum = "f0af146e591a94430234da4178fbdec4bc867b5ad2859700646ef9e5c2b6ec8e"
 dependencies = [
+ "arrayvec",
  "bounded-static",
  "itoa",
  "rust_decimal",

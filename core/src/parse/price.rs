@@ -41,7 +41,7 @@ where
         + Clone,
     <I as Stream>::Token: AsChar + Clone,
     E: ParserError<I>
-        + FromExternalError<I, pretty_decimal::Error>
+        + FromExternalError<I, pretty_decimal::ParseError>
         + FromExternalError<I, chrono::ParseError>,
 {
     trace(
