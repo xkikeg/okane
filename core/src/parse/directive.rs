@@ -72,7 +72,7 @@ where
         + winnow::stream::Compare<&'static str>
         + winnow::stream::FindSlice<(char, char)>,
     <I as Stream>::Token: AsChar + Clone,
-    E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
+    E: ParserError<I> + FromExternalError<I, pretty_decimal::ParseError>,
 {
     (
         delimited(

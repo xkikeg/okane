@@ -21,7 +21,7 @@ repository = "https://github.com/xkikeg/okane"
 bumpalo = {version = "3.17", features = ["collections", "boxed"]}
 chrono = "0.4.40"
 log = "0.4"
-pretty_decimal = { version = "0.1", features = ["bounded-static"] }
+pretty_decimal = { version = "0.2.1", features = ["bounded-static"] }
 regex = "1.11"
 rust_decimal = "1.37"
 strum = { version = "0.27", features = ["derive"] }

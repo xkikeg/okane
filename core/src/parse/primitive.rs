@@ -15,7 +15,7 @@ use winnow::{
 pub fn pretty_decimal<'a, I, E>(input: &mut I) -> winnow::Result<PrettyDecimal, E>
 where
     I: Stream<Slice = &'a str> + StreamIsPartial,
-    E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
+    E: ParserError<I> + FromExternalError<I, pretty_decimal::ParseError>,
     <I as Stream>::Token: AsChar,
 {
     trace(

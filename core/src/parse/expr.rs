@@ -20,7 +20,7 @@ use super::{adaptor::ParseOptions, character::paren, error, primitive};
 pub fn value_expr<'i, I, E>(input: &mut I) -> winnow::Result<expr::ValueExpr<'i>, E>
 where
     I: Stream<Token = char, Slice = &'i str> + StreamIsPartial + Clone,
-    E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
+    E: ParserError<I> + FromExternalError<I, pretty_decimal::ParseError>,
     <I as Stream>::Token: AsChar + Clone,
 {
     trace(
@@ -46,7 +46,7 @@ impl<'i> TryFrom<&'i str> for expr::ValueExpr<'i> {
 fn paren_expr<'i, I, E>(input: &mut I) -> winnow::Result<expr::ValueExpr<'i>, E>
 where
     I: Stream<Token = char, Slice = &'i str> + StreamIsPartial + Clone,
-    E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
+    E: ParserError<I> + FromExternalError<I, pretty_decimal::ParseError>,
     <I as Stream>::Token: AsChar + Clone,
 {
     trace(
@@ -59,7 +59,7 @@ where
 fn add_expr<'i, I, E>(input: &mut I) -> winnow::Result<expr::Expr<'i>, E>
 where
     I: Stream<Token = char, Slice = &'i str> + StreamIsPartial + Clone,
-    E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
+    E: ParserError<I> + FromExternalError<I, pretty_decimal::ParseError>,
     <I as Stream>::Token: AsChar + Clone,
 {
     trace("expr::add_expr", infixl(add_op, mul_expr)).parse_next(input)
@@ -84,7 +84,7 @@ where
 fn mul_expr<'i, I, E>(input: &mut I) -> winnow::Result<expr::Expr<'i>, E>
 where
     I: Stream<Token = char, Slice = &'i str> + StreamIsPartial + Clone,
-    E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
+    E: ParserError<I> + FromExternalError<I, pretty_decimal::ParseError>,
     <I as Stream>::Token: AsChar + Clone,
 {
     trace("expr::mul_expr", infixl(mul_op, unary_expr)).parse_next(input)
@@ -109,7 +109,7 @@ where
 fn unary_expr<'i, I, E>(input: &mut I) -> winnow::Result<expr::Expr<'i>, E>
 where
     I: Stream<Token = char, Slice = &'i str> + StreamIsPartial + Clone,
-    E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
+    E: ParserError<I> + FromExternalError<I, pretty_decimal::ParseError>,
     <I as Stream>::Token: AsChar + Clone,
 {
     trace(
@@ -127,7 +127,7 @@ where
 fn unary_amount<'i, I, E>(input: &mut I) -> winnow::Result<expr::Amount<'i>, E>
 where
     I: Stream<Slice = &'i str> + StreamIsPartial,
-    E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
+    E: ParserError<I> + FromExternalError<I, pretty_decimal::ParseError>,
     <I as Stream>::Token: AsChar + Clone,
 {
     // This supports prefix commodity.
@@ -168,7 +168,7 @@ impl<'i> TryFrom<&'i str> for expr::Amount<'i> {
 fn negate_expr<'i, I, E>(input: &mut I) -> winnow::Result<expr::Expr<'i>, E>
 where
     I: Stream<Token = char, Slice = &'i str> + StreamIsPartial + Clone,
-    E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
+    E: ParserError<I> + FromExternalError<I, pretty_decimal::ParseError>,
     <I as Stream>::Token: AsChar + Clone,
 {
     trace(
@@ -187,7 +187,7 @@ where
 pub fn amount<'i, I, E>(input: &mut I) -> winnow::Result<expr::Amount<'i>, E>
 where
     I: Stream<Slice = &'i str> + StreamIsPartial,
-    E: ParserError<I> + FromExternalError<I, pretty_decimal::Error>,
+    E: ParserError<I> + FromExternalError<I, pretty_decimal::ParseError>,
     <I as Stream>::Token: AsChar + Clone,
 {
     // Currently it only supports suffix commodity,
