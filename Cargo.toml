@@ -40,5 +40,8 @@ pretty_assertions = "1.4"
 rstest = "0.25"
 rust_decimal_macros = "1.37"
 
+[profile.release]
+lto = "thin"
+
 [profile.bench]
 debug = "limited"
