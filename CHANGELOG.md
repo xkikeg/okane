@@ -6,6 +6,9 @@
 
 ### Changed
 
+* Core: Removed PrettyDecimal, now published as independent crate (https://github.com/xkikeg/okane/pull/258).
+* CLI: Renamed `format.commodity` option into `output.commodity` (https://github.com/xkikeg/okane/pull/260).
+
 ### Fixed
 
 ## [0.15.0] - 2025-06-19

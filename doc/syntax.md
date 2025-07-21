@@ -187,6 +187,8 @@ comma-integer ::= number+ | number{1-3} ("," number{3})*
 
 number ::= [0-9]
 
+; Note quoted commodity isn't supported yet.
+; https://github.com/xkikeg/okane/issues/254
 commodity ::= [^- \t\r\n0123456789.,;:?!+*/^&|=<>[](){}@]
 
 date ::= <yyyy/mm/dd> | <yyyy-mm-dd>

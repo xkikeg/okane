@@ -65,11 +65,13 @@ format:
     commodity: 通貨
     rate: 適用レート
     secondary_amount: 取引円換算額
+output:
   commodity:
-    EUR:
-      precision: 2
-    CHF:
-      precision: 2
+    default:
+      scale: 2
+    overrides:
+      JPY:
+        scale: 0
 rewrite:
   - matcher:
       payee: .*Visaデビット　(?P<code>\d+)　(?P<payee>.*)$
@@ -150,12 +152,13 @@ encoding: UTF-8
 account_type: asset
 operator: Okane Bank (fee)
 commodity: CHF
-format:
+output:
   commodity:
-    CHF:
-      precision: 2
-    EUR:
-      precision: 2
+    overrides:
+      CHF:
+        scale: 2
+      EUR:
+        scale: 2
 rewrite:
   - matcher:
       additional_transaction_info: "Okanecard purchase [0-9.]+ [0-9:]+ (?P<payee>.*) Card number: \\d+"

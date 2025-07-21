@@ -1,7 +1,8 @@
 //! Contains YAML serde representation for the config.
 
-use std::collections::HashMap;
+use std::collections::{hash_map, HashMap};
 use std::convert::{TryFrom, TryInto};
+use std::hash::Hash;
 use std::path::{Path, PathBuf};
 
 use path_slash::PathBufExt;
@@ -73,8 +74,12 @@ pub struct ConfigEntry {
     /// Operator of the import target.
     /// Required only when some charges applied.
     pub operator: Option<String>,
+    /// Commodity handling about the account.
     pub commodity: AccountCommoditySpec,
+    /// Format of the given input file.
     pub format: FormatSpec,
+    /// Specification about output file.
+    pub output: OutputSpec,
     pub rewrite: Vec<RewriteRule>,
 }
 
@@ -95,6 +100,7 @@ impl TryFrom<ConfigFragment> for ConfigEntry {
             .ok_or(ImportError::InvalidConfig("no commodity specified"))?
             .into();
         let format = value.format.unwrap_or_default();
+        let output = value.output.unwrap_or_default();
         Ok(ConfigEntry {
             path: value.path,
             encoding,
@@ -103,6 +109,7 @@ impl TryFrom<ConfigFragment> for ConfigEntry {
             operator: value.operator,
             commodity,
             format,
+            output,
             rewrite: value.rewrite,
         })
     }
@@ -126,27 +133,68 @@ struct ConfigFragment {
     pub operator: Option<String>,
     pub commodity: Option<AccountCommodityConfig>,
     pub format: Option<FormatSpec>,
+    pub output: Option<OutputSpec>,
     #[serde(default)]
     pub rewrite: Vec<RewriteRule>,
 }
 
-impl ConfigFragment {
-    /// Merges `other` into `self`, with overwriting as much as possible.
-    /// Note `rewrite` rules will be appended.
-    /// For now, `format` is also overwritten, not merged.
-    fn merge(self, mut other: ConfigFragment) -> ConfigFragment {
-        let mut rewrite = self.rewrite;
-        rewrite.append(&mut other.rewrite);
-        ConfigFragment {
+/// Merge allows merging objects into one.
+trait Merge: Sized {
+    /// Merges two into one, `other` takes precedence over `self`.
+    fn merge(mut self, other: Self) -> Self {
+        self.merge_from(other);
+        self
+    }
+
+    /// Merges `other` into `self`. Value in `other` takes precedence over `self`.
+    fn merge_from(&mut self, other: Self);
+}
+
+impl<T: Merge> Merge for Option<T> {
+    fn merge_from(&mut self, other: Self) {
+        match (self.as_mut(), other) {
+            (Some(v1), Some(v2)) => v1.merge_from(v2),
+            (None, Some(v)) => *self = Some(v),
+            (_, None) => (),
+        }
+    }
+}
+
+impl<K: Eq + Hash, T: Merge> Merge for HashMap<K, T> {
+    fn merge_from(&mut self, other: Self) {
+        for (k, v2) in other.into_iter() {
+            match self.entry(k) {
+                hash_map::Entry::Occupied(mut v1) => v1.get_mut().merge_from(v2),
+                hash_map::Entry::Vacant(e) => {
+                    e.insert(v2);
+                }
+            }
+        }
+    }
+}
+
+impl Merge for ConfigFragment {
+    fn merge(mut self, mut other: ConfigFragment) -> Self {
+        self.rewrite.append(&mut other.rewrite);
+        self.commodity.merge_from(other.commodity);
+        self.format.merge_from(other.format);
+        self.output.merge_from(other.output);
+        Self {
             path: other.path,
             encoding: other.encoding.or(self.encoding),
             account: other.account.or(self.account),
             account_type: other.account_type.or(self.account_type),
             operator: other.operator.or(self.operator),
-            commodity: other.commodity.or(self.commodity),
-            format: other.format.or(self.format),
-            rewrite,
+            commodity: self.commodity,
+            format: self.format,
+            output: self.output,
+            rewrite: self.rewrite,
         }
+    }
+
+    fn merge_from(&mut self, other: Self) {
+        // insufficient implementation, but safer unless we implement derive macro.
+        *self = self.clone().merge(other);
     }
 }
 
@@ -200,6 +248,21 @@ enum AccountCommodityConfig {
     Spec(AccountCommoditySpec),
 }
 
+impl Merge for AccountCommodityConfig {
+    fn merge_from(&mut self, other: Self) {
+        let other: AccountCommoditySpec = other.into();
+        match self {
+            Self::PrimaryCommodity(_) => {
+                *self = {
+                    let spec: AccountCommoditySpec = self.clone().into();
+                    Self::Spec(spec.merge(other))
+                }
+            }
+            Self::Spec(x) => x.merge_from(other),
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for AccountCommodityConfig {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -244,6 +307,16 @@ impl<'de> de::Visitor<'de> for AccountCommodityConfigVisitor {
     }
 }
 
+macro_rules! non_empty_right_most {
+    ($a:expr, $b:expr) => {
+        if !$b.is_empty() {
+            $b
+        } else {
+            $a
+        }
+    };
+}
+
 /// CommoditySpec describes commodity configs.
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
@@ -270,6 +343,24 @@ impl From<AccountCommodityConfig> for AccountCommoditySpec {
     }
 }
 
+impl Merge for AccountCommoditySpec {
+    fn merge(self, other: Self) -> Self {
+        let mut rename = self.rename;
+        for (k, v) in other.rename.into_iter() {
+            rename.insert(k, v);
+        }
+        Self {
+            primary: non_empty_right_most!(self.primary, other.primary),
+            conversion: self.conversion.merge(other.conversion),
+            rename,
+        }
+    }
+
+    fn merge_from(&mut self, other: Self) {
+        *self = self.clone().merge(other)
+    }
+}
+
 /// FormatSpec describes the several format used in import target.
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
@@ -277,20 +368,37 @@ pub struct FormatSpec {
     /// Specify the date format, in [chrono::format::strftime] compatible format.
     #[serde(default)]
     pub date: String,
-    /// Commodity (currency) styling.
-    #[serde(default)]
-    pub commodity: HashMap<String, CommodityFormatSpec>,
     /// Mapping from abstracted field key to abstracted position.
     #[serde(default)]
     pub fields: HashMap<FieldKey, FieldPos>,
     /// Delimiter for the CSV. Leave it empty to use default ",".
     #[serde(default)]
     pub delimiter: String,
-    #[serde(default)]
-    pub skip: SkipSpec,
-    /// Order of the row. By default, old to new order.
-    #[serde(default)]
-    pub row_order: RowOrder,
+    pub skip: Option<SkipSpec>,
+    /// Order of the row. By default (if None), old to new order.
+    pub row_order: Option<RowOrder>,
+}
+
+impl Merge for FormatSpec {
+    fn merge(self, other: Self) -> Self {
+        let date = non_empty_right_most!(self.date, other.date);
+        let fields = non_empty_right_most!(self.fields, other.fields);
+        let delimiter = non_empty_right_most!(self.delimiter, other.delimiter);
+        let skip = other.skip.or(self.skip);
+        let row_order = other.row_order.or(self.row_order);
+        Self {
+            date,
+            fields,
+            delimiter,
+            skip,
+            row_order,
+        }
+    }
+
+    fn merge_from(&mut self, other: Self) {
+        // insufficient implementation, but safer unless we have derive macro.
+        *self = self.clone().merge(other)
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
@@ -309,10 +417,109 @@ pub enum RowOrder {
     NewToOld,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
+/// Spec to describe the output formatting.
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct CommodityFormatSpec {
-    pub precision: u8,
+pub struct OutputSpec {
+    /// Output commodity format.
+    #[serde(default)]
+    pub commodity: OutputCommoditySpec,
+}
+
+impl Merge for OutputSpec {
+    fn merge(self, other: Self) -> Self {
+        Self {
+            commodity: self.commodity.merge(other.commodity),
+        }
+    }
+
+    fn merge_from(&mut self, other: Self) {
+        // insufficient, but safer implementation.
+        *self = self.clone().merge(other);
+    }
+}
+
+/// Spec to describe set of commodities format styling.
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct OutputCommoditySpec {
+    /// Default style applied for all commodities.
+    #[serde(default)]
+    pub default: OutputCommodityDetailsSpec,
+    /// Overrides specific to the map key commodity.
+    #[serde(default)]
+    pub overrides: HashMap<String, OutputCommodityDetailsSpec>,
+}
+
+impl Merge for OutputCommoditySpec {
+    fn merge_from(&mut self, other: Self) {
+        self.default.merge_from(other.default);
+        self.overrides.merge_from(other.overrides);
+    }
+}
+
+impl From<OutputCommoditySpec>
+    for okane_core::utility::ConfigResolver<
+        String,
+        okane_core::syntax::display::CommodityDisplayOption,
+    >
+{
+    fn from(value: OutputCommoditySpec) -> Self {
+        Self::new(
+            value.default.into(),
+            value
+                .overrides
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
+                .collect(),
+        )
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct OutputCommodityDetailsSpec {
+    /// Format of the amount.
+    pub style: Option<CommodityFormatStyle>,
+    /// Scale of the amount, which is the minimal number of digits below the decimal point.
+    pub scale: Option<u8>,
+}
+
+impl Merge for OutputCommodityDetailsSpec {
+    fn merge_from(&mut self, other: Self) {
+        *self = Self {
+            style: other.style.or(self.style),
+            scale: other.scale.or(self.scale),
+        }
+    }
+}
+
+impl From<OutputCommodityDetailsSpec> for okane_core::syntax::display::CommodityDisplayOption {
+    fn from(value: OutputCommodityDetailsSpec) -> Self {
+        Self {
+            format: value.style.map(|x| x.into()),
+            min_scale: value.scale,
+        }
+    }
+}
+
+/// Key represents the field abstracted way.
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CommodityFormatStyle {
+    /// Plain number, such as 1234.567
+    Plain,
+    /// Comma separated number, such as 1,234.56.
+    Comma3Dot,
+}
+
+impl From<CommodityFormatStyle> for pretty_decimal::Format {
+    fn from(value: CommodityFormatStyle) -> Self {
+        match value {
+            CommodityFormatStyle::Plain => Self::Plain,
+            CommodityFormatStyle::Comma3Dot => Self::Comma3Dot,
+        }
+    }
 }
 
 /// Key represents the field abstracted way.
@@ -454,16 +661,31 @@ pub struct RewriteRule {
 #[serde(deny_unknown_fields, default)]
 pub struct CommodityConversionSpec {
     /// Decides how the `secondary_amount` is computed.
-    pub amount: ConversionAmountMode,
+    pub amount: Option<ConversionAmountMode>,
     /// Overrides `secondary_commodity` with the given value.
     pub commodity: Option<String>,
     /// Decides `rate` meaning.
-    pub rate: ConversionRateMode,
+    pub rate: Option<ConversionRateMode>,
     /// Disable all conversions.
-    pub disabled: bool,
+    pub disabled: Option<bool>,
 }
 
-#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
+impl Merge for CommodityConversionSpec {
+    fn merge(self, other: Self) -> Self {
+        Self {
+            amount: other.amount.or(self.amount),
+            commodity: other.commodity.or(self.commodity),
+            rate: other.rate.or(self.rate),
+            disabled: other.disabled.or(self.disabled),
+        }
+    }
+
+    fn merge_from(&mut self, other: Self) {
+        *self = self.clone().merge(other)
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum ConversionAmountMode {
     /// Extracts the `secondary_amount` from the input data field.
@@ -473,7 +695,7 @@ pub enum ConversionAmountMode {
     Compute,
 }
 
-#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum ConversionRateMode {
     /// Given rate is a price of secondary commodity, e.g.
@@ -554,6 +776,7 @@ mod tests {
             commodity: None,
             encoding: None,
             format: None,
+            output: None,
             operator: None,
             rewrite: Vec::new(),
         }
@@ -572,6 +795,7 @@ mod tests {
                 date: "%Y%m%d".to_owned(),
                 ..FormatSpec::default()
             }),
+            output: None,
             rewrite: vec![],
         }
     }
@@ -649,7 +873,6 @@ mod tests {
                 },
                 ConfigFragment {
                     path: "bank/checking/".to_string(),
-                    // Normally commodity won't be overridden by merge.
                     commodity: Some(AccountCommodityConfig::Spec(simple_commodity_spec(
                         "CHF".to_string(),
                     ))),
@@ -679,45 +902,44 @@ mod tests {
             )
             .expect("select must not fail")
             .expect("entry should be found");
-        assert_eq!(
-            cfg,
-            ConfigEntry {
-                path: "bank/checking/".to_string(),
-                encoding: Encoding(encoding_rs::UTF_8),
-                account: "Assets:Banks:Checking".to_string(),
-                account_type: AccountType::Asset,
-                operator: None,
-                commodity: simple_commodity_spec("CHF".to_string()),
-                format: FormatSpec {
-                    date: "%Y/%m/%d".to_string(),
-                    ..Default::default()
+        let want = ConfigEntry {
+            path: "bank/checking/".to_string(),
+            encoding: Encoding(encoding_rs::UTF_8),
+            account: "Assets:Banks:Checking".to_string(),
+            account_type: AccountType::Asset,
+            operator: None,
+            commodity: simple_commodity_spec("CHF".to_string()),
+            format: FormatSpec {
+                date: "%Y/%m/%d".to_string(),
+                ..Default::default()
+            },
+            output: OutputSpec::default(),
+            rewrite: vec![
+                RewriteRule {
+                    matcher: RewriteMatcher::Field(FieldMatcher {
+                        fields: hashmap! {
+                            RewriteField::Payee => r#"foo"#.to_string(),
+                        },
+                    }),
+                    account: Some("Account Foo".to_string()),
+                    payee: None,
+                    conversion: None,
+                    pending: false,
                 },
-                rewrite: vec![
-                    RewriteRule {
-                        matcher: RewriteMatcher::Field(FieldMatcher {
-                            fields: hashmap! {
-                                RewriteField::Payee => r#"foo"#.to_string(),
-                            },
-                        }),
-                        account: Some("Account Foo".to_string()),
-                        payee: None,
-                        conversion: None,
-                        pending: false,
-                    },
-                    RewriteRule {
-                        matcher: RewriteMatcher::Field(FieldMatcher {
-                            fields: hashmap! {
-                                RewriteField::Payee => r#"bar"#.to_string(),
-                            },
-                        }),
-                        account: Some("Account Bar".to_string()),
-                        payee: None,
-                        conversion: None,
-                        pending: false,
-                    }
-                ],
-            }
-        );
+                RewriteRule {
+                    matcher: RewriteMatcher::Field(FieldMatcher {
+                        fields: hashmap! {
+                            RewriteField::Payee => r#"bar"#.to_string(),
+                        },
+                    }),
+                    account: Some("Account Bar".to_string()),
+                    payee: None,
+                    conversion: None,
+                    pending: false,
+                },
+            ],
+        };
+        assert_eq!(want, cfg);
     }
 
     #[test]
@@ -917,7 +1139,7 @@ mod tests {
           rate: price_of_primary
         "#};
         let de = serde_yaml::Deserializer::from_str(input);
-        let matcher = RewriteRule {
+        let want = RewriteRule {
             matcher: RewriteMatcher::Field(FieldMatcher {
                 fields: hashmap! {RewriteField::DomainCode => "PMNT".to_string()},
             }),
@@ -925,13 +1147,13 @@ mod tests {
             payee: None,
             account: Some("Income:Salary".to_string()),
             conversion: Some(CommodityConversionSpec {
-                amount: ConversionAmountMode::Extract,
+                amount: None,
                 commodity: None,
-                rate: ConversionRateMode::PriceOfPrimary,
-                disabled: false,
+                rate: Some(ConversionRateMode::PriceOfPrimary),
+                disabled: None,
             }),
         };
-        assert_eq!(matcher, RewriteRule::deserialize(de).unwrap());
+        assert_eq!(want, RewriteRule::deserialize(de).unwrap());
     }
 
     #[test]

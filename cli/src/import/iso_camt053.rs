@@ -50,7 +50,7 @@ where
             }
         }
         let closing_balance = find_balance(&stmt, xmlnode::BalanceCode::Closing);
-        let entries = match &config.format.row_order {
+        let entries = match &config.format.row_order.unwrap_or_default() {
             config::RowOrder::OldToNew => Either::Left(stmt.entries.iter()),
             config::RowOrder::NewToOld => Either::Right(stmt.entries.iter().rev()),
         };
