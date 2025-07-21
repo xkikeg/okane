@@ -3,7 +3,7 @@
     ! Income:Unknown                       -24000.11 USD
 
 2020/07/11 * 円普通預金より振替（デビット）
-    Assets:Okane Bank                          23.45 CHF @ 114.0500 JPY = 23.45 CHF
+    Assets:Okane Bank                          23.45 CHF @ 114.05 JPY = 23.45 CHF
     Assets:Wire                                -2675 JPY
 
 2020/07/11 * (785403) Hamachi Super
@@ -28,5 +28,9 @@
 
 2020/07/30 * 円普通預金へ振替
     Assets:Wire                               398819 JPY
-    Assets:Okane Bank                       -2740.65 USD @ 145.5200 JPY = 26597.73 USD
+    Assets:Okane Bank                       -2740.65 USD @ 145.52 JPY = 26597.73 USD
+
+2025/06/27 * 円普通預金へ振替
+    Assets:Wire                               721400 JPY
+    Assets:Okane Bank                       -5000.00 USD @ 144.28 JPY = 21597.73 USD
 

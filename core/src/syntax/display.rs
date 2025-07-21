@@ -4,14 +4,31 @@ use super::*;
 
 use decoration::AsUndecorated;
 
+use crate::utility;
+
 use pretty_decimal::PrettyDecimal;
-use std::collections::HashMap;
 use unicode_width::UnicodeWidthStr;
 
 /// Context information to control the formatting of the transaction.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct DisplayContext {
-    pub precisions: HashMap<String, u8>,
+    pub commodity: utility::ConfigResolver<String, CommodityDisplayOption>,
+}
+
+#[derive(Debug, Default)]
+pub struct CommodityDisplayOption {
+    pub format: Option<pretty_decimal::Format>,
+    pub min_scale: Option<u8>,
+}
+
+impl CommodityDisplayOption {
+    fn get_format(&self) -> Option<pretty_decimal::Format> {
+        self.format
+    }
+
+    fn get_min_scale(&self) -> Option<u8> {
+        self.min_scale
+    }
 }
 
 impl DisplayContext {
@@ -366,15 +383,23 @@ fn get_column(colsize: usize, left: usize, padding: usize) -> usize {
 
 fn rescale(x: &expr::Amount, context: &DisplayContext) -> PrettyDecimal {
     let mut v = x.value.clone();
-    v.rescale(std::cmp::max(
-        v.scale(),
-        context
-            .precisions
-            .get(x.commodity.as_ref())
-            .cloned()
-            .unwrap_or(0) as u32,
-    ));
-    v
+    match context
+        .commodity
+        .get_opt(x.commodity.as_ref(), CommodityDisplayOption::get_min_scale)
+    {
+        Some(min_scale) => {
+            v.as_mut().normalize_assign();
+            v.rescale(std::cmp::max(min_scale.into(), v.scale()));
+        }
+        None => (),
+    }
+    match context
+        .commodity
+        .get_opt(x.commodity.as_ref(), CommodityDisplayOption::get_format)
+    {
+        Some(format) => PrettyDecimal::with_format(v.value, Some(format)),
+        None => v,
+    }
 }
 
 fn print_clear_state(v: ClearState) -> &'static str {
@@ -388,6 +413,8 @@ fn print_clear_state(v: ClearState) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::collections::HashMap;
 
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
@@ -494,29 +521,29 @@ mod tests {
     fn posting_non_expr() {
         let all = Posting {
             amount: Some(PostingAmount {
-                amount: amount(1, "USD"),
-                cost: Some(Exchange::Rate(amount(100, "JPY"))),
+                amount: amount(1234, "USD"),
+                cost: Some(Exchange::Rate(amount(dec!(100.00), "JPY"))),
                 lot: plain::Lot {
                     price: Some(Exchange::Rate(amount(dec!(1.1), "USD"))),
                     date: Some(NaiveDate::from_ymd_opt(2022, 5, 20).unwrap()),
                     note: Some(Cow::Borrowed("printable note")),
                 },
             }),
-            balance: Some(amount(1, "USD")),
+            balance: Some(amount(1234, "USD")),
             ..Posting::new_untracked("Account")
         };
         let costbalance = Posting {
             amount: Some(PostingAmount {
-                amount: amount(1, "USD"),
+                amount: amount(1234, "USD"),
                 cost: Some(Exchange::Rate(amount(100, "JPY"))),
                 lot: plain::Lot::default(),
             }),
-            balance: Some(amount(1, "USD")),
+            balance: Some(amount(1234, "USD")),
             ..Posting::new_untracked("Account")
         };
         let total = Posting {
             amount: Some(PostingAmount {
-                amount: amount(1, "USD"),
+                amount: amount(1234, "USD"),
                 cost: Some(Exchange::Total(amount(100, "JPY"))),
                 lot: plain::Lot::default(),
             }),
@@ -524,16 +551,16 @@ mod tests {
         };
         let nocost = Posting {
             amount: Some(PostingAmount {
-                amount: amount(1, "USD"),
+                amount: amount(1234, "USD"),
                 cost: None,
                 lot: plain::Lot::default(),
             }),
-            balance: Some(amount(1, "USD")),
+            balance: Some(amount(1234, "USD")),
             ..Posting::new_untracked("Account")
         };
         let noamount = plain::Posting {
             amount: None,
-            balance: Some(amount(1, "USD")),
+            balance: Some(amount(1234, "USD")),
             ..Posting::new_untracked("Account")
         };
         let zerobalance = plain::Posting {
@@ -546,11 +573,11 @@ mod tests {
             concat!(
                 //       10        20        30        40        50        60        70
                 // 34567890123456789012345678901234567890123456789012345678901234567890
-                "    Account                                        1 USD {1.1 USD} [2022/05/20] (printable note) @ 100 JPY = 1 USD\n",
-                "    Account                                        1 USD @ 100 JPY = 1 USD\n",
-                "    Account                                        1 USD @@ 100 JPY\n",
-                "    Account                                        1 USD = 1 USD\n",
-                "    Account                                              = 1 USD\n",
+                "    Account                                     1234 USD {1.1 USD} [2022/05/20] (printable note) @ 100.00 JPY = 1234 USD\n",
+                "    Account                                     1234 USD @ 100 JPY = 1234 USD\n",
+                "    Account                                     1234 USD @@ 100 JPY\n",
+                "    Account                                     1234 USD = 1234 USD\n",
+                "    Account                                              = 1234 USD\n",
                 // we don't have shared state to determine where = should be aligned
                 "    Account                                          = 0\n"
             ),
@@ -565,18 +592,22 @@ mod tests {
             ),
         );
 
+        // overrides only
         let ctx = DisplayContext {
-            precisions: hashmap! {"USD".to_string() => 4},
+            commodity: utility::ConfigResolver::new(
+                CommodityDisplayOption::default(),
+                hashmap! {"USD".to_string() => CommodityDisplayOption {format: Some(pretty_decimal::Format::Comma3Dot), min_scale: Some(4)}},
+            ),
         };
         assert_eq!(
             concat!(
                 //       10        20        30        40        50        60        70
                 // 34567890123456789012345678901234567890123456789012345678901234567890
-                "    Account                                   1.0000 USD {1.1000 USD} [2022/05/20] (printable note) @ 100 JPY = 1.0000 USD\n",
-                "    Account                                   1.0000 USD @ 100 JPY = 1.0000 USD\n",
-                "    Account                                   1.0000 USD @@ 100 JPY\n",
-                "    Account                                   1.0000 USD = 1.0000 USD\n",
-                "    Account                                              = 1.0000 USD\n",
+                "    Account                               1,234.0000 USD {1.1000 USD} [2022/05/20] (printable note) @ 100.00 JPY = 1,234.0000 USD\n",
+                "    Account                               1,234.0000 USD @ 100 JPY = 1,234.0000 USD\n",
+                "    Account                               1,234.0000 USD @@ 100 JPY\n",
+                "    Account                               1,234.0000 USD = 1,234.0000 USD\n",
+                "    Account                                              = 1,234.0000 USD\n",
                 "    Account                                          = 0\n"
             ),
             format!(
@@ -639,24 +670,48 @@ mod tests {
 
     #[test]
     fn fmt_with_alignment_simple_amount_with_commodity() {
+        // no format, no min_scale
         let mut buffer = String::new();
-        let usd123 = amount(123i8, "USD");
+        let usd1234 = amount(1234i16, "USD");
         let alignment = DisplayContext::default()
-            .as_display(&usd123)
+            .as_display(&usd1234)
             .fmt_with_alignment(&mut buffer)
             .unwrap();
-        assert_eq!("123 USD", buffer.as_str());
-        assert_eq!(Alignment::Complete(3), alignment);
+        assert_eq!("1234 USD", buffer.as_str());
+        assert_eq!(Alignment::Complete(4), alignment);
+
+        // min_scale
+        buffer.clear();
+        let alignment = DisplayContext {
+            commodity: utility::ConfigResolver::new(
+                CommodityDisplayOption {
+                    format: None,
+                    min_scale: Some(2),
+                },
+                HashMap::new(),
+            ),
+        }
+        .as_display(&usd1234)
+        .fmt_with_alignment(&mut buffer)
+        .unwrap();
+        assert_eq!("1234.00 USD", buffer.as_str());
+        assert_eq!(Alignment::Complete(7), alignment);
 
         buffer.clear();
         let alignment = DisplayContext {
-            precisions: hashmap! {"USD".to_string() => 2},
+            commodity: utility::ConfigResolver::new(
+                CommodityDisplayOption {
+                    format: Some(pretty_decimal::Format::Comma3Dot),
+                    min_scale: Some(2),
+                },
+                HashMap::new(),
+            ),
         }
-        .as_display(&usd123)
+        .as_display(&usd1234)
         .fmt_with_alignment(&mut buffer)
         .unwrap();
-        assert_eq!("123.00 USD", buffer.as_str());
-        assert_eq!(Alignment::Complete(6), alignment);
+        assert_eq!("1,234.00 USD", buffer.as_str());
+        assert_eq!(Alignment::Complete(8), alignment);
     }
 
     #[test]

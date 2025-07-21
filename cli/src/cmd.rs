@@ -115,12 +115,7 @@ impl ImportCmd {
             .build(file);
         let xacts = import::import(decoded, format, &config_entry)?;
         let ctx = syntax::display::DisplayContext {
-            precisions: config_entry
-                .format
-                .commodity
-                .iter()
-                .map(|(k, v)| (k.clone(), v.precision))
-                .collect(),
+            commodity: config_entry.output.commodity.into(),
         };
         let opts = import::single_entry::Options {
             commodity_rename: config_entry.commodity.rename.clone(),

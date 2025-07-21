@@ -41,13 +41,10 @@ pub fn import<R: std::io::Read>(
     if !config.format.delimiter.is_empty() {
         rb.delimiter(config.format.delimiter.as_bytes()[0]);
     }
-    if config.format.skip.head > 0 {
+    for i in 0..config.format.skip.unwrap_or_default().head {
         let mut skipped = String::new();
-        for i in 0..config.format.skip.head {
-            skipped.clear();
-            br.read_line(&mut skipped)?;
-            log::info!("skipped {}-th line: {}", i, skipped.as_str().trim_end());
-        }
+        br.read_line(&mut skipped)?;
+        log::info!("skipped {}-th line: {}", i, skipped.as_str().trim_end());
     }
     let mut rdr = rb.from_reader(br);
     if !rdr.has_headers() {
@@ -154,7 +151,7 @@ pub fn import<R: std::io::Read>(
         let conversion = fragment
             .conversion
             .or(default_conversion)
-            .filter(|x| !x.disabled);
+            .filter(|x| !x.disabled.unwrap_or_default());
         if let Some(conv) = conversion {
             let rate = rate.ok_or_else(|| {
                 ImportError::Other(format!(
@@ -164,7 +161,7 @@ pub fn import<R: std::io::Read>(
             })?;
             let secondary_commodity = conv.commodity.as_deref().or(secondary_commodity.as_deref())
                 .ok_or_else(||ImportError::Other(format!("either rewrite.conversion.commodity or secondary_commodity field must be set @ line {}", pos.line())))?;
-            let (rate_key, computed_transferred) = match conv.rate {
+            let (rate_key, computed_transferred) = match conv.rate.unwrap_or_default() {
                 config::ConversionRateMode::PriceOfPrimary => (
                     CommodityPair {
                         source: secondary_commodity.to_owned(),
@@ -181,7 +178,7 @@ pub fn import<R: std::io::Read>(
                 ),
             };
             txn.add_rate(rate_key, rate)?;
-            let transferred = match conv.amount {
+            let transferred = match conv.amount.unwrap_or_default() {
                     config::ConversionAmountMode::Extract => secondary_amount.ok_or_else(|| ImportError::Other(format!(
                             "secondary_amount should be specified when conversion.amount is set to extract @ line {}", pos.line()
                     )))?,
@@ -194,7 +191,7 @@ pub fn import<R: std::io::Read>(
         }
         res.push(txn);
     }
-    match config.format.row_order {
+    match config.format.row_order.unwrap_or_default() {
         config::RowOrder::OldToNew => (),
         config::RowOrder::NewToOld => {
             res.reverse();

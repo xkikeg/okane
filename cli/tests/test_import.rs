@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use pretty_assertions::assert_eq;
 use rstest::rstest;
 
 pub mod testing;
