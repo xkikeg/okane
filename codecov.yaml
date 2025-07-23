@@ -11,15 +11,15 @@ component_management:
         branches:
           - "!main"
   individual_components:
-    - component_id: module_core
+    - component_id: crate_okane_core
       name: core
       paths:
         - core/**
-    - component_id: module_cli
+    - component_id: crate_okane
       name: CLI
       paths:
         - cli/**
-    - component_id: module_golden
+    - component_id: crate_okane_golden
       name: okane-golden
       paths:
         - golden/**
