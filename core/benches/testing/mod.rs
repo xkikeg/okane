@@ -67,7 +67,7 @@ impl Display for InputParams {
 impl InputParams {
     pub fn params_from_env() -> impl Iterator<Item = Self> {
         let mut target = std::env::var(BENCH_TARGET_KEY).unwrap_or_default();
-        if target == "" {
+        if target.is_empty() {
             target = Self::middle_more_commodity().name.to_string();
         }
         [
@@ -291,7 +291,7 @@ impl FileSink for RealFileSink {
     }
 
     fn shortcut(rootfile: &Path) -> bool {
-        match fs::metadata(&rootfile) {
+        match fs::metadata(rootfile) {
             Err(error) => {
                 log::warn!(
                     "std::fs::metadata() failed on {}, retry creation: {}",
@@ -306,11 +306,11 @@ impl FileSink for RealFileSink {
     }
 
     fn initialize(rootdir: &Path) -> Result<(), std::io::Error> {
-        fs::remove_dir_all(&rootdir).or_else(|e| match e.kind() {
+        fs::remove_dir_all(rootdir).or_else(|e| match e.kind() {
             io::ErrorKind::NotFound => Ok(()),
             _ => Err(e),
         })?;
-        fs::create_dir_all(&rootdir)
+        fs::create_dir_all(rootdir)
     }
 
     fn create_subdir(subdir: &Path) -> Result<(), std::io::Error> {
@@ -438,7 +438,7 @@ fn prepare_leaf_file<T: FileSink>(
     year: Year,
     mut total: i64,
 ) -> Result<i64, std::io::Error> {
-    let mut w = sink.writer(&target)?;
+    let mut w = sink.writer(target)?;
     for i in 0..params.num_transactions_per_file {
         let ordinal = (i * 365 / params.num_transactions_per_file + 1) as u32;
         let date = NaiveDate::from_yo_opt(year.0, ordinal)
@@ -495,7 +495,7 @@ fn prepare_leaf_file<T: FileSink>(
         writeln!(w, "{date} {payee}",)?;
         writeln!(w, "  Assets:Account{dir:02}     {amount} = {total} JPY",)?;
         writeln!(w, "  {other_account}     {other_amount}",)?;
-        writeln!(w, "")?;
+        writeln!(w)?;
     }
     Ok(total)
 }

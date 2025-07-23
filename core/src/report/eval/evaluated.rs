@@ -69,7 +69,7 @@ impl<'ctx> Evaluated<'ctx> {
             return amount.value.value.into();
         }
         let commodity = ctx.commodities.ensure(&amount.commodity);
-        Amount::from_value(amount.value.clone().into(), commodity).into()
+        Amount::from_value(amount.value.into(), commodity).into()
     }
 
     /// Creates [`Evaluated`] from [`expr::Amount`],
@@ -86,7 +86,7 @@ impl<'ctx> Evaluated<'ctx> {
                 amount.commodity.clone().into_owned(),
             ))
         })?;
-        Ok(Amount::from_value(amount.value.clone().into(), commodity).into())
+        Ok(Amount::from_value(amount.value.into(), commodity).into())
     }
 
     /// Returns if the amount is zero.

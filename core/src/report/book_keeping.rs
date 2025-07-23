@@ -164,7 +164,7 @@ impl<'ctx> ProcessAccumulator<'ctx> {
                         }
                         syntax::CommodityDetail::Format(format_amount) => {
                             ctx.commodities
-                                .set_format(canonical, format_amount.value.clone());
+                                .set_format(canonical, format_amount.value);
                         }
                         _ => {}
                     }
