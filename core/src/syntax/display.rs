@@ -382,16 +382,12 @@ fn get_column(colsize: usize, left: usize, padding: usize) -> usize {
 }
 
 fn rescale(x: &expr::Amount, context: &DisplayContext) -> PrettyDecimal {
-    let mut v = x.value.clone();
-    match context
+    let mut v = x.value;
+    if let Some(min_scale) = context
         .commodity
-        .get_opt(x.commodity.as_ref(), CommodityDisplayOption::get_min_scale)
-    {
-        Some(min_scale) => {
-            v.as_mut().normalize_assign();
-            v.rescale(std::cmp::max(min_scale.into(), v.scale()));
-        }
-        None => (),
+        .get_opt(x.commodity.as_ref(), CommodityDisplayOption::get_min_scale) {
+        v.as_mut().normalize_assign();
+        v.rescale(std::cmp::max(min_scale.into(), v.scale()));
     }
     match context
         .commodity

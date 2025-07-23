@@ -136,7 +136,7 @@ fn query_balance(c: &mut Criterion) {
             .expect("report::process must succeed");
 
         group.bench_with_input(
-            BenchmarkId::new("default", &params),
+            BenchmarkId::new("default", params),
             &params,
             |b, _params| {
                 b.iter_with_large_drop(|| {
@@ -166,7 +166,7 @@ fn query_balance(c: &mut Criterion) {
             conversion: None,
         };
         group.bench_with_input(
-            BenchmarkId::new("date-range", &params),
+            BenchmarkId::new("date-range", params),
             &params,
             |b, _params| {
                 b.iter_with_large_drop(|| {
@@ -196,7 +196,7 @@ fn query_balance(c: &mut Criterion) {
             }),
         };
         group.bench_with_input(
-            BenchmarkId::new("conversion-up-to-date", &params),
+            BenchmarkId::new("conversion-up-to-date", params),
             &params,
             |b, _params| {
                 b.iter_with_large_drop(|| {
@@ -223,7 +223,7 @@ fn query_balance(c: &mut Criterion) {
             }),
         };
         group.bench_with_input(
-            BenchmarkId::new("conversion-historical", &params),
+            BenchmarkId::new("conversion-historical", params),
             &params,
             |b, _params| {
                 b.iter_with_large_drop(|| {
