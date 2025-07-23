@@ -50,13 +50,18 @@ impl<'de> Deserialize<'de> for OneBasedIndex {
 }
 
 impl OneBasedIndex {
-    /// Creates OneBasedindex from 1-based index.
+    /// Creates OneBasedIndex from 1-based index.
     pub fn from_one_based(v: usize) -> Result<Self, Error> {
         if v == 0 {
             Err(Error::InvalidIndex)
         } else {
             Ok(OneBasedIndex(v - 1))
         }
+    }
+
+    /// Creates OneBasedIndex from 0-based index.
+    pub fn from_zero_based(v: usize) -> Self {
+        Self(v)
     }
 
     /// Returns regular 0-based index.

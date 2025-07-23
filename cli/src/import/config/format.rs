@@ -7,7 +7,7 @@ use serde::{
 
 use crate::one_based::OneBasedIndex;
 
-use super::merge::{non_empty_right_most, Merge};
+use super::merge::{merge_non_empty, Merge};
 
 /// FormatSpec describes the several format used in import target.
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
@@ -29,9 +29,9 @@ pub struct FormatSpec {
 
 impl Merge for FormatSpec {
     fn merge(self, other: Self) -> Self {
-        let date = non_empty_right_most!(self.date, other.date);
-        let fields = non_empty_right_most!(self.fields, other.fields);
-        let delimiter = non_empty_right_most!(self.delimiter, other.delimiter);
+        let date = merge_non_empty!(self.date, other.date);
+        let fields = merge_non_empty!(self.fields, other.fields);
+        let delimiter = merge_non_empty!(self.delimiter, other.delimiter);
         let skip = other.skip.or(self.skip);
         let row_order = other.row_order.or(self.row_order);
         Self {
@@ -129,6 +129,20 @@ impl<'de> de::Visitor<'de> for FieldPosVisitor {
         )
     }
 
+    fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        if v > 0 {
+            self.visit_u64(v as u64)
+        } else {
+            Err(E::invalid_value(
+                de::Unexpected::Signed(v),
+                &"a positive column index",
+            ))
+        }
+    }
+
     fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
     where
         E: de::Error,
@@ -168,4 +182,89 @@ impl<'de> de::Visitor<'de> for FieldPosVisitor {
 #[serde(deny_unknown_fields)]
 pub struct TemplateField {
     pub template: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use maplit::hashmap;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn merge_format_spec() {
+        let spec1 = FormatSpec {
+            date: "%Y/%m/%d".to_string(),
+            fields: hashmap! {
+                FieldKey::Date => FieldPos::Index(OneBasedIndex::from_zero_based(2)),
+            },
+            delimiter: ";".to_string(),
+            skip: Some(SkipSpec { head: 2 }),
+            row_order: Some(RowOrder::OldToNew),
+        };
+        let spec2 = FormatSpec {
+            date: "%Y-%m-%d".to_string(),
+            fields: hashmap! {
+                FieldKey::Payee => FieldPos::Index(OneBasedIndex::from_zero_based(3)),
+            },
+            delimiter: ",".to_string(),
+            skip: Some(SkipSpec { head: 3 }),
+            row_order: Some(RowOrder::NewToOld),
+        };
+
+        assert_eq!(spec1, spec1.clone().merge(FormatSpec::default()));
+        assert_eq!(spec1, FormatSpec::default().merge(spec1.clone()));
+        // both filled, then other takes precedence
+        assert_eq!(spec2, spec1.merge(spec2.clone()));
+    }
+
+    mod deserialize_field_pos {
+        use super::*;
+
+        use serde_test::{assert_de_tokens, assert_de_tokens_error, Token};
+
+        #[test]
+        fn positive_integer_succeeds() {
+            assert_de_tokens(
+                &FieldPos::Index(OneBasedIndex::from_zero_based(0)),
+                &[Token::U16(1)],
+            );
+            assert_de_tokens(
+                &FieldPos::Index(OneBasedIndex::from_zero_based(1)),
+                &[Token::I32(2)],
+            );
+        }
+
+        #[test]
+        fn non_positive_integer_fails() {
+            assert_de_tokens_error::<FieldPos>(
+                &[Token::U16(0)],
+                "invalid value: integer `0`, expected a positive column index",
+            );
+            assert_de_tokens_error::<FieldPos>(
+                &[Token::I32(-1)],
+                "invalid value: integer `-1`, expected a positive column index",
+            );
+        }
+
+        #[test]
+        fn str_succeeds() {
+            assert_de_tokens(&FieldPos::Label("foo".to_string()), &[Token::Str("foo")]);
+        }
+
+        #[test]
+        fn map_succeeds_with_valid_key() {
+            assert_de_tokens(
+                &FieldPos::Template(TemplateField {
+                    template: "foo".to_string(),
+                }),
+                &[
+                    Token::Map { len: None },
+                    Token::Str("template"),
+                    Token::Str("foo"),
+                    Token::MapEnd,
+                ],
+            );
+        }
+    }
 }
