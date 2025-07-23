@@ -14,15 +14,8 @@ pub struct OutputSpec {
 }
 
 impl Merge for OutputSpec {
-    fn merge(self, other: Self) -> Self {
-        Self {
-            commodity: self.commodity.merge(other.commodity),
-        }
-    }
-
     fn merge_from(&mut self, other: Self) {
-        // insufficient, but safer implementation.
-        *self = self.clone().merge(other);
+        self.commodity.merge_from(other.commodity);
     }
 }
 
@@ -106,5 +99,61 @@ impl From<CommodityFormatStyle> for pretty_decimal::Format {
             CommodityFormatStyle::Plain => Self::Plain,
             CommodityFormatStyle::Comma3Dot => Self::Comma3Dot,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use maplit::hashmap;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn merge_output_spec() {
+        let spec1 = OutputSpec {
+            commodity: OutputCommoditySpec {
+                default: OutputCommodityDetailsSpec {
+                    style: Some(CommodityFormatStyle::Plain),
+                    scale: Some(1),
+                },
+                overrides: hashmap! {
+                    "USD".to_string() => OutputCommodityDetailsSpec {
+                        style: Some(CommodityFormatStyle::Comma3Dot),
+                        scale: None,
+                    },
+                },
+            },
+        };
+        let spec2 = OutputSpec {
+            commodity: OutputCommoditySpec {
+                default: OutputCommodityDetailsSpec {
+                    style: Some(CommodityFormatStyle::Comma3Dot),
+                    scale: None,
+                },
+                overrides: hashmap! {
+                    "USD".to_string() => OutputCommodityDetailsSpec {
+                        style: None,
+                        scale: Some(3),
+                    },
+                },
+            },
+        };
+        let merged = OutputSpec {
+            commodity: OutputCommoditySpec {
+                default: OutputCommodityDetailsSpec {
+                    style: Some(CommodityFormatStyle::Comma3Dot),
+                    scale: Some(1),
+                },
+                overrides: hashmap! {
+                    "USD".to_string() => OutputCommodityDetailsSpec {
+                        style: Some(CommodityFormatStyle::Comma3Dot),
+                        scale: Some(3),
+                    },
+                },
+            },
+        };
+
+        assert_eq!(merged, spec1.merge(spec2));
     }
 }

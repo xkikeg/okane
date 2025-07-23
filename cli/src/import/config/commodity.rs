@@ -5,7 +5,7 @@ use serde::{
     {Deserialize, Serialize},
 };
 
-use super::merge::{non_empty_right_most, Merge};
+use super::merge::{merge_non_empty, Merge};
 
 /// CommodityConfig contains either primary commodity string, or more complex CommoditySpec.
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
@@ -107,7 +107,7 @@ impl Merge for AccountCommoditySpec {
             rename.insert(k, v);
         }
         Self {
-            primary: non_empty_right_most!(self.primary, other.primary),
+            primary: merge_non_empty!(self.primary, other.primary),
             conversion: self.conversion.merge(other.conversion),
             rename,
         }
@@ -169,4 +169,52 @@ pub enum ConversionRateMode {
     /// Given rate is a price of primary commodity, e.g.
     /// `1 $commodity == $rate $secondary_commodity`
     PriceOfPrimary,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use maplit::hashmap;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn merge_commodity_config() {
+        // merge doesn't preserve PrimaryCommodity enum.
+        assert_eq!(
+            AccountCommodityConfig::Spec(AccountCommoditySpec {
+                primary: "JPY".to_string(),
+                ..AccountCommoditySpec::default()
+            }),
+            AccountCommodityConfig::PrimaryCommodity("CHF".to_string())
+                .merge(AccountCommodityConfig::PrimaryCommodity("JPY".to_string()))
+        );
+
+        // merge treats PrimaryCommodity just as a Spec with primary field filled.
+        assert_eq!(
+            AccountCommodityConfig::Spec(AccountCommoditySpec {
+                primary: "JPY".to_string(),
+                conversion: CommodityConversionSpec {
+                    amount: Some(ConversionAmountMode::Compute),
+                    rate: Some(ConversionRateMode::PriceOfSecondary),
+                    commodity: None,
+                    disabled: Some(false),
+                },
+                rename: hashmap! {"米ドル".to_string() => "USD".to_string()},
+                ..AccountCommoditySpec::default()
+            }),
+            AccountCommodityConfig::Spec(AccountCommoditySpec {
+                primary: "CHF".to_string(),
+                conversion: CommodityConversionSpec {
+                    amount: Some(ConversionAmountMode::Compute),
+                    rate: Some(ConversionRateMode::PriceOfSecondary),
+                    commodity: None,
+                    disabled: Some(false),
+                },
+                rename: hashmap! {"米ドル".to_string() => "USD".to_string()},
+                ..AccountCommoditySpec::default()
+            })
+            .merge(AccountCommodityConfig::PrimaryCommodity("JPY".to_string()))
+        );
+    }
 }
