@@ -73,7 +73,7 @@ fn extract_transaction(
         )));
     }
     let datestr = resolver
-        .extract(FieldKey::Date, &r)?
+        .extract(FieldKey::Date, r)?
         .ok_or_else(|| ImportError::Other("Field date must be present".to_string()))?;
     if datestr.is_empty() {
         log::info!("skip empty date at line {}", pos.line());
@@ -81,22 +81,22 @@ fn extract_transaction(
     }
     let date = NaiveDate::parse_from_str(&datestr, config.format.date.as_str())?;
     let original_payee = resolver
-        .extract(FieldKey::Payee, &r)?
+        .extract(FieldKey::Payee, r)?
         .ok_or_else(|| ImportError::Other("Field payee must be present".to_string()))?;
-    let amount = resolver.amount(config.account_type, &r)?;
+    let amount = resolver.amount(config.account_type, r)?;
     let balance = resolver
-        .extract(FieldKey::Balance, &r)?
+        .extract(FieldKey::Balance, r)?
         .map_or(Ok(None), |s| str_to_comma_decimal(&s))?;
     let secondary_amount = resolver
-        .extract(FieldKey::SecondaryAmount, &r)?
+        .extract(FieldKey::SecondaryAmount, r)?
         .map_or(Ok(None), |s| str_to_comma_decimal(&s))?;
-    let secondary_commodity = resolver.extract(FieldKey::SecondaryCommodity, &r)?;
-    let category = resolver.extract(FieldKey::Category, &r)?;
+    let secondary_commodity = resolver.extract(FieldKey::SecondaryCommodity, r)?;
+    let category = resolver.extract(FieldKey::Category, r)?;
     let commodity = resolver
-        .extract(FieldKey::Commodity, &r)?
+        .extract(FieldKey::Commodity, r)?
         .unwrap_or_else(|| Cow::Borrowed(&config.commodity.primary));
     let rate = resolver
-        .extract(FieldKey::Rate, &r)?
+        .extract(FieldKey::Rate, r)?
         .map_or_else(|| Ok(None), |s| str_to_comma_decimal(&s))?;
     let fragment = extractor.extract(matcher::Record {
         payee: &original_payee,
@@ -120,7 +120,7 @@ fn extract_transaction(
     if !fragment.cleared {
         txn.clear_state(syntax::ClearState::Pending);
     }
-    if let Some(note) = resolver.extract(FieldKey::Note, &r)? {
+    if let Some(note) = resolver.extract(FieldKey::Note, r)? {
         if !note.trim().is_empty() {
             txn.add_comment(note.into_owned());
         }
@@ -131,7 +131,7 @@ fn extract_transaction(
             commodity: commodity.clone().into_owned(),
         });
     }
-    if let Some(charge) = resolver.extract(FieldKey::Charge, &r)? {
+    if let Some(charge) = resolver.extract(FieldKey::Charge, r)? {
         let payee = config.operator.as_ref().ok_or(ImportError::InvalidConfig(
             "config should have operator to have charge",
         ))?;

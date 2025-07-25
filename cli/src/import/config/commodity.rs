@@ -201,7 +201,6 @@ mod tests {
                     disabled: Some(false),
                 },
                 rename: hashmap! {"米ドル".to_string() => "USD".to_string()},
-                ..AccountCommoditySpec::default()
             }),
             AccountCommodityConfig::Spec(AccountCommoditySpec {
                 primary: "CHF".to_string(),
@@ -212,7 +211,6 @@ mod tests {
                     disabled: Some(false),
                 },
                 rename: hashmap! {"米ドル".to_string() => "USD".to_string()},
-                ..AccountCommoditySpec::default()
             })
             .merge(AccountCommodityConfig::PrimaryCommodity("JPY".to_string()))
         );
