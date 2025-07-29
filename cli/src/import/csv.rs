@@ -8,7 +8,6 @@ use std::io::BufRead;
 use std::io::BufReader;
 
 use chrono::NaiveDate;
-use log::{info, warn};
 
 use okane_core::syntax;
 
@@ -77,7 +76,7 @@ fn extract_transaction(
         .extract(FieldKey::Date, &r)?
         .ok_or_else(|| ImportError::Other("Field date must be present".to_string()))?;
     if datestr.is_empty() {
-        info!("skip empty date at line {}", pos.line());
+        log::info!("skip empty date at line {}", pos.line());
         return Ok(None);
     }
     let date = NaiveDate::parse_from_str(&datestr, config.format.date.as_str())?;
@@ -106,7 +105,7 @@ fn extract_transaction(
     });
     let payee = fragment.payee.unwrap_or(&original_payee);
     if fragment.account.is_none() {
-        warn!("account unmatched at line {}, payee={}", pos.line(), payee);
+        log::warn!("account unmatched at line {}, payee={}", pos.line(), payee);
     }
     let mut txn = single_entry::Txn::new(
         date,
