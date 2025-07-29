@@ -12,9 +12,9 @@ use crate::import::{
 };
 
 #[derive(Debug, PartialEq)]
-enum TxnValueField {
+enum AmountField {
     CreditDebit { credit: Field, debit: Field },
-    Amount(Field),
+    Absolute(Field),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -24,16 +24,16 @@ enum Field {
 }
 
 struct MappedRecord<'a> {
-    field_map: &'a FieldResolver,
+    field_resolver: &'a FieldResolver,
     record: &'a csv::StringRecord,
 }
 
 impl<'a> template::RenderValue<'a> for MappedRecord<'a> {
-    fn query(&self, key: TemplateKey) -> Option<&'a str> {
+    fn render(&self, key: TemplateKey) -> Option<&'a str> {
         let key = match key {
             // Clone here might have penalty on template,
             // but it will be a failure path so good to go.
-            TemplateKey::Named(fk) => self.field_map.field(fk)?.clone(),
+            TemplateKey::Named(fk) => self.field_resolver.field(fk)?.clone(),
             TemplateKey::Indexed(i) => Field::ColumnIndex(i.as_zero_based()),
         };
         match key {
@@ -49,7 +49,7 @@ impl<'a> template::RenderValue<'a> for MappedRecord<'a> {
 pub struct FieldResolver {
     date: Field,
     payee: Field,
-    value: TxnValueField,
+    value: AmountField,
     all_fields: HashMap<FieldKey, Field>,
     max_column: usize,
 }
@@ -85,7 +85,7 @@ impl FieldResolver {
                 .render(
                     field_key,
                     MappedRecord {
-                        field_map: self,
+                        field_resolver: self,
                         record,
                     },
                 )
@@ -99,7 +99,7 @@ impl FieldResolver {
         r: &csv::StringRecord,
     ) -> Result<Decimal, ImportError> {
         match &self.value {
-            TxnValueField::CreditDebit { credit, debit } => {
+            AmountField::CreditDebit { credit, debit } => {
                 let credit = self
                     .resolve(FieldKey::Credit, credit, r)?
                     .ok_or_else(|| ImportError::Other("Field credit must exist".to_string()))?;
@@ -116,7 +116,7 @@ impl FieldResolver {
                     ))
                 }
             }
-            TxnValueField::Amount(a) => {
+            AmountField::Absolute(a) => {
                 let s = self
                     .resolve(FieldKey::Amount, a, r)?
                     .ok_or_else(|| ImportError::Other("Field amount must exist".to_string()))?;
@@ -187,10 +187,10 @@ impl FieldResolver {
         let credit = ki.get(&config::FieldKey::Credit).cloned();
         let debit = ki.get(&config::FieldKey::Debit).cloned();
         let value = match amount {
-            Some(a) => Ok(TxnValueField::Amount(a)),
+            Some(a) => Ok(AmountField::Absolute(a)),
             None => credit
                 .zip(debit)
-                .map(|(c, d)| TxnValueField::CreditDebit {
+                .map(|(c, d)| AmountField::CreditDebit {
                     credit: c,
                     debit: d,
                 })
@@ -237,7 +237,7 @@ mod tests {
             FieldResolver {
                 date: Field::ColumnIndex(0),
                 payee: Field::ColumnIndex(1),
-                value: TxnValueField::CreditDebit {
+                value: AmountField::CreditDebit {
                     credit: Field::ColumnIndex(2),
                     debit: Field::ColumnIndex(3)
                 },
@@ -268,7 +268,7 @@ mod tests {
             FieldResolver {
                 date: Field::ColumnIndex(0),
                 payee: Field::ColumnIndex(1),
-                value: TxnValueField::Amount(Field::ColumnIndex(2)),
+                value: AmountField::Absolute(Field::ColumnIndex(2)),
                 all_fields: hashmap! {
                     FieldKey::Date => Field::ColumnIndex(0),
                     FieldKey::Payee => Field::ColumnIndex(1),
@@ -299,7 +299,7 @@ mod tests {
             FieldResolver {
                 date: Field::ColumnIndex(0),
                 payee: Field::ColumnIndex(1),
-                value: TxnValueField::Amount(Field::ColumnIndex(2)),
+                value: AmountField::Absolute(Field::ColumnIndex(2)),
                 all_fields: hashmap! {
                     FieldKey::Date => Field::ColumnIndex(0),
                     FieldKey::Payee => Field::ColumnIndex(1),
