@@ -238,7 +238,7 @@ mod tests {
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
 
-    use crate::one_based;
+    use crate::one_based_macro::one_based_32;
 
     use super::commodity::{AccountCommodityConfig, AccountCommoditySpec};
 
@@ -593,7 +593,7 @@ mod tests {
             .fields
             .get(&format::FieldKey::Amount)
             .unwrap();
-        assert_eq!(*field_amount, format::FieldPos::Index(one_based!(2)));
+        assert_eq!(*field_amount, format::FieldPos::Index(one_based_32!(2)));
     }
 
     #[test]

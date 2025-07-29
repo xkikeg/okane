@@ -28,13 +28,16 @@ struct MappedRecord<'a> {
     record: &'a csv::StringRecord,
 }
 
-impl<'a> template::RenderValue<'a> for MappedRecord<'a> {
-    fn render(&self, key: TemplateKey) -> Option<&'a str> {
+// here we only supports 32-bits or more bits system.
+const _: () = assert!(u32::BITS <= usize::BITS);
+
+impl<'a> template::Interpolate<'a> for MappedRecord<'a> {
+    fn interpolate(&self, key: TemplateKey) -> Option<&'a str> {
         let key = match key {
             // Clone here might have penalty on template,
             // but it will be a failure path so good to go.
             TemplateKey::Named(fk) => self.field_resolver.field(fk)?.clone(),
-            TemplateKey::Indexed(i) => Field::ColumnIndex(i.as_zero_based()),
+            TemplateKey::Indexed(i) => Field::ColumnIndex(i.as_zero_based().try_into().unwrap()),
         };
         match key {
             // It might cause inifite loop if we resolve another template during template rendering.
@@ -138,7 +141,9 @@ impl FieldResolver {
         let mut ki: HashMap<config::FieldKey, Field> = HashMap::with_capacity(config_mapping.len());
         for (&k, pos) in config_mapping {
             let field = match &pos {
-                config::FieldPos::Index(i) => Some(Field::ColumnIndex(i.as_zero_based())),
+                config::FieldPos::Index(i) => {
+                    Some(Field::ColumnIndex(i.as_zero_based().try_into().unwrap()))
+                }
                 config::FieldPos::Label(label) => match hm.get(label.as_str()).cloned() {
                     Some(i) => Some(Field::ColumnIndex(i)),
                     None => {
@@ -217,7 +222,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::config::{AccountType, FieldPos};
-    use crate::one_based;
+    use crate::one_based_macro::one_based_32;
 
     #[test]
     fn field_map_try_new_label_credit_debit() {
@@ -257,9 +262,9 @@ mod tests {
     #[test]
     fn field_map_try_new_index_amount() {
         let config: HashMap<FieldKey, FieldPos> = hashmap! {
-            FieldKey::Date => FieldPos::Index(one_based!(1)),
-            FieldKey::Payee => FieldPos::Index(one_based!(2)),
-            FieldKey::Amount => FieldPos::Index(one_based!(3)),
+            FieldKey::Date => FieldPos::Index(one_based_32!(1)),
+            FieldKey::Payee => FieldPos::Index(one_based_32!(2)),
+            FieldKey::Amount => FieldPos::Index(one_based_32!(3)),
         };
         let got =
             FieldResolver::try_new(&config, &csv::StringRecord::from(vec!["unrelated"])).unwrap();
@@ -282,15 +287,15 @@ mod tests {
     #[test]
     fn field_map_try_new_optionals() {
         let config: HashMap<FieldKey, FieldPos> = hashmap! {
-            FieldKey::Date => FieldPos::Index(one_based!(1)),
-            FieldKey::Payee => FieldPos::Index(one_based!(2)),
-            FieldKey::Amount => FieldPos::Index(one_based!(3)),
-            FieldKey::Balance => FieldPos::Index(one_based!(4)),
-            FieldKey::Category => FieldPos::Index(one_based!(5)),
-            FieldKey::Commodity => FieldPos::Index(one_based!(6)),
-            FieldKey::Rate => FieldPos::Index(one_based!(7)),
-            FieldKey::SecondaryAmount => FieldPos::Index(one_based!(8)),
-            FieldKey::SecondaryCommodity => FieldPos::Index(one_based!(9)),
+            FieldKey::Date => FieldPos::Index(one_based_32!(1)),
+            FieldKey::Payee => FieldPos::Index(one_based_32!(2)),
+            FieldKey::Amount => FieldPos::Index(one_based_32!(3)),
+            FieldKey::Balance => FieldPos::Index(one_based_32!(4)),
+            FieldKey::Category => FieldPos::Index(one_based_32!(5)),
+            FieldKey::Commodity => FieldPos::Index(one_based_32!(6)),
+            FieldKey::Rate => FieldPos::Index(one_based_32!(7)),
+            FieldKey::SecondaryAmount => FieldPos::Index(one_based_32!(8)),
+            FieldKey::SecondaryCommodity => FieldPos::Index(one_based_32!(9)),
         };
         let got =
             FieldResolver::try_new(&config, &csv::StringRecord::from(vec!["unrelated"])).unwrap();
@@ -319,11 +324,11 @@ mod tests {
     #[test]
     fn field_map_extract() {
         let config: HashMap<FieldKey, FieldPos> = hashmap! {
-            FieldKey::Date => FieldPos::Index(one_based!(1)),
+            FieldKey::Date => FieldPos::Index(one_based_32!(1)),
             FieldKey::Payee => FieldPos::Template(config::TemplateField { template: "{category} - {note}".parse().expect("this must be the correct template") }),
-            FieldKey::Amount => FieldPos::Index(one_based!(2)),
-            FieldKey::Category => FieldPos::Index(one_based!(3)),
-            FieldKey::Note => FieldPos::Index(one_based!(4)),
+            FieldKey::Amount => FieldPos::Index(one_based_32!(2)),
+            FieldKey::Category => FieldPos::Index(one_based_32!(3)),
+            FieldKey::Note => FieldPos::Index(one_based_32!(4)),
         };
         let fm = FieldResolver::try_new(
             &config,

@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 
+use one_based::OneBasedU32;
 use serde::{
     de::{self, value::MapAccessDeserializer},
     Deserialize, Serialize,
 };
-
-use crate::one_based::OneBasedIndex;
 
 use super::merge::{merge_non_empty, Merge};
 
@@ -103,7 +102,7 @@ pub enum FieldKey {
 
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 pub enum FieldPos {
-    Index(OneBasedIndex),
+    Index(OneBasedU32),
     Label(String),
     Template(TemplateField),
 }
@@ -119,6 +118,8 @@ impl<'de> Deserialize<'de> for FieldPos {
 
 struct FieldPosVisitor;
 
+const POS_ERR_MSG: &'static str = "a 32-bit unsigned positive index";
+
 impl<'de> de::Visitor<'de> for FieldPosVisitor {
     type Value = FieldPos;
 
@@ -133,25 +134,24 @@ impl<'de> de::Visitor<'de> for FieldPosVisitor {
     where
         E: de::Error,
     {
-        if v > 0 {
-            self.visit_u64(v as u64)
-        } else {
-            Err(E::invalid_value(
-                de::Unexpected::Signed(v),
-                &"a positive column index",
-            ))
-        }
+        let v: u64 = v
+            .try_into()
+            .or_else(|_| Err(E::invalid_value(de::Unexpected::Signed(v), &POS_ERR_MSG)))?;
+        self.visit_u64(v as u64)
     }
 
     fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
     where
         E: de::Error,
     {
-        match OneBasedIndex::from_one_based(v as usize) {
+        let v: u32 = v
+            .try_into()
+            .or_else(|_| Err(E::invalid_value(de::Unexpected::Unsigned(v), &POS_ERR_MSG)))?;
+        match OneBasedU32::from_one_based(v) {
             Ok(x) => Ok(FieldPos::Index(x)),
             Err(_) => Err(E::invalid_value(
-                de::Unexpected::Unsigned(v),
-                &"a positive column index",
+                de::Unexpected::Unsigned(v.into()),
+                &POS_ERR_MSG,
             )),
         }
     }
@@ -191,12 +191,14 @@ mod tests {
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
 
+    use crate::one_based_macro::one_based_32;
+
     #[test]
     fn merge_format_spec() {
         let spec1 = FormatSpec {
             date: "%Y/%m/%d".to_string(),
             fields: hashmap! {
-                FieldKey::Date => FieldPos::Index(OneBasedIndex::from_zero_based(2)),
+                FieldKey::Date => FieldPos::Index(one_based_32!(3)),
             },
             delimiter: ";".to_string(),
             skip: Some(SkipSpec { head: 2 }),
@@ -205,7 +207,7 @@ mod tests {
         let spec2 = FormatSpec {
             date: "%Y-%m-%d".to_string(),
             fields: hashmap! {
-                FieldKey::Payee => FieldPos::Index(OneBasedIndex::from_zero_based(3)),
+                FieldKey::Payee => FieldPos::Index(one_based_32!(4)),
             },
             delimiter: ",".to_string(),
             skip: Some(SkipSpec { head: 3 }),
@@ -225,25 +227,23 @@ mod tests {
 
         #[test]
         fn positive_integer_succeeds() {
-            assert_de_tokens(
-                &FieldPos::Index(OneBasedIndex::from_zero_based(0)),
-                &[Token::U16(1)],
-            );
-            assert_de_tokens(
-                &FieldPos::Index(OneBasedIndex::from_zero_based(1)),
-                &[Token::I32(2)],
-            );
+            assert_de_tokens(&FieldPos::Index(one_based_32!(1)), &[Token::U16(1)]);
+            assert_de_tokens(&FieldPos::Index(one_based_32!(2)), &[Token::I32(2)]);
         }
 
         #[test]
         fn non_positive_integer_fails() {
             assert_de_tokens_error::<FieldPos>(
                 &[Token::U16(0)],
-                "invalid value: integer `0`, expected a positive column index",
+                "invalid value: integer `0`, expected a 32-bit unsigned positive index",
             );
             assert_de_tokens_error::<FieldPos>(
                 &[Token::I32(-1)],
-                "invalid value: integer `-1`, expected a positive column index",
+                "invalid value: integer `-1`, expected a 32-bit unsigned positive index",
+            );
+            assert_de_tokens_error::<FieldPos>(
+                &[Token::U64(u64::MAX)],
+                "invalid value: integer `18446744073709551615`, expected a 32-bit unsigned positive index",
             );
         }
 

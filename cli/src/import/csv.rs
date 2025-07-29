@@ -204,10 +204,9 @@ mod tests {
 
     use indoc::indoc;
     use maplit::hashmap;
+    use one_based::OneBasedU32;
 
     use config::FieldPos;
-
-    use crate::one_based::OneBasedIndex;
 
     fn empty_config() -> config::ConfigEntry {
         config::ConfigEntry {
@@ -235,9 +234,9 @@ mod tests {
                 format: config::FormatSpec {
                     date: "%Y/%m/%d".to_string(),
                     fields: hashmap! {
-                        FieldKey::Date => FieldPos::Index(OneBasedIndex::from_one_based(1).unwrap()),
-                        FieldKey::Payee => FieldPos::Index(OneBasedIndex::from_one_based(2).unwrap()),
-                        FieldKey::Amount => FieldPos::Index(OneBasedIndex::from_one_based(3).unwrap()),
+                        FieldKey::Date => FieldPos::Index(OneBasedU32::from_one_based(1).unwrap()),
+                        FieldKey::Payee => FieldPos::Index(OneBasedU32::from_one_based(2).unwrap()),
+                        FieldKey::Amount => FieldPos::Index(OneBasedU32::from_one_based(3).unwrap()),
                     },
                     delimiter: "".to_string(),
                     skip: None,

@@ -9,4 +9,5 @@
 pub mod cmd;
 pub mod format;
 pub mod import;
-pub mod one_based;
+#[cfg(test)]
+pub mod one_based_macro;

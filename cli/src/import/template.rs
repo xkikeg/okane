@@ -1,7 +1,12 @@
 //! Provides very minimal template mechanism for FieldPos.
 
-use std::{collections::HashMap, fmt::Display, str::FromStr};
+use std::{
+    fmt::{Debug, Display},
+    num::ParseIntError,
+    str::FromStr,
+};
 
+use one_based::OneBasedU32;
 use serde::{Deserialize, Serialize};
 use winnow::{
     combinator::{alt, delimited, repeat},
@@ -9,8 +14,6 @@ use winnow::{
     token::{one_of, take_till},
     Parser,
 };
-
-use crate::one_based::{self, OneBasedIndex};
 
 use super::config::FieldKey;
 
@@ -22,7 +25,7 @@ pub enum TemplateKey {
     /// Named field.
     Named(FieldKey),
     /// Indexed field, specified as 0-origin index.
-    Indexed(OneBasedIndex),
+    Indexed(OneBasedU32),
 }
 
 impl Display for TemplateKey {
@@ -55,12 +58,12 @@ pub struct Template {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
-    #[error("invalid template {0}")]
+    #[error("invalid template: {0}")]
     InvalidTemplate(String),
     #[error("unknown template_key {template_key}: template key must be a positive integer or known field key")]
     UnknownTemplateKey { template_key: String },
     #[error("index-based template key must be a positive integer")]
-    InvalidIndexTemplateKey(#[from] one_based::ParseError),
+    InvalidIndexTemplateKey(#[from] ParseIntError),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -142,46 +145,44 @@ impl<'de> Deserialize<'de> for Template {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum RenderError {
     #[error("template field {0} in template is not supported")]
     FieldKeyUnsupported(TemplateKey),
     #[error("template field {0:?} is self recurring in the template")]
-    SelfRecusiveFieldKey(FieldKey),
+    SelfRecursiveFieldKey(FieldKey),
 }
 
+#[derive(Debug)]
 struct RenderedTemplate<'a> {
     parts: Vec<&'a str>,
 }
 
-pub trait RenderValue<'a> {
-    fn render(&self, key: TemplateKey) -> Option<&'a str>;
-}
-
-impl<'a> RenderValue<'a> for &HashMap<FieldKey, &'a str> {
-    fn render(&self, key: TemplateKey) -> Option<&'a str> {
-        match key {
-            TemplateKey::Named(fk) => self.get(&fk).copied(),
-            TemplateKey::Indexed(_) => None,
-        }
-    }
+/// Trait feeding the value of template interpolated variables to the [`Template`].
+pub trait Interpolate<'a> {
+    /// Returns the `&str` corresponding to the given `key`.
+    /// It may return `None` if it's impossible.
+    fn interpolate(&self, key: TemplateKey) -> Option<&'a str>;
 }
 
 impl Template {
-    pub fn render<'a, T: RenderValue<'a>>(
+    /// Renders the template.
+    /// Args:
+    ///  * `current_field`: Currently rendered field to avoid infinite recursion.
+    pub fn render<'a, T: Interpolate<'a>>(
         &'a self,
-        field_key: FieldKey,
+        current_field: FieldKey,
         values: T,
-    ) -> Result<impl Display + 'a, RenderError> {
+    ) -> Result<impl Debug + Display + 'a, RenderError> {
         let mut parts = Vec::with_capacity(self.segments.len());
         for segment in &self.segments {
             let part = match segment {
                 Segment::Literal(l) => l.as_str(),
-                Segment::Reference(fk) if *fk == field_key => {
-                    Err(RenderError::SelfRecusiveFieldKey(field_key))?
+                Segment::Reference(fk) if *fk == current_field => {
+                    Err(RenderError::SelfRecursiveFieldKey(current_field))?
                 }
                 Segment::Reference(fk) => values
-                    .render(*fk)
+                    .interpolate(*fk)
                     .ok_or(RenderError::FieldKeyUnsupported(*fk))?,
             };
             parts.push(part);
@@ -215,7 +216,7 @@ impl FieldKey {
 
 fn template_key_from_str(s: &str) -> Result<TemplateKey, ParseError> {
     if s.chars().all(|x| x.is_ascii_digit()) {
-        let v: OneBasedIndex = s.parse()?;
+        let v: OneBasedU32 = s.parse()?;
         return Ok(TemplateKey::Indexed(v));
     }
     match s {
@@ -233,35 +234,122 @@ fn template_key_from_str(s: &str) -> Result<TemplateKey, ParseError> {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
-    use maplit::hashmap;
+    use one_based::OneBasedUsize;
 
-    #[test]
-    fn render_nop() {
-        let t: Template = "this is a pen".parse().unwrap();
-        assert_eq!(
-            "this is a pen",
-            format!("{}", t.render(FieldKey::Payee, &HashMap::new()).unwrap())
-        )
+    use crate::one_based_macro::one_based_32;
+
+    /// impl for RenderValue with simple Vec.
+    impl<'a> Interpolate<'a> for Vec<(FieldKey, &'a str)> {
+        fn interpolate(&self, key: TemplateKey) -> Option<&'a str> {
+            match key {
+                TemplateKey::Named(fk) => self
+                    .iter()
+                    .filter_map(|(key, value)| if *key == fk { Some(*value) } else { None })
+                    .next(),
+                TemplateKey::Indexed(i) => self
+                    .get(OneBasedUsize::try_from(i).unwrap().as_zero_based())
+                    .map(|(_, v)| *v),
+            }
+        }
     }
 
     #[test]
-    fn render_valid() {
+    fn wrong_template() {
+        // no support for {} escaping yet. this must be improved though.
+        assert!(matches!(
+            Template::from_str("{{}}").unwrap_err(),
+            ParseError::InvalidTemplate(_)
+        ));
+
+        // invalid number
+        assert!(matches!(
+            Template::from_str("{-123}").unwrap_err(),
+            ParseError::InvalidTemplate(_)
+        ));
+
+        // unknown FieldKey
+        assert!(matches!(
+            Template::from_str("{unknown}").unwrap_err(),
+            ParseError::InvalidTemplate(_)
+        ));
+    }
+
+    #[test]
+    fn render_plain_str() {
+        let t: Template = "this is a pen".parse().unwrap();
+        assert_eq!(
+            "this is a pen",
+            t.render(FieldKey::Payee, Vec::new()).unwrap().to_string()
+        );
+    }
+
+    #[test]
+    fn render_valid_index() {
+        let t: Template = "{1} - {2}".parse().unwrap();
+        assert_eq!(
+            "Transport - SBB",
+            t.render(
+                FieldKey::Payee,
+                vec![(FieldKey::Category, "Transport"), (FieldKey::Note, "SBB"),]
+            )
+            .unwrap()
+            .to_string()
+        );
+    }
+
+    #[test]
+    fn render_index_out_of_range() {
+        let t: Template = "{3}".parse().unwrap();
+        assert_eq!(
+            RenderError::FieldKeyUnsupported(TemplateKey::Indexed(one_based_32!(3))),
+            t.render(
+                FieldKey::Payee,
+                vec![(FieldKey::Category, "Transport"), (FieldKey::Note, "SBB"),]
+            )
+            .unwrap_err(),
+        );
+    }
+
+    #[test]
+    fn render_valid_name() {
         let t: Template = "{category} - {note}".parse().unwrap();
         assert_eq!(
             "Transport - SBB",
-            format!(
-                "{}",
-                t.render(
-                    FieldKey::Payee,
-                    &hashmap! {
-                        FieldKey::Category => "Transport",
-                        FieldKey::Note => "SBB",
-                    }
-                )
-                .unwrap()
+            t.render(
+                FieldKey::Payee,
+                vec![(FieldKey::Category, "Transport"), (FieldKey::Note, "SBB"),]
             )
+            .unwrap()
+            .to_string()
+        );
+    }
+
+    #[test]
+    fn render_unknown_field() {
+        let t: Template = "{commodity} - {secondary_commodity}".parse().unwrap();
+        assert_eq!(
+            RenderError::FieldKeyUnsupported(TemplateKey::Named(FieldKey::Commodity)),
+            t.render(
+                FieldKey::Payee,
+                vec![(FieldKey::Category, "Transport"), (FieldKey::Note, "SBB"),]
+            )
+            .unwrap_err(),
+        );
+    }
+
+    #[test]
+    fn render_self_recursive() {
+        let t: Template = "{category} - {date}".parse().unwrap();
+        assert_eq!(
+            RenderError::SelfRecursiveFieldKey(FieldKey::Category),
+            t.render(
+                FieldKey::Category,
+                vec![(FieldKey::Category, "Transport"), (FieldKey::Note, "SBB"),]
+            )
+            .unwrap_err(),
         );
     }
 }

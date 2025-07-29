@@ -23,6 +23,7 @@ encoding_rs_io = "0.1.7"
 env_logger.workspace = true
 lazy_static.workspace = true
 log.workspace = true
+one-based = { version = "0.2.2", features = ["serde"] }
 path-slash = "0.2.1"
 pretty_decimal.workspace = true
 quick-xml = { version = "0.38", features = [ "serialize" ] }
