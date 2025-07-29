@@ -67,3 +67,41 @@ impl extract::EntityMatcher for CsvMatcher {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use pretty_assertions::assert_eq;
+
+    use extract::EntityMatcher as _;
+
+    #[test]
+    fn matcher_fails_with_unsupported_field() {
+        CsvMatcher::try_from((config::RewriteField::DomainCode, "foo"))
+            .expect_err("domain_code is not a supported field");
+    }
+
+    #[test]
+    fn matches_secondary_commodity() {
+        let m: CsvMatcher = ((config::RewriteField::SecondaryCommodity, "C.F"))
+            .try_into()
+            .unwrap();
+
+        let got = m.captures(
+            &extract::Fragment::default(),
+            Record {
+                payee: "this is the shop",
+                category: None,
+                secondary_commodity: Some("CHF"),
+            },
+        );
+        assert_eq!(
+            Some(extract::Matched {
+                payee: None,
+                code: None
+            }),
+            got
+        );
+    }
+}

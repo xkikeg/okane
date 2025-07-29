@@ -6,7 +6,9 @@ mod merge;
 mod output;
 mod rewrite;
 
-pub use commodity::{CommodityConversionSpec, ConversionAmountMode, ConversionRateMode};
+pub use commodity::{
+    AccountCommoditySpec, CommodityConversionSpec, ConversionAmountMode, ConversionRateMode,
+};
 pub use format::{FieldKey, FieldPos, FormatSpec, RowOrder, SkipSpec, TemplateField};
 pub use output::{
     CommodityFormatStyle, OutputCommodityDetailsSpec, OutputCommoditySpec, OutputSpec,

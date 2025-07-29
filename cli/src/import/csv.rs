@@ -197,3 +197,59 @@ fn extract_transaction(
     }
     Ok(Some(txn))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use indoc::indoc;
+    use maplit::hashmap;
+
+    use config::FieldPos;
+
+    use crate::one_based::OneBasedIndex;
+
+    fn empty_config() -> config::ConfigEntry {
+        config::ConfigEntry {
+            path: "/not/used".to_string(),
+            encoding: config::Encoding(encoding_rs::UTF_8),
+            account: "Assets:Bank".to_string(),
+            account_type: config::AccountType::Asset,
+            operator: None,
+            commodity: config::AccountCommoditySpec::default(),
+            format: config::FormatSpec::default(),
+            output: config::OutputSpec::default(),
+            rewrite: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn import_fails_if_columns_missing() {
+        let input = indoc! {"
+            date,payee,amount
+            2025/01/02,foo
+        "};
+        let err = import(
+            input.as_bytes(),
+            &config::ConfigEntry {
+                format: config::FormatSpec {
+                    date: "%Y/%m/%d".to_string(),
+                    fields: hashmap! {
+                        FieldKey::Date => FieldPos::Index(OneBasedIndex::from_one_based(1).unwrap()),
+                        FieldKey::Payee => FieldPos::Index(OneBasedIndex::from_one_based(2).unwrap()),
+                        FieldKey::Amount => FieldPos::Index(OneBasedIndex::from_one_based(3).unwrap()),
+                    },
+                    delimiter: "".to_string(),
+                    skip: None,
+                    row_order: None,
+                },
+                ..empty_config()
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&err, ImportError::Other(s) if s.contains("csv record length too short")),
+            "unexpected error: {err}"
+        );
+    }
+}
