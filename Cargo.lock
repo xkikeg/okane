@@ -956,6 +956,7 @@ dependencies = [
  "maplit",
  "okane-core",
  "okane-golden",
+ "one-based",
  "path-slash",
  "pretty_assertions",
  "pretty_decimal",
@@ -1024,6 +1025,15 @@ name = "once_cell_polyfill"
 version = "1.70.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4895175b425cb1f87721b59f0f286c2092bd4af812243672510e1ac53e2e0ad"
+
+[[package]]
+name = "one-based"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5c9f4dc3e5261d27d5d8431f7a0c865a9e126c27d5ff51df77907450bbf48ad"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "oorandom"
