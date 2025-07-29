@@ -10,6 +10,7 @@ use super::amount::{AmountRef, BorrowedAmount, OwnedAmount};
 use super::ImportError;
 
 /// Represents single-entry transaction, associated with the particular account.
+#[derive(Debug, Clone)]
 pub struct Txn {
     /// Date when the transaction happened.
     date: NaiveDate,
@@ -55,6 +56,7 @@ pub struct Options {
 }
 
 /// Represents the charge (commission) in the transaction.
+#[derive(Debug, Clone)]
 struct Charge {
     payee: String,
     amount: OwnedAmount,

@@ -81,7 +81,7 @@ impl InputParams {
             if *done {
                 return None;
             }
-            if item.name == &target {
+            if item.name == target {
                 *done = true;
             }
             Some(item)

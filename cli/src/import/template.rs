@@ -155,11 +155,11 @@ struct RenderedTemplate<'a> {
 }
 
 pub trait RenderValue<'a> {
-    fn query(&self, key: TemplateKey) -> Option<&'a str>;
+    fn render(&self, key: TemplateKey) -> Option<&'a str>;
 }
 
 impl<'a> RenderValue<'a> for &HashMap<FieldKey, &'a str> {
-    fn query(&self, key: TemplateKey) -> Option<&'a str> {
+    fn render(&self, key: TemplateKey) -> Option<&'a str> {
         match key {
             TemplateKey::Named(fk) => self.get(&fk).copied(),
             TemplateKey::Indexed(_) => None,
@@ -181,7 +181,7 @@ impl Template {
                     Err(RenderError::SelfRecusiveFieldKey(field_key))?
                 }
                 Segment::Reference(fk) => values
-                    .query(*fk)
+                    .render(*fk)
                     .ok_or(RenderError::FieldKeyUnsupported(*fk))?,
             };
             parts.push(part);
