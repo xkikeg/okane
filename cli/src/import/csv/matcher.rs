@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn matches_secondary_commodity() {
-        let m: CsvMatcher = ((config::RewriteField::SecondaryCommodity, "C.F"))
+        let m: CsvMatcher = (config::RewriteField::SecondaryCommodity, "C.F")
             .try_into()
             .unwrap();
 
