@@ -118,7 +118,7 @@ impl<'de> Deserialize<'de> for FieldPos {
 
 struct FieldPosVisitor;
 
-const POS_ERR_MSG: &'static str = "a 32-bit unsigned positive index";
+const POS_ERR_MSG: &str = "a 32-bit unsigned positive index";
 
 impl<'de> de::Visitor<'de> for FieldPosVisitor {
     type Value = FieldPos;
@@ -135,9 +135,8 @@ impl<'de> de::Visitor<'de> for FieldPosVisitor {
         E: de::Error,
     {
         let v: u64 = v
-            .try_into()
-            .or_else(|_| Err(E::invalid_value(de::Unexpected::Signed(v), &POS_ERR_MSG)))?;
-        self.visit_u64(v as u64)
+            .try_into().map_err(|_| E::invalid_value(de::Unexpected::Signed(v), &POS_ERR_MSG))?;
+        self.visit_u64(v)
     }
 
     fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
@@ -145,8 +144,7 @@ impl<'de> de::Visitor<'de> for FieldPosVisitor {
         E: de::Error,
     {
         let v: u32 = v
-            .try_into()
-            .or_else(|_| Err(E::invalid_value(de::Unexpected::Unsigned(v), &POS_ERR_MSG)))?;
+            .try_into().map_err(|_| E::invalid_value(de::Unexpected::Unsigned(v), &POS_ERR_MSG))?;
         match OneBasedU32::from_one_based(v) {
             Ok(x) => Ok(FieldPos::Index(x)),
             Err(_) => Err(E::invalid_value(
