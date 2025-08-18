@@ -88,13 +88,8 @@ impl Txn {
         self
     }
 
-    pub fn code_option<'a>(&'a mut self, code: Option<&str>) -> &'a mut Txn {
-        self.code = code.map(str::to_string);
-        self
-    }
-
-    pub fn code<'a>(&'a mut self, code: &str) -> &'a mut Txn {
-        self.code = Some(code.to_string());
+    pub fn code_option(&mut self, code: Option<String>) -> &mut Txn {
+        self.code = code;
         self
     }
 
