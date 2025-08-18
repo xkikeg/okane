@@ -104,6 +104,10 @@ fn extract_transaction(
         secondary_commodity: secondary_commodity.as_deref(),
     });
     let payee = fragment.payee.unwrap_or(&original_payee);
+    let code = fragment
+        .code
+        .map(Cow::Borrowed)
+        .or(resolver.extract(FieldKey::Code, r)?);
     if fragment.account.is_none() {
         log::warn!("account unmatched at line {}, payee={}", pos.line(), payee);
     }
@@ -115,7 +119,7 @@ fn extract_transaction(
             commodity: commodity.clone().into_owned(),
         },
     );
-    txn.code_option(fragment.code)
+    txn.code_option(code.map(Cow::into_owned))
         .dest_account_option(fragment.account);
     if !fragment.cleared {
         txn.clear_state(syntax::ClearState::Pending);

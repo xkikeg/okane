@@ -87,7 +87,7 @@ where
                     .amount
                     .to_data(transaction.credit_or_debit.value);
                 let fragment = extractor.extract((entry, Some(transaction)));
-                let code = transaction.refs.account_servicer_reference.as_deref();
+                let code = transaction.refs.account_servicer_reference.clone();
                 if fragment.payee.is_none() {
                     log::warn!("payee not set @ {:?}", code);
                 } else if fragment.account.is_none() {

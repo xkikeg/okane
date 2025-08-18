@@ -72,6 +72,8 @@ pub enum FieldKey {
     Date,
     /// Payee, opposite side of the transaction.
     Payee,
+    /// Transaction code which can uniquely identify the transaction.
+    Code,
     /// Category of the transaction.
     Category,
     /// Side note.
@@ -135,7 +137,8 @@ impl<'de> de::Visitor<'de> for FieldPosVisitor {
         E: de::Error,
     {
         let v: u64 = v
-            .try_into().map_err(|_| E::invalid_value(de::Unexpected::Signed(v), &POS_ERR_MSG))?;
+            .try_into()
+            .map_err(|_| E::invalid_value(de::Unexpected::Signed(v), &POS_ERR_MSG))?;
         self.visit_u64(v)
     }
 
@@ -144,7 +147,8 @@ impl<'de> de::Visitor<'de> for FieldPosVisitor {
         E: de::Error,
     {
         let v: u32 = v
-            .try_into().map_err(|_| E::invalid_value(de::Unexpected::Unsigned(v), &POS_ERR_MSG))?;
+            .try_into()
+            .map_err(|_| E::invalid_value(de::Unexpected::Unsigned(v), &POS_ERR_MSG))?;
         match OneBasedU32::from_one_based(v) {
             Ok(x) => Ok(FieldPos::Index(x)),
             Err(_) => Err(E::invalid_value(
