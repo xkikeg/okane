@@ -30,7 +30,7 @@ quick-xml = { version = "0.38", features = [ "serialize" ] }
 regex.workspace = true
 rust_decimal.workspace = true
 serde = { version = "1.0", features = [ "derive" ] }
-serde_with = { version = "3.14", features = [ "chrono" ] }
+serde_with = { version = "3.15", features = [ "chrono" ] }
 serde_yaml = "0.9.34"
 strum.workspace = true
 thiserror.workspace = true

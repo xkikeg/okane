@@ -25,8 +25,8 @@ fn test_import_with_lib(
         "failed to set extension .ledger to input {}",
         input.display()
     );
-    let golden = okane_golden::Golden::new(golden_path.clone()).unwrap_or_else(|_| panic!("cannot create golden on {}",
-        golden_path.display()));
+    let golden = okane_golden::Golden::new(golden_path.clone())
+        .unwrap_or_else(|_| panic!("cannot create golden on {}", golden_path.display()));
     let mut result: Vec<u8> = Vec::new();
 
     okane::cmd::ImportCmd {

@@ -55,11 +55,12 @@ impl Display for ParseErrorImpl {
         let message = self.winnow_error.to_string();
         let message = &[
             Group::with_title(Level::ERROR.primary_title(&message)).element(
-            Snippet::source(&self.input)
-                .line_start(self.line_start)
-                .fold(true)
-                .annotation(AnnotationKind::Primary.span (self.error_span.clone())),
-        )];
+                Snippet::source(&self.input)
+                    .line_start(self.line_start)
+                    .fold(true)
+                    .annotation(AnnotationKind::Primary.span(self.error_span.clone())),
+            ),
+        ];
         let rendered = self.renderer.render(message);
         rendered.fmt(f)
     }

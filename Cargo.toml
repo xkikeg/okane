@@ -12,7 +12,7 @@ resolver = "2"
 version = "0.16.0-dev"
 authors = ["kikeg"]
 edition = "2021"
-rust-version = "1.81.0"
+rust-version = "1.82.0"
 license = "MIT"
 repository = "https://github.com/xkikeg/okane"
 
@@ -22,8 +22,8 @@ bumpalo = {version = "3.19", features = ["collections", "boxed"]}
 chrono = "0.4.42"
 log = "0.4"
 pretty_decimal = { version = "0.2.1", features = ["bounded-static"] }
-regex = "1.11"
-rust_decimal = "1.38"
+regex = "1.12"
+rust_decimal = "1.39"
 strum = { version = "0.27", features = ["derive"] }
 thiserror = "2.0"
 winnow = "0.7.13"
@@ -33,12 +33,12 @@ env_logger = "0.11"
 lazy_static = "1.5"
 
 # dev-dependencies
-ctor = "0.5"
+ctor = "0.6.0"
 indoc = "2.0"
 maplit = "1.0"
 pretty_assertions = "1.4"
 rstest = "0.26"
-rust_decimal_macros = "1.38"
+rust_decimal_macros = "1.39"
 
 [profile.release]
 lto = "thin"
