@@ -85,7 +85,7 @@ mod tests {
 
     use syntax::plain::LedgerEntry;
 
-    fn parse_ledger_into(input: &str) -> Vec<(ParsedContext, LedgerEntry)> {
+    fn parse_ledger_into(input: &'_ str) -> Vec<(ParsedContext<'_>, LedgerEntry<'_>)> {
         let r: Result<Vec<(ParsedContext, LedgerEntry)>, ParseError> =
             parse_ledger(&ParseOptions::default(), input).collect();
         match r {

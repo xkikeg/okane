@@ -539,7 +539,7 @@ mod tests {
         syntax::tracked::TrackedSpan,
     };
 
-    fn parse_transaction(input: &str) -> syntax::tracked::Transaction {
+    fn parse_transaction(input: &'_ str) -> syntax::tracked::Transaction<'_> {
         let (_, ret) = expect_parse_ok(parse::transaction::transaction, input);
         ret
     }
