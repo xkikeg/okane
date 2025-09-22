@@ -385,7 +385,8 @@ fn rescale(x: &expr::Amount, context: &DisplayContext) -> PrettyDecimal {
     let mut v = x.value;
     if let Some(min_scale) = context
         .commodity
-        .get_opt(x.commodity.as_ref(), CommodityDisplayOption::get_min_scale) {
+        .get_opt(x.commodity.as_ref(), CommodityDisplayOption::get_min_scale)
+    {
         v.as_mut().normalize_assign();
         v.rescale(std::cmp::max(min_scale.into(), v.scale()));
     }
