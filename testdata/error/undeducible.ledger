@@ -3,4 +3,5 @@
 2024/09/01 Shopping with point
     Expenses                                     100 CHF
     Assets:Banks
+    ; this cannot be deduced as you have another empty account.
     Assets:Points

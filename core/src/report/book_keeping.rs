@@ -163,8 +163,7 @@ impl<'ctx> ProcessAccumulator<'ctx> {
                                 .map_err(BookKeepError::InvalidCommodity)?;
                         }
                         syntax::CommodityDetail::Format(format_amount) => {
-                            ctx.commodities
-                                .set_format(canonical, format_amount.value);
+                            ctx.commodities.set_format(canonical, format_amount.value);
                         }
                         _ => {}
                     }
@@ -188,17 +187,17 @@ fn add_transaction<'ctx>(
     let mut unfilled: Option<Tracked<usize>> = None;
     let mut balance = Amount::default();
     for (i, posting) in txn.posts.iter().enumerate() {
-        let posting_span = posting.span();
         let posting = posting.as_undecorated();
+        let account_span = posting.account.span();
         let account = ctx.accounts.ensure(posting.account.as_undecorated());
         let (evaluated, price_event) = match process_posting(ctx, bal, txn.date, account, posting)?
         {
             (Some(x), y) => (x, y),
             (None, y) => {
-                if let Some(first) = unfilled.replace(Tracked::new(i, posting_span.clone())) {
+                if let Some(first) = unfilled.replace(Tracked::new(i, account_span.clone())) {
                     return Err(BookKeepError::UndeduciblePostingAmount(
                         first,
-                        Tracked::new(i, posting_span.clone()),
+                        Tracked::new(i, account_span.clone()),
                     ));
                 } else {
                     // placeholder which will be replaced later.
@@ -840,8 +839,8 @@ mod tests {
         assert_eq!(
             got,
             BookKeepError::UndeduciblePostingAmount(
-                Tracked::new(0, TrackedSpan::new(20..42)),
-                Tracked::new(1, TrackedSpan::new(44..66))
+                Tracked::new(0, TrackedSpan::new(20..29)),
+                Tracked::new(1, TrackedSpan::new(44..53))
             )
         );
     }
