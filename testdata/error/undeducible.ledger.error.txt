@@ -1,10 +1,10 @@
 error: transaction cannot have multiple postings without constraints
- --> okane/testdata/error/undeducible.ledger:5:5
+ --> okane/testdata/error/undeducible.ledger:7:5
   |
 3 | 2024/09/01 Shopping with point
 4 |     Expenses                                     100 CHF
 5 |     Assets:Banks
   |     ------------ first posting without constraints
-6 |     Assets:Points
+6 |     ; this cannot be deduced as you have another empty account.
+7 |     Assets:Points
   |     ^^^^^^^^^^^^^ cannot deduce this posting
-  |

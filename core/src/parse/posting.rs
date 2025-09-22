@@ -22,6 +22,9 @@ use crate::{
     syntax::{self, decoration::Decoration},
 };
 
+/// Parses one line of posting, including the last newline.
+/// Note this can actually consume multiple lines,
+/// if there are metadata lines below.
 pub fn posting<'i, Deco, Input, E>(
     input: &mut Input,
 ) -> winnow::Result<syntax::Posting<'i, Deco>, E>

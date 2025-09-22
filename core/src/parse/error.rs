@@ -3,7 +3,7 @@ use std::{
     ops::{Deref, Range},
 };
 
-use annotate_snippets::{Level, Renderer, Snippet};
+use annotate_snippets::{AnnotationKind, Group, Level, Renderer, Snippet};
 use winnow::{
     error::{ContextError, StrContext},
     stream::{Location, Offset, Stream},
@@ -53,12 +53,13 @@ impl ParseError {
 impl Display for ParseErrorImpl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let message = self.winnow_error.to_string();
-        let message = Level::Error.title(&message).snippet(
+        let message = &[
+            Group::with_title(Level::ERROR.primary_title(&message)).element(
             Snippet::source(&self.input)
                 .line_start(self.line_start)
                 .fold(true)
-                .annotation(Level::Error.span(self.error_span.clone())),
-        );
+                .annotation(AnnotationKind::Primary.span (self.error_span.clone())),
+        )];
         let rendered = self.renderer.render(message);
         rendered.fmt(f)
     }

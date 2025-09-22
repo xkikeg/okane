@@ -5,4 +5,3 @@ error: transaction cannot have unbalanced postings: -1000 JPY
 4 | |     Assets:Bank                              -10,000 JPY
 5 | |     Expenses:Cash                              9,000 JPY
   | |_________________________________________________________^ error occured
-  |
