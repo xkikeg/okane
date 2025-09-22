@@ -15,6 +15,7 @@ bounded-static = { version = "0.8", default-features = false, features = ["deriv
 bumpalo.workspace = true
 chrono.workspace = true
 derive-where = "1.2"
+dunce = "1.0.5"
 glob = "0.3.2"
 itoa = "1"
 log.workspace = true

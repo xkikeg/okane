@@ -155,7 +155,7 @@ pub struct ProdFileSystem;
 
 impl FileSystem for ProdFileSystem {
     fn canonicalize_path<'a>(path: &'a Path) -> Cow<'a, Path> {
-        std::fs::canonicalize(path)
+        dunce::canonicalize(path)
             .map(|x| {
                 if x == path {
                     Cow::Borrowed(path)
@@ -300,20 +300,12 @@ mod tests {
             testdata_dir.display()
         );
         testdata_dir.push("testdata/load");
-        let root = testdata_dir
-            .join("recursive.ledger")
-            .canonicalize()
-            .unwrap();
-        let child1 = testdata_dir.join("child1.ledger").canonicalize().unwrap();
-        let child2 = testdata_dir
-            .join("sub/child2.ledger")
-            .canonicalize()
-            .unwrap();
-        let child3 = testdata_dir.join("child3.ledger").canonicalize().unwrap();
-        let child4 = testdata_dir
-            .join("sub/child4.ledger")
-            .canonicalize()
-            .unwrap();
+        testdata_dir = dunce::canonicalize(testdata_dir).unwrap();
+        let root = testdata_dir.join("recursive.ledger");
+        let child1 = testdata_dir.join("child1.ledger");
+        let child2 = testdata_dir.join("sub").join("child2.ledger");
+        let child3 = testdata_dir.join("child3.ledger");
+        let child4 = testdata_dir.join("sub").join("child4.ledger");
         let want = parse_static_ledger_entry(&[
             (
                 &root,
