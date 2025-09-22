@@ -317,7 +317,7 @@ where
     }
 }
 
-fn amount_with_sign(amount: &OwnedAmount, sign: Decimal) -> BorrowedAmount {
+fn amount_with_sign(amount: &'_ OwnedAmount, sign: Decimal) -> BorrowedAmount<'_> {
     let mut ret = amount.into_borrowed();
     ret.value.set_sign_positive(sign.is_sign_positive());
     ret
@@ -364,7 +364,7 @@ mod tests {
         );
     }
 
-    fn syntax_amount(value: PrettyDecimal, commodity: &str) -> syntax::expr::ValueExpr {
+    fn syntax_amount(value: PrettyDecimal, commodity: &'_ str) -> syntax::expr::ValueExpr<'_> {
         syntax::expr::Amount {
             value,
             commodity: commodity.into(),
