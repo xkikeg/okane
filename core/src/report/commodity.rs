@@ -5,7 +5,7 @@ use std::{collections::HashMap, fmt::Display};
 use bumpalo::Bump;
 use pretty_decimal::PrettyDecimal;
 
-use crate::intern::{FromInterned, InternError, InternStore, InternedStr};
+use crate::intern::{FromInterned, InternStore, InternedStr, OccupiedError};
 
 /// `&str` for commodities, interned within the `'arena` bounded allocator lifetime.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -96,12 +96,13 @@ impl<'arena> CommodityStore<'arena> {
     }
 
     /// Inserts given `value` as always canonical.
-    /// Returns the registered canonical, or error if given `value` is already registered as alias.
-    /// Facade for [InternStore::insert_canonical].
+    /// Returns error if given `value` is already registered as alias.
+    /// Facade for [`InternStore::insert_canonical`].
+    #[cfg(test)]
     pub(super) fn insert_canonical(
         &mut self,
         value: &str,
-    ) -> Result<Commodity<'arena>, InternError> {
+    ) -> Result<Commodity<'arena>, OccupiedError> {
         self.intern.insert_canonical(value)
     }
 
@@ -112,7 +113,7 @@ impl<'arena> CommodityStore<'arena> {
         &mut self,
         value: &str,
         canonical: Commodity<'arena>,
-    ) -> Result<(), InternError> {
+    ) -> Result<(), OccupiedError> {
         self.intern.insert_alias(value, canonical)
     }
 
