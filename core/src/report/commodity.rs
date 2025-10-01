@@ -5,7 +5,7 @@ use std::{collections::HashMap, fmt::Display};
 use bumpalo::Bump;
 use pretty_decimal::PrettyDecimal;
 
-use super::intern::{FromInterned, InternError, InternStore, InternedStr};
+use crate::intern::{FromInterned, InternError, InternStore, InternedStr};
 
 /// `&str` for commodities, interned within the `'arena` bounded allocator lifetime.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
