@@ -1,9 +1,8 @@
 use bumpalo::Bump;
 
-use super::{
-    commodity::{Commodity, CommodityStore},
-    intern::{FromInterned, InternStore, InternedStr, StoredValue},
-};
+use crate::intern::{FromInterned, InternStore, InternedStr, StoredValue};
+
+use super::commodity::{Commodity, CommodityStore};
 
 /// `&str` for accounts, interned within the `'arena` bounded allocator lifetime.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]

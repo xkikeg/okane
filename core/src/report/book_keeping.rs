@@ -8,6 +8,7 @@ use chrono::NaiveDate;
 use rust_decimal::Decimal;
 
 use crate::{
+    intern::InternError,
     load,
     syntax::{
         self,
@@ -21,7 +22,6 @@ use super::{
     context::ReportContext,
     error::{self, ReportError},
     eval::{Amount, EvalError, Evaluable, PostingAmount, SingleAmount},
-    intern::InternError,
     price_db::{PriceEvent, PriceRepositoryBuilder, PriceSource},
     query::Ledger,
     transaction::{Posting, Transaction},
