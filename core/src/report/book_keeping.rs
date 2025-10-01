@@ -8,7 +8,7 @@ use chrono::NaiveDate;
 use rust_decimal::Decimal;
 
 use crate::{
-    intern::InternError,
+    intern::OccupiedError,
     load,
     syntax::{
         self,
@@ -49,9 +49,9 @@ pub enum BookKeepError {
         diff: String,
     },
     #[error("failed to register account: {0}")]
-    InvalidAccount(#[source] InternError),
+    InvalidAccount(#[source] OccupiedError),
     #[error("failed to register commodity: {0}")]
-    InvalidCommodity(#[source] InternError),
+    InvalidCommodity(#[source] OccupiedError),
     #[error("posting without commodity should not have exchange")]
     ZeroAmountWithExchange(TrackedSpan),
     #[error("cost or lot exchange must not be zero")]
@@ -137,10 +137,7 @@ impl<'ctx> ProcessAccumulator<'ctx> {
                 Ok(())
             }
             syntax::LedgerEntry::Account(account) => {
-                let canonical = ctx
-                    .accounts
-                    .insert_canonical(&account.name)
-                    .map_err(BookKeepError::InvalidAccount)?;
+                let canonical = ctx.accounts.ensure(&account.name);
                 for ad in &account.details {
                     if let syntax::AccountDetail::Alias(alias) = ad {
                         ctx.accounts
@@ -151,10 +148,7 @@ impl<'ctx> ProcessAccumulator<'ctx> {
                 Ok(())
             }
             syntax::LedgerEntry::Commodity(commodity) => {
-                let canonical = ctx
-                    .commodities
-                    .insert_canonical(&commodity.name)
-                    .map_err(BookKeepError::InvalidCommodity)?;
+                let canonical = ctx.commodities.ensure(&commodity.name);
                 for cd in &commodity.details {
                     match cd {
                         syntax::CommodityDetail::Alias(alias) => {

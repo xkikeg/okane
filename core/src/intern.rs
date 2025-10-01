@@ -50,15 +50,6 @@ pub(super) trait FromInterned<'arena>: Copy {
     fn as_interned(&self) -> InternedStr<'arena>;
 }
 
-/// Error on InternStore operations.
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
-pub enum InternError {
-    #[error("given alias is already registered as canonical")]
-    AlreadyCanonical,
-    #[error("given canonical is already registered as an alias")]
-    AlreadyAlias,
-}
-
 /// Manage interned `&str` in the arena allocator.
 /// This can also handles alias.
 /// Semantics of alias:
@@ -112,19 +103,20 @@ impl<'arena, T: FromInterned<'arena>> InternStore<'arena, T> {
 
     /// Inserts given `value` as always canonical.
     /// Returns the registered canonical, or error if given `value` is already registered as alias.
-    pub fn insert_canonical(&mut self, value: &str) -> Result<T, InternError> {
+    #[cfg(test)]
+    pub fn insert_canonical(&mut self, value: &str) -> Result<T, OccupiedError> {
         match self.get(value) {
             None => Ok(self.insert_canonical_impl(value)),
             Some(StoredValue::Canonical(found)) => Ok(found),
-            Some(StoredValue::Alias { .. }) => Err(InternError::AlreadyAlias),
+            Some(StoredValue::Alias { .. }) => Err(OccupiedError::AlreadyAlias),
         }
     }
 
     /// Inserts given `value` as always alias of `canonical`.
     /// Returns error if given `value` is already registered as canonical.
-    pub fn insert_alias(&mut self, value: &str, canonical: T) -> Result<(), InternError> {
+    pub fn insert_alias(&mut self, value: &str, canonical: T) -> Result<(), OccupiedError> {
         match self.get(value) {
-            Some(StoredValue::Canonical(_)) => Err(InternError::AlreadyCanonical),
+            Some(StoredValue::Canonical(_)) => Err(OccupiedError::AlreadyCanonical),
             Some(StoredValue::Alias { .. }) => Ok(()),
             None => {
                 self.insert_alias_impl(value, canonical.as_interned());
@@ -189,6 +181,15 @@ impl<'arena, T: FromInterned<'arena>> InternStore<'arena, T> {
     fn as_type(s: &'arena str) -> T {
         <T as FromInterned>::from_interned(InternedStr(s))
     }
+}
+
+/// Error returned when try_insert* method fails.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum OccupiedError {
+    #[error("given alias is already registered as canonical")]
+    AlreadyCanonical,
+    #[error("given canonical is already registered as an alias")]
+    AlreadyAlias,
 }
 
 /// an iterator over the items of a `Interner`.
@@ -291,7 +292,7 @@ mod tests {
         let foo: TestInterned = intern_store.insert_canonical("foo").unwrap();
         intern_store.insert_alias("bar", foo).unwrap();
         assert_eq!(
-            InternError::AlreadyAlias,
+            OccupiedError::AlreadyAlias,
             intern_store.insert_canonical("bar").unwrap_err()
         );
     }
@@ -322,7 +323,7 @@ mod tests {
         let foo: TestInterned = intern_store.insert_canonical("foo").unwrap();
         intern_store.insert_canonical("bar").unwrap();
         assert_eq!(
-            InternError::AlreadyCanonical,
+            OccupiedError::AlreadyCanonical,
             intern_store.insert_alias("bar", foo).unwrap_err()
         );
     }

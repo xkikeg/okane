@@ -20,10 +20,11 @@ fn print_err<E: Display>(x: E) -> E {
 #[rstest]
 fn balance_default(
     #[base_dir = "../testdata/report"]
-    #[files("single_commodity.ledger")]
+    #[files("*.ledger")]
+    #[exclude("multi_commodity")]
     input: PathBuf,
 ) {
-    println!("TODO: Remove this line: {}", input.display());
+    println!("test input file path: {}", input.display());
     let mut golden_path = input.clone();
     let filename = golden_path.file_name().unwrap().to_owned();
     assert!(golden_path.pop());
