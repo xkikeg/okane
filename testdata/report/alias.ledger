@@ -1,0 +1,18 @@
+; Example using alias extensively, both for account and commodity.
+; This also tests double alias which may happen on structural definition.
+
+account Expenses:Grocery
+    alias SuperMarket
+
+account SuperMarket
+    alias Food
+
+commodity JPY
+    alias 円
+
+commodity 円
+    alias 日本円
+
+2024/01/29 * Transaction
+    Food                                         100 日本円
+    Equity:Initial

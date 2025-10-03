@@ -6,7 +6,6 @@ mod commodity;
 mod context;
 mod error;
 mod eval;
-mod intern;
 mod price_db;
 pub mod query;
 mod transaction;
