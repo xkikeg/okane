@@ -8,8 +8,8 @@ use chrono::NaiveDate;
 use rust_decimal::Decimal;
 
 use crate::{
-    intern::OccupiedError,
     load,
+    report::eval::EvalError,
     syntax::{
         self,
         decoration::AsUndecorated,
@@ -21,7 +21,7 @@ use super::{
     balance::{Balance, BalanceError},
     context::ReportContext,
     error::{self, ReportError},
-    eval::{Amount, EvalError, Evaluable, PostingAmount, SingleAmount},
+    eval::{Amount, Evaluable, OwnedEvalError, PostingAmount, SingleAmount},
     price_db::{PriceEvent, PriceRepositoryBuilder, PriceSource},
     query::Ledger,
     transaction::{Posting, Transaction},
@@ -32,7 +32,7 @@ use super::{
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum BookKeepError {
     #[error("failed to evaluate the expression: {0}")]
-    EvalFailure(#[from] EvalError),
+    EvalFailure(#[from] OwnedEvalError),
     #[error("failed to meet balance condition: {0}")]
     BalanceFailure(#[from] BalanceError),
     #[error("posting amount must be resolved as a simple value with commodity or zero")]
@@ -48,10 +48,10 @@ pub enum BookKeepError {
         computed: String,
         diff: String,
     },
-    #[error("failed to register account: {0}")]
-    InvalidAccount(#[source] OccupiedError),
-    #[error("failed to register commodity: {0}")]
-    InvalidCommodity(#[source] OccupiedError),
+    #[error("already registered account alias: {0}")]
+    InvalidAccountAlias(String),
+    #[error("already registered commodity alias: {0}")]
+    InvalidCommodityAlias(String),
     #[error("posting without commodity should not have exchange")]
     ZeroAmountWithExchange(TrackedSpan),
     #[error("cost or lot exchange must not be zero")]
@@ -142,7 +142,7 @@ impl<'ctx> ProcessAccumulator<'ctx> {
                     if let syntax::AccountDetail::Alias(alias) = ad {
                         ctx.accounts
                             .insert_alias(alias, canonical)
-                            .map_err(BookKeepError::InvalidAccount)?;
+                            .map_err(|_| BookKeepError::InvalidAccountAlias(alias.to_string()))?;
                     }
                 }
                 Ok(())
@@ -154,7 +154,9 @@ impl<'ctx> ProcessAccumulator<'ctx> {
                         syntax::CommodityDetail::Alias(alias) => {
                             ctx.commodities
                                 .insert_alias(alias, canonical)
-                                .map_err(BookKeepError::InvalidCommodity)?;
+                                .map_err(|_| {
+                                    BookKeepError::InvalidCommodityAlias(alias.to_string())
+                                })?;
                         }
                         syntax::CommodityDetail::Format(format_amount) => {
                             ctx.commodities.set_format(canonical, format_amount.value);
@@ -258,10 +260,14 @@ fn process_posting<'ctx>(
         (None, Some(balance_constraints)) => {
             let current: PostingAmount = balance_constraints
                 .as_undecorated()
-                .eval_mut(ctx)?
-                .try_into()?;
-            let prev: PostingAmount = bal.set_partial(account, current)?;
-            let amount = current.check_sub(prev)?;
+                .eval_mut(ctx)
+                .map_err(|e| e.into_owned(ctx))?
+                .try_into()
+                .map_err(|e: EvalError<'ctx>| e.into_owned(ctx))?;
+            let prev: PostingAmount = bal.set_partial(ctx, account, current)?;
+            let amount = current
+                .check_sub(prev)
+                .map_err(|e: EvalError<'ctx>| e.into_owned(ctx))?;
             Ok((
                 Some(EvaluatedPosting {
                     amount,
@@ -278,23 +284,25 @@ fn process_posting<'ctx>(
             if let Some(balance_constraints) = balance_constraints.as_ref() {
                 let expected: PostingAmount = balance_constraints
                     .as_undecorated()
-                    .eval_mut(ctx)?
-                    .try_into()?;
+                    .eval_mut(ctx)
+                    .map_err(|e| e.into_owned(ctx))?
+                    .try_into()
+                    .map_err(|e: EvalError<'ctx>| e.into_owned(ctx))?;
                 let diff = current.assert_balance(&expected);
                 if !diff.is_absolute_zero() {
                     return Err(BookKeepError::BalanceAssertionFailure {
                         account_span: posting.account.span(),
                         balance_span: balance_constraints.span(),
-                        computed: format!("{}", current.as_inline_display()),
-                        diff: format!("{}", diff.as_inline_display()),
+                        computed: format!("{}", current.as_inline_display(ctx)),
+                        diff: format!("{}", diff.as_inline_display(ctx)),
                     });
                 }
             }
-            let balance_delta = computed.calculate_balance_amount()?;
+            let balance_delta = computed.calculate_balance_amount(ctx)?;
             Ok((
                 Some(EvaluatedPosting {
                     amount: computed.amount,
-                    converted_amount: computed.calculate_converted_amount()?,
+                    converted_amount: computed.calculate_converted_amount(ctx)?,
                     balance_delta,
                 }),
                 posting_price_event(date, &computed)?,
@@ -319,8 +327,10 @@ impl<'ctx> ComputedPosting<'ctx> {
         let amount: PostingAmount = syntax_amount
             .amount
             .as_undecorated()
-            .eval_mut(ctx)?
-            .try_into()?;
+            .eval_mut(ctx)
+            .map_err(|e| e.into_owned(ctx))?
+            .try_into()
+            .map_err(|e: EvalError<'ctx>| e.into_owned(ctx))?;
         let cost = posting_cost_exchange(syntax_amount)
             .map(|exchange| Exchange::try_from_syntax(ctx, syntax_amount, &amount, exchange))
             .transpose()?;
@@ -330,16 +340,28 @@ impl<'ctx> ComputedPosting<'ctx> {
         Ok(ComputedPosting { amount, cost, lot })
     }
 
-    fn calculate_converted_amount(&self) -> Result<Option<SingleAmount<'ctx>>, BookKeepError> {
+    fn calculate_converted_amount(
+        &self,
+        ctx: &ReportContext<'ctx>,
+    ) -> Result<Option<SingleAmount<'ctx>>, BookKeepError> {
         self.cost
             .as_ref()
             .or(self.lot.as_ref())
-            .map(|x| Ok(x.exchange(self.amount.try_into()?)))
+            .map(|x| {
+                Ok(x.exchange(
+                    self.amount
+                        .try_into()
+                        .map_err(|e: EvalError<'ctx>| e.into_owned(ctx))?,
+                ))
+            })
             .transpose()
     }
 
     /// Returns the amount which sums up to the balance within the transaction.
-    fn calculate_balance_amount(&self) -> Result<PostingAmount<'ctx>, BookKeepError> {
+    fn calculate_balance_amount(
+        &self,
+        ctx: &ReportContext<'ctx>,
+    ) -> Result<PostingAmount<'ctx>, BookKeepError> {
         // Actually, there's no point to compute cost if lot price is provided.
         // Example: if you sell a X with cost p Y lot q Y.
         //   Broker          -a X {{q Y}} @@ p Y
@@ -351,7 +373,13 @@ impl<'ctx> ComputedPosting<'ctx> {
         // t = -q Y
         // so actually cost is pointless in this case.
         match self.lot.as_ref().or(self.cost.as_ref()) {
-            Some(x) => Ok(x.exchange(self.amount.try_into()?).into()),
+            Some(x) => Ok(x
+                .exchange(
+                    self.amount
+                        .try_into()
+                        .map_err(|e: EvalError<'ctx>| e.into_owned(ctx))?,
+                )
+                .into()),
             None => Ok(self.amount),
         }
     }
@@ -408,11 +436,19 @@ impl<'ctx> Exchange<'ctx> {
     ) -> Result<Exchange<'ctx>, BookKeepError> {
         let (rate_commodity, rate) = match exchange.as_undecorated() {
             syntax::Exchange::Rate(rate) => {
-                let rate: SingleAmount<'ctx> = rate.eval_mut(ctx)?.try_into()?;
+                let rate: SingleAmount<'ctx> = rate
+                    .eval_mut(ctx)
+                    .map_err(|e| e.into_owned(ctx))?
+                    .try_into()
+                    .map_err(|e: EvalError<'ctx>| e.into_owned(ctx))?;
                 (rate.commodity, Exchange::Rate(rate))
             }
             syntax::Exchange::Total(rate) => {
-                let rate: SingleAmount<'ctx> = rate.eval_mut(ctx)?.try_into()?;
+                let rate: SingleAmount<'ctx> = rate
+                    .eval_mut(ctx)
+                    .map_err(|e| e.into_owned(ctx))?
+                    .try_into()
+                    .map_err(|e: EvalError<'ctx>| e.into_owned(ctx))?;
                 (rate.commodity, Exchange::Total(rate))
             }
         };
@@ -454,7 +490,7 @@ fn check_balance<'ctx>(
 ) -> Result<(), BookKeepError> {
     log::trace!(
         "balance before rounding in txn: {}",
-        balance.as_inline_display()
+        balance.as_inline_display(ctx)
     );
     let balance = balance.round(ctx);
     if balance.is_zero() {
@@ -494,7 +530,7 @@ fn check_balance<'ctx>(
     if !balance.is_zero() {
         return Err(BookKeepError::UnbalancedPostings(format!(
             "{}",
-            balance.as_inline_display()
+            balance.as_inline_display(ctx)
         )));
     }
     Ok(())
@@ -903,13 +939,13 @@ mod tests {
         let want_prices = vec![
             PriceEvent {
                 date,
-                price_x: SingleAmount::from_value(dec!(1), jpy),
-                price_y: SingleAmount::from_value(dec!(1) / dec!(100), okane),
+                price_x: SingleAmount::from_value(dec!(1), okane),
+                price_y: SingleAmount::from_value(dec!(100), jpy),
             },
             PriceEvent {
                 date,
-                price_x: SingleAmount::from_value(dec!(1), okane),
-                price_y: SingleAmount::from_value(dec!(100), jpy),
+                price_x: SingleAmount::from_value(dec!(1), jpy),
+                price_y: SingleAmount::from_value(dec!(1) / dec!(100), okane),
             },
         ];
         assert_eq!(want_prices, price_repos.into_events());
@@ -1003,13 +1039,13 @@ mod tests {
         let want_prices = vec![
             PriceEvent {
                 date,
-                price_x: SingleAmount::from_value(dec!(1), jpy),
-                price_y: SingleAmount::from_value(dec!(1) / dec!(120), okane),
+                price_x: SingleAmount::from_value(dec!(1), okane),
+                price_y: SingleAmount::from_value(dec!(120), jpy),
             },
             PriceEvent {
                 date,
-                price_x: SingleAmount::from_value(dec!(1), okane),
-                price_y: SingleAmount::from_value(dec!(120), jpy),
+                price_x: SingleAmount::from_value(dec!(1), jpy),
+                price_y: SingleAmount::from_value(dec!(1) / dec!(120), okane),
             },
         ];
         assert_eq!(want_prices, price_repos.into_events());
@@ -1070,13 +1106,13 @@ mod tests {
         let want_prices = vec![
             PriceEvent {
                 date,
-                price_x: SingleAmount::from_value(dec!(1), jpy),
-                price_y: SingleAmount::from_value(dec!(1) / dec!(120), okane),
+                price_x: SingleAmount::from_value(dec!(1), okane),
+                price_y: SingleAmount::from_value(dec!(120), jpy),
             },
             PriceEvent {
                 date,
-                price_x: SingleAmount::from_value(dec!(1), okane),
-                price_y: SingleAmount::from_value(dec!(120), jpy),
+                price_x: SingleAmount::from_value(dec!(1), jpy),
+                price_y: SingleAmount::from_value(dec!(1) / dec!(120), okane),
             },
         ];
         assert_eq!(want_prices, price_repos.into_events());
@@ -1086,7 +1122,7 @@ mod tests {
     fn add_transaction_balances_minor_diff() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
-        let chf = ctx.commodities.insert_canonical("CHF").unwrap();
+        let chf = ctx.commodities.insert("CHF").unwrap();
         ctx.commodities
             .set_format(chf, "20,000.00".parse().unwrap());
         let mut bal = Balance::default();

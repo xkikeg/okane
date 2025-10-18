@@ -248,7 +248,7 @@ impl EvalCmd {
                 exchange: self.eval_options.exchange,
             },
         )?;
-        writeln!(w, "{}", result.as_inline_display())?;
+        writeln!(w, "{}", result.as_inline_display(&ctx))?;
         Ok(())
     }
 }
@@ -299,7 +299,12 @@ impl BalanceCmd {
             date_range: self.eval_options.to_date_range(),
         };
         for (account, amount) in ledger.balance(&ctx, &query)?.into_owned().into_vec() {
-            writeln!(w, "{}: {}", account.as_str(), amount.as_inline_display())?;
+            writeln!(
+                w,
+                "{}: {}",
+                account.as_str(),
+                amount.as_inline_display(&ctx)
+            )?;
         }
         Ok(())
     }
@@ -342,8 +347,8 @@ impl RegisterCmd {
                 w,
                 "{} {} {}",
                 posting.account.as_str(),
-                posting.amount.as_inline_display(),
-                balance.as_inline_display()
+                posting.amount.as_inline_display(&ctx),
+                balance.as_inline_display(&ctx)
             )?;
         }
         Ok(())

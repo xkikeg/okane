@@ -1,8 +1,11 @@
 use bumpalo::Bump;
 
-use crate::intern::{FromInterned, InternStore, InternedStr, StoredValue};
+use crate::{
+    intern::{FromInterned, InternStore, InternedStr, StoredValue},
+    report::commodity::CommodityTag,
+};
 
-use super::commodity::{Commodity, CommodityStore};
+use super::commodity::CommodityStore;
 
 /// `&str` for accounts, interned within the `'arena` bounded allocator lifetime.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -67,7 +70,7 @@ impl<'ctx> ReportContext<'ctx> {
     }
 
     /// Returns the given commmodity, or `None` if not found.
-    pub fn commodity(&self, value: &str) -> Option<Commodity<'ctx>> {
+    pub fn commodity(&self, value: &str) -> Option<CommodityTag<'ctx>> {
         self.commodities.resolve(value)
     }
 }

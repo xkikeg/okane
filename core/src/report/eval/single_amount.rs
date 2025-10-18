@@ -5,7 +5,7 @@ use std::{
 
 use rust_decimal::Decimal;
 
-use crate::report::{commodity::Commodity, ReportContext};
+use crate::report::{commodity::CommodityTag, ReportContext};
 
 use super::error::EvalError;
 
@@ -13,7 +13,7 @@ use super::error::EvalError;
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct SingleAmount<'ctx> {
     pub(crate) value: Decimal,
-    pub(crate) commodity: Commodity<'ctx>,
+    pub(crate) commodity: CommodityTag<'ctx>,
 }
 
 impl Neg for SingleAmount<'_> {
@@ -41,16 +41,16 @@ impl Mul<Decimal> for SingleAmount<'_> {
 impl<'ctx> SingleAmount<'ctx> {
     /// Constructs an instance with single commodity.
     #[inline]
-    pub fn from_value(value: Decimal, commodity: Commodity<'ctx>) -> Self {
+    pub fn from_value(value: Decimal, commodity: CommodityTag<'ctx>) -> Self {
         Self { value, commodity }
     }
 
     /// Adds the amount with keeping commodity single.
-    pub fn check_add(self, rhs: Self) -> Result<Self, EvalError> {
+    pub fn check_add(self, rhs: Self) -> Result<Self, EvalError<'ctx>> {
         if self.commodity != rhs.commodity {
             Err(EvalError::UnmatchingCommodities(
-                self.commodity.into(),
-                rhs.commodity.into(),
+                self.commodity,
+                rhs.commodity,
             ))
         } else {
             Ok(Self {
@@ -64,12 +64,12 @@ impl<'ctx> SingleAmount<'ctx> {
     }
 
     /// Subtracts the amount with keeping the commodity single.
-    pub fn check_sub(self, rhs: Self) -> Result<Self, EvalError> {
+    pub fn check_sub(self, rhs: Self) -> Result<Self, EvalError<'ctx>> {
         self.check_add(-rhs)
     }
 
     /// Divides by given Decimal.
-    pub fn check_div(self, rhs: Decimal) -> Result<Self, EvalError> {
+    pub fn check_div(self, rhs: Decimal) -> Result<Self, EvalError<'ctx>> {
         if rhs.is_zero() {
             return Err(EvalError::DivideByZero);
         }
@@ -109,11 +109,27 @@ impl<'ctx> SingleAmount<'ctx> {
         self.value.set_sign_positive(sign.value.is_sign_positive());
         self
     }
+
+    /// Returns an instance which can be displayed.
+    pub fn as_display<'a>(&'a self, ctx: &'a ReportContext<'ctx>) -> impl Display + 'a
+    where
+        'a: 'ctx,
+    {
+        SingleAmountDisplay(self, ctx)
+    }
 }
 
-impl Display for SingleAmount<'_> {
+struct SingleAmountDisplay<'a, 'ctx>(&'a SingleAmount<'ctx>, &'a ReportContext<'ctx>);
+
+impl Display for SingleAmountDisplay<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.value, self.commodity.as_str())
+        // TODO: remove unwrap and make it safe!
+        write!(
+            f,
+            "{} {}",
+            self.0.value,
+            self.1.commodities.get(self.0.commodity).unwrap()
+        )
     }
 }
 
@@ -133,7 +149,7 @@ mod tests {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
 
-        let jpy = ctx.commodities.insert_canonical("JPY").unwrap();
+        let jpy = ctx.commodities.insert("JPY").unwrap();
 
         assert_eq!(
             SingleAmount::from_value(dec!(-5), jpy),
@@ -146,8 +162,8 @@ mod tests {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
 
-        let jpy = ctx.commodities.insert_canonical("JPY").unwrap();
-        let chf = ctx.commodities.insert_canonical("CHF").unwrap();
+        let jpy = ctx.commodities.insert("JPY").unwrap();
+        let chf = ctx.commodities.insert("CHF").unwrap();
 
         assert_eq!(
             Err(EvalError::UnmatchingCommodities(jpy.into(), chf.into())),
@@ -161,7 +177,7 @@ mod tests {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
 
-        let jpy = ctx.commodities.insert_canonical("JPY").unwrap();
+        let jpy = ctx.commodities.insert("JPY").unwrap();
 
         assert_eq!(
             SingleAmount::from_value(dec!(-10), jpy),
@@ -176,8 +192,8 @@ mod tests {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
 
-        let jpy = ctx.commodities.insert_canonical("JPY").unwrap();
-        let chf = ctx.commodities.insert_canonical("CHF").unwrap();
+        let jpy = ctx.commodities.insert("JPY").unwrap();
+        let chf = ctx.commodities.insert("CHF").unwrap();
 
         assert_eq!(
             Err(EvalError::UnmatchingCommodities(jpy.into(), chf.into())),
@@ -191,7 +207,7 @@ mod tests {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
 
-        let jpy = ctx.commodities.insert_canonical("JPY").unwrap();
+        let jpy = ctx.commodities.insert("JPY").unwrap();
 
         assert_eq!(
             SingleAmount::from_value(dec!(5), jpy),
@@ -206,11 +222,13 @@ mod tests {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
 
-        let usd = ctx.commodities.insert_canonical("USD").unwrap();
+        let usd = ctx.commodities.insert("USD").unwrap();
 
         assert_eq!(
             "1.20 USD".to_string(),
-            SingleAmount::from_value(dec!(1.20), usd).to_string()
+            SingleAmount::from_value(dec!(1.20), usd)
+                .as_display(&ctx)
+                .to_string()
         );
     }
 
@@ -262,8 +280,8 @@ mod tests {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
 
-        let jpy = ctx.commodities.insert_canonical("JPY").unwrap();
-        let eur = ctx.commodities.insert_canonical("EUR").unwrap();
+        let jpy = ctx.commodities.insert("JPY").unwrap();
+        let eur = ctx.commodities.insert("EUR").unwrap();
 
         let positive = SingleAmount::from_value(dec!(1000), jpy);
         assert_eq!(

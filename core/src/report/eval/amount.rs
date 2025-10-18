@@ -7,7 +7,10 @@ use std::{
 
 use rust_decimal::Decimal;
 
-use crate::report::{commodity::Commodity, context::ReportContext};
+use crate::report::{
+    commodity::{CommodityStore, CommodityTag},
+    context::ReportContext,
+};
 
 use super::{error::EvalError, PostingAmount, SingleAmount};
 
@@ -17,11 +20,11 @@ pub struct Amount<'ctx> {
     // if values.len == zero, then it'll be completely zero.
     // TODO: Consider optimizing for small number of commodities,
     // as most of the case it needs to be just a few elements.
-    values: HashMap<Commodity<'ctx>, Decimal>,
+    values: HashMap<CommodityTag<'ctx>, Decimal>,
 }
 
 impl<'ctx> TryFrom<Amount<'ctx>> for SingleAmount<'ctx> {
-    type Error = EvalError;
+    type Error = EvalError<'ctx>;
 
     fn try_from(value: Amount<'ctx>) -> Result<Self, Self::Error> {
         SingleAmount::try_from(&value)
@@ -29,7 +32,7 @@ impl<'ctx> TryFrom<Amount<'ctx>> for SingleAmount<'ctx> {
 }
 
 impl<'ctx> TryFrom<Amount<'ctx>> for PostingAmount<'ctx> {
-    type Error = EvalError;
+    type Error = EvalError<'ctx>;
 
     fn try_from(value: Amount<'ctx>) -> Result<Self, Self::Error> {
         PostingAmount::try_from(&value)
@@ -37,7 +40,7 @@ impl<'ctx> TryFrom<Amount<'ctx>> for PostingAmount<'ctx> {
 }
 
 impl<'ctx> TryFrom<&Amount<'ctx>> for SingleAmount<'ctx> {
-    type Error = EvalError;
+    type Error = EvalError<'ctx>;
 
     fn try_from(value: &Amount<'ctx>) -> Result<Self, Self::Error> {
         let (commodity, value) = value
@@ -53,7 +56,7 @@ impl<'ctx> TryFrom<&Amount<'ctx>> for SingleAmount<'ctx> {
 }
 
 impl<'ctx> TryFrom<&Amount<'ctx>> for PostingAmount<'ctx> {
-    type Error = EvalError;
+    type Error = EvalError<'ctx>;
 
     fn try_from(value: &Amount<'ctx>) -> Result<Self, Self::Error> {
         if value.values.len() > 1 {
@@ -97,14 +100,14 @@ impl<'ctx> Amount<'ctx> {
     }
 
     /// Creates an [`Amount`] with single value and commodity.
-    pub fn from_value(amount: Decimal, commodity: Commodity<'ctx>) -> Self {
+    pub fn from_value(amount: Decimal, commodity: CommodityTag<'ctx>) -> Self {
         Self::zero() + SingleAmount::from_value(amount, commodity)
     }
 
     /// Creates an [`Amount`] from a set of values.
     pub fn from_values<T>(values: T) -> Self
     where
-        T: IntoIterator<Item = (Decimal, Commodity<'ctx>)>,
+        T: IntoIterator<Item = (Decimal, CommodityTag<'ctx>)>,
     {
         let mut ret = Amount::zero();
         for (value, commodity) in values.into_iter() {
@@ -114,7 +117,7 @@ impl<'ctx> Amount<'ctx> {
     }
 
     /// Takes out the instance and returns map from commodity to its value.
-    pub fn into_values(self) -> HashMap<Commodity<'ctx>, Decimal> {
+    pub fn into_values(self) -> HashMap<CommodityTag<'ctx>, Decimal> {
         self.values
     }
 
@@ -124,8 +127,14 @@ impl<'ctx> Amount<'ctx> {
     }
 
     /// Returns an objectt to print the amount as inline.
-    pub fn as_inline_display(&self) -> impl Display + '_ {
-        InlinePrintAmount(self)
+    pub fn as_inline_display<'a>(&'a self, ctx: &'a ReportContext<'ctx>) -> impl Display + 'a + 'ctx
+    where
+        'a: 'ctx,
+    {
+        InlinePrintAmount {
+            commodity_store: &ctx.commodities,
+            amount: &self,
+        }
     }
 
     /// Returns `true` if this is 'non-commoditized zero', which is used to assert
@@ -164,7 +173,7 @@ impl<'ctx> Amount<'ctx> {
     }
 
     /// Returns the amount of the particular commodity.
-    fn get_part(&self, commodity: Commodity<'ctx>) -> Decimal {
+    fn get_part(&self, commodity: CommodityTag<'ctx>) -> Decimal {
         self.values.get(&commodity).copied().unwrap_or_default()
     }
 
@@ -212,7 +221,7 @@ impl<'ctx> Amount<'ctx> {
     }
 
     /// Run division with error checking.
-    pub fn check_div(mut self, rhs: Decimal) -> Result<Self, EvalError> {
+    pub fn check_div(mut self, rhs: Decimal) -> Result<Self, EvalError<'ctx>> {
         if rhs.is_zero() {
             return Err(EvalError::DivideByZero);
         }
@@ -252,7 +261,7 @@ impl<'ctx> Amount<'ctx> {
 }
 
 #[derive(Debug)]
-struct AmountIter<'a, 'ctx>(hash_map::Iter<'a, Commodity<'ctx>, Decimal>);
+struct AmountIter<'a, 'ctx>(hash_map::Iter<'a, CommodityTag<'ctx>, Decimal>);
 
 impl<'ctx> Iterator for AmountIter<'_, 'ctx> {
     type Item = SingleAmount<'ctx>;
@@ -265,14 +274,20 @@ impl<'ctx> Iterator for AmountIter<'_, 'ctx> {
 impl FusedIterator for AmountIter<'_, '_> {}
 
 #[derive(Debug)]
-struct InlinePrintAmount<'a, 'ctx>(&'a Amount<'ctx>);
+struct InlinePrintAmount<'a, 'ctx> {
+    commodity_store: &'a CommodityStore<'ctx>,
+    amount: &'a Amount<'ctx>,
+}
 
 impl Display for InlinePrintAmount<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let vs = &self.0.values;
+        let vs = &self.amount.values;
         match vs.len() {
             0 | 1 => match vs.iter().next() {
-                Some((c, v)) => write!(f, "{} {}", v, c.as_str()),
+                // TODO: Make it safe without unwrap!
+                Some((c, v)) => {
+                    write!(f, "{} {}", v, self.commodity_store.get(*c).unwrap())
+                }
                 None => write!(f, "0"),
             },
             _ => {
@@ -281,7 +296,8 @@ impl Display for InlinePrintAmount<'_, '_> {
                     if i != 0 {
                         write!(f, " + ")?;
                     }
-                    write!(f, "{} {}", v, c.as_str())?;
+                    // TODO: Make it safe without unwrap!
+                    write!(f, "{} {}", v, self.commodity_store.get(*c).unwrap())?;
                 }
                 write!(f, ")")
             }
@@ -391,8 +407,10 @@ mod tests {
 
     #[test]
     fn test_default() {
+        let arena = Bump::new();
+        let ctx = ReportContext::new(&arena);
         let amount = Amount::default();
-        assert_eq!(format!("{}", amount.as_inline_display()), "0")
+        assert_eq!(format!("{}", amount.as_inline_display(&ctx)), "0")
     }
 
     #[test]
@@ -401,7 +419,7 @@ mod tests {
         let mut ctx = ReportContext::new(&arena);
         let jpy = ctx.commodities.ensure("JPY");
         let amount = Amount::from_value(dec!(123.45), jpy);
-        assert_eq!(format!("{}", amount.as_inline_display()), "123.45 JPY")
+        assert_eq!(format!("{}", amount.as_inline_display(&ctx)), "123.45 JPY")
     }
 
     #[test]
@@ -435,10 +453,18 @@ mod tests {
         assert!(!Amount::from_value(dec!(0), jpy).is_absolute_zero());
 
         let mut amount = Amount::from_values([(dec!(0), jpy), (dec!(0), usd)]);
-        assert!(!amount.is_absolute_zero(), "{}", amount.as_inline_display());
+        assert!(
+            !amount.is_absolute_zero(),
+            "{}",
+            amount.as_inline_display(&ctx)
+        );
 
         amount.remove_zero_entries();
-        assert!(amount.is_absolute_zero(), "{}", amount.as_inline_display());
+        assert!(
+            amount.is_absolute_zero(),
+            "{}",
+            amount.as_inline_display(&ctx)
+        );
     }
 
     #[test]

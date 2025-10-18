@@ -13,6 +13,7 @@ repository.workspace = true
 annotate-snippets = "0.12.5"
 bounded-static = { version = "0.8", default-features = false, features = ["derive", "alloc", "chrono"] }
 bumpalo.workspace = true
+bumpalo-intern = "0.1.0"
 chrono.workspace = true
 derive-where = "1.6"
 dunce = "1.0.5"

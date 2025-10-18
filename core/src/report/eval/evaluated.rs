@@ -17,7 +17,7 @@ pub enum Evaluated<'ctx> {
 }
 
 impl<'ctx> TryFrom<Evaluated<'ctx>> for SingleAmount<'ctx> {
-    type Error = EvalError;
+    type Error = EvalError<'ctx>;
 
     fn try_from(value: Evaluated<'ctx>) -> Result<Self, Self::Error> {
         let amount: Amount<'ctx> = value.try_into()?;
@@ -26,7 +26,7 @@ impl<'ctx> TryFrom<Evaluated<'ctx>> for SingleAmount<'ctx> {
 }
 
 impl<'ctx> TryFrom<Evaluated<'ctx>> for PostingAmount<'ctx> {
-    type Error = EvalError;
+    type Error = EvalError<'ctx>;
 
     fn try_from(value: Evaluated<'ctx>) -> Result<Self, Self::Error> {
         let amount: Amount<'ctx> = value.try_into()?;
@@ -35,7 +35,7 @@ impl<'ctx> TryFrom<Evaluated<'ctx>> for PostingAmount<'ctx> {
 }
 
 impl<'ctx> TryFrom<Evaluated<'ctx>> for Amount<'ctx> {
-    type Error = EvalError;
+    type Error = EvalError<'ctx>;
 
     fn try_from(value: Evaluated<'ctx>) -> Result<Self, Self::Error> {
         match value {
@@ -74,10 +74,10 @@ impl<'ctx> Evaluated<'ctx> {
 
     /// Creates [`Evaluated`] from [`expr::Amount`],
     /// with just looking up the commodity.
-    pub(super) fn from_expr_amount(
+    pub(super) fn from_expr_amount<'a>(
         ctx: &ReportContext<'ctx>,
-        amount: &expr::Amount,
-    ) -> Result<Evaluated<'ctx>, EvalError> {
+        amount: &'a expr::Amount<'a>,
+    ) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
         if amount.commodity.is_empty() {
             return Ok(amount.value.value.into());
         }
@@ -109,7 +109,7 @@ impl<'ctx> Evaluated<'ctx> {
     /// Operation with the following types supported.
     /// * number + number
     /// * commodities + commodities
-    pub fn check_add(self, rhs: Self) -> Result<Self, EvalError> {
+    pub fn check_add(self, rhs: Self) -> Result<Self, EvalError<'ctx>> {
         match (self, rhs) {
             (Evaluated::Number(l), Evaluated::Number(r)) => Ok(Evaluated::Number(l + r)),
             (Evaluated::Commodities(l), Evaluated::Commodities(r)) => {
@@ -123,7 +123,7 @@ impl<'ctx> Evaluated<'ctx> {
     /// Operation with the following types supported.
     /// * number - number
     /// * commodities - commodities
-    pub fn check_sub(self, rhs: Self) -> Result<Self, EvalError> {
+    pub fn check_sub(self, rhs: Self) -> Result<Self, EvalError<'ctx>> {
         match (self, rhs) {
             (Evaluated::Number(l), Evaluated::Number(r)) => Ok(Evaluated::Number(l - r)),
             (Evaluated::Commodities(l), Evaluated::Commodities(r)) => {
@@ -138,7 +138,7 @@ impl<'ctx> Evaluated<'ctx> {
     /// * number * number
     /// * commodities * number
     /// * number * commodities
-    pub fn check_mul(self, rhs: Self) -> Result<Self, EvalError> {
+    pub fn check_mul(self, rhs: Self) -> Result<Self, EvalError<'ctx>> {
         match (self, rhs) {
             (Evaluated::Number(x), Evaluated::Number(y)) => Ok(Evaluated::Number(x * y)),
             (Evaluated::Commodities(x), Evaluated::Number(y)) => Ok(Evaluated::Commodities(x * y)),
@@ -151,7 +151,7 @@ impl<'ctx> Evaluated<'ctx> {
     /// Operation with the following types supported.
     /// * number / number
     /// * commodities / number
-    pub fn check_div(self, rhs: Self) -> Result<Self, EvalError> {
+    pub fn check_div(self, rhs: Self) -> Result<Self, EvalError<'ctx>> {
         match (self, rhs) {
             (_, rhs) if rhs.is_zero() => Err(EvalError::DivideByZero),
             (Evaluated::Number(x), Evaluated::Number(y)) => Ok(Evaluated::Number(x / y)),
@@ -166,13 +166,23 @@ impl<'ctx> Evaluated<'ctx> {
             _ => Err(EvalError::UnmatchingOperation),
         }
     }
+
+    /// Returns display impl.
+    pub fn as_display<'a>(&'a self, ctx: &'a ReportContext<'ctx>) -> impl Display + 'a
+    where
+        'a: 'ctx,
+    {
+        EvaluatedDisplay(self, ctx)
+    }
 }
 
-impl Display for Evaluated<'_> {
+struct EvaluatedDisplay<'a, 'ctx>(&'a Evaluated<'ctx>, &'a ReportContext<'ctx>);
+
+impl Display for EvaluatedDisplay<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
+        match self.0 {
             Evaluated::Number(x) => x.fmt(f),
-            Evaluated::Commodities(x) => x.as_inline_display().fmt(f),
+            Evaluated::Commodities(x) => x.as_inline_display(self.1).fmt(f),
         }
     }
 }
@@ -207,6 +217,25 @@ mod tests {
             )))
             .unwrap(),
             Amount::from_value(dec!(1000), ctx.commodities.ensure("USD"))
+        );
+    }
+
+    #[test]
+    fn test_display() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+
+        assert_eq!("0", &Evaluated::from(dec!(0)).as_display(&ctx).to_string());
+        assert_eq!(
+            "1.5",
+            &Evaluated::from(dec!(1.5)).as_display(&ctx).to_string()
+        );
+
+        assert_eq!(
+            "0 USD",
+            Evaluated::from(Amount::from_value(dec!(0), ctx.commodities.ensure("USD")))
+                .as_display(&ctx)
+                .to_string()
         );
     }
 

@@ -1,4 +1,7 @@
-use std::{fmt::Display, ops::Neg};
+use std::ops::Neg;
+
+#[cfg(test)]
+use crate::report::ReportContext;
 
 use super::{error::EvalError, single_amount::SingleAmount};
 
@@ -16,7 +19,7 @@ impl Default for PostingAmount<'_> {
 }
 
 impl<'ctx> TryFrom<PostingAmount<'ctx>> for SingleAmount<'ctx> {
-    type Error = EvalError;
+    type Error = EvalError<'ctx>;
 
     fn try_from(amount: PostingAmount<'ctx>) -> Result<Self, Self::Error> {
         match amount {
@@ -32,15 +35,6 @@ impl<'ctx> From<SingleAmount<'ctx>> for PostingAmount<'ctx> {
     }
 }
 
-impl Display for PostingAmount<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PostingAmount::Zero => write!(f, "0"),
-            PostingAmount::Single(single) => single.fmt(f),
-        }
-    }
-}
-
 impl Neg for PostingAmount<'_> {
     type Output = Self;
 
@@ -52,14 +46,14 @@ impl Neg for PostingAmount<'_> {
     }
 }
 
-impl PostingAmount<'_> {
+impl<'ctx> PostingAmount<'ctx> {
     /// Returns absolute zero.
     pub fn zero() -> Self {
         Self::default()
     }
 
     /// Adds the amount with keeping commodity single.
-    pub fn check_add(self, rhs: Self) -> Result<Self, EvalError> {
+    pub fn check_add(self, rhs: Self) -> Result<Self, EvalError<'ctx>> {
         match (self, rhs) {
             (PostingAmount::Zero, _) => Ok(rhs),
             (_, PostingAmount::Zero) => Ok(self),
@@ -70,17 +64,38 @@ impl PostingAmount<'_> {
     }
 
     /// Subtracts the amount with keeping the commodity single.
-    pub fn check_sub(self, rhs: Self) -> Result<Self, EvalError> {
+    pub fn check_sub(self, rhs: Self) -> Result<Self, EvalError<'ctx>> {
         self.check_add(-rhs)
     }
 }
 
 #[cfg(test)]
+struct PostingAmountDisplay<'a, 'ctx>(&'a PostingAmount<'ctx>, &'a ReportContext<'ctx>);
+
+#[cfg(test)]
+impl std::fmt::Display for PostingAmountDisplay<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use std::fmt::Write;
+        match self.0 {
+            PostingAmount::Zero => f.write_char('0'),
+            PostingAmount::Single(single) => single.as_display(self.1).fmt(f),
+        }
+    }
+}
+#[cfg(test)]
 impl<'ctx> PostingAmount<'ctx> {
+    /// Returns an instance which can be displayed.
+    pub fn as_display<'a>(&'a self, ctx: &'a ReportContext<'ctx>) -> impl std::fmt::Display + 'a
+    where
+        'a: 'ctx,
+    {
+        PostingAmountDisplay(self, &ctx)
+    }
+
     /// Constructs an instance with single commodity.
     pub(crate) fn from_value(
         value: rust_decimal::Decimal,
-        commodity: crate::report::commodity::Commodity<'ctx>,
+        commodity: crate::report::commodity::CommodityTag<'ctx>,
     ) -> Self {
         PostingAmount::Single(SingleAmount::from_value(value, commodity))
     }
@@ -101,7 +116,7 @@ mod tests {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
 
-        let jpy = ctx.commodities.insert_canonical("JPY").unwrap();
+        let jpy = ctx.commodities.insert("JPY").unwrap();
 
         assert_eq!(PostingAmount::Zero, -PostingAmount::zero());
 
@@ -116,7 +131,7 @@ mod tests {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
 
-        let jpy = ctx.commodities.insert_canonical("JPY").unwrap();
+        let jpy = ctx.commodities.insert("JPY").unwrap();
 
         assert_eq!(
             PostingAmount::from_value(dec!(5), jpy),
@@ -130,6 +145,23 @@ mod tests {
             PostingAmount::zero()
                 .check_add(PostingAmount::from_value(dec!(5), jpy))
                 .unwrap(),
+        );
+    }
+
+    #[test]
+    fn display() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+
+        let jpy = ctx.commodities.insert("JPY").unwrap();
+
+        assert_eq!("0", format!("{}", PostingAmount::zero().as_display(&ctx)));
+        assert_eq!(
+            "1.23 JPY",
+            format!(
+                "{}",
+                PostingAmount::from_value(dec!(1.23), jpy).as_display(&ctx)
+            )
         );
     }
 }

@@ -4,11 +4,15 @@ use std::{borrow::Cow, collections::HashSet};
 
 use chrono::NaiveDate;
 
-use crate::{parse, syntax};
+use crate::{
+    parse,
+    report::{commodity::CommodityTag, eval::OwnedEvalError},
+    syntax,
+};
 
 use super::{
     balance::Balance,
-    commodity::{Commodity, OwnedCommodity},
+    commodity::OwnedCommodity,
     context::{Account, ReportContext},
     eval::{Amount, EvalError, Evaluable},
     price_db::{self, PriceRepository},
@@ -31,7 +35,7 @@ pub enum QueryError {
     #[error("failed to parse the given value")]
     ParseFailed(#[from] parse::ParseError),
     #[error("failed to evaluate the expr")]
-    EvalFailed(#[from] EvalError),
+    EvalFailed(#[from] OwnedEvalError),
     #[error("commodity {0} not found")]
     CommodityNotFound(OwnedCommodity),
     #[error("cannot convert amount: {0}")]
@@ -65,7 +69,7 @@ pub enum ConversionStrategy {
 // TODO: non_exhaustive
 pub struct Conversion<'ctx> {
     pub strategy: ConversionStrategy,
-    pub target: Commodity<'ctx>,
+    pub target: CommodityTag<'ctx>,
 }
 
 /// Half-open range of the date for the query result.
@@ -173,6 +177,7 @@ impl<'ctx> Ledger<'ctx> {
                         target,
                     }) => Cow::Owned(
                         price_db::convert_amount(
+                            ctx,
                             &mut self.price_repos,
                             &posting.amount,
                             target,
@@ -208,6 +213,7 @@ impl<'ctx> Ledger<'ctx> {
                     converted.add_amount(
                         *account,
                         price_db::convert_amount(
+                            ctx,
                             &mut self.price_repos,
                             original_amount,
                             target,
@@ -240,13 +246,21 @@ impl<'ctx> Ledger<'ctx> {
             .transpose()?;
         let parsed: syntax::expr::ValueExpr =
             expression.try_into().map_err(QueryError::ParseFailed)?;
-        let evaled: Amount<'ctx> = parsed.eval(ctx)?.try_into()?;
+        let evaled: Amount<'ctx> = parsed
+            .eval(ctx)
+            .map_err(|e| e.into_owned(ctx))?
+            .try_into()
+            .map_err(|e: EvalError<'_>| e.into_owned(ctx))?;
         let evaled = match exchange {
             None => evaled,
-            Some(price_with) => {
-                price_db::convert_amount(&mut self.price_repos, &evaled, price_with, eval_ctx.date)
-                    .map_err(|err| QueryError::CommodityConversionFailure(err.to_string()))?
-            }
+            Some(price_with) => price_db::convert_amount(
+                ctx,
+                &mut self.price_repos,
+                &evaled,
+                price_with,
+                eval_ctx.date,
+            )
+            .map_err(|err| QueryError::CommodityConversionFailure(err.to_string()))?,
         };
         Ok(evaled)
     }
