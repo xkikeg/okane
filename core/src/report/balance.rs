@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
+use crate::report::eval::EvalError;
+
 use super::{
     context::Account,
-    eval::{Amount, EvalError, PostingAmount},
+    eval::{Amount, OwnedEvalError, PostingAmount},
     ReportContext,
 };
 
@@ -10,7 +12,7 @@ use super::{
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum BalanceError {
     #[error("balance = 0 cannot deduce posting amount when balance has multi commodities")]
-    MultiCommodityWithPartialSet(#[from] EvalError),
+    MultiCommodityWithPartialSet(#[from] OwnedEvalError),
 }
 
 /// Accumulated balance of accounts.
@@ -56,6 +58,7 @@ impl<'ctx> Balance<'ctx> {
     /// and returns the delta which should have caused the difference.
     pub(super) fn set_partial(
         &mut self,
+        ctx: &ReportContext<'ctx>,
         account: Account<'ctx>,
         amount: PostingAmount<'ctx>,
     ) -> Result<PostingAmount<'ctx>, BalanceError> {
@@ -65,9 +68,9 @@ impl<'ctx> Balance<'ctx> {
                     .accounts
                     .insert(account, Amount::zero())
                     .unwrap_or_default();
-                (&prev)
-                    .try_into()
-                    .map_err(BalanceError::MultiCommodityWithPartialSet)
+                (&prev).try_into().map_err(|e: EvalError<'_>| {
+                    BalanceError::MultiCommodityWithPartialSet(e.into_owned(ctx))
+                })
             }
             PostingAmount::Single(single_amount) => {
                 let prev = self
@@ -166,25 +169,18 @@ mod tests {
         let mut ctx = ReportContext::new(&arena);
         let mut balance = Balance::default();
 
+        let expenses = ctx.accounts.ensure("Expenses");
+        let jpy = ctx.commodities.insert("JPY").unwrap();
         let prev = balance
-            .set_partial(
-                ctx.accounts.ensure("Expenses"),
-                PostingAmount::from_value(dec!(1000), ctx.commodities.ensure("JPY")),
-            )
+            .set_partial(&ctx, expenses, PostingAmount::from_value(dec!(1000), jpy))
             .unwrap();
 
         // Note it won't be PostingAmount::zero(),
         // as set_partial is called with commodity amount.
+        assert_eq!(prev, PostingAmount::from_value(dec!(0), jpy));
         assert_eq!(
-            prev,
-            PostingAmount::from_value(dec!(0), ctx.commodities.ensure("JPY"))
-        );
-        assert_eq!(
-            balance.get(&ctx.accounts.ensure("Expenses")),
-            Some(&Amount::from_value(
-                dec!(1000),
-                ctx.commodities.ensure("JPY")
-            ))
+            balance.get(&expenses),
+            Some(&Amount::from_value(dec!(1000), jpy))
         );
     }
 
@@ -198,11 +194,11 @@ mod tests {
             PostingAmount::from_value(dec!(1000), ctx.commodities.ensure("JPY")),
         );
 
+        let expenses = ctx.accounts.ensure("Expenses");
+        let jpy = ctx.commodities.ensure("JPY");
+
         let prev = balance
-            .set_partial(
-                ctx.accounts.ensure("Expenses"),
-                PostingAmount::from_value(dec!(-1000), ctx.commodities.ensure("JPY")),
-            )
+            .set_partial(&ctx, expenses, PostingAmount::from_value(dec!(-1000), jpy))
             .unwrap();
 
         assert_eq!(
@@ -232,11 +228,11 @@ mod tests {
             PostingAmount::from_value(dec!(200), ctx.commodities.ensure("CHF")),
         );
 
+        let expenses = ctx.accounts.ensure("Expenses");
+        let chf = ctx.commodities.ensure("CHF");
+
         let prev = balance
-            .set_partial(
-                ctx.accounts.ensure("Expenses"),
-                PostingAmount::from_value(dec!(100), ctx.commodities.ensure("CHF")),
-            )
+            .set_partial(&ctx, expenses, PostingAmount::from_value(dec!(100), chf))
             .unwrap();
 
         assert_eq!(
@@ -258,8 +254,10 @@ mod tests {
         let mut ctx = ReportContext::new(&arena);
         let mut balance = Balance::default();
 
+        let expenses = ctx.accounts.ensure("Expenses");
+
         let prev = balance
-            .set_partial(ctx.accounts.ensure("Expenses"), PostingAmount::zero())
+            .set_partial(&ctx, expenses, PostingAmount::zero())
             .unwrap();
 
         assert_eq!(prev, PostingAmount::zero());
@@ -279,8 +277,10 @@ mod tests {
             PostingAmount::from_value(dec!(1000), ctx.commodities.ensure("JPY")),
         );
 
+        let expenses = ctx.accounts.ensure("Expenses");
+
         let prev = balance
-            .set_partial(ctx.accounts.ensure("Expenses"), PostingAmount::zero())
+            .set_partial(&ctx, expenses, PostingAmount::zero())
             .unwrap();
 
         assert_eq!(
@@ -307,13 +307,15 @@ mod tests {
             PostingAmount::from_value(dec!(200), ctx.commodities.ensure("CHF")),
         );
 
+        let expenses = ctx.accounts.ensure("Expenses");
+
         let err = balance
-            .set_partial(ctx.accounts.ensure("Expenses"), PostingAmount::zero())
+            .set_partial(&ctx, expenses, PostingAmount::zero())
             .unwrap_err();
 
         assert_eq!(
             err,
-            BalanceError::MultiCommodityWithPartialSet(EvalError::PostingAmountRequired)
+            BalanceError::MultiCommodityWithPartialSet(OwnedEvalError::PostingAmountRequired)
         );
     }
 }

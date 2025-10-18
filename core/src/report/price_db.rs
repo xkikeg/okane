@@ -8,10 +8,12 @@ use std::{
 use chrono::{NaiveDate, TimeDelta};
 use rust_decimal::Decimal;
 
-use crate::parse;
+use crate::{
+    parse,
+    report::{commodity::CommodityTag, OwnedCommodity},
+};
 
 use super::{
-    commodity::Commodity,
     context::ReportContext,
     eval::{Amount, SingleAmount},
 };
@@ -40,7 +42,7 @@ struct Entry(PriceSource, Vec<(NaiveDate, Decimal)>);
 /// Builder of [`PriceRepository`].
 #[derive(Debug, Default)]
 pub(super) struct PriceRepositoryBuilder<'ctx> {
-    records: HashMap<Commodity<'ctx>, HashMap<Commodity<'ctx>, Entry>>,
+    records: HashMap<CommodityTag<'ctx>, HashMap<CommodityTag<'ctx>, Entry>>,
 }
 
 /// Event of commodity price.
@@ -53,7 +55,7 @@ pub(super) struct PriceEvent<'ctx> {
 
 #[cfg(test)]
 impl<'ctx> PriceEvent<'ctx> {
-    fn sort_key<'a>(&'a self) -> (NaiveDate, &'ctx str, &'ctx str, &'a Decimal, &'a Decimal) {
+    fn sort_key<'a>(&'a self) -> (NaiveDate, usize, usize, &'a Decimal, &'a Decimal) {
         let PriceEvent {
             date,
             price_x:
@@ -69,8 +71,8 @@ impl<'ctx> PriceEvent<'ctx> {
         } = self;
         (
             *date,
-            commodity_x.as_str(),
-            commodity_y.as_str(),
+            commodity_x.as_index(),
+            commodity_y.as_index(),
             value_x,
             value_y,
         )
@@ -176,21 +178,22 @@ impl<'ctx> PriceRepositoryBuilder<'ctx> {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum ConversionError<'ctx> {
+pub enum ConversionError {
     #[error("commodity rate {0} into {1} at {2} not found")]
-    RateNotFound(SingleAmount<'ctx>, Commodity<'ctx>, NaiveDate),
+    RateNotFound(OwnedCommodity, OwnedCommodity, NaiveDate),
 }
 
 /// Converts the given amount into the specified commodity.
 pub fn convert_amount<'ctx>(
+    ctx: &ReportContext<'ctx>,
     price_repos: &mut PriceRepository<'ctx>,
     amount: &Amount<'ctx>,
-    commodity_with: Commodity<'ctx>,
+    commodity_with: CommodityTag<'ctx>,
     date: NaiveDate,
-) -> Result<Amount<'ctx>, ConversionError<'ctx>> {
+) -> Result<Amount<'ctx>, ConversionError> {
     let mut result = Amount::zero();
     for v in amount.iter() {
-        result += price_repos.convert_single(v, commodity_with, date)?;
+        result += price_repos.convert_single(ctx, v, commodity_with, date)?;
     }
     Ok(result)
 }
@@ -202,7 +205,10 @@ pub struct PriceRepository<'ctx> {
     // TODO: add price_with as a key, otherwise it's wrong.
     // BTreeMap could be used if cursor support is ready.
     // Then, we can avoid computing rates over and over if no rate update happens.
-    cache: HashMap<(Commodity<'ctx>, NaiveDate), HashMap<Commodity<'ctx>, WithDistance<Decimal>>>,
+    cache: HashMap<
+        (CommodityTag<'ctx>, NaiveDate),
+        HashMap<CommodityTag<'ctx>, WithDistance<Decimal>>,
+    >,
 }
 
 impl<'ctx> PriceRepository<'ctx> {
@@ -218,10 +224,11 @@ impl<'ctx> PriceRepository<'ctx> {
     /// returns `Ok(value)` as-is.
     pub fn convert_single(
         &mut self,
+        ctx: &ReportContext<'ctx>,
         value: SingleAmount<'ctx>,
-        commodity_with: Commodity<'ctx>,
+        commodity_with: CommodityTag<'ctx>,
         date: NaiveDate,
-    ) -> Result<SingleAmount<'ctx>, ConversionError<'ctx>> {
+    ) -> Result<SingleAmount<'ctx>, ConversionError> {
         if value.commodity == commodity_with {
             return Ok(value);
         }
@@ -234,7 +241,11 @@ impl<'ctx> PriceRepository<'ctx> {
             Some(WithDistance(_, rate)) => {
                 Ok(SingleAmount::from_value(value.value * rate, commodity_with))
             }
-            None => Err(ConversionError::RateNotFound(value, commodity_with, date)),
+            None => Err(ConversionError::RateNotFound(
+                value.commodity.to_owned_lossy(&ctx.commodities),
+                commodity_with.to_owned_lossy(&ctx.commodities),
+                date,
+            )),
         }
     }
 }
@@ -244,7 +255,7 @@ struct NaivePriceRepository<'ctx> {
     // from comodity -> to commodity -> date -> price.
     // e.g. USD AAPL 2024-01-01 100 means 1 AAPL == 100 USD at 2024-01-01.
     // the value are sorted in NaiveDate order.
-    records: HashMap<Commodity<'ctx>, HashMap<Commodity<'ctx>, Entry>>,
+    records: HashMap<CommodityTag<'ctx>, HashMap<CommodityTag<'ctx>, Entry>>,
 }
 
 impl<'ctx> NaivePriceRepository<'ctx> {
@@ -253,7 +264,7 @@ impl<'ctx> NaivePriceRepository<'ctx> {
     fn convert(
         &self,
         value: SingleAmount<'ctx>,
-        commodity_with: Commodity<'ctx>,
+        commodity_with: CommodityTag<'ctx>,
         date: NaiveDate,
     ) -> Result<SingleAmount<'ctx>, SingleAmount<'ctx>> {
         if value.commodity == commodity_with {
@@ -271,12 +282,12 @@ impl<'ctx> NaivePriceRepository<'ctx> {
 
     fn compute_price_table(
         &self,
-        price_with: Commodity<'ctx>,
+        price_with: CommodityTag<'ctx>,
         date: NaiveDate,
-    ) -> HashMap<Commodity<'ctx>, WithDistance<Decimal>> {
+    ) -> HashMap<CommodityTag<'ctx>, WithDistance<Decimal>> {
         // minimize the distance, and then minimize the staleness.
-        let mut queue: BinaryHeap<WithDistance<(Commodity<'ctx>, Decimal)>> = BinaryHeap::new();
-        let mut distances: HashMap<Commodity<'ctx>, WithDistance<Decimal>> = HashMap::new();
+        let mut queue: BinaryHeap<WithDistance<(CommodityTag<'ctx>, Decimal)>> = BinaryHeap::new();
+        let mut distances: HashMap<CommodityTag<'ctx>, WithDistance<Decimal>> = HashMap::new();
         queue.push(WithDistance(
             Distance {
                 num_ledger_conversions: 0,
@@ -304,8 +315,8 @@ impl<'ctx> NaivePriceRepository<'ctx> {
             } {
                 let bound = rates.partition_point(|(record_date, _)| record_date <= &date);
                 log::debug!(
-                    "found next commodity {} with date bound {}",
-                    j.as_str(),
+                    "found next commodity #{} with date bound {}",
+                    j.as_index(),
                     bound
                 );
                 if bound == 0 {

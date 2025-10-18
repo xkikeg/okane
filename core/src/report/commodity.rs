@@ -1,23 +1,26 @@
 //! Defines commodity and its related types.
 
-use std::{collections::HashMap, fmt::Display};
+use std::fmt::Display;
 
 use bumpalo::Bump;
+use bumpalo_intern::dense::{DenseInternStore, InternTag, Interned, Keyed, OccupiedError};
 use pretty_decimal::PrettyDecimal;
-
-use crate::intern::{FromInterned, InternStore, InternedStr, OccupiedError};
 
 /// `&str` for commodities, interned within the `'arena` bounded allocator lifetime.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-pub struct Commodity<'arena>(InternedStr<'arena>);
+pub struct Commodity<'arena>(&'arena str);
 
-impl<'arena> FromInterned<'arena> for Commodity<'arena> {
-    fn from_interned(v: InternedStr<'arena>) -> Self {
-        Self(v)
-    }
-
-    fn as_interned(&self) -> InternedStr<'arena> {
+impl<'a> Keyed<'a> for Commodity<'a> {
+    fn intern_key(&self) -> &'a str {
         self.0
+    }
+}
+impl<'a> Interned<'a> for Commodity<'a> {
+    type View<'b> = Commodity<'b>;
+
+    fn intern_from<'b>(arena: &'a Bump, view: Self::View<'b>) -> (&'a str, Self) {
+        let key = arena.alloc_str(view.0);
+        (key, Commodity(key))
     }
 }
 
@@ -27,10 +30,10 @@ impl Display for Commodity<'_> {
     }
 }
 
-impl<'arena> Commodity<'arena> {
+impl<'a> Commodity<'a> {
     /// Returns the `&str`.
-    pub fn as_str(&self) -> &'arena str {
-        self.0.as_str()
+    pub fn as_str(&self) -> &'a str {
+        self.0
     }
 }
 
@@ -68,42 +71,73 @@ impl Display for OwnedCommodity {
     }
 }
 
-/// `Interner` for [`Commodity`].
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct CommodityTag<'a>(InternTag<Commodity<'a>>);
+
+impl<'ctx> CommodityTag<'ctx> {
+    /// Returns the index of the commodity.
+    /// Note this index is dense, so you can assume it fits in 0..len range.
+    pub fn as_index(&self) -> usize {
+        self.0.as_index()
+    }
+
+    /// Converts the self into [`OwnedCommodity`].
+    /// If the tag isn't registered in the `commodity_store`,
+    /// it'll print "unknown#xx" as the place holder.
+    pub(super) fn to_owned_lossy(self, commodity_store: &CommodityStore<'ctx>) -> OwnedCommodity {
+        match commodity_store.get(self) {
+            Some(x) => x.into(),
+            None => OwnedCommodity(format!("unknown#{}", self.as_index())),
+        }
+    }
+}
+
+/// Interner for [`Commodity`].
 pub(super) struct CommodityStore<'arena> {
-    intern: InternStore<'arena, Commodity<'arena>>,
-    formatting: HashMap<Commodity<'arena>, PrettyDecimal>,
+    intern: DenseInternStore<'arena, Commodity<'arena>>,
+    formatting: Vec<Option<PrettyDecimal>>,
+}
+
+impl<'arena> std::fmt::Debug for CommodityStore<'arena> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CommodityStore")
+            .field("intern", &format!("[{} commodities]", self.intern.len()))
+            .finish()
+    }
 }
 
 impl<'arena> CommodityStore<'arena> {
     /// Creates a new instance.
     pub fn new(arena: &'arena Bump) -> Self {
         Self {
-            intern: InternStore::new(arena),
-            formatting: HashMap::new(),
+            intern: DenseInternStore::new(arena),
+            formatting: Vec::new(),
         }
     }
 
     /// Returns the Commodity with the given `value`,
     /// potentially resolving the alias.
     /// If not available, registers the given `value` as the canonical.
-    pub fn ensure(&mut self, value: &str) -> Commodity<'arena> {
-        self.intern.ensure(value)
+    pub fn ensure(&mut self, value: &'_ str) -> CommodityTag<'arena> {
+        CommodityTag(self.intern.ensure(Commodity(value)))
+    }
+
+    /// Returns the tag corresponding [`Commodity`].
+    pub fn get(&self, tag: CommodityTag<'arena>) -> Option<Commodity<'arena>> {
+        self.intern.get(tag.0)
     }
 
     /// Returns the Commodity with the given `value` if and only if it's already registered.
-    pub fn resolve(&self, value: &str) -> Option<Commodity<'arena>> {
-        self.intern.resolve(value)
+    pub fn resolve(&self, value: &str) -> Option<CommodityTag<'arena>> {
+        self.intern.resolve(value).map(CommodityTag)
     }
 
-    /// Inserts given `value` as always canonical.
-    /// Returns error if given `value` is already registered as alias.
-    /// Facade for [`InternStore::insert_canonical`].
     #[cfg(test)]
-    pub(super) fn insert_canonical(
+    pub fn insert(
         &mut self,
         value: &str,
-    ) -> Result<Commodity<'arena>, OccupiedError> {
-        self.intern.insert_canonical(value)
+    ) -> Result<CommodityTag<'arena>, OccupiedError<Commodity<'arena>>> {
+        self.intern.try_insert(Commodity(value)).map(CommodityTag)
     }
 
     /// Inserts given `value` as always alias of `canonical`.
@@ -112,18 +146,71 @@ impl<'arena> CommodityStore<'arena> {
     pub(super) fn insert_alias(
         &mut self,
         value: &str,
-        canonical: Commodity<'arena>,
-    ) -> Result<(), OccupiedError> {
-        self.intern.insert_alias(value, canonical)
+        canonical: CommodityTag<'arena>,
+    ) -> Result<(), OccupiedError<Commodity<'arena>>> {
+        self.intern.insert_alias(Commodity(value), canonical.0)
+    }
+
+    /// Returns the precision of the `commodity` if specified.
+    #[inline]
+    pub(super) fn get_decimal_point(&self, commodity: CommodityTag<'arena>) -> Option<u32> {
+        match self.formatting.get(commodity.0.as_index()) {
+            Some(Some(x)) => Some(x.scale()),
+            _ => None,
+        }
     }
 
     #[inline]
-    pub(super) fn get_decimal_point(&self, commodity: Commodity<'arena>) -> Option<u32> {
-        self.formatting.get(&commodity).map(|x| x.value.scale())
+    pub(super) fn set_format(&mut self, commodity: CommodityTag<'arena>, format: PrettyDecimal) {
+        if self.formatting.len() <= commodity.as_index() {
+            self.formatting.resize(commodity.as_index() + 1, None);
+        }
+        self.formatting[commodity.0.as_index()] = Some(format);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use pretty_assertions::assert_eq;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn to_owned_lossy() {
+        let arena = Bump::new();
+        let mut commodities = CommodityStore::new(&arena);
+        let chf = commodities.insert("CHF").unwrap();
+
+        assert_eq!(
+            OwnedCommodity::from_string("CHF".to_string()),
+            chf.to_owned_lossy(&commodities)
+        );
+
+        let unknown = CommodityTag(InternTag::new(1));
+
+        assert_eq!(
+            OwnedCommodity::from_string("unknown#1".to_string()),
+            unknown.to_owned_lossy(&commodities)
+        );
     }
 
-    #[inline]
-    pub(super) fn set_format(&mut self, commodity: Commodity<'arena>, format: PrettyDecimal) {
-        self.formatting.insert(commodity, format);
+    #[test]
+    fn get_decimal_point_returns_none_if_unspecified() {
+        let arena = Bump::new();
+        let mut commodities = CommodityStore::new(&arena);
+        let jpy = commodities.insert("JPY").unwrap();
+
+        assert_eq!(None, commodities.get_decimal_point(jpy));
+    }
+
+    #[test]
+    fn get_decimal_point_returns_some_if_set() {
+        let arena = Bump::new();
+        let mut commodities = CommodityStore::new(&arena);
+        let jpy = commodities.insert("JPY").unwrap();
+        commodities.set_format(jpy, PrettyDecimal::comma3dot(dec!(1.234)));
+
+        assert_eq!(Some(3), commodities.get_decimal_point(jpy));
     }
 }

@@ -7,7 +7,7 @@ mod posting_amount;
 mod single_amount;
 
 pub use amount::Amount;
-pub use error::EvalError;
+pub use error::{EvalError, OwnedEvalError};
 pub use evaluated::Evaluated;
 pub(super) use posting_amount::PostingAmount;
 pub use single_amount::SingleAmount;
@@ -17,27 +17,30 @@ use crate::syntax::expr;
 
 // Provides evaluation to syntax expressions.
 pub(crate) trait Evaluable {
-    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError>>(
+    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError<'ctx>>>(
         &self,
         evaluator: &mut F,
-    ) -> Result<Evaluated<'ctx>, EvalError>;
+    ) -> Result<Evaluated<'ctx>, EvalError<'ctx>>;
 
     /// Evaluate the self with mutable `ctx`, which allows unknown commodities in the expressions to be registered.
-    fn eval_mut<'ctx>(&self, ctx: &mut ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError> {
+    fn eval_mut<'ctx>(
+        &self,
+        ctx: &mut ReportContext<'ctx>,
+    ) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
         self.eval_visit(&mut |amount| Ok(Evaluated::from_expr_amount_mut(ctx, amount)))
     }
 
     /// Evaluate the self with immutable `ctx`, which raises error on unknown commoditieis.
-    fn eval<'ctx>(&self, ctx: &ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError> {
+    fn eval<'ctx>(&self, ctx: &ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
         self.eval_visit(&mut |amount| Evaluated::from_expr_amount(ctx, amount))
     }
 }
 
 impl Evaluable for expr::ValueExpr<'_> {
-    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError>>(
+    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError<'ctx>>>(
         &self,
         evaluator: &mut F,
-    ) -> Result<Evaluated<'ctx>, EvalError> {
+    ) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
         match self {
             expr::ValueExpr::Paren(x) => x.eval_visit(evaluator),
             expr::ValueExpr::Amount(x) => evaluator(x),
@@ -46,10 +49,10 @@ impl Evaluable for expr::ValueExpr<'_> {
 }
 
 impl Evaluable for expr::Expr<'_> {
-    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError>>(
+    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError<'ctx>>>(
         &self,
         evaluator: &mut F,
-    ) -> Result<Evaluated<'ctx>, EvalError> {
+    ) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
         match self {
             expr::Expr::Unary(e) => e.eval_visit(evaluator),
             expr::Expr::Binary(e) => e.eval_visit(evaluator),
@@ -59,10 +62,10 @@ impl Evaluable for expr::Expr<'_> {
 }
 
 impl Evaluable for expr::UnaryOpExpr<'_> {
-    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError>>(
+    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError<'ctx>>>(
         &self,
         evaluator: &mut F,
-    ) -> Result<Evaluated<'ctx>, EvalError> {
+    ) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
         match self.op {
             expr::UnaryOp::Negate => {
                 let val = self.expr.eval_visit(evaluator)?;
@@ -73,10 +76,10 @@ impl Evaluable for expr::UnaryOpExpr<'_> {
 }
 
 impl Evaluable for expr::BinaryOpExpr<'_> {
-    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError>>(
+    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError<'ctx>>>(
         &self,
         evaluator: &mut F,
-    ) -> Result<Evaluated<'ctx>, EvalError> {
+    ) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
         let lhs = self.lhs.eval_visit(evaluator)?;
         let rhs = self.rhs.eval_visit(evaluator)?;
         match self.op {

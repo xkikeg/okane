@@ -211,6 +211,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
 
 [[package]]
+name = "bumpalo-intern"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "065de78d6905af47fc9dc74af332b4130a01e7d7fd87066c8451f1d56cd1bdf0"
+dependencies = [
+ "bumpalo",
+ "derive-where",
+]
+
+[[package]]
 name = "bytecheck"
 version = "0.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -981,6 +991,7 @@ dependencies = [
  "annotate-snippets",
  "bounded-static",
  "bumpalo",
+ "bumpalo-intern",
  "chrono",
  "criterion",
  "ctor",

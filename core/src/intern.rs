@@ -189,6 +189,7 @@ pub enum OccupiedError {
     #[error("given alias is already registered as canonical")]
     AlreadyCanonical,
     #[error("given canonical is already registered as an alias")]
+    #[allow(dead_code)]
     AlreadyAlias,
 }
 
