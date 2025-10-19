@@ -14,6 +14,7 @@ pub use output::{
     CommodityFormatStyle, OutputCommodityDetailsSpec, OutputCommoditySpec, OutputSpec,
 };
 pub use rewrite::{FieldMatcher, RewriteField, RewriteMatcher, RewriteRule};
+use soft_canonicalize::soft_canonicalize;
 
 use std::convert::{TryFrom, TryInto};
 use std::path::{Path, PathBuf};
@@ -34,17 +35,19 @@ pub struct ConfigSet {
 
 impl ConfigSet {
     pub fn select(&self, p: &Path) -> Result<Option<ConfigEntry>, ImportError> {
-        self.select_impl(p).transpose()
+        self.select_impl(&soft_canonicalize(p)?).transpose()
     }
 
     fn select_impl(&self, p: &Path) -> Option<Result<ConfigEntry, ImportError>> {
         let fp: &str = match p.to_str() {
             None => {
-                log::warn!("invalid Unicode path: {}", p.display());
-                None
+                return Some(Err(ImportError::Other(format!(
+                    "invalid Unicode path: {}",
+                    p.display()
+                ))));
             }
-            Some(x) => Some(x),
-        }?;
+            Some(x) => x,
+        };
         fn has_matches<'a>(
             entry: &'a ConfigFragment,
             fp: &str,

@@ -35,6 +35,7 @@ serde_yaml = "0.9.34"
 strum.workspace = true
 thiserror.workspace = true
 winnow.workspace = true
+soft-canonicalize = { version = "0.4.5", features = [ "dunce" ] }
 
 [dev-dependencies]
 okane-golden = { version = "0.1.0", path = "../golden" }

@@ -968,6 +968,7 @@ dependencies = [
  "serde_with",
  "serde_yaml",
  "shlex",
+ "soft-canonicalize",
  "strum",
  "thiserror",
  "winnow",
@@ -1669,6 +1670,15 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+
+[[package]]
+name = "soft-canonicalize"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d773c1dc6044d8c2065e16808d6aed9d840c172a8b6c3295658be1138b3b53b"
+dependencies = [
+ "dunce",
+]
 
 [[package]]
 name = "strsim"
