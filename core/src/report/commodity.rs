@@ -185,6 +185,14 @@ pub struct CommodityMap<T> {
     inner: Vec<Option<T>>,
 }
 
+impl<T> Default for CommodityMap<T> {
+    fn default() -> Self {
+        Self {
+            inner: Vec::default(),
+        }
+    }
+}
+
 impl<T> CommodityMap<T> {
     /// Creates a new instance.
     pub fn new() -> Self {
@@ -204,6 +212,22 @@ impl<T> CommodityMap<T> {
             Some(Some(r)) => Some(r),
             Some(None) | None => None,
         }
+    }
+
+    /// Returns the iterator of the key and values.
+    pub fn iter<'ctx>(&self) -> impl Iterator<Item = (CommodityTag<'ctx>, &T)> {
+        self.inner
+            .iter()
+            .enumerate()
+            .filter_map(|(i, v)| v.as_ref().map(|x| (CommodityTag(InternTag::new(i)), x)))
+    }
+
+    /// Runs the given f for all elements.
+    pub fn for_each<F: FnMut(&mut T)>(&mut self, mut f: F) {
+        self.inner.iter_mut().for_each(|v| match v.as_mut() {
+            Some(v) => f(v),
+            None => (),
+        });
     }
 }
 
