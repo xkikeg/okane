@@ -1,7 +1,7 @@
 //! Provides [PriceRepository], which can compute the commodity (currency) conversion.
 
 use std::{
-    collections::{hash_map, BinaryHeap, HashMap},
+    collections::{BinaryHeap, HashMap},
     path::Path,
 };
 
@@ -10,7 +10,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     parse,
-    report::{commodity::CommodityTag, OwnedCommodity},
+    report::commodity::{CommodityMap, CommodityTag, OwnedCommodity},
 };
 
 use super::{
@@ -125,9 +125,10 @@ impl<'ctx> PriceRepositoryBuilder<'ctx> {
         let content = std::fs::read_to_string(path)?;
         for entry in parse::price::parse_price_db(&parse::ParseOptions::default(), &content) {
             let (_, entry) = entry?;
-            // we cannot skip commodities we don't know, as the price might be indirected in DB.
+            // we cannot skip commodities which doesn't appear in Ledger source,
+            // as the price might be computed via indirect relationship.
             // For example, if we have only AUD and JPY in Ledger,
-            // price DB might just expose AUD/EUR EUR/CHF CHF/JPY.
+            // price DB might expose AUD/EUR EUR/CHF CHF/JPY conversion.
             let target = ctx.commodities.ensure(entry.target.as_ref());
             let rate: SingleAmount<'ctx> = SingleAmount::from_value(
                 entry.rate.value.value,
@@ -205,10 +206,7 @@ pub struct PriceRepository<'ctx> {
     // TODO: add price_with as a key, otherwise it's wrong.
     // BTreeMap could be used if cursor support is ready.
     // Then, we can avoid computing rates over and over if no rate update happens.
-    cache: HashMap<
-        (CommodityTag<'ctx>, NaiveDate),
-        HashMap<CommodityTag<'ctx>, WithDistance<Decimal>>,
-    >,
+    cache: HashMap<(CommodityTag<'ctx>, NaiveDate), CommodityMap<WithDistance<Decimal>>>,
 }
 
 impl<'ctx> PriceRepository<'ctx> {
@@ -235,8 +233,8 @@ impl<'ctx> PriceRepository<'ctx> {
         let rate = self
             .cache
             .entry((commodity_with, date))
-            .or_insert_with(|| self.inner.compute_price_table(commodity_with, date))
-            .get(&value.commodity);
+            .or_insert_with(|| self.inner.compute_price_table(ctx, commodity_with, date))
+            .get(value.commodity);
         match rate {
             Some(WithDistance(_, rate)) => {
                 Ok(SingleAmount::from_value(value.value * rate, commodity_with))
@@ -263,6 +261,7 @@ impl<'ctx> NaivePriceRepository<'ctx> {
     #[cfg(test)]
     fn convert(
         &self,
+        ctx: &ReportContext<'ctx>,
         value: SingleAmount<'ctx>,
         commodity_with: CommodityTag<'ctx>,
         date: NaiveDate,
@@ -271,8 +270,8 @@ impl<'ctx> NaivePriceRepository<'ctx> {
             return Ok(value);
         }
         let rate = self
-            .compute_price_table(commodity_with, date)
-            .get(&value.commodity)
+            .compute_price_table(ctx, commodity_with, date)
+            .get(value.commodity)
             .map(|x| x.1);
         match rate {
             Some(rate) => Ok(SingleAmount::from_value(value.value * rate, commodity_with)),
@@ -282,12 +281,14 @@ impl<'ctx> NaivePriceRepository<'ctx> {
 
     fn compute_price_table(
         &self,
+        ctx: &ReportContext<'ctx>,
         price_with: CommodityTag<'ctx>,
         date: NaiveDate,
-    ) -> HashMap<CommodityTag<'ctx>, WithDistance<Decimal>> {
+    ) -> CommodityMap<WithDistance<Decimal>> {
         // minimize the distance, and then minimize the staleness.
         let mut queue: BinaryHeap<WithDistance<(CommodityTag<'ctx>, Decimal)>> = BinaryHeap::new();
-        let mut distances: HashMap<CommodityTag<'ctx>, WithDistance<Decimal>> = HashMap::new();
+        let mut distances: CommodityMap<WithDistance<Decimal>> =
+            CommodityMap::with_capacity(ctx.commodities.len());
         queue.push(WithDistance(
             Distance {
                 num_ledger_conversions: 0,
@@ -299,7 +300,7 @@ impl<'ctx> NaivePriceRepository<'ctx> {
         while let Some(curr) = queue.pop() {
             log::debug!("curr: {:?}", curr);
             let WithDistance(curr_dist, (prev, prev_rate)) = curr;
-            if let Some(WithDistance(prev_dist, _)) = distances.get(&prev) {
+            if let Some(WithDistance(prev_dist, _)) = distances.get(prev) {
                 if *prev_dist < curr_dist {
                     log::debug!(
                         "no need to update, prev_dist {:?} is smaller than curr_dist {:?}",
@@ -328,17 +329,18 @@ impl<'ctx> NaivePriceRepository<'ctx> {
                 let next_dist = curr_dist.extend(*source, date - record_date);
                 let rate = prev_rate * rate;
                 let next = WithDistance(next_dist.clone(), (*j, rate));
-                let updated = match distances.entry(*j) {
-                    hash_map::Entry::Occupied(mut e) => {
-                        if e.get() <= &next_dist {
+                let e: &mut Option<_> = distances.get_mut(*j);
+                let updated = match e.as_mut() {
+                    Some(e) => {
+                        if *e <= next_dist {
                             false
                         } else {
-                            e.insert(WithDistance(next_dist, rate));
+                            *e = WithDistance(next_dist, rate);
                             true
                         }
                     }
-                    hash_map::Entry::Vacant(e) => {
-                        e.insert(WithDistance(next_dist, rate));
+                    None => {
+                        *e = Some(WithDistance(next_dist, rate));
                         true
                     }
                 };
@@ -383,7 +385,7 @@ impl Distance {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct WithDistance<T>(Distance, T);
 
 impl<T> PartialEq for WithDistance<T> {
@@ -445,6 +447,7 @@ mod tests {
 
         // before the event date, we can't convert the value, thus see Right.
         let got = db.convert(
+            &ctx,
             SingleAmount::from_value(dec!(1), eur),
             chf,
             NaiveDate::from_ymd_opt(2024, 9, 30).unwrap(),
@@ -452,6 +455,7 @@ mod tests {
         assert_eq!(got, Err(SingleAmount::from_value(dec!(1), eur)));
 
         let got = db.convert(
+            &ctx,
             SingleAmount::from_value(dec!(10), chf),
             eur,
             NaiveDate::from_ymd_opt(2024, 9, 30).unwrap(),
@@ -459,6 +463,7 @@ mod tests {
         assert_eq!(got, Err(SingleAmount::from_value(dec!(10), chf)));
 
         let got = db.convert(
+            &ctx,
             SingleAmount::from_value(dec!(1.0), eur),
             chf,
             NaiveDate::from_ymd_opt(2024, 10, 1).unwrap(),
@@ -466,6 +471,7 @@ mod tests {
         assert_eq!(got, Ok(SingleAmount::from_value(dec!(0.8), chf)));
 
         let got = db.convert(
+            &ctx,
             SingleAmount::from_value(dec!(10.0), chf),
             eur,
             NaiveDate::from_ymd_opt(2024, 10, 1).unwrap(),
@@ -516,6 +522,7 @@ mod tests {
         let db = builder.build_naive();
 
         let got = db.convert(
+            &ctx,
             SingleAmount::from_value(dec!(1), chf),
             jpy,
             NaiveDate::from_ymd_opt(2024, 10, 3).unwrap(),
