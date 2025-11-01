@@ -1,5 +1,6 @@
 //! Defines commodity and its related types.
 
+use std::borrow::Cow;
 use std::fmt::Display;
 
 use bumpalo::Bump;
@@ -81,14 +82,19 @@ impl<'ctx> CommodityTag<'ctx> {
         self.0.as_index()
     }
 
+    /// Takes the str if possible.
+    pub(super) fn to_str_lossy(self, commodity_store: &CommodityStore<'ctx>) -> Cow<'ctx, str> {
+        match commodity_store.get(self) {
+            Some(x) => Cow::Borrowed(x.as_str()),
+            None => Cow::Owned(format!("unknown#{}", self.as_index())),
+        }
+    }
+
     /// Converts the self into [`OwnedCommodity`].
     /// If the tag isn't registered in the `commodity_store`,
     /// it'll print "unknown#xx" as the place holder.
     pub(super) fn to_owned_lossy(self, commodity_store: &CommodityStore<'ctx>) -> OwnedCommodity {
-        match commodity_store.get(self) {
-            Some(x) => x.into(),
-            None => OwnedCommodity(format!("unknown#{}", self.as_index())),
-        }
+        OwnedCommodity::from_string(self.to_str_lossy(commodity_store).into_owned())
     }
 }
 

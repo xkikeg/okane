@@ -284,9 +284,8 @@ impl Display for InlinePrintAmount<'_, '_> {
         let vs = &self.amount.values;
         match vs.len() {
             0 | 1 => match vs.iter().next() {
-                // TODO: Make it safe without unwrap!
                 Some((c, v)) => {
-                    write!(f, "{} {}", v, self.commodity_store.get(*c).unwrap())
+                    write!(f, "{} {}", v, c.to_str_lossy(&self.commodity_store))
                 }
                 None => write!(f, "0"),
             },
@@ -296,8 +295,7 @@ impl Display for InlinePrintAmount<'_, '_> {
                     if i != 0 {
                         write!(f, " + ")?;
                     }
-                    // TODO: Make it safe without unwrap!
-                    write!(f, "{} {}", v, self.commodity_store.get(*c).unwrap())?;
+                    write!(f, "{} {}", v, c.to_str_lossy(&self.commodity_store))?;
                 }
                 write!(f, ")")
             }
