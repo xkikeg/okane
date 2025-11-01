@@ -101,7 +101,7 @@ impl<'ctx> CommodityTag<'ctx> {
 /// Interner for [`Commodity`].
 pub(super) struct CommodityStore<'arena> {
     intern: DenseInternStore<'arena, Commodity<'arena>>,
-    formatting: Vec<Option<PrettyDecimal>>,
+    formatting: CommodityMap<PrettyDecimal>,
 }
 
 impl<'arena> std::fmt::Debug for CommodityStore<'arena> {
@@ -117,7 +117,7 @@ impl<'arena> CommodityStore<'arena> {
     pub fn new(arena: &'arena Bump) -> Self {
         Self {
             intern: DenseInternStore::new(arena),
-            formatting: Vec::new(),
+            formatting: CommodityMap::new(),
         }
     }
 
@@ -160,18 +160,72 @@ impl<'arena> CommodityStore<'arena> {
     /// Returns the precision of the `commodity` if specified.
     #[inline]
     pub(super) fn get_decimal_point(&self, commodity: CommodityTag<'arena>) -> Option<u32> {
-        match self.formatting.get(commodity.0.as_index()) {
-            Some(Some(x)) => Some(x.scale()),
+        match self.formatting.get(commodity) {
+            Some(x) => Some(x.scale()),
             _ => None,
         }
     }
 
+    /// Sets the format of the `commodity` as [`PrettyDecimal`].
     #[inline]
     pub(super) fn set_format(&mut self, commodity: CommodityTag<'arena>, format: PrettyDecimal) {
-        if self.formatting.len() <= commodity.as_index() {
-            self.formatting.resize(commodity.as_index() + 1, None);
+        self.formatting.set(commodity, format);
+    }
+
+    /// Returns the total length of the commodity.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.intern.len()
+    }
+}
+
+/// Map from CommodityTag<'arena> to value.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct CommodityMap<T> {
+    inner: Vec<Option<T>>,
+}
+
+impl<T> CommodityMap<T> {
+    /// Creates a new instance.
+    pub fn new() -> Self {
+        Self::with_capacity(0)
+    }
+
+    /// Creates a new instance with a given `capacity`.
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            inner: Vec::with_capacity(capacity),
         }
-        self.formatting[commodity.0.as_index()] = Some(format);
+    }
+
+    /// Returns the reference to the corresponding element.
+    pub fn get(&self, k: CommodityTag<'_>) -> Option<&T> {
+        match self.inner.get(k.as_index()) {
+            Some(Some(r)) => Some(r),
+            Some(None) | None => None,
+        }
+    }
+}
+
+impl<T: Clone> CommodityMap<T> {
+    /// Returns the mutable reference corresponding to the given `k`.
+    pub fn get_mut(&mut self, k: CommodityTag<'_>) -> &mut Option<T> {
+        self.ensure_size(k);
+        &mut self.inner[k.as_index()]
+    }
+
+    /// Sets the given key value.
+    pub fn set(&mut self, k: CommodityTag<'_>, v: T) {
+        self.ensure_size(k);
+        self.inner[k.as_index()] = Some(v);
+    }
+
+    /// Ensure size for given `k`.
+    #[inline]
+    fn ensure_size(&mut self, k: CommodityTag<'_>) {
+        if self.inner.len() <= k.as_index() {
+            self.inner.resize(k.as_index() + 1, None);
+        }
     }
 }
 
