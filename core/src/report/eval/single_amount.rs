@@ -123,12 +123,11 @@ struct SingleAmountDisplay<'a, 'ctx>(&'a SingleAmount<'ctx>, &'a ReportContext<'
 
 impl Display for SingleAmountDisplay<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // TODO: remove unwrap and make it safe!
         write!(
             f,
             "{} {}",
             self.0.value,
-            self.1.commodities.get(self.0.commodity).unwrap()
+            self.0.commodity.to_str_lossy(&self.1.commodities)
         )
     }
 }
