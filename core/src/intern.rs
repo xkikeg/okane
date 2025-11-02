@@ -58,7 +58,7 @@ pub(super) trait FromInterned<'arena>: Copy {
 /// * It's prohibited to change account type once registered.
 ///   Caller can't register alias which is already registered as canonical,
 ///   or vice versa.
-pub(super) struct InternStore<'arena, T> {
+pub(super) struct DirectInternStore<'arena, T> {
     // Contains None for canonical, Some for alias.
     records: HashMap<&'arena str, Option<InternedStr<'arena>>>,
     allocator: &'arena Bump,
@@ -82,7 +82,7 @@ impl<T: Copy> StoredValue<'_, T> {
 }
 
 #[allow(private_bounds)]
-impl<'arena, T: FromInterned<'arena>> InternStore<'arena, T> {
+impl<'arena, T: FromInterned<'arena>> DirectInternStore<'arena, T> {
     pub fn new(allocator: &'arena Bump) -> Self {
         Self {
             records: HashMap::new(),
@@ -104,7 +104,7 @@ impl<'arena, T: FromInterned<'arena>> InternStore<'arena, T> {
     /// Inserts given `value` as always canonical.
     /// Returns the registered canonical, or error if given `value` is already registered as alias.
     #[cfg(test)]
-    pub fn insert_canonical(&mut self, value: &str) -> Result<T, OccupiedError> {
+    pub fn try_insert(&mut self, value: &str) -> Result<T, OccupiedError> {
         match self.get(value) {
             None => Ok(self.insert_canonical_impl(value)),
             Some(StoredValue::Canonical(found)) => Ok(found),
@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn ensure_gives_distinct_strings() {
         let bump = Bump::new();
-        let mut intern_store = InternStore::new(&bump);
+        let mut intern_store = DirectInternStore::new(&bump);
         let foo: TestInterned = intern_store.ensure("foo");
         let bar: TestInterned = intern_store.ensure("bar");
         assert_ne!(foo, bar);
@@ -266,7 +266,7 @@ mod tests {
     #[test]
     fn ensure_gives_same_obj() {
         let bump = Bump::new();
-        let mut intern_store = InternStore::new(&bump);
+        let mut intern_store = DirectInternStore::new(&bump);
         let foo1: TestInterned = intern_store.ensure("foo");
         let foo2: TestInterned = intern_store.ensure("foo");
         assert_eq!(foo1, foo2);
@@ -276,10 +276,10 @@ mod tests {
     #[test]
     fn insert_canonical_succeeds_on_non_alias() {
         let bump = Bump::new();
-        let mut intern_store = InternStore::new(&bump);
-        let foo1: TestInterned = intern_store.insert_canonical("foo").unwrap();
-        let foo2: TestInterned = intern_store.insert_canonical("foo").unwrap();
-        let bar: TestInterned = intern_store.insert_canonical("bar").unwrap();
+        let mut intern_store = DirectInternStore::new(&bump);
+        let foo1: TestInterned = intern_store.try_insert("foo").unwrap();
+        let foo2: TestInterned = intern_store.try_insert("foo").unwrap();
+        let bar: TestInterned = intern_store.try_insert("bar").unwrap();
         assert_eq!(foo1, foo2);
         assert_eq!(foo1.as_interned().as_str(), "foo");
         assert_ne!(foo1, bar);
@@ -289,20 +289,20 @@ mod tests {
     #[test]
     fn insert_canonical_fails_when_already_alias() {
         let bump = Bump::new();
-        let mut intern_store = InternStore::new(&bump);
-        let foo: TestInterned = intern_store.insert_canonical("foo").unwrap();
+        let mut intern_store = DirectInternStore::new(&bump);
+        let foo: TestInterned = intern_store.try_insert("foo").unwrap();
         intern_store.insert_alias("bar", foo).unwrap();
         assert_eq!(
             OccupiedError::AlreadyAlias,
-            intern_store.insert_canonical("bar").unwrap_err()
+            intern_store.try_insert("bar").unwrap_err()
         );
     }
 
     #[test]
     fn insert_alias_works_on_unregistered_value() {
         let bump = Bump::new();
-        let mut intern_store = InternStore::new(&bump);
-        let foo: TestInterned = intern_store.insert_canonical("foo").unwrap();
+        let mut intern_store = DirectInternStore::new(&bump);
+        let foo: TestInterned = intern_store.try_insert("foo").unwrap();
         intern_store.insert_alias("bar", foo).unwrap();
         let bar = intern_store.ensure("bar");
         assert_eq!(foo, bar);
@@ -311,8 +311,8 @@ mod tests {
     #[test]
     fn insert_alias_works_on_already_alias_value() {
         let bump = Bump::new();
-        let mut intern_store = InternStore::new(&bump);
-        let foo: TestInterned = intern_store.insert_canonical("foo").unwrap();
+        let mut intern_store = DirectInternStore::new(&bump);
+        let foo: TestInterned = intern_store.try_insert("foo").unwrap();
         intern_store.insert_alias("bar", foo).unwrap();
         intern_store.insert_alias("bar", foo).unwrap();
     }
@@ -320,9 +320,9 @@ mod tests {
     #[test]
     fn insert_alias_fails_on_canonical() {
         let bump = Bump::new();
-        let mut intern_store = InternStore::new(&bump);
-        let foo: TestInterned = intern_store.insert_canonical("foo").unwrap();
-        intern_store.insert_canonical("bar").unwrap();
+        let mut intern_store = DirectInternStore::new(&bump);
+        let foo: TestInterned = intern_store.try_insert("foo").unwrap();
+        intern_store.try_insert("bar").unwrap();
         assert_eq!(
             OccupiedError::AlreadyCanonical,
             intern_store.insert_alias("bar", foo).unwrap_err()
@@ -332,7 +332,7 @@ mod tests {
     #[test]
     fn intern_store_iter_all_elements() {
         let bump = Bump::new();
-        let mut intern_store = InternStore::new(&bump);
+        let mut intern_store = DirectInternStore::new(&bump);
         let v1: TestInterned = intern_store.ensure("abc");
         let v2: TestInterned = intern_store.ensure("def");
         intern_store.ensure("def");

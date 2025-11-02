@@ -1,7 +1,7 @@
 use bumpalo::Bump;
 
 use crate::{
-    intern::{FromInterned, InternStore, InternedStr, StoredValue},
+    intern::{FromInterned, DirectInternStore, InternedStr, StoredValue},
     report::commodity::CommodityTag,
 };
 
@@ -29,7 +29,7 @@ impl<'arena> Account<'arena> {
 }
 
 /// `Interner` for `Account`.
-pub(super) type AccountStore<'arena> = InternStore<'arena, Account<'arena>>;
+pub(super) type AccountStore<'arena> = DirectInternStore<'arena, Account<'arena>>;
 
 /// Context object extensively used across Ledger file evaluation.
 pub struct ReportContext<'ctx> {
