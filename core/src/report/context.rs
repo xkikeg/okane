@@ -1,9 +1,7 @@
 use bumpalo::Bump;
+use bumpalo_intern::direct::{DirectInternStore, FromInterned, InternedStr, StoredValue};
 
-use crate::{
-    intern::{FromInterned, DirectInternStore, InternedStr, StoredValue},
-    report::commodity::CommodityTag,
-};
+use crate::report::commodity::CommodityTag;
 
 use super::commodity::CommodityStore;
 

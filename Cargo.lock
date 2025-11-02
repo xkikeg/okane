@@ -212,9 +212,9 @@ checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
 
 [[package]]
 name = "bumpalo-intern"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "065de78d6905af47fc9dc74af332b4130a01e7d7fd87066c8451f1d56cd1bdf0"
+checksum = "b7a50429297698d70ed58c3c3009a49bc0054ff918e569985a2b61f00ff6841d"
 dependencies = [
  "bumpalo",
  "derive-where",
