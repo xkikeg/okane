@@ -133,7 +133,7 @@ impl<'ctx> Amount<'ctx> {
     {
         InlinePrintAmount {
             commodity_store: &ctx.commodities,
-            amount: &self,
+            amount: self,
         }
     }
 
@@ -285,7 +285,7 @@ impl Display for InlinePrintAmount<'_, '_> {
         match vs.len() {
             0 | 1 => match vs.iter().next() {
                 Some((c, v)) => {
-                    write!(f, "{} {}", v, c.to_str_lossy(&self.commodity_store))
+                    write!(f, "{} {}", v, c.to_str_lossy(self.commodity_store))
                 }
                 None => write!(f, "0"),
             },
@@ -295,7 +295,7 @@ impl Display for InlinePrintAmount<'_, '_> {
                     if i != 0 {
                         write!(f, " + ")?;
                     }
-                    write!(f, "{} {}", v, c.to_str_lossy(&self.commodity_store))?;
+                    write!(f, "{} {}", v, c.to_str_lossy(self.commodity_store))?;
                 }
                 write!(f, ")")
             }

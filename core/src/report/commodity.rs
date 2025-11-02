@@ -160,10 +160,7 @@ impl<'arena> CommodityStore<'arena> {
     /// Returns the precision of the `commodity` if specified.
     #[inline]
     pub(super) fn get_decimal_point(&self, commodity: CommodityTag<'arena>) -> Option<u32> {
-        match self.formatting.get(commodity) {
-            Some(x) => Some(x.scale()),
-            _ => None,
-        }
+        self.formatting.get(commodity).map(|x| x.scale())
     }
 
     /// Sets the format of the `commodity` as [`PrettyDecimal`].
