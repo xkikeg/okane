@@ -3,7 +3,6 @@
 //! withreusable components.
 
 pub mod format;
-mod intern;
 pub mod load;
 pub mod parse;
 pub mod report;
