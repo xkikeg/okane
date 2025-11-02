@@ -10,7 +10,7 @@ readme = "../README.md"
 repository.workspace = true
 
 [dependencies]
-okane-core = { version = "0.16.0-dev", path = "../core" }
+okane-core = { version = "0.16.0", path = "../core" }
 
 # anstream = "0.6"
 bumpalo.workspace = true
