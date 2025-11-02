@@ -6,10 +6,29 @@
 
 ### Changed
 
-* Core: Removed PrettyDecimal, now published as independent crate (https://github.com/xkikeg/okane/pull/258).
-* CLI: Renamed `format.commodity` option into `output.commodity` (https://github.com/xkikeg/okane/pull/260).
+### Fixed
+
+## [0.16.0] - 2025-11-02
+
+### Added
+
+* CLI: CSV import can have `code` column (https://github.com/xkikeg/okane/pull/270).
+
+### Changed
+
+* Core: Removed `PrettyDecimal`, now published as independent crate (https://github.com/xkikeg/okane/pull/258).
+* Core: Use dunce filepath canonicalization for clearer path on Windows (https://github.com/xkikeg/okane/pull/272).
+* CLI: Renamed `format.commodity` option into `output.commodity` (https://github.com/xkikeg/okane/pull/260). \
+  This allows emitting comma separated decimal on `import` command as well.
+* CLI: Factored out `OneBasedIndex` as a separate crate (https://github.com/xkikeg/okane/pull/265). \
+  Now it's https://crates.io/crates/one-based.
+* Core: Use dense commodty for performance (https://github.com/xkikeg/okane/pull/280).
 
 ### Fixed
+
+* CLI: Enabled LTO on release build (https://github.com/xkikeg/okane/pull/261).
+* Core: Allow double-alias (https://github.com/xkikeg/okane/pull/274).
+* CLI: Fixed `import` on Windows (https://github.com/xkikeg/okane/pull/276).
 
 ## [0.15.0] - 2025-06-19
 

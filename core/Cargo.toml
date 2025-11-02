@@ -10,7 +10,7 @@ readme = "README.md"
 repository.workspace = true
 
 [dependencies]
-annotate-snippets = "0.12.5"
+annotate-snippets = "0.12.8"
 bounded-static = { version = "0.8", default-features = false, features = ["derive", "alloc", "chrono"] }
 bumpalo.workspace = true
 bumpalo-intern = "0.1.1"
@@ -30,7 +30,7 @@ winnow.workspace = true
 [dev-dependencies]
 okane-golden = { version = "0.1.0", path = "../golden" }
 
-annotate-snippets = { version = "0.12.5", features = ["testing-colors"] }
+annotate-snippets = { version = "0.12.8", features = ["testing-colors"] }
 ctor.workspace = true
 env_logger.workspace = true
 indoc.workspace = true
