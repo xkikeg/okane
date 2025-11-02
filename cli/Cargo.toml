@@ -40,7 +40,7 @@ soft-canonicalize = { version = "0.4.5", features = [ "dunce" ] }
 [dev-dependencies]
 okane-golden = { version = "0.1.0", path = "../golden" }
 
-assert_cmd = "2.0"
+assert_cmd = "2.1"
 # assert_fs = "1.0"
 # assert_matches = "1.5"
 ctor.workspace = true
