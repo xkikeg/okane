@@ -11,3 +11,7 @@ pub mod format;
 pub mod import;
 #[cfg(test)]
 pub mod one_based_macro;
+
+use shadow_rs::shadow;
+
+shadow!(build);
