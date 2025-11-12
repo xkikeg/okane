@@ -13,6 +13,7 @@ use okane_core::syntax::display::DisplayContext;
 use okane_core::syntax::plain::LedgerEntry;
 use okane_core::{load, report, syntax};
 
+use crate::build::CLAP_LONG_VERSION;
 use crate::format;
 use crate::import::{self, Format, ImportError};
 
@@ -33,7 +34,7 @@ pub enum Error {
 }
 
 #[derive(clap::Parser, Debug)]
-#[clap(about, version, author)]
+#[clap(about, version, author, long_version = CLAP_LONG_VERSION)]
 #[command(infer_subcommands = true)]
 pub struct Cli {
     #[clap(subcommand)]
