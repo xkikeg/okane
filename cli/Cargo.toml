@@ -36,6 +36,7 @@ strum.workspace = true
 thiserror.workspace = true
 winnow.workspace = true
 soft-canonicalize = { version = "0.4.5", features = [ "dunce" ] }
+shadow-rs = { version = "1.4.0", default-features = false }
 
 [dev-dependencies]
 okane-golden = { version = "0.1.0", path = "../golden" }
@@ -51,3 +52,6 @@ rstest.workspace = true
 rust_decimal_macros.workspace = true
 serde_test = "1.0"
 shlex = "1.3"
+
+[build-dependencies]
+shadow-rs = "1.4.0"
