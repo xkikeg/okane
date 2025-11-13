@@ -165,7 +165,7 @@ mod tests {
         let chf = ctx.commodities.insert("CHF").unwrap();
 
         assert_eq!(
-            Err(EvalError::UnmatchingCommodities(jpy.into(), chf.into())),
+            Err(EvalError::UnmatchingCommodities(jpy, chf)),
             SingleAmount::from_value(dec!(10), jpy)
                 .check_add(SingleAmount::from_value(dec!(20), chf))
         );
@@ -195,7 +195,7 @@ mod tests {
         let chf = ctx.commodities.insert("CHF").unwrap();
 
         assert_eq!(
-            Err(EvalError::UnmatchingCommodities(jpy.into(), chf.into())),
+            Err(EvalError::UnmatchingCommodities(jpy, chf)),
             SingleAmount::from_value(dec!(10), jpy)
                 .check_sub(SingleAmount::from_value(dec!(0), chf))
         );
