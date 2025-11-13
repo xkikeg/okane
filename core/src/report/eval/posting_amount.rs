@@ -6,16 +6,11 @@ use crate::report::ReportContext;
 use super::{error::EvalError, single_amount::SingleAmount};
 
 /// Amount with only one commodity, or total zero.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 pub(crate) enum PostingAmount<'ctx> {
+    #[default]
     Zero,
     Single(SingleAmount<'ctx>),
-}
-
-impl Default for PostingAmount<'_> {
-    fn default() -> Self {
-        Self::Zero
-    }
 }
 
 impl<'ctx> TryFrom<PostingAmount<'ctx>> for SingleAmount<'ctx> {
@@ -89,7 +84,7 @@ impl<'ctx> PostingAmount<'ctx> {
     where
         'a: 'ctx,
     {
-        PostingAmountDisplay(self, &ctx)
+        PostingAmountDisplay(self, ctx)
     }
 
     /// Constructs an instance with single commodity.

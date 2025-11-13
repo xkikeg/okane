@@ -435,7 +435,7 @@ mod tests {
                 }))
             },
         ];
-        let input = vec![
+        let input = [
             TestEntity {
                 creditor: "",
                 debtor: "",
@@ -462,7 +462,7 @@ mod tests {
                 additional_info: "unrelated",
             },
         ];
-        let want = vec![
+        let want = [
             Fragment {
                 cleared: true,
                 account: Some("Expenses:Grocery"),
@@ -498,6 +498,6 @@ mod tests {
             .cloned()
             .map(|t| extractor.extract(t))
             .collect();
-        assert_eq!(want, got);
+        assert_eq!(want, got.as_slice());
     }
 }

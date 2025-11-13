@@ -55,7 +55,7 @@ pub(super) struct PriceEvent<'ctx> {
 
 #[cfg(test)]
 impl<'ctx> PriceEvent<'ctx> {
-    fn sort_key<'a>(&'a self) -> (NaiveDate, usize, usize, &'a Decimal, &'a Decimal) {
+    fn sort_key(&self) -> (NaiveDate, usize, usize, &Decimal, &Decimal) {
         let PriceEvent {
             date,
             price_x:
