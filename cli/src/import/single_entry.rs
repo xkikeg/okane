@@ -62,6 +62,12 @@ struct Charge {
     amount: OwnedAmount,
 }
 
+// TODO: Allow injecting these values from config.
+// https://github.com/xkikeg/okane/issues/287
+const LABEL_COMMISSIONS: &str = "Expenses:Commissions";
+const LABEL_UNKNOWN_INCOME: &str = "Income:Unknown";
+const LABEL_UNKNOWN_EXPENSE: &str = "Expenses:Unknown";
+
 impl Txn {
     pub fn new(date: NaiveDate, payee: &str, amount: OwnedAmount) -> Txn {
         Txn {
@@ -232,7 +238,7 @@ impl Txn {
                         key: Cow::Borrowed("Payee"),
                         value: syntax::MetadataValue::Text(chrg.payee.as_str().into()),
                     }],
-                    ..syntax::Posting::new_untracked("Expenses:Commissions")
+                    ..syntax::Posting::new_untracked(LABEL_COMMISSIONS)
                 });
             }
         };
@@ -251,7 +257,7 @@ impl Txn {
                 clear_state: post_clear,
                 amount: Some(self.dest_amount(opts)),
                 ..syntax::Posting::new_untracked(
-                    self.dest_account.as_deref().unwrap_or("Income:Unknown"),
+                    self.dest_account.as_deref().unwrap_or(LABEL_UNKNOWN_INCOME),
                 )
             });
         } else if self.amount.value.is_sign_negative() {
@@ -259,7 +265,9 @@ impl Txn {
                 clear_state: post_clear,
                 amount: Some(self.dest_amount(opts)),
                 ..syntax::Posting::new_untracked(
-                    self.dest_account.as_deref().unwrap_or("Expenses:Unknown"),
+                    self.dest_account
+                        .as_deref()
+                        .unwrap_or(LABEL_UNKNOWN_EXPENSE),
                 )
             });
             add_charges(&mut posts);
