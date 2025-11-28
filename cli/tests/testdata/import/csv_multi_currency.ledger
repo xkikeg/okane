@@ -1,40 +1,40 @@
 2020/07/08 * 被仕向外貨送金  OKANE. INC.
-    Assets:Okane Bank                       24000.11 USD = 31691.78 USD
-    ! Income:Unknown                       -24000.11 USD
+    Assets:Okane Bank                      24,000.11 USD = 31,691.78 USD
+    ! Income:Unknown                      -24,000.11 USD
 
 2020/07/11 * 円普通預金より振替（デビット）
     Assets:Okane Bank                          23.45 CHF @ 114.05 JPY = 23.45 CHF
-    Assets:Wire                                -2675 JPY
+    Assets:Wire                               -2,675 JPY
 
 2020/07/11 * (785403) Hamachi Super
     Expenses:Grocery                           23.45 CHF
     Assets:Okane Bank                         -23.45 CHF = 0.00 CHF
 
 2020/07/29 * 外貨普通預金（スイスフラン）へ振替
-    Assets:Wire                          1000.003752 CHF
-    Assets:Okane Bank                       -1097.94 USD @ 0.9108 CHF = 31691.78 USD
+    Assets:Wire                         1,000.003752 CHF
+    Assets:Okane Bank                      -1,097.94 USD @ 0.9108 CHF = 31,691.78 USD
 
 2020/07/29 * 外貨普通預金（米ドル）より振替
-    Assets:Okane Bank                        1000.00 CHF = 1000.00 CHF
-    Assets:Wire                             -1000.00 CHF
+    Assets:Okane Bank                       1,000.00 CHF = 1,000.00 CHF
+    Assets:Wire                            -1,000.00 CHF
 
 2020/07/29 * 外貨普通預金（ユーロ）へ振替
-    Assets:Wire                              2000.00 EUR @ 1.1767 USD
-    Assets:Okane Bank                       -2353.40 USD = 29338.38 USD
+    Assets:Wire                             2,000.00 EUR @ 1.1767 USD
+    Assets:Okane Bank                      -2,353.40 USD = 29,338.38 USD
 
 2020/07/29 * 外貨普通預金（米ドル）より振替
-    Assets:Okane Bank                        2000.00 EUR = 2000.00 EUR
-    Assets:Wire                             -2000.00 EUR
+    Assets:Okane Bank                       2,000.00 EUR = 2,000.00 EUR
+    Assets:Wire                            -2,000.00 EUR
 
 2020/07/30 * 円普通預金へ振替
-    Assets:Wire                               398819 JPY
-    Assets:Okane Bank                       -2740.65 USD @ 145.52 JPY = 26597.73 USD
+    Assets:Wire                              398,819 JPY
+    Assets:Okane Bank                      -2,740.65 USD @ 145.52 JPY = 26,597.73 USD
 
 2025/06/27 * 円普通預金へ振替
-    Assets:Wire                               721400 JPY
-    Assets:Okane Bank                       -5000.00 USD @ 144.28 JPY = 21597.73 USD
+    Assets:Wire                              721,400 JPY
+    Assets:Okane Bank                      -5,000.00 USD @ 144.28 JPY = 21,597.73 USD
 
 2025/09/18 * 円普通預金より振替
     Assets:Okane Bank                         573.19 EUR @ 174.46 JPY = 573.21 EUR
-    Assets:Wire                              -100000 JPY
+    Assets:Wire                             -100,000 JPY
 

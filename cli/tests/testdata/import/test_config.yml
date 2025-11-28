@@ -68,6 +68,7 @@ format:
 output:
   commodity:
     default:
+      style: comma3_dot
       scale: 2
     overrides:
       JPY:
