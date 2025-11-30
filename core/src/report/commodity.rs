@@ -82,7 +82,8 @@ impl<'ctx> CommodityTag<'ctx> {
         self.0.as_index()
     }
 
-    /// Takes the str if possible.
+    /// Converts back the tag into `&str` if possible.
+    /// If not found, use `unknown#xx` placeholder.
     pub(super) fn to_str_lossy(self, commodity_store: &CommodityStore<'ctx>) -> Cow<'ctx, str> {
         match commodity_store.get(self) {
             Some(x) => Cow::Borrowed(x.as_str()),
@@ -93,13 +94,13 @@ impl<'ctx> CommodityTag<'ctx> {
     /// Converts the self into [`OwnedCommodity`].
     /// If the tag isn't registered in the `commodity_store`,
     /// it'll print "unknown#xx" as the place holder.
-    pub(super) fn to_owned_lossy(self, commodity_store: &CommodityStore<'ctx>) -> OwnedCommodity {
+    pub fn to_owned_lossy(self, commodity_store: &CommodityStore<'ctx>) -> OwnedCommodity {
         OwnedCommodity::from_string(self.to_str_lossy(commodity_store).into_owned())
     }
 }
 
 /// Interner for [`Commodity`].
-pub(super) struct CommodityStore<'arena> {
+pub struct CommodityStore<'arena> {
     intern: DenseInternStore<'arena, Commodity<'arena>>,
     formatting: CommodityMap<PrettyDecimal>,
 }
@@ -114,7 +115,7 @@ impl<'arena> std::fmt::Debug for CommodityStore<'arena> {
 
 impl<'arena> CommodityStore<'arena> {
     /// Creates a new instance.
-    pub fn new(arena: &'arena Bump) -> Self {
+    pub(super) fn new(arena: &'arena Bump) -> Self {
         Self {
             intern: DenseInternStore::new(arena),
             formatting: CommodityMap::new(),
@@ -128,7 +129,7 @@ impl<'arena> CommodityStore<'arena> {
         CommodityTag(self.intern.ensure(Commodity(value)))
     }
 
-    /// Returns the tag corresponding [`Commodity`].
+    /// Returns [`Commodity`] corresponding to the given `tag`.
     pub fn get(&self, tag: CommodityTag<'arena>) -> Option<Commodity<'arena>> {
         self.intern.get(tag.0)
     }

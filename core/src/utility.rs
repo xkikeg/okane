@@ -4,7 +4,7 @@
 use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
 /// Structured configuration holding overrides with default values.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ConfigResolver<Key, ConfigValue> {
     base: ConfigValue,
     overrides: HashMap<Key, ConfigValue>,

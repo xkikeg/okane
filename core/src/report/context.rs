@@ -71,6 +71,15 @@ impl<'ctx> ReportContext<'ctx> {
     pub fn commodity(&self, value: &str) -> Option<CommodityTag<'ctx>> {
         self.commodities.resolve(value)
     }
+
+    /// Returns [`CommodityStore`].
+    pub fn commodity_store(&self) -> &CommodityStore<'ctx> {
+        &self.commodities
+    }
+    /// Returns mut [`CommodityStore`].
+    pub fn commodity_store_mut(&mut self) -> &mut CommodityStore<'ctx> {
+        &mut self.commodities
+    }
 }
 
 #[cfg(test)]
