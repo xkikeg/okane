@@ -119,10 +119,13 @@ impl ImportCmd {
         };
         let opts = import::single_entry::Options {
             commodity_rename: config_entry.commodity.rename.clone(),
+            commodity_format: ctx.commodity.clone(),
         };
-        for xact in xacts {
+        let arena = Bump::new();
+        let mut rctx = report::ReportContext::new(&arena);
+        for xact in &xacts {
             let xact: syntax::plain::Transaction =
-                xact.to_double_entry(&config_entry.account, &opts)?;
+                xact.to_double_entry(&config_entry.account, &opts, &mut rctx)?;
             writeln!(w, "{}", ctx.as_display(&xact))?;
         }
         Ok(())

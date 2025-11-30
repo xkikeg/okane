@@ -10,12 +10,12 @@ use pretty_decimal::PrettyDecimal;
 use unicode_width::UnicodeWidthStr;
 
 /// Context information to control the formatting of the transaction.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct DisplayContext {
     pub commodity: utility::ConfigResolver<String, CommodityDisplayOption>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct CommodityDisplayOption {
     pub format: Option<pretty_decimal::Format>,
     pub min_scale: Option<u8>,

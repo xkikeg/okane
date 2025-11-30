@@ -14,7 +14,7 @@ use std::borrow::Borrow;
 
 pub use balance::Balance;
 pub use book_keeping::{process, ProcessOptions};
-pub use commodity::{Commodity, OwnedCommodity};
+pub use commodity::{Commodity, CommodityStore, CommodityTag, OwnedCommodity};
 pub use context::{Account, ReportContext};
 pub use error::ReportError;
 pub use eval::{Amount, SingleAmount};

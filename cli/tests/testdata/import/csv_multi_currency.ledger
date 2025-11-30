@@ -5,6 +5,7 @@
 2020/07/11 * 円普通預金より振替（デビット）
     Assets:Okane Bank                          23.45 CHF @ 114.05 JPY = 23.45 CHF
     Assets:Wire                               -2,675 JPY
+    ! Equity:Adjustments                           1 JPY
 
 2020/07/11 * (785403) Hamachi Super
     Expenses:Grocery                           23.45 CHF
@@ -37,4 +38,5 @@
 2025/09/18 * 円普通預金より振替
     Assets:Okane Bank                         573.19 EUR @ 174.46 JPY = 573.21 EUR
     Assets:Wire                             -100,000 JPY
+    ! Equity:Adjustments                           1 JPY
 
