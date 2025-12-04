@@ -76,6 +76,7 @@ pub enum CreditOrDebit {
     Debit,
 }
 
+/// `<Ntry>` element.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Entry {
     #[serde(rename = "Amt")]
@@ -211,6 +212,9 @@ pub struct Batch {
     // pub credit_or_debit: CreditDebitIndicator,
 }
 
+/// `<TxDtls>` element, which may represent a single transaction.
+/// Note bank might use [`Entry`] to represent a single transaction,
+/// and leave this field empty.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TransactionDetails {
     #[serde(rename = "Refs")]
@@ -441,14 +445,24 @@ pub struct ExchangeRate {
     pub value: Decimal,
 }
 
+/// `<AmtDtls>` element.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AmountDetails {
-    // Actual passed amount.
+    /// `<InstdAmt>`, instructed amount.
+    ///
+    /// Identifies the amount of money to be moved between the debtor and creditor,
+    /// before deduction of charges, expressed in the currency as ordered
+    /// by the initiating party and provides currency exchange information in case
+    /// the instructed amount and/or currency is/are different from the entry
+    /// amount and/or currency.
     #[serde(rename = "InstdAmt")]
-    pub instructed: AmountWithExchange,
-    // Specified transaction amount, before charge deduction.
+    pub instructed: Option<AmountWithExchange>,
+
+    /// `<TxAmt>`, amount of the underlying transaction.
+    ///
+    /// Basically this value should be equal to instructed - charges.
     #[serde(rename = "TxAmt")]
-    pub transaction: AmountWithExchange,
+    pub transaction: Option<AmountWithExchange>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -459,12 +473,18 @@ pub struct Charges {
     pub records: Vec<ChargeRecord>,
 }
 
+/// `<Rcrd>` element represents an individual charge.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ChargeRecord {
     #[serde(rename = "Amt")]
     pub amount: Amount,
+
+    ///Indicates whether the charges amount is a credit or a debit amount.
     #[serde(rename = "CdtDbtInd")]
     pub credit_or_debit: CreditDebitIndicator,
+
+    /// Indicates whether the charge should be included in
+    /// the amount or is added as pre-advice.
     #[serde(rename = "ChrgInclInd", default)]
     pub is_charge_included: bool,
 }

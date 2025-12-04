@@ -44,7 +44,7 @@ where
                         value: Decimal::ZERO,
                     },
                 );
-                txn.dest_account("Equity:Adjustments");
+                txn.dest_account(single_entry::LABEL_ADJUSTMENTS);
                 txn.balance(opening_balance);
                 res.push(txn);
             }
@@ -57,7 +57,7 @@ where
         for entry in entries {
             if entry.details.transactions.is_empty() {
                 // TODO(kikeg): Fix this code repetition.
-                let amount = entry.amount.to_data(entry.credit_or_debit.value);
+                let amount = entry.amount.to_owned(entry.credit_or_debit.value);
                 let fragment = extractor.extract((entry, None));
                 if fragment.payee.is_none() {
                     log::warn!("payee not set @ {:?} {:?}", entry.booking_date, amount);
@@ -85,7 +85,7 @@ where
             for transaction in &entry.details.transactions {
                 let amount = transaction
                     .amount
-                    .to_data(transaction.credit_or_debit.value);
+                    .to_owned(transaction.credit_or_debit.value);
                 let fragment = extractor.extract((entry, Some(transaction)));
                 let code = transaction.refs.account_servicer_reference.clone();
                 if fragment.payee.is_none() {
@@ -104,11 +104,16 @@ where
                 if !fragment.cleared {
                     txn.clear_state(syntax::ClearState::Pending);
                 }
-                if let Some(amount_details) = transaction.amount_details.as_ref() {
-                    if transaction.amount != amount_details.transaction.amount {
-                        if let Some(exchange) =
-                            amount_details.transaction.currency_exchange.as_ref()
-                        {
+                if let Some(detail_amount) = transaction
+                    .amount_details
+                    .as_ref()
+                    .and_then(|x| x.transaction.as_ref())
+                {
+                    // TODO: Check this logic again so that it makes sense logically.
+                    // https://github.com/xkikeg/okane/issues/289
+                    // For now, we use transaciton amount, without falling back to instructed amount.
+                    if transaction.amount != detail_amount.amount {
+                        if let Some(exchange) = detail_amount.currency_exchange.as_ref() {
                             txn.add_rate(
                                 CommodityPair {
                                     source: exchange.source_currency.clone(),
@@ -118,10 +123,9 @@ where
                             )?;
                         }
                         txn.transferred_amount(
-                            amount_details
-                                .transaction
+                            detail_amount
                                 .amount
-                                .to_data(transaction.credit_or_debit.value),
+                                .to_owned(transaction.credit_or_debit.value),
                         );
                     }
                 }
@@ -143,7 +147,7 @@ fn find_balance(stmt: &xmlnode::Statement, code: xmlnode::BalanceCode) -> Option
     stmt.balance
         .iter()
         .filter(|x| x.balance_type.credit_or_property.code.value == code)
-        .map(|x| x.amount.to_data(x.credit_or_debit.value))
+        .map(|x| x.amount.to_owned(x.credit_or_debit.value))
         .next()
 }
 
@@ -165,7 +169,7 @@ fn add_charges(
         ))?;
         log::info!("ADDED cr: {:?}", cr);
         // charge_amount must be negated, as charge is by default debit.
-        let charge_amount = -cr.amount.to_data(cr.credit_or_debit.value);
+        let charge_amount = -cr.amount.to_owned(cr.credit_or_debit.value);
         if !cr.is_charge_included {
             txn.try_add_charge_not_included(payee, charge_amount)?;
         } else {
@@ -176,7 +180,7 @@ fn add_charges(
 }
 
 impl xmlnode::Amount {
-    fn to_data(&self, credit_or_debit: xmlnode::CreditOrDebit) -> OwnedAmount {
+    fn to_owned(&self, credit_or_debit: xmlnode::CreditOrDebit) -> OwnedAmount {
         OwnedAmount {
             value: match credit_or_debit {
                 xmlnode::CreditOrDebit::Credit => self.value,
@@ -388,20 +392,20 @@ mod tests {
                 currency: "CHF".to_string(),
             },
             amount_details: Some(xmlnode::AmountDetails {
-                instructed: xmlnode::AmountWithExchange {
+                instructed: Some(xmlnode::AmountWithExchange {
                     amount: xmlnode::Amount {
                         value: dec!(12.3),
                         currency: "CHF".to_string(),
                     },
                     currency_exchange: None,
-                },
-                transaction: xmlnode::AmountWithExchange {
+                }),
+                transaction: Some(xmlnode::AmountWithExchange {
                     amount: xmlnode::Amount {
                         value: dec!(12.3),
                         currency: "CHF".to_string(),
                     },
                     currency_exchange: None,
-                },
+                }),
             }),
             charges: None,
             related_parties: Some(xmlnode::RelatedParties {
