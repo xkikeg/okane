@@ -81,7 +81,7 @@ struct Charge {
 // TODO: Allow injecting these values from config.
 // https://github.com/xkikeg/okane/issues/287
 const LABEL_COMMISSIONS: &str = "Expenses:Commissions";
-const LABEL_ADJUSTMENTS: &str = "Equity:Adjustments";
+pub(super) const LABEL_ADJUSTMENTS: &str = "Equity:Adjustments";
 const LABEL_UNKNOWN_INCOME: &str = "Income:Unknown";
 const LABEL_UNKNOWN_EXPENSE: &str = "Expenses:Unknown";
 
