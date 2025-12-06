@@ -1,7 +1,13 @@
 use std::convert::{From, TryFrom, TryInto};
 
+use chrono::NaiveDate;
+
+use okane_core::syntax::ClearState;
+
+use super::amount::OwnedAmount;
 use super::config;
 use super::error::ImportError;
+use super::single_entry;
 
 /// Extractor is a set of `ExtractRule`, so to extract `Fragment` out of the entity.
 ///
@@ -51,6 +57,35 @@ pub struct Fragment<'a> {
     pub code: Option<&'a str>,
     /// Currency conversion, `None` if not found.
     pub conversion: Option<&'a config::CommodityConversionSpec>,
+}
+
+impl<'a> Fragment<'a> {
+    /// Creates a new transaction out of the fragment.
+    pub fn new_txn<Pos, PosFn>(
+        &self,
+        date: NaiveDate,
+        amount: OwnedAmount,
+        mut position: PosFn,
+    ) -> single_entry::Txn
+    where
+        PosFn: FnMut() -> Pos,
+        Pos: std::fmt::Display,
+    {
+        let payee = match self.payee {
+            Some(p) => p,
+            None => {
+                log::warn!("payee not set @ {}", position());
+                "unknown payee"
+            }
+        };
+        let mut txn = single_entry::Txn::new(date, payee, amount);
+        txn.code_option(self.code.map(|x| x.into()).into())
+            .dest_account_option(self.account);
+        if !self.cleared {
+            txn.clear_state(ClearState::Pending);
+        }
+        txn
+    }
 }
 
 impl std::ops::AddAssign for Fragment<'_> {

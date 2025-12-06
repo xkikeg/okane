@@ -87,6 +87,7 @@ const LABEL_UNKNOWN_EXPENSE: &str = "Expenses:Unknown";
 
 impl Txn {
     /// Create a new single entry [`Txn`].
+    /// For those who owns [`super::extract::Fragment`], use [`super::extract::Fragment::new_txn()`].
     pub fn new(date: NaiveDate, payee: &str, amount: OwnedAmount) -> Txn {
         Txn {
             date,

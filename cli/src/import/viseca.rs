@@ -5,8 +5,6 @@ use std::convert::{TryFrom, TryInto};
 
 use regex::Regex;
 
-use okane_core::syntax;
-
 use super::amount::OwnedAmount;
 use super::config;
 use super::extract;
@@ -23,30 +21,23 @@ pub fn import<R: std::io::Read>(
         parser::Parser::new(std::io::BufReader::new(r), config.commodity.primary.clone());
     let mut result = Vec::new();
     while let Some(entry) = parser.parse_entry()? {
+        let line_count = entry.line_count;
         let fragment = extractor.extract(&entry);
         let payee = fragment.payee.unwrap_or(entry.payee.as_str());
-        if fragment.account.is_none() {
-            log::warn!(
-                "account unmatched at line {}, payee={}",
-                entry.line_count,
-                payee
-            );
-        }
-        let mut txn = single_entry::Txn::new(
+        let fragment = extract::Fragment {
+            payee: Some(payee),
+            ..fragment
+        };
+        let mut txn = fragment.new_txn(
             entry.date,
-            payee,
             OwnedAmount {
                 value: -entry.amount,
                 commodity: config.commodity.primary.clone(),
             },
+            || format!("line {line_count} payee={payee}"),
         );
-        txn.effective_date(entry.effective_date)
-            .dest_account_option(fragment.account);
-        if !fragment.cleared {
-            txn.clear_state(syntax::ClearState::Pending);
-        }
+        txn.effective_date(entry.effective_date);
         if let Some(exchange) = entry.exchange {
-            let line_count = entry.line_count;
             let spent = entry.spent.ok_or_else(|| {
                 ImportError::Viseca(format!(
                     "internal error: exchange should set aside with spent: {}",
