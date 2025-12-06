@@ -9,8 +9,6 @@ use std::io::BufReader;
 
 use chrono::NaiveDate;
 
-use okane_core::syntax;
-
 use super::amount::OwnedAmount;
 use super::config::{self, FieldKey};
 use super::extract;
@@ -104,26 +102,26 @@ fn extract_transaction(
         secondary_commodity: secondary_commodity.as_deref(),
     });
     let payee = fragment.payee.unwrap_or(&original_payee);
-    let code = fragment
-        .code
-        .map(Cow::Borrowed)
-        .or(resolver.extract(FieldKey::Code, r)?);
-    if fragment.account.is_none() {
-        log::warn!("account unmatched at line {}, payee={}", pos.line(), payee);
-    }
-    let mut txn = single_entry::Txn::new(
+    let fragment = extract::Fragment {
+        payee: Some(payee),
+        ..fragment
+    };
+    let mut txn = fragment.new_txn(
         date,
-        payee,
         OwnedAmount {
             value: amount,
             commodity: commodity.clone().into_owned(),
         },
+        || format!("line {}, payee={}", pos.line(), payee),
     );
-    txn.code_option(code.map(Cow::into_owned))
-        .dest_account_option(fragment.account);
-    if !fragment.cleared {
-        txn.clear_state(syntax::ClearState::Pending);
-    }
+    // Even though code is handled in the new_txn call above,
+    // we need to set it again to have fallback onto the field.
+    // It's not performance critical, so it's ok to apply twice.
+    let code = fragment
+        .code
+        .map(String::from)
+        .or(resolver.extract(FieldKey::Code, r)?.map(Cow::into_owned));
+    txn.code_option(code);
     if let Some(note) = resolver.extract(FieldKey::Note, r)? {
         if !note.trim().is_empty() {
             txn.add_comment(note.into_owned());

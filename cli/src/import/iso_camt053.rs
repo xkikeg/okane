@@ -7,8 +7,6 @@ use either::Either;
 use regex::Regex;
 use rust_decimal::Decimal;
 
-use okane_core::syntax;
-
 use super::amount::OwnedAmount;
 use super::config;
 use super::extract;
@@ -33,7 +31,7 @@ where
     let mut buf = std::io::BufReader::new(r);
     let doc: xmlnode::Document = quick_xml::de::from_reader(&mut buf)?;
     let mut res = Vec::new();
-    for stmt in doc.bank_to_customer.statements {
+    for (si, stmt) in doc.bank_to_customer.statements.into_iter().enumerate() {
         if let Some(opening_balance) = find_balance(&stmt, xmlnode::BalanceCode::Opening) {
             if let Some(first) = stmt.entries.first() {
                 let mut txn = single_entry::Txn::new(
@@ -54,7 +52,7 @@ where
             config::RowOrder::OldToNew => Either::Left(stmt.entries.iter()),
             config::RowOrder::NewToOld => Either::Right(stmt.entries.iter().rev()),
         };
-        for entry in entries {
+        for (ni, entry) in entries.enumerate() {
             if entry.details.transactions.is_empty() {
                 // TODO(kikeg): Fix this code repetition.
                 let amount = entry.amount.to_owned(entry.credit_or_debit.value);
@@ -69,41 +67,30 @@ where
                         fragment.payee.unwrap()
                     );
                 }
-                let mut txn = single_entry::Txn::new(
-                    entry.guess_value_date(),
-                    fragment.payee.unwrap_or("unknown payee"),
-                    amount,
-                );
-                txn.effective_date(entry.booking_date.as_naive_date())
-                    .dest_account_option(fragment.account);
-                if !fragment.cleared {
-                    txn.clear_state(syntax::ClearState::Pending);
-                }
+                let mut txn = fragment.new_txn(entry.guess_value_date(), amount, || {
+                    format!(".//BkToCstmrStmt/Stmt[{}]/Ntry[{}]", si + 1, ni + 1)
+                });
+                txn.effective_date(entry.booking_date.as_naive_date());
                 add_charges(&mut txn, config, &entry.charges)?;
                 res.push(txn);
             }
-            for transaction in &entry.details.transactions {
+            for (di, transaction) in entry.details.transactions.iter().enumerate() {
                 let amount = transaction
                     .amount
                     .to_owned(transaction.credit_or_debit.value);
                 let fragment = extractor.extract((entry, Some(transaction)));
                 let code = transaction.refs.account_servicer_reference.clone();
-                if fragment.payee.is_none() {
-                    log::warn!("payee not set @ {:?}", code);
-                } else if fragment.account.is_none() {
-                    log::warn!("account not set @ {:?} {}", code, fragment.payee.unwrap());
-                }
-                let mut txn = single_entry::Txn::new(
-                    entry.guess_value_date(),
-                    fragment.payee.unwrap_or("unknown payee"),
-                    amount,
-                );
+                let mut txn = fragment.new_txn(entry.guess_value_date(), amount, || {
+                    format!(
+                        ".//BkToCstmrStmt/Stmt[{}]/Ntry[{}]/NtryDtls/TxDtls[{}] code={:?}",
+                        si + 1,
+                        ni + 1,
+                        di + 1,
+                        code,
+                    )
+                });
                 txn.effective_date(entry.booking_date.as_naive_date())
-                    .code_option(code)
-                    .dest_account_option(fragment.account);
-                if !fragment.cleared {
-                    txn.clear_state(syntax::ClearState::Pending);
-                }
+                    .code_option(code);
                 if let Some(detail_amount) = transaction
                     .amount_details
                     .as_ref()
