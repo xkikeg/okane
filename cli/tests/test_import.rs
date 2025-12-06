@@ -11,36 +11,6 @@ fn init() {
 }
 
 #[rstest]
-fn test_import_with_lib(
-    #[base_dir = "tests/testdata/import/"]
-    #[files("*.csv")]
-    #[files("iso_camt.xml")]
-    #[files("viseca.txt")]
-    input: PathBuf,
-) {
-    let config = testing::TESTDATA_DIR.join("import/test_config.yml");
-    let mut golden_path = input.clone();
-    assert!(
-        golden_path.set_extension("ledger"),
-        "failed to set extension .ledger to input {}",
-        input.display()
-    );
-    let golden = okane_golden::Golden::new(golden_path.clone())
-        .unwrap_or_else(|_| panic!("cannot create golden on {}", golden_path.display()));
-    let mut result: Vec<u8> = Vec::new();
-
-    okane::cmd::ImportCmd {
-        config,
-        source: input,
-    }
-    .run(&mut result)
-    .expect("execution failed");
-    let got = String::from_utf8(result).expect("invalid UTF-8");
-
-    golden.assert(&got);
-}
-
-#[rstest]
 fn test_import_with_cli(
     #[base_dir = "tests/testdata/import/"]
     #[files("*.csv")]
