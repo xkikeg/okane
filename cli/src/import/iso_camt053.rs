@@ -1,6 +1,6 @@
 mod xmlnode;
 
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
 use chrono::NaiveDate;
 use either::Either;
@@ -27,7 +27,7 @@ pub fn import<R>(r: R, config: &config::ConfigEntry) -> Result<Vec<single_entry:
 where
     R: std::io::Read,
 {
-    let extractor: extract::Extractor<FieldMatch> = (&config.rewrite).try_into()?;
+    let extractor = extract::Extractor::<FieldMatch>::try_new(&config.rewrite)?;
     let mut buf = std::io::BufReader::new(r);
     let doc: xmlnode::Document = quick_xml::de::from_reader(&mut buf)?;
     let mut res = Vec::new();

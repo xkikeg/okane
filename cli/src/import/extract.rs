@@ -9,16 +9,19 @@ use super::config;
 use super::error::ImportError;
 use super::single_entry;
 
-/// Extractor is a set of `ExtractRule`, so to extract `Fragment` out of the entity.
+/// Extractor is a set of [`ExtractRule`], so to extract [`Fragment`] out of the entity.
 ///
 /// Usually entity corresponds to one transaction such as a particular CSV row.
 #[derive(Debug)]
-pub struct Extractor<'a, M: EntityMatcher> {
+pub struct Extractor<'a, M> {
     rules: Vec<ExtractRule<'a, M>>,
 }
 
-impl<'a, M: EntityMatcher> Extractor<'a, M> {
-    pub fn extract(&'a self, entity: <M as Entity<'a>>::T) -> Fragment<'a> {
+impl<'a, M> Extractor<'a, M> {
+    pub fn extract(&'a self, entity: <M as Entity<'a>>::T) -> Fragment<'a>
+    where
+        M: EntityMatcher,
+    {
         let mut fragment = Fragment::default();
         for rule in &self.rules {
             if let Some(updated) = rule.extract(fragment.clone(), entity) {
@@ -27,15 +30,12 @@ impl<'a, M: EntityMatcher> Extractor<'a, M> {
         }
         fragment
     }
-}
 
-/// Create Extractor from config.rewrite.
-impl<'a, M> TryFrom<&'a Vec<config::RewriteRule>> for Extractor<'a, M>
-where
-    M: EntityMatcher,
-{
-    type Error = ImportError;
-    fn try_from(rules: &'a Vec<config::RewriteRule>) -> Result<Self, Self::Error> {
+    /// Create `Extractor` instance from [`config::RewriteRule`] items.
+    pub fn try_new(rules: &'a [config::RewriteRule]) -> Result<Self, ImportError>
+    where
+        M: EntityMatcher,
+    {
         rules
             .iter()
             .map(|x| x.try_into())
@@ -149,7 +149,7 @@ pub struct Matched<'a> {
 }
 
 #[derive(Debug)]
-struct ExtractRule<'a, M: EntityMatcher> {
+struct ExtractRule<'a, M> {
     match_expr: MatchOrExpr<M>,
     pending: bool,
     payee: Option<&'a str>,
@@ -187,7 +187,7 @@ impl<'a, M: EntityMatcher> ExtractRule<'a, M> {
 }
 
 #[derive(Debug)]
-struct MatchOrExpr<M: EntityMatcher>(Vec<MatchAndExpr<M>>);
+struct MatchOrExpr<M>(Vec<MatchAndExpr<M>>);
 
 impl<M: EntityMatcher> TryFrom<&config::RewriteMatcher> for MatchOrExpr<M> {
     type Error = ImportError;
@@ -220,7 +220,7 @@ impl<M: EntityMatcher> MatchOrExpr<M> {
 }
 
 #[derive(Debug)]
-struct MatchAndExpr<M: EntityMatcher>(Vec<M>);
+struct MatchAndExpr<M>(Vec<M>);
 
 impl<M: EntityMatcher> TryFrom<&config::FieldMatcher> for MatchAndExpr<M> {
     type Error = ImportError;
@@ -418,7 +418,7 @@ mod tests {
             ..Fragment::default()
         };
 
-        let extractor: Extractor<TestMatcher> = (&rw).try_into().unwrap();
+        let extractor = Extractor::<TestMatcher>::try_new(&rw).unwrap();
         let fragment = extractor.extract(input);
 
         assert_eq!(want, fragment);
@@ -527,7 +527,7 @@ mod tests {
             Fragment::default(),
         ];
 
-        let extractor: Extractor<TestMatcher> = (&rw).try_into().unwrap();
+        let extractor = Extractor::<TestMatcher>::try_new(&rw).unwrap();
         let got: Vec<Fragment> = input
             .iter()
             .cloned()

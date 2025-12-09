@@ -1,7 +1,7 @@
 pub mod format;
 pub mod parser;
 
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
 use regex::Regex;
 
@@ -16,7 +16,7 @@ pub fn import<R: std::io::Read>(
     r: R,
     config: &config::ConfigEntry,
 ) -> Result<Vec<single_entry::Txn>, ImportError> {
-    let extractor: extract::Extractor<VisecaMatcher> = (&config.rewrite).try_into()?;
+    let extractor = extract::Extractor::<VisecaMatcher>::try_new(&config.rewrite)?;
     let mut parser =
         parser::Parser::new(std::io::BufReader::new(r), config.commodity.primary.clone());
     let mut result = Vec::new();
