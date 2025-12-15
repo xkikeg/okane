@@ -1,13 +1,9 @@
 pub mod format;
 pub mod parser;
 
-use std::convert::TryFrom;
-
-use regex::Regex;
-
 use super::amount::OwnedAmount;
 use super::config;
-use super::extract;
+use super::extract::{self, StrField};
 use super::single_entry;
 use super::single_entry::CommodityPair;
 use super::ImportError;
@@ -16,7 +12,7 @@ pub fn import<R: std::io::Read>(
     r: R,
     config: &config::ConfigEntry,
 ) -> Result<Vec<single_entry::Txn>, ImportError> {
-    let extractor = extract::Extractor::<VisecaMatcher>::try_new(&config.rewrite)?;
+    let extractor = extract::Extractor::try_new(&config.rewrite, VisecaFormat)?;
     let mut parser =
         parser::Parser::new(std::io::BufReader::new(r), config.commodity.primary.clone());
     let mut result = Vec::new();
@@ -67,46 +63,36 @@ pub fn import<R: std::io::Read>(
 }
 
 #[derive(Debug, Clone, Copy)]
-enum Field {
-    Payee,
-    Category,
-}
+struct VisecaFormat;
 
-#[derive(Debug)]
-struct VisecaMatcher {
-    field: Field,
-    pattern: Regex,
-}
+impl extract::EntityFormat for VisecaFormat {
+    fn name(&self) -> &'static str {
+        "viseca"
+    }
 
-impl TryFrom<(config::RewriteField, &str)> for VisecaMatcher {
-    type Error = ImportError;
-    fn try_from((f, v): (config::RewriteField, &str)) -> Result<VisecaMatcher, ImportError> {
-        let field = match f {
-            config::RewriteField::Payee => Field::Payee,
-            config::RewriteField::Category => Field::Category,
-            _ => {
-                return Err(ImportError::InvalidConfig("unsupported rewrite field"));
-            }
-        };
-        let pattern = extract::regex_matcher(v)?;
-        Ok(VisecaMatcher { field, pattern })
+    fn has_camt_transaction_code(&self) -> bool {
+        false
+    }
+
+    fn has_str_field(&self, field: StrField) -> bool {
+        match field {
+            StrField::Camt(_) => false,
+            StrField::Payee => true,
+            StrField::Category => true,
+            // TODO: implement this
+            StrField::SecondaryCommodity => false,
+        }
     }
 }
 
-impl<'a> extract::Entity<'a> for VisecaMatcher {
-    type T = &'a format::Entry;
-}
-
-impl extract::EntityMatcher for VisecaMatcher {
-    fn captures<'a>(
-        &self,
-        fragment: &extract::Fragment<'a>,
-        entity: &'a format::Entry,
-    ) -> Option<extract::Matched<'a>> {
-        let target = match self.field {
-            Field::Payee => fragment.payee.unwrap_or(entity.payee.as_str()),
-            Field::Category => entity.category.as_str(),
-        };
-        self.pattern.captures(target).map(Into::into)
+impl<'a> extract::Entity<'a> for &'a format::Entry {
+    fn str_field(&self, field: StrField) -> Option<&'a str> {
+        match field {
+            StrField::Camt(_) => None,
+            StrField::Payee => Some(&self.payee),
+            StrField::Category => Some(&self.category),
+            // TODO: implement this
+            StrField::SecondaryCommodity => None,
+        }
     }
 }

@@ -119,6 +119,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "assert_matches"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b34d609dfbaf33d6889b2b7106d3ca345eacad44200913df5ba02bfd31d2ba9"
+
+[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -945,6 +951,7 @@ name = "okane"
 version = "0.16.0"
 dependencies = [
  "assert_cmd",
+ "assert_matches",
  "bumpalo",
  "chrono",
  "clap",
@@ -967,6 +974,7 @@ dependencies = [
  "quick-xml",
  "regex",
  "rstest",
+ "rstest_reuse",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -1445,6 +1453,17 @@ dependencies = [
  "rustc_version",
  "syn 2.0.108",
  "unicode-ident",
+]
+
+[[package]]
+name = "rstest_reuse"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3a8fb4672e840a587a66fc577a5491375df51ddb88f2a2c2a792598c326fe14"
+dependencies = [
+ "quote",
+ "rand",
+ "syn 2.0.108",
 ]
 
 [[package]]

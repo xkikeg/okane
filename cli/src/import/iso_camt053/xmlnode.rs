@@ -97,7 +97,7 @@ pub struct Entry {
     pub additional_info: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct BankTransactionCode {
     #[serde(rename = "Domn")]
     pub domain: Option<Domain>,
@@ -119,7 +119,7 @@ impl BankTransactionCode {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct Domain {
     #[serde(rename = "Cd")]
     pub code: DomainCodeValue,
@@ -127,7 +127,7 @@ pub struct Domain {
     pub family: DomainFamily,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct DomainFamily {
     #[serde(rename = "Cd")]
     pub code: DomainFamilyCodeValue,
@@ -135,7 +135,7 @@ pub struct DomainFamily {
     pub sub_family_code: DomainSubFamilyCodeValue,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct DomainCodeValue {
     #[serde(rename = "$text")]
     pub value: DomainCode,
@@ -147,13 +147,13 @@ pub enum DomainCode {
     Payment,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct DomainFamilyCodeValue {
     #[serde(rename = "$text")]
     pub value: DomainFamilyCode,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct DomainSubFamilyCodeValue {
     #[serde(rename = "$text")]
     pub value: DomainSubFamilyCode,
@@ -185,7 +185,7 @@ pub enum DomainSubFamilyCode {
     Other,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub struct Proprietary {
     #[serde(rename = "Cd")]
     pub code: String,
@@ -382,6 +382,15 @@ pub struct PartyDetails {
 pub struct Account {
     #[serde(rename = "Id")]
     pub id: AccountIdWrapper,
+}
+
+impl Account {
+    #[cfg(test)]
+    pub fn from_inner(value: AccountId) -> Self {
+        Account {
+            id: AccountIdWrapper { value },
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]

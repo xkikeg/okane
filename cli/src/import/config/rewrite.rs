@@ -44,7 +44,18 @@ pub struct FieldMatcher {
     pub fields: HashMap<RewriteField, String>,
 }
 
-#[derive(Debug, Eq, Hash, PartialEq, Clone, Copy, Serialize, Deserialize, strum::Display)]
+#[derive(
+    Debug,
+    Eq,
+    Hash,
+    PartialEq,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    strum::Display,
+    strum::EnumCount,
+)]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum RewriteField {
