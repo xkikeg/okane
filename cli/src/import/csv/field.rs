@@ -11,43 +11,7 @@ use crate::import::{
     ImportError,
 };
 
-#[derive(Debug, PartialEq)]
-enum AmountField {
-    CreditDebit { credit: Field, debit: Field },
-    Absolute(Field),
-}
-
-#[derive(Debug, PartialEq, Clone)]
-enum Field {
-    ColumnIndex(usize),
-    Template(Template),
-}
-
-struct MappedRecord<'a> {
-    field_resolver: &'a FieldResolver,
-    record: &'a csv::StringRecord,
-}
-
-// here we only supports 32-bits or more bits system.
-const _: () = assert!(u32::BITS <= usize::BITS);
-
-impl<'a> template::Interpolate<'a> for MappedRecord<'a> {
-    fn interpolate(&self, key: TemplateKey) -> Option<&'a str> {
-        let key = match key {
-            // Clone here might have penalty on template,
-            // but it will be a failure path so good to go.
-            TemplateKey::Named(fk) => self.field_resolver.field(fk)?.clone(),
-            TemplateKey::Indexed(i) => Field::ColumnIndex(i.as_zero_based().try_into().unwrap()),
-        };
-        match key {
-            // It might cause inifite loop if we resolve another template during template rendering.
-            // Thus we only support simple column reference.
-            Field::Template(_) => None,
-            Field::ColumnIndex(c) => self.record.get(c),
-        }
-    }
-}
-
+/// Manages all CSV field positions.
 #[derive(Debug, PartialEq)]
 pub struct FieldResolver {
     date: Field,
@@ -58,14 +22,12 @@ pub struct FieldResolver {
 }
 
 impl FieldResolver {
+    /// Returns the maximum column size (0-index).
     pub fn max(&self) -> usize {
         self.max_column
     }
 
-    fn field(&self, field_key: FieldKey) -> Option<&Field> {
-        self.all_fields.get(&field_key)
-    }
-
+    /// Extracts the given field out of the `record`.
     pub fn extract<'a>(
         &self,
         field_key: FieldKey,
@@ -74,6 +36,10 @@ impl FieldResolver {
         self.field(field_key)
             .and_then(|x| self.resolve(field_key, x, record).transpose())
             .transpose()
+    }
+
+    fn field(&self, field_key: FieldKey) -> Option<&Field> {
+        self.all_fields.get(&field_key)
     }
 
     fn resolve<'a>(
@@ -210,6 +176,45 @@ impl FieldResolver {
             all_fields: ki,
             max_column,
         })
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum AmountField {
+    CreditDebit { credit: Field, debit: Field },
+    Absolute(Field),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+enum Field {
+    ColumnIndex(usize),
+    Template(Template),
+}
+
+/// CSV record with [`FieldResolver`],
+/// that allows user to get a particular field.
+struct MappedRecord<'a> {
+    field_resolver: &'a FieldResolver,
+    record: &'a csv::StringRecord,
+}
+
+// here we only supports 32-bits or more bits system.
+const _: () = assert!(u32::BITS <= usize::BITS);
+
+impl<'a> template::Interpolate<'a> for MappedRecord<'a> {
+    fn interpolate(&self, key: TemplateKey) -> Option<&'a str> {
+        let key = match key {
+            // Clone here might have penalty on template,
+            // but it will be a failure path so good to go.
+            TemplateKey::Named(fk) => self.field_resolver.field(fk)?.clone(),
+            TemplateKey::Indexed(i) => Field::ColumnIndex(i.as_zero_based().try_into().unwrap()),
+        };
+        match key {
+            // It might cause inifite loop if we resolve another template during template rendering.
+            // Thus we only support simple column reference.
+            Field::Template(_) => None,
+            Field::ColumnIndex(c) => self.record.get(c),
+        }
     }
 }
 
