@@ -1,5 +1,5 @@
 mod field;
-mod matcher;
+mod record;
 mod utility;
 
 use std::borrow::Cow;
@@ -35,7 +35,7 @@ pub fn import<R: std::io::Read>(
     let mut rdr = rb.from_reader(br);
     let header = rdr.headers()?;
     let resolver = field::FieldResolver::try_new(&config.format.fields, header)?;
-    let extractor = extract::Extractor::<matcher::CsvMatcher>::try_new(&config.rewrite)?;
+    let extractor = extract::Extractor::try_new(&config.rewrite, record::CsvFormat)?;
     let default_conversion: &config::CommodityConversionSpec = &config.commodity.conversion;
     for record in rdr.records() {
         if let Some(txn) =
@@ -56,7 +56,7 @@ pub fn import<R: std::io::Read>(
 fn extract_transaction(
     config: &config::ConfigEntry,
     resolver: &field::FieldResolver,
-    extractor: &extract::Extractor<matcher::CsvMatcher>,
+    extractor: &extract::Extractor,
     default_conversion: &config::CommodityConversionSpec,
     r: &csv::StringRecord,
 ) -> Result<Option<single_entry::Txn>, ImportError> {
@@ -95,11 +95,13 @@ fn extract_transaction(
     let rate = resolver
         .extract(FieldKey::Rate, r)?
         .map_or_else(|| Ok(None), |s| str_to_comma_decimal(&s))?;
-    let fragment = extractor.extract(matcher::Record {
+    // TODO: remove this temporary record.
+    let tmp_record = record::Record {
         payee: &original_payee,
         category: category.as_deref(),
         secondary_commodity: secondary_commodity.as_deref(),
-    });
+    };
+    let fragment = extractor.extract(&tmp_record);
     let payee = fragment.payee.unwrap_or(&original_payee);
     let fragment = extract::Fragment {
         payee: Some(payee),

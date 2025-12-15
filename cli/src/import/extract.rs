@@ -1,4 +1,6 @@
-use std::convert::{From, TryFrom, TryInto};
+mod filter;
+#[cfg(test)]
+mod testing;
 
 use chrono::NaiveDate;
 
@@ -7,21 +9,32 @@ use okane_core::syntax::ClearState;
 use super::amount::OwnedAmount;
 use super::config;
 use super::error::ImportError;
+use super::iso_camt053::xmlnode;
 use super::single_entry;
 
-/// Extractor is a set of [`ExtractRule`], so to extract [`Fragment`] out of the entity.
-///
-/// Usually entity corresponds to one transaction such as a particular CSV row.
+use filter::FieldFilter;
+
+/// Extractor is a set of [`ExtractRule`], so to extract [`Fragment`] out of the [`Entity`].
 #[derive(Debug)]
-pub struct Extractor<'a, M> {
-    rules: Vec<ExtractRule<'a, M>>,
+pub struct Extractor<'a> {
+    rules: Vec<ExtractRule<'a>>,
 }
 
-impl<'a, M> Extractor<'a, M> {
-    pub fn extract(&'a self, entity: <M as Entity<'a>>::T) -> Fragment<'a>
-    where
-        M: EntityMatcher,
-    {
+impl<'a> Extractor<'a> {
+    /// Create `Extractor` instance from [`config::RewriteRule`] items.
+    pub fn try_new<Ef: EntityFormat>(
+        rules: &'a [config::RewriteRule],
+        entity_format: Ef,
+    ) -> Result<Self, ImportError> {
+        rules
+            .iter()
+            .map(|x| ExtractRule::try_new(x, entity_format))
+            .collect::<Result<Vec<_>, _>>()
+            .map(|rules| Extractor { rules })
+    }
+
+    /// Extracts the entity information into [`Fragment`].
+    pub fn extract<Et: Entity<'a>>(&'a self, entity: Et) -> Fragment<'a> {
         let mut fragment = Fragment::default();
         for rule in &self.rules {
             if let Some(updated) = rule.extract(fragment.clone(), entity) {
@@ -30,18 +43,56 @@ impl<'a, M> Extractor<'a, M> {
         }
         fragment
     }
+}
 
-    /// Create `Extractor` instance from [`config::RewriteRule`] items.
-    pub fn try_new(rules: &'a [config::RewriteRule]) -> Result<Self, ImportError>
-    where
-        M: EntityMatcher,
-    {
-        rules
-            .iter()
-            .map(|x| x.try_into())
-            .collect::<Result<Vec<_>, _>>()
-            .map(|rules| Extractor { rules })
+/// Format definition describing which fields are accepted.
+pub trait EntityFormat: Copy {
+    /// Name of the format.
+    fn name(&self) -> &'static str;
+
+    /// Returns if the format accepts Camt domains.
+    fn has_camt_transaction_code(&self) -> bool;
+
+    /// Returns if the format accepts specified field.
+    fn has_str_field(&self, field: StrField) -> bool;
+}
+
+/// Entity to extract [`Fragment`] with [`Extractor`].
+///
+/// Usually entity corresponds to one transaction such as a particular CSV row.
+pub trait Entity<'a>: Copy {
+    /// Returns Camt053 domain code if available.
+    fn camt_transaction_code(&self) -> Option<&'a xmlnode::BankTransactionCode> {
+        None
     }
+
+    /// Returns `&str` field corresponding to the specified field.
+    fn str_field(&self, field: StrField) -> Option<&'a str>;
+}
+
+/// String fields.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum StrField {
+    Payee,
+    Category,
+    SecondaryCommodity,
+    /// Camt specific field.
+    /// With this approach other format (CSV) can avoid skipping all camt arm one by one.
+    Camt(CamtStrField),
+}
+
+/// Camt specific string fields.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum CamtStrField {
+    CreditorName,
+    CreditorAccountId,
+    UltimateCreditorName,
+    DebtorName,
+    DebtorAccountId,
+    UltimateDebtorName,
+    RemittanceUnstructuredInfo,
+    AdditionalEntryInfo,
+    AdditionalTransactionInfo,
 }
 
 /// Fragment is a extracted information out of parcitular entity.
@@ -86,6 +137,21 @@ impl<'a> Fragment<'a> {
         }
         txn
     }
+
+    /// Returns field existence. Similar to [`EntityFormat::has_str_field`].
+    /// For now, fragment only supports payee.
+    fn has_str_field(field: StrField) -> bool {
+        return field == StrField::Payee;
+    }
+
+    /// Returns the corresponding field, similar to [`Entity::str_field`].
+    /// For now, fragment only supports payee.
+    fn str_field(&self, field: StrField) -> Option<&'a str> {
+        match field {
+            StrField::Payee => self.payee,
+            _ => None,
+        }
+    }
 }
 
 impl std::ops::AddAssign for Fragment<'_> {
@@ -101,67 +167,22 @@ impl std::ops::AddAssign for Fragment<'_> {
     }
 }
 
-impl<'a> std::ops::Add<Matched<'a>> for Fragment<'a> {
-    type Output = Self;
-    fn add(self, rhs: Matched<'a>) -> Self::Output {
-        Fragment {
-            payee: rhs.payee.or(self.payee),
-            code: rhs.code.or(self.code),
-            ..self
-        }
-    }
-}
-
-/// Entity is a type of the particular `EntityMatcher` input.
-///
-/// Note that once GAT is available, we can instead have
-///
-/// type Input<'a>: Copy;
-///
-/// In EntityMatcher.
-pub trait Entity<'a> {
-    type T: Copy;
-}
-
-/// EntityGat is a pollyfil to mimic GAT like behavior without GAT.
-/// Although it's public, branket impl should work all the time.
-pub trait EntityGat: for<'a> Entity<'a> {}
-
-impl<T: ?Sized> EntityGat for T where Self: for<'a> Entity<'a> {}
-
-/// EntityMatcher defines the concrete logic for matching `Entity` and `Fragment`.
-pub trait EntityMatcher:
-    EntityGat + for<'a> TryFrom<(config::RewriteField, &'a str), Error = ImportError>
-{
-    fn captures<'a>(
-        &self,
-        fragment: &Fragment<'a>,
-        entity: <Self as Entity<'a>>::T,
-    ) -> Option<Matched<'a>>;
-}
-
-/// Matched is a result of EntityMatcher::captures method,
-/// Most likely it can be regex::Capture or Matched::default().
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct Matched<'a> {
-    pub payee: Option<&'a str>,
-    pub code: Option<&'a str>,
-}
-
 #[derive(Debug)]
-struct ExtractRule<'a, M> {
-    match_expr: MatchOrExpr<M>,
+struct ExtractRule<'a> {
+    match_expr: MatchOrExpr,
     pending: bool,
     payee: Option<&'a str>,
     account: Option<&'a str>,
     conversion: Option<&'a config::CommodityConversionSpec>,
 }
 
-impl<'a, M: EntityMatcher> TryFrom<&'a config::RewriteRule> for ExtractRule<'a, M> {
-    type Error = ImportError;
-
-    fn try_from(from: &'a config::RewriteRule) -> Result<Self, Self::Error> {
-        let match_expr = (&from.matcher).try_into()?;
+impl<'a> ExtractRule<'a> {
+    /// Constructs a rule instance out of a RewriteRule.
+    fn try_new<Ef: EntityFormat>(
+        from: &'a config::RewriteRule,
+        entity_format: Ef,
+    ) -> Result<Self, ImportError> {
+        let match_expr = MatchOrExpr::try_new(&from.matcher, entity_format)?;
         Ok(ExtractRule {
             match_expr,
             pending: from.pending,
@@ -172,8 +193,8 @@ impl<'a, M: EntityMatcher> TryFrom<&'a config::RewriteRule> for ExtractRule<'a, 
     }
 }
 
-impl<'a, M: EntityMatcher> ExtractRule<'a, M> {
-    fn extract(&self, current: Fragment<'a>, entity: <M as Entity<'a>>::T) -> Option<Fragment<'a>> {
+impl<'a> ExtractRule<'a> {
+    fn extract<Et: Entity<'a>>(&self, current: Fragment<'a>, entity: Et) -> Option<Fragment<'a>> {
         self.match_expr.extract(current, entity).map(|mut current| {
             current.payee = self.payee.or(current.payee);
             current.account = self.account;
@@ -187,31 +208,34 @@ impl<'a, M: EntityMatcher> ExtractRule<'a, M> {
 }
 
 #[derive(Debug)]
-struct MatchOrExpr<M>(Vec<MatchAndExpr<M>>);
+struct MatchOrExpr(Vec<MatchAndExpr>);
 
-impl<M: EntityMatcher> TryFrom<&config::RewriteMatcher> for MatchOrExpr<M> {
-    type Error = ImportError;
-
-    fn try_from(from: &config::RewriteMatcher) -> Result<Self, ImportError> {
+impl MatchOrExpr {
+    /// Creates a new instance.
+    fn try_new<Ef: EntityFormat>(
+        from: &config::RewriteMatcher,
+        entity_format: Ef,
+    ) -> Result<Self, ImportError> {
         match from {
             config::RewriteMatcher::Or(orms) => {
-                let exprs: Result<Vec<MatchAndExpr<M>>, ImportError> =
-                    orms.iter().map(|x| x.try_into()).collect();
+                let exprs: Result<Vec<MatchAndExpr>, ImportError> = orms
+                    .iter()
+                    .map(|x| MatchAndExpr::try_new(x, entity_format))
+                    .collect();
                 Ok(MatchOrExpr(exprs?))
             }
             config::RewriteMatcher::Field(f) => {
-                let and_expr = f.try_into()?;
+                let and_expr = MatchAndExpr::try_new(f, entity_format)?;
                 Ok(MatchOrExpr(vec![and_expr]))
             }
         }
     }
-}
 
-impl<M: EntityMatcher> MatchOrExpr<M> {
-    fn extract<'a>(
+    /// Extracts [`Fragment`].
+    fn extract<'a, Et: Entity<'a>>(
         &self,
         current: Fragment<'a>,
-        entity: <M as Entity<'a>>::T,
+        entity: Et,
     ) -> Option<Fragment<'a>> {
         self.0
             .iter()
@@ -220,16 +244,17 @@ impl<M: EntityMatcher> MatchOrExpr<M> {
 }
 
 #[derive(Debug)]
-struct MatchAndExpr<M>(Vec<M>);
+struct MatchAndExpr(Vec<FieldFilter>);
 
-impl<M: EntityMatcher> TryFrom<&config::FieldMatcher> for MatchAndExpr<M> {
-    type Error = ImportError;
-
-    fn try_from(from: &config::FieldMatcher) -> Result<Self, ImportError> {
-        let matchers: Result<Vec<M>, _> = from
+impl MatchAndExpr {
+    fn try_new<Ef: EntityFormat>(
+        from: &config::FieldMatcher,
+        entity_format: Ef,
+    ) -> Result<Self, ImportError> {
+        let matchers: Result<Vec<FieldFilter>, _> = from
             .fields
             .iter()
-            .map(|(fd, v)| (*fd, v.as_str()).try_into())
+            .map(|(fd, v)| FieldFilter::try_new(*fd, v.as_str(), entity_format))
             .collect();
         let matchers = matchers?;
         if matchers.is_empty() {
@@ -240,37 +265,19 @@ impl<M: EntityMatcher> TryFrom<&config::FieldMatcher> for MatchAndExpr<M> {
             Ok(MatchAndExpr(matchers))
         }
     }
-}
 
-impl<M: EntityMatcher> MatchAndExpr<M> {
-    fn extract<'a>(
+    fn extract<'a, Et: Entity<'a>>(
         &self,
         current: Fragment<'a>,
-        entity: <M as Entity<'a>>::T,
+        entity: Et,
     ) -> Option<Fragment<'a>> {
-        self.0.iter().try_fold(current.clone(), |prev, matcher| {
+        let got = self.0.iter().try_fold(current, |prev, matcher| {
             matcher
                 .captures(&prev, entity)
-                .map(|matched| prev.clone() + matched)
-        })
+                .map(|matched| prev + matched)
+        });
+        got
     }
-}
-
-impl<'a> From<regex::Captures<'a>> for Matched<'a> {
-    fn from(from: regex::Captures<'a>) -> Self {
-        Matched {
-            payee: from.name("payee").map(|x| x.as_str()),
-            code: from.name("code").map(|x| x.as_str()),
-        }
-    }
-}
-
-/// Creates standard regex matcher.
-pub fn regex_matcher(value: &str) -> Result<regex::Regex, ImportError> {
-    regex::RegexBuilder::new(value)
-        .case_insensitive(true)
-        .build()
-        .map_err(Into::into)
 }
 
 #[cfg(test)]
@@ -281,6 +288,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use config::CommodityConversionSpec;
+    use testing::{TestEntity, TestFormat};
 
     #[test]
     fn fragment_add_assign_filled() {
@@ -327,62 +335,6 @@ mod tests {
         assert_eq!(x, orig);
     }
 
-    #[derive(Clone, Copy)]
-    struct TestEntity {
-        creditor: &'static str,
-        debtor: &'static str,
-        additional_info: &'static str,
-    }
-
-    enum TestMatcherField {
-        Creditor,
-        Debtor,
-        AdditionalInfo,
-        Payee,
-    }
-
-    struct TestMatcher {
-        field: TestMatcherField,
-        pattern: regex::Regex,
-    }
-
-    impl<'a> TryFrom<(config::RewriteField, &'a str)> for TestMatcher {
-        type Error = ImportError;
-        fn try_from(from: (config::RewriteField, &'a str)) -> Result<Self, Self::Error> {
-            let field = match from.0 {
-                config::RewriteField::CreditorName => Ok(TestMatcherField::Creditor),
-                config::RewriteField::DebtorName => Ok(TestMatcherField::Debtor),
-                config::RewriteField::AdditionalTransactionInfo => {
-                    Ok(TestMatcherField::AdditionalInfo)
-                }
-                config::RewriteField::Payee => Ok(TestMatcherField::Payee),
-                _ => Err(ImportError::Unimplemented("no support")),
-            }?;
-            let pattern = regex_matcher(from.1)?;
-            Ok(TestMatcher { field, pattern })
-        }
-    }
-
-    impl Entity<'_> for TestMatcher {
-        type T = TestEntity;
-    }
-
-    impl EntityMatcher for TestMatcher {
-        fn captures<'a>(
-            &self,
-            fragment: &Fragment<'a>,
-            entity: <Self as Entity<'a>>::T,
-        ) -> Option<Matched<'a>> {
-            let target = match self.field {
-                TestMatcherField::Creditor => Some(entity.creditor),
-                TestMatcherField::Debtor => Some(entity.debtor),
-                TestMatcherField::AdditionalInfo => Some(entity.additional_info),
-                TestMatcherField::Payee => fragment.payee,
-            }?;
-            self.pattern.captures(target).map(|x| x.into())
-        }
-    }
-
     fn into_rule(m: config::RewriteMatcher) -> config::RewriteRule {
         config::RewriteRule {
             matcher: m,
@@ -394,32 +346,120 @@ mod tests {
     }
 
     #[test]
-    fn extract_single_match() {
+    fn extract_single_match_all() {
+        use strum::EnumCount;
+
+        let fields = hashmap! {
+            config::RewriteField::DomainCode => "PMNT".to_string(),
+            config::RewriteField::DomainFamily => "RDDT".to_string(),
+            config::RewriteField::DomainSubFamily => "STDO".to_string(),
+            config::RewriteField::CreditorName => "my-creditor-name".to_string(),
+            config::RewriteField::CreditorAccountId => "my-creditor-account-id".to_string(),
+            config::RewriteField::UltimateCreditorName => "my-ultimate-creditor-name".to_string(),
+            config::RewriteField::DebtorName => "my-debtor-name".to_string(),
+            config::RewriteField::DebtorAccountId => "my-debtor-account-id".to_string(),
+            config::RewriteField::UltimateDebtorName => "my-ultimate-debtor-name".to_string(),
+            config::RewriteField::RemittanceUnstructuredInfo => "my remittance info".to_string(),
+            config::RewriteField::AdditionalEntryInfo => "my entry info".to_string(),
+            config::RewriteField::AdditionalTransactionInfo => "my transaction info: (?P<payee>.*)".to_string(),
+            config::RewriteField::SecondaryCommodity => "CHF".to_string(),
+            config::RewriteField::Category => "my category".to_string(),
+            config::RewriteField::Payee => "my payee".to_string(),
+        };
+        assert_eq!(fields.len(), config::RewriteField::COUNT);
         let rw = vec![config::RewriteRule {
             pending: false,
-            payee: Some("Payee".to_string()),
+            payee: None,
             account: Some("Income".to_string()),
             ..into_rule(config::RewriteMatcher::Field(config::FieldMatcher {
-                fields: hashmap! {
-                    config::RewriteField::CreditorName => "Foo grocery".to_string(),
-                    config::RewriteField::DebtorName => "Bar company".to_string(),
-                },
+                fields,
             }))
         }];
         let input = TestEntity {
-            creditor: "Foo grocery",
-            debtor: "Bar company",
-            additional_info: "",
+            camt_txn_code: Some(xmlnode::BankTransactionCode {
+                domain: Some(xmlnode::Domain {
+                    code: xmlnode::DomainCodeValue {
+                        // PMNT
+                        value: xmlnode::DomainCode::Payment,
+                    },
+                    family: xmlnode::DomainFamily {
+                        code: xmlnode::DomainFamilyCodeValue {
+                            // RDDT
+                            value: xmlnode::DomainFamilyCode::ReceivedDirectDebits,
+                        },
+                        sub_family_code: xmlnode::DomainSubFamilyCodeValue {
+                            // STDO
+                            value: xmlnode::DomainSubFamilyCode::StandingOrder,
+                        },
+                    },
+                }),
+                proprietary: None,
+            }),
+            str_fields: hashmap! {
+                StrField::Camt(CamtStrField::CreditorName) => "my-creditor-name".to_string(),
+                StrField::Camt(CamtStrField::CreditorAccountId) => "my-creditor-account-id".to_string(),
+                StrField::Camt(CamtStrField::UltimateCreditorName) => "my-ultimate-creditor-name".to_string(),
+                StrField::Camt(CamtStrField::DebtorName) => "my-debtor-name".to_string(),
+                StrField::Camt(CamtStrField::DebtorAccountId) => "my-debtor-account-id".to_string(),
+                StrField::Camt(CamtStrField::UltimateDebtorName) => "my-ultimate-debtor-name".to_string(),
+                StrField::Camt(CamtStrField::RemittanceUnstructuredInfo) => "my remittance info".to_string(),
+                StrField::Camt(CamtStrField::AdditionalEntryInfo) => "my entry info".to_string(),
+                // this must be compatible with Payee matcher.
+                // in practical, it's not recommended to use both
+                // payee in regex capture and payee filter at the same time.
+                StrField::Camt(CamtStrField::AdditionalTransactionInfo) => "my transaction info: my payee new".to_string(),
+                StrField::SecondaryCommodity => "CHF".to_string(),
+                StrField::Category => "my category".to_string(),
+                StrField::Payee => "my payee".to_string(),
+            },
         };
         let want = Fragment {
             cleared: true,
             account: Some("Income"),
+            payee: Some("my payee new"),
+            ..Fragment::default()
+        };
+
+        let extractor = Extractor::try_new(&rw, &TestFormat::all()).unwrap();
+        let fragment = extractor.extract(&input);
+
+        assert_eq!(want, fragment);
+    }
+
+    #[test]
+    fn extract_single_match_or() {
+        let rw = vec![config::RewriteRule {
+            pending: false,
+            payee: Some("Payee".to_string()),
+            account: Some("Expense".to_string()),
+            ..into_rule(config::RewriteMatcher::Or(vec![
+                config::FieldMatcher {
+                    fields: hashmap! {
+                        config::RewriteField::Category => "food".to_string(),
+                    },
+                },
+                config::FieldMatcher {
+                    fields: hashmap! {
+                        config::RewriteField::Category => "beverage".to_string(),
+                    },
+                },
+            ]))
+        }];
+        let input = TestEntity {
+            camt_txn_code: None,
+            str_fields: hashmap! {
+                StrField::Category => "beverage".to_string(),
+            },
+        };
+        let want = Fragment {
+            cleared: true,
+            account: Some("Expense"),
             payee: Some("Payee"),
             ..Fragment::default()
         };
 
-        let extractor = Extractor::<TestMatcher>::try_new(&rw).unwrap();
-        let fragment = extractor.extract(input);
+        let extractor = Extractor::try_new(&rw, &TestFormat::all()).unwrap();
+        let fragment = extractor.extract(&input);
 
         assert_eq!(want, fragment);
     }
@@ -432,7 +472,7 @@ mod tests {
         };
         let rw = vec![
             config::RewriteRule {
-                pending: false, // pending: true implied
+                pending: false,
                 payee: None,
                 account: None,
                 ..into_rule(config::RewriteMatcher::Field(config::FieldMatcher {
@@ -472,29 +512,34 @@ mod tests {
         ];
         let input = [
             TestEntity {
-                creditor: "",
-                debtor: "",
-                additional_info: "Some card Grocery shop",
+                camt_txn_code: None,
+                str_fields: hashmap! {
+                    StrField::Camt(CamtStrField::AdditionalTransactionInfo) => "Some card Grocery shop".to_string(),
+                },
             },
             TestEntity {
-                creditor: "",
-                debtor: "",
-                additional_info: "Some card Another shop",
+                camt_txn_code: None,
+                str_fields: hashmap! {
+                    StrField::Camt(CamtStrField::AdditionalTransactionInfo) => "Some card Another shop".to_string(),
+                },
             },
             TestEntity {
-                creditor: "",
-                debtor: "",
-                additional_info: "Some card [123] Certain Petrol",
+                camt_txn_code: None,
+                str_fields: hashmap! {
+                    StrField::Camt(CamtStrField::AdditionalTransactionInfo) => "Some card [123] Certain Petrol".to_string(),
+                },
             },
             TestEntity {
-                creditor: "",
-                debtor: "",
-                additional_info: "Some card [456] unknown payee",
+                camt_txn_code: None,
+                str_fields: hashmap! {
+                    StrField::Camt(CamtStrField::AdditionalTransactionInfo) => "Some card [456] unknown payee".to_string(),
+                },
             },
             TestEntity {
-                creditor: "",
-                debtor: "",
-                additional_info: "unrelated",
+                camt_txn_code: None,
+                str_fields: hashmap! {
+                    StrField::Camt(CamtStrField::AdditionalTransactionInfo) => "unrelated".to_string(),
+                },
             },
         ];
         let want = [
@@ -527,12 +572,8 @@ mod tests {
             Fragment::default(),
         ];
 
-        let extractor = Extractor::<TestMatcher>::try_new(&rw).unwrap();
-        let got: Vec<Fragment> = input
-            .iter()
-            .cloned()
-            .map(|t| extractor.extract(t))
-            .collect();
+        let extractor = Extractor::try_new(&rw, &TestFormat::all()).unwrap();
+        let got: Vec<Fragment> = input.iter().map(|t| extractor.extract(t)).collect();
         assert_eq!(want, got.as_slice());
     }
 }

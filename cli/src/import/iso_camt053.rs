@@ -1,15 +1,12 @@
-mod xmlnode;
-
-use std::convert::TryFrom;
+pub(super) mod xmlnode;
 
 use chrono::NaiveDate;
 use either::Either;
-use regex::Regex;
 use rust_decimal::Decimal;
 
 use super::amount::OwnedAmount;
 use super::config;
-use super::extract;
+use super::extract::{self, CamtStrField, StrField};
 use super::single_entry::{self, CommodityPair};
 use super::ImportError;
 
@@ -27,7 +24,7 @@ pub fn import<R>(r: R, config: &config::ConfigEntry) -> Result<Vec<single_entry:
 where
     R: std::io::Read,
 {
-    let extractor = extract::Extractor::<FieldMatch>::try_new(&config.rewrite)?;
+    let extractor = extract::Extractor::try_new(&config.rewrite, CamtFormat)?;
     let mut buf = std::io::BufReader::new(r);
     let doc: xmlnode::Document = quick_xml::de::from_reader(&mut buf)?;
     let mut res = Vec::new();
@@ -56,7 +53,7 @@ where
             if entry.details.transactions.is_empty() {
                 // TODO(kikeg): Fix this code repetition.
                 let amount = entry.amount.to_owned(entry.credit_or_debit.value);
-                let fragment = extractor.extract((entry, None));
+                let fragment = extractor.extract(CamtEntity(entry, None));
                 if fragment.payee.is_none() {
                     log::warn!("payee not set @ {:?} {:?}", entry.booking_date, amount);
                 } else if fragment.account.is_none() {
@@ -78,7 +75,7 @@ where
                 let amount = transaction
                     .amount
                     .to_owned(transaction.credit_or_debit.value);
-                let fragment = extractor.extract((entry, Some(transaction)));
+                let fragment = extractor.extract(CamtEntity(entry, Some(transaction)));
                 let code = transaction.refs.account_servicer_reference.clone();
                 let mut txn = fragment.new_txn(entry.guess_value_date(), amount, || {
                     format!(
@@ -180,142 +177,76 @@ impl xmlnode::Amount {
 
 // Adapter for Extractor.
 
-#[derive(Debug)]
-enum FieldMatch {
-    DomainCode(xmlnode::DomainCode),
-    DomainFamily(xmlnode::DomainFamilyCode),
-    DomainSubFamily(xmlnode::DomainSubFamilyCode),
-    RegexMatch(MatchField, Regex),
-}
+#[derive(Debug, Clone, Copy)]
+struct CamtFormat;
 
-#[derive(Debug, PartialEq)]
-enum MatchField {
-    CreditorName,
-    CreditorAccountId,
-    UltimateCreditorName,
-    DebtorName,
-    DebtorAccountId,
-    UltimateDebtorName,
-    RemittanceUnstructuredInfo,
-    AdditionalEntryInfo,
-    AdditionalTransactionInfo,
-    Payee,
-}
+impl extract::EntityFormat for CamtFormat {
+    fn name(&self) -> &'static str {
+        "ISO Camt053"
+    }
 
-fn to_field(f: config::RewriteField) -> Result<MatchField, ImportError> {
-    match f {
-        config::RewriteField::CreditorName => Some(MatchField::CreditorName),
-        config::RewriteField::CreditorAccountId => Some(MatchField::CreditorAccountId),
-        config::RewriteField::UltimateCreditorName => Some(MatchField::UltimateCreditorName),
-        config::RewriteField::DebtorName => Some(MatchField::DebtorName),
-        config::RewriteField::DebtorAccountId => Some(MatchField::DebtorAccountId),
-        config::RewriteField::UltimateDebtorName => Some(MatchField::UltimateDebtorName),
-        config::RewriteField::RemittanceUnstructuredInfo => {
-            Some(MatchField::RemittanceUnstructuredInfo)
+    fn has_camt_transaction_code(&self) -> bool {
+        true
+    }
+
+    fn has_str_field(&self, field: StrField) -> bool {
+        match field {
+            StrField::Camt(_) => true,
+            _ => false,
         }
-        config::RewriteField::AdditionalEntryInfo => Some(MatchField::AdditionalEntryInfo),
-        config::RewriteField::AdditionalTransactionInfo => {
-            Some(MatchField::AdditionalTransactionInfo)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CamtEntity<'a>(&'a xmlnode::Entry, Option<&'a xmlnode::TransactionDetails>);
+
+impl<'a> extract::Entity<'a> for CamtEntity<'a> {
+    fn camt_transaction_code(&self) -> Option<&'a xmlnode::BankTransactionCode> {
+        Some(&self.0.bank_transaction_code)
+    }
+
+    fn str_field(&self, field: StrField) -> Option<&'a str> {
+        let CamtEntity(entry, transaction) = self;
+        match field {
+            StrField::Camt(fd) => match fd {
+                CamtStrField::CreditorName => transaction
+                    .and_then(|t| t.related_parties.as_ref())
+                    .and_then(|rp| rp.creditor.as_ref())
+                    .map(|cd| cd.name()),
+                CamtStrField::CreditorAccountId => transaction
+                    .and_then(|t| t.related_parties.as_ref())
+                    .and_then(|rp| rp.creditor_account.as_ref())
+                    .map(|a| a.id.value.as_str_id()),
+                CamtStrField::UltimateCreditorName => transaction
+                    .and_then(|t| t.related_parties.as_ref())
+                    .and_then(|rp| rp.ultimate_creditor.as_ref())
+                    .map(|ud| ud.name()),
+                CamtStrField::DebtorName => transaction
+                    .and_then(|t| t.related_parties.as_ref())
+                    .and_then(|rp| rp.debtor.as_ref())
+                    .map(|dt| dt.name()),
+                CamtStrField::DebtorAccountId => transaction
+                    .and_then(|t| t.related_parties.as_ref())
+                    .and_then(|rp| rp.debtor_account.as_ref())
+                    .map(|a| a.id.value.as_str_id()),
+                CamtStrField::UltimateDebtorName => transaction
+                    .and_then(|t| t.related_parties.as_ref())
+                    .and_then(|rp| rp.ultimate_debtor.as_ref())
+                    .map(|ud| ud.name()),
+                CamtStrField::RemittanceUnstructuredInfo => transaction
+                    .and_then(|t| t.remittance_info.as_ref())
+                    .and_then(|i| i.unstructured.as_ref())
+                    .map(|v| v.as_str()),
+                CamtStrField::AdditionalEntryInfo => Some(&entry.additional_info),
+                CamtStrField::AdditionalTransactionInfo => transaction
+                    .and_then(|t| t.additional_info.as_ref())
+                    .map(|ai| ai.as_str()),
+            },
+            _ => None,
         }
-        config::RewriteField::Payee => Some(MatchField::Payee),
-        _ => None,
-    }
-    .ok_or_else(|| ImportError::Other(format!("unknown match field: {:?}", f)))
-}
-
-impl TryFrom<(config::RewriteField, &str)> for FieldMatch {
-    type Error = ImportError;
-    fn try_from((f, v): (config::RewriteField, &str)) -> Result<FieldMatch, ImportError> {
-        Ok(match f {
-            config::RewriteField::DomainCode => {
-                let code = serde_yaml::from_str(v)?;
-                FieldMatch::DomainCode(code)
-            }
-            config::RewriteField::DomainFamily => {
-                let code = serde_yaml::from_str(v)?;
-                FieldMatch::DomainFamily(code)
-            }
-            config::RewriteField::DomainSubFamily => {
-                let code = serde_yaml::from_str(v)?;
-                FieldMatch::DomainSubFamily(code)
-            }
-            _ => {
-                let pattern = extract::regex_matcher(v)?;
-                let field = to_field(f)?;
-                FieldMatch::RegexMatch(field, pattern)
-            }
-        })
     }
 }
 
-impl<'a> extract::Entity<'a> for FieldMatch {
-    type T = (&'a xmlnode::Entry, Option<&'a xmlnode::TransactionDetails>);
-}
-
-impl extract::EntityMatcher for FieldMatch {
-    fn captures<'a>(
-        &self,
-        fragment: &extract::Fragment<'a>,
-        (entry, transaction): (&'a xmlnode::Entry, Option<&'a xmlnode::TransactionDetails>),
-    ) -> Option<extract::Matched<'a>> {
-        let has_match = match self {
-            FieldMatch::DomainCode(code) => {
-                Either::Left(*code == entry.bank_transaction_code.domain_code()?)
-            }
-            FieldMatch::DomainFamily(code) => {
-                Either::Left(*code == entry.bank_transaction_code.domain_family_code()?)
-            }
-            FieldMatch::DomainSubFamily(code) => {
-                Either::Left(*code == entry.bank_transaction_code.domain_sub_family_code()?)
-            }
-            FieldMatch::RegexMatch(fd, re) => {
-                let target: Option<&str> = match fd {
-                    MatchField::CreditorName => transaction
-                        .and_then(|t| t.related_parties.as_ref())
-                        .and_then(|rp| rp.creditor.as_ref())
-                        .map(|cd| cd.name()),
-                    MatchField::CreditorAccountId => transaction
-                        .and_then(|t| t.related_parties.as_ref())
-                        .and_then(|rp| rp.creditor_account.as_ref())
-                        .map(|a| a.id.value.as_str_id()),
-                    MatchField::UltimateCreditorName => transaction
-                        .and_then(|t| t.related_parties.as_ref())
-                        .and_then(|rp| rp.ultimate_creditor.as_ref())
-                        .map(|ud| ud.name()),
-                    MatchField::DebtorName => transaction
-                        .and_then(|t| t.related_parties.as_ref())
-                        .and_then(|rp| rp.debtor.as_ref())
-                        .map(|dt| dt.name()),
-                    MatchField::DebtorAccountId => transaction
-                        .and_then(|t| t.related_parties.as_ref())
-                        .and_then(|rp| rp.debtor_account.as_ref())
-                        .map(|a| a.id.value.as_str_id()),
-                    MatchField::UltimateDebtorName => transaction
-                        .and_then(|t| t.related_parties.as_ref())
-                        .and_then(|rp| rp.ultimate_debtor.as_ref())
-                        .map(|ud| ud.name()),
-                    MatchField::RemittanceUnstructuredInfo => transaction
-                        .and_then(|t| t.remittance_info.as_ref())
-                        .and_then(|i| i.unstructured.as_ref())
-                        .map(|v| v.as_str()),
-                    MatchField::AdditionalEntryInfo => Some(&entry.additional_info),
-                    MatchField::AdditionalTransactionInfo => transaction
-                        .and_then(|t| t.additional_info.as_ref())
-                        .map(|ai| ai.as_str()),
-                    MatchField::Payee => fragment.payee,
-                };
-                Either::Right(target.and_then(|t| re.captures(t)).map(|c| c.into()))
-            }
-        };
-        has_match.right_or_else(|matched| {
-            if matched {
-                Some(extract::Matched::default())
-            } else {
-                None
-            }
-        })
-    }
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,6 +254,8 @@ mod tests {
     use chrono::NaiveDate;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
+
+    use extract::Entity;
 
     fn test_entry() -> xmlnode::Entry {
         xmlnode::Entry {
@@ -340,19 +273,7 @@ mod tests {
                 NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
             )),
             bank_transaction_code: xmlnode::BankTransactionCode {
-                domain: Some(xmlnode::Domain {
-                    code: xmlnode::DomainCodeValue {
-                        value: xmlnode::DomainCode::Payment,
-                    },
-                    family: xmlnode::DomainFamily {
-                        code: xmlnode::DomainFamilyCodeValue {
-                            value: xmlnode::DomainFamilyCode::IssuedCreditTransfers,
-                        },
-                        sub_family_code: xmlnode::DomainSubFamilyCodeValue {
-                            value: xmlnode::DomainSubFamilyCode::AutomaticTransfer,
-                        },
-                    },
-                }),
+                domain: None,
                 proprietary: None,
             },
             charges: None,
@@ -395,20 +316,7 @@ mod tests {
                 }),
             }),
             charges: None,
-            related_parties: Some(xmlnode::RelatedParties {
-                debtor: Some(xmlnode::RelatedParty::from_inner(xmlnode::PartyDetails {
-                    name: "debtor".to_string(),
-                    ..xmlnode::PartyDetails::default()
-                })),
-                creditor: Some(xmlnode::RelatedParty::from_inner(xmlnode::PartyDetails {
-                    name: "creditor".to_string(),
-                    ..xmlnode::PartyDetails::default()
-                })),
-                creditor_account: None,
-                debtor_account: None,
-                ultimate_debtor: None,
-                ultimate_creditor: None,
-            }),
+            related_parties: None,
             remittance_info: Some(xmlnode::RemittanceInfo {
                 unstructured: Some("the remittance info".to_string()),
             }),
@@ -416,263 +324,192 @@ mod tests {
         }
     }
 
-    use extract::{EntityMatcher, Fragment, Matched};
-
     #[test]
-    fn field_match_from_invalid_domain_family() {
-        let err = FieldMatch::try_from((config::RewriteField::DomainCode, "foo")).unwrap_err();
-        match err {
-            ImportError::YAML(cause) => {
-                assert!(
-                    cause.to_string().contains("unknown variant `foo`"),
-                    "{:?} did not contains expected error",
-                    cause
-                );
-            }
-            _ => {
-                panic!("unexpected type of error: {:?}", err);
-            }
+    fn camt_transaction_code_returns_value() {
+        let code = xmlnode::BankTransactionCode {
+            domain: Some(xmlnode::Domain {
+                code: xmlnode::DomainCodeValue {
+                    value: xmlnode::DomainCode::Payment,
+                },
+                family: xmlnode::DomainFamily {
+                    code: xmlnode::DomainFamilyCodeValue {
+                        value: xmlnode::DomainFamilyCode::IssuedCreditTransfers,
+                    },
+                    sub_family_code: xmlnode::DomainSubFamilyCodeValue {
+                        value: xmlnode::DomainSubFamilyCode::AutomaticTransfer,
+                    },
+                },
+            }),
+            proprietary: None,
+        };
+        let entry = xmlnode::Entry {
+            bank_transaction_code: code.clone(),
+            ..test_entry()
+        };
+        let details = None;
+        let entity = CamtEntity(&entry, details);
+
+        assert_eq!(Some(&code), entity.camt_transaction_code());
+    }
+
+    mod str_field {
+        use super::*;
+
+        use pretty_assertions::assert_eq;
+        use rstest::rstest;
+        use rstest_reuse::{self, *};
+
+        #[template]
+        #[rstest]
+        #[case(CamtStrField::CreditorName)]
+        #[case(CamtStrField::CreditorAccountId)]
+        #[case(CamtStrField::UltimateCreditorName)]
+        #[case(CamtStrField::DebtorName)]
+        #[case(CamtStrField::DebtorAccountId)]
+        #[case(CamtStrField::UltimateDebtorName)]
+        fn related_party_fields(#[case] field: CamtStrField) {}
+
+        #[apply(related_party_fields)]
+        fn related_party_fields_returns_none_without_detail(#[case] field: CamtStrField) {
+            let entry = test_entry();
+            let details = None;
+            let entity = CamtEntity(&entry, details);
+
+            assert_eq!(None, entity.str_field(StrField::Camt(field)));
         }
-    }
 
-    #[test]
-    fn field_match_captures_domain_family_match() {
-        let m = FieldMatch::try_from((config::RewriteField::DomainFamily, "ICDT")).unwrap();
-        let entry = test_entry();
+        #[apply(related_party_fields)]
+        fn related_party_fields_returns_none_with_empty_detail(#[case] field: CamtStrField) {
+            let entry = test_entry();
+            let details = test_transaction();
 
-        let got = m.captures(&Fragment::default(), (&entry, None));
-
-        assert_eq!(Some(Matched::default()), got);
-    }
-
-    #[test]
-    fn field_match_captures_domain_family_unmatch() {
-        let m = FieldMatch::try_from((config::RewriteField::DomainFamily, "RCDT")).unwrap();
-        let entry = test_entry();
-
-        let got = m.captures(&Fragment::default(), (&entry, None));
-
-        assert_eq!(None, got);
-    }
-    #[test]
-    fn field_match_captures_domain_sub_family_match() {
-        let m = FieldMatch::try_from((config::RewriteField::DomainSubFamily, "AUTT")).unwrap();
-        let entry = test_entry();
-
-        let got = m.captures(&Fragment::default(), (&entry, None));
-
-        assert_eq!(Some(Matched::default()), got);
-    }
-
-    #[test]
-    fn field_match_captures_domain_sub_family_unmatch() {
-        let m = FieldMatch::try_from((config::RewriteField::DomainSubFamily, "SALA")).unwrap();
-        let entry = test_entry();
-
-        let got = m.captures(&Fragment::default(), (&entry, None));
-
-        assert_eq!(None, got);
-    }
-
-    #[test]
-    fn field_match_from_invalid_regex() {
-        let err = FieldMatch::try_from((config::RewriteField::Payee, "*")).unwrap_err();
-        match err {
-            ImportError::InvalidRegex(_) => {}
-            _ => {
-                panic!("unexpected type of error: {:?}", err);
-            }
+            assert_eq!(
+                None,
+                CamtEntity(&entry, Some(&details)).str_field(StrField::Camt(field))
+            );
         }
-    }
 
-    #[test]
-    fn field_match_captures_creditor_debtor() {
-        let entry = test_entry();
-        let without_ultimate = xmlnode::TransactionDetails {
-            related_parties: Some(xmlnode::RelatedParties {
-                debtor: Some(xmlnode::RelatedParty::from_inner(xmlnode::PartyDetails {
-                    name: "expected debtor".to_string(),
-                    ..xmlnode::PartyDetails::default()
-                })),
-                creditor: Some(xmlnode::RelatedParty::from_inner(xmlnode::PartyDetails {
-                    name: "expected creditor".to_string(),
-                    ..xmlnode::PartyDetails::default()
-                })),
-                creditor_account: None,
-                debtor_account: None,
-                ultimate_debtor: None,
-                ultimate_creditor: None,
-            }),
-            ..test_transaction()
-        };
-        let with_ultimate = xmlnode::TransactionDetails {
-            related_parties: Some(xmlnode::RelatedParties {
-                debtor: Some(xmlnode::RelatedParty::from_inner(xmlnode::PartyDetails {
-                    name: "expected debtor".to_string(),
-                    ..xmlnode::PartyDetails::default()
-                })),
-                creditor: Some(xmlnode::RelatedParty::from_inner(xmlnode::PartyDetails {
-                    name: "expected creditor".to_string(),
-                    ..xmlnode::PartyDetails::default()
-                })),
-                creditor_account: None,
-                debtor_account: None,
-                ultimate_debtor: Some(xmlnode::RelatedParty::from_inner(xmlnode::PartyDetails {
-                    name: "expected ultimate debtor".to_string(),
-                    ..xmlnode::PartyDetails::default()
-                })),
-                ultimate_creditor: Some(xmlnode::RelatedParty::from_inner(xmlnode::PartyDetails {
-                    name: "expected ultimate creditor".to_string(),
-                    ..xmlnode::PartyDetails::default()
-                })),
-            }),
-            ..test_transaction()
-        };
-        assert_eq!(
-            None,
-            FieldMatch::try_from((config::RewriteField::CreditorName, "no match"))
-                .unwrap()
-                .captures(&Fragment::default(), (&entry, Some(&with_ultimate)))
-        );
-        assert_eq!(
-            Some(Matched::default()),
-            FieldMatch::try_from((config::RewriteField::CreditorName, "expected creditor"))
-                .unwrap()
-                .captures(&Fragment::default(), (&entry, Some(&with_ultimate)))
-        );
-        assert_eq!(
-            Some(Matched {
-                payee: Some("expected"),
-                code: Some("creditor")
-            }),
-            FieldMatch::try_from((
-                config::RewriteField::CreditorName,
-                "(?P<payee>expected) (?P<code>creditor)"
-            ))
-            .unwrap()
-            .captures(&Fragment::default(), (&entry, Some(&with_ultimate)))
-        );
-        assert_eq!(
-            None,
-            FieldMatch::try_from((config::RewriteField::DebtorName, "no match"))
-                .unwrap()
-                .captures(&Fragment::default(), (&entry, Some(&with_ultimate)))
-        );
-        assert_eq!(
-            Some(Matched::default()),
-            FieldMatch::try_from((config::RewriteField::DebtorName, "expected debtor"))
-                .unwrap()
-                .captures(&Fragment::default(), (&entry, Some(&with_ultimate)))
-        );
-        assert_eq!(
-            None,
-            FieldMatch::try_from((config::RewriteField::UltimateDebtorName, "something"))
-                .unwrap()
-                .captures(&Fragment::default(), (&entry, Some(&without_ultimate)))
-        );
-        assert_eq!(
-            None,
-            FieldMatch::try_from((config::RewriteField::UltimateDebtorName, "something"))
-                .unwrap()
-                .captures(&Fragment::default(), (&entry, Some(&with_ultimate)))
-        );
-        assert_eq!(
-            Some(Matched::default()),
-            FieldMatch::try_from((
-                config::RewriteField::UltimateDebtorName,
-                "expected ultimate debtor"
-            ))
-            .unwrap()
-            .captures(&Fragment::default(), (&entry, Some(&with_ultimate)))
-        );
-    }
+        #[apply(related_party_fields)]
+        fn related_party_fields_returns_none_with_empty_related_parties(
+            #[case] field: CamtStrField,
+        ) {
+            let entry = test_entry();
+            let details = xmlnode::TransactionDetails {
+                related_parties: Some(xmlnode::RelatedParties::default()),
+                ..test_transaction()
+            };
 
-    #[test]
-    fn field_match_remittance_info_no_txn() {
-        let entry = test_entry();
-        let txn = xmlnode::TransactionDetails {
-            remittance_info: Some(xmlnode::RemittanceInfo { unstructured: None }),
-            ..test_transaction()
-        };
-        let m = FieldMatch::try_from((
-            config::RewriteField::RemittanceUnstructuredInfo,
-            "remittance info",
-        ))
-        .unwrap();
+            assert_eq!(
+                None,
+                CamtEntity(&entry, Some(&details)).str_field(StrField::Camt(field))
+            );
+        }
 
-        assert_eq!(None, m.captures(&Fragment::default(), (&entry, None)));
-        assert_eq!(None, m.captures(&Fragment::default(), (&entry, Some(&txn))));
-    }
+        fn simple_related_party(x: &str) -> xmlnode::RelatedParty {
+            xmlnode::RelatedParty::from_inner(xmlnode::PartyDetails {
+                name: x.to_string(),
+                ..xmlnode::PartyDetails::default()
+            })
+        }
 
-    #[test]
-    fn field_match_remittance_info_no_match() {
-        let entry = test_entry();
-        let txn = xmlnode::TransactionDetails {
-            remittance_info: Some(xmlnode::RemittanceInfo {
-                unstructured: Some("expected remittance info".to_owned()),
-            }),
-            ..test_transaction()
-        };
-        let m =
-            FieldMatch::try_from((config::RewriteField::RemittanceUnstructuredInfo, "no match"))
-                .unwrap();
+        #[test]
+        fn all_set() {
+            let entry = test_entry();
+            let details = xmlnode::TransactionDetails {
+                related_parties: Some(xmlnode::RelatedParties {
+                    creditor: Some(simple_related_party("creditor name")),
+                    creditor_account: Some(xmlnode::Account::from_inner(xmlnode::AccountId::Iban(
+                        "creditor-account-id".to_string(),
+                    ))),
+                    ultimate_creditor: Some(simple_related_party("ultimate creditor name")),
+                    debtor: Some(simple_related_party("debtor name")),
+                    debtor_account: Some(xmlnode::Account::from_inner(xmlnode::AccountId::Other(
+                        xmlnode::OtherAccountId {
+                            id: "debtor-account-id".to_string(),
+                        },
+                    ))),
+                    ultimate_debtor: Some(simple_related_party("ultimate debtor name")),
+                }),
+                ..test_transaction()
+            };
+            let entity = CamtEntity(&entry, Some(&details));
 
-        assert_eq!(None, m.captures(&Fragment::default(), (&entry, Some(&txn))));
-    }
+            assert_eq!(
+                Some("creditor name"),
+                entity.str_field(StrField::Camt(CamtStrField::CreditorName))
+            );
+            assert_eq!(
+                Some("ultimate creditor name"),
+                entity.str_field(StrField::Camt(CamtStrField::UltimateCreditorName))
+            );
+            assert_eq!(
+                Some("debtor-account-id"),
+                entity.str_field(StrField::Camt(CamtStrField::DebtorAccountId))
+            );
+            assert_eq!(
+                Some("debtor name"),
+                entity.str_field(StrField::Camt(CamtStrField::DebtorName))
+            );
+            assert_eq!(
+                Some("debtor name"),
+                entity.str_field(StrField::Camt(CamtStrField::DebtorName))
+            );
+            assert_eq!(
+                Some("debtor-account-id"),
+                entity.str_field(StrField::Camt(CamtStrField::DebtorAccountId))
+            );
+        }
 
-    #[test]
-    fn field_match_remittance_info_match() {
-        let entry = test_entry();
-        let txn = xmlnode::TransactionDetails {
-            remittance_info: Some(xmlnode::RemittanceInfo {
-                unstructured: Some("expected remittance info".to_owned()),
-            }),
-            ..test_transaction()
-        };
-        let m = FieldMatch::try_from((
-            config::RewriteField::RemittanceUnstructuredInfo,
-            "expected remittance info",
-        ))
-        .unwrap();
+        #[rstest]
+        #[case(CamtStrField::RemittanceUnstructuredInfo)]
+        #[case(CamtStrField::AdditionalTransactionInfo)]
+        fn remittance_info_without_details(#[case] field: CamtStrField) {
+            let entry = test_entry();
+            let details = xmlnode::TransactionDetails {
+                remittance_info: Some(xmlnode::RemittanceInfo { unstructured: None }),
+                additional_info: None,
+                ..test_transaction()
+            };
 
-        assert_eq!(
-            Some(Matched::default()),
-            m.captures(&Fragment::default(), (&entry, Some(&txn)))
-        );
-    }
+            assert_eq!(
+                None,
+                CamtEntity(&entry, None).str_field(StrField::Camt(field))
+            );
+            assert_eq!(
+                None,
+                CamtEntity(&entry, Some(&details)).str_field(StrField::Camt(field))
+            );
+        }
 
-    #[test]
-    fn field_match_additional_transaction_info_match() {
-        let entry = test_entry();
-        let txn = xmlnode::TransactionDetails {
-            additional_info: Some("expected additional transaction info".to_owned()),
-            ..test_transaction()
-        };
-        let m = FieldMatch::try_from((
-            config::RewriteField::AdditionalTransactionInfo,
-            "expected additional transaction info",
-        ))
-        .unwrap();
+        #[test]
+        fn remittance_info_filled() {
+            let entry = xmlnode::Entry {
+                additional_info: "additional entry info".to_string(),
+                ..test_entry()
+            };
+            let details = xmlnode::TransactionDetails {
+                remittance_info: Some(xmlnode::RemittanceInfo {
+                    unstructured: Some("remittance info".to_string()),
+                }),
+                additional_info: Some("additional transaction info".to_string()),
+                ..test_transaction()
+            };
 
-        assert_eq!(
-            Some(Matched::default()),
-            m.captures(&Fragment::default(), (&entry, Some(&txn)))
-        );
-    }
+            let entity = CamtEntity(&entry, Some(&details));
 
-    #[test]
-    fn field_match_payee_match() {
-        let fragment = Fragment {
-            payee: Some("expected payee"),
-            ..Fragment::default()
-        };
-        let m: FieldMatch = (config::RewriteField::Payee, "expected payee")
-            .try_into()
-            .unwrap();
+            assert_eq!(
+                Some("remittance info"),
+                entity.str_field(StrField::Camt(CamtStrField::RemittanceUnstructuredInfo))
+            );
+            assert_eq!(
+                Some("additional entry info"),
+                entity.str_field(StrField::Camt(CamtStrField::AdditionalEntryInfo))
+            );
 
-        assert_eq!(
-            Some(Matched::default()),
-            m.captures(&fragment, (&test_entry(), None))
-        );
+            assert_eq!(
+                Some("additional transaction info"),
+                entity.str_field(StrField::Camt(CamtStrField::AdditionalTransactionInfo))
+            );
+        }
     }
 }
