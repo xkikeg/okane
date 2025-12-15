@@ -192,6 +192,7 @@ impl extract::EntityFormat for CamtFormat {
     fn has_str_field(&self, field: StrField) -> bool {
         match field {
             StrField::Camt(_) => true,
+            StrField::SecondaryCommodity => true,
             _ => false,
         }
     }
@@ -242,6 +243,11 @@ impl<'a> extract::Entity<'a> for CamtEntity<'a> {
                     .and_then(|t| t.additional_info.as_ref())
                     .map(|ai| ai.as_str()),
             },
+            StrField::SecondaryCommodity => transaction
+                .as_ref()
+                .and_then(|x| x.amount_details.as_ref())
+                .and_then(|x| x.transaction.as_ref())
+                .map(|x| x.amount.currency.as_str()),
             _ => None,
         }
     }
@@ -458,6 +464,7 @@ mod tests {
                 Some("debtor-account-id"),
                 entity.str_field(StrField::Camt(CamtStrField::DebtorAccountId))
             );
+            assert_eq!(Some("CHF"), entity.str_field(StrField::SecondaryCommodity));
         }
 
         #[rstest]

@@ -79,8 +79,7 @@ impl extract::EntityFormat for VisecaFormat {
             StrField::Camt(_) => false,
             StrField::Payee => true,
             StrField::Category => true,
-            // TODO: implement this
-            StrField::SecondaryCommodity => false,
+            StrField::SecondaryCommodity => true,
         }
     }
 }
@@ -91,8 +90,7 @@ impl<'a> extract::Entity<'a> for &'a format::Entry {
             StrField::Camt(_) => None,
             StrField::Payee => Some(&self.payee),
             StrField::Category => Some(&self.category),
-            // TODO: implement this
-            StrField::SecondaryCommodity => None,
+            StrField::SecondaryCommodity => self.spent.as_ref().map(|x| x.commodity.as_str()),
         }
     }
 }
