@@ -83,14 +83,3 @@ impl extract::EntityFormat for VisecaFormat {
         }
     }
 }
-
-impl<'a> extract::Entity<'a> for &'a format::Entry {
-    fn str_field(&self, field: StrField) -> Option<&'a str> {
-        match field {
-            StrField::Camt(_) => None,
-            StrField::Payee => Some(&self.payee),
-            StrField::Category => Some(&self.category),
-            StrField::SecondaryCommodity => self.spent.as_ref().map(|x| x.commodity.as_str()),
-        }
-    }
-}
