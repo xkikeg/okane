@@ -1,9 +1,15 @@
 use std::collections::HashMap;
 
+use lazy_static::lazy_static;
+use regex::Regex;
+use rust_decimal::Decimal;
 use serde::{
     de::{self, value::MapAccessDeserializer},
     {Deserialize, Serialize},
 };
+use serde_with::{DeserializeFromStr, SerializeDisplay};
+
+use crate::import::amount::OwnedAmount;
 
 use super::merge::{merge_non_empty, Merge};
 
@@ -80,9 +86,15 @@ impl<'de> de::Visitor<'de> for AccountCommodityConfigVisitor {
 pub struct AccountCommoditySpec {
     /// Primary commodity used in the account.
     pub primary: String,
+
     /// Default conversion applied to all transaction, if not specified in rewrite rules.
     #[serde(default)]
     pub conversion: CommodityConversionSpec,
+
+    /// Default hidden fee settings, if not specified in rewrite rule.
+    #[serde(default)]
+    pub hidden_fee: Option<HiddenFee>,
+
     /// Rename the key commodity into value.
     #[serde(default)]
     pub rename: HashMap<String, String>,
@@ -109,6 +121,7 @@ impl Merge for AccountCommoditySpec {
         Self {
             primary: merge_non_empty!(self.primary, other.primary),
             conversion: self.conversion.merge(other.conversion),
+            hidden_fee: other.hidden_fee.or(self.hidden_fee),
             rename,
         }
     }
@@ -171,12 +184,105 @@ pub enum ConversionRateMode {
     PriceOfPrimary,
 }
 
+/// Controls hidden fee.
+/// Hidden fee is a fee that is not incurred as an explicit fee,
+/// but as a spread into commodity (currency) rate advertised by the operator.
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct HiddenFee {
+    /// Spread rate of the hidden fee. Set `None` would disable hidden rate.
+    #[serde(default)]
+    pub spread: Option<HiddenFeeRate>,
+    /// Condition when the hidden fee applied.
+    #[serde(default)]
+    pub condition: Option<HiddenFeeCondition>,
+}
+
+/// Rate of the hidden fee.
+#[derive(Debug, PartialEq, Eq, SerializeDisplay, DeserializeFromStr, Clone)]
+pub enum HiddenFeeRate {
+    /// Percent incurred for the rate.
+    Percent(Decimal),
+    /// Fixed amount for the rate.
+    Fixed(OwnedAmount),
+}
+
+impl std::fmt::Display for HiddenFeeRate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            Self::Percent(pct) => write!(f, "{}%", pct),
+            Self::Fixed(fixed) => write!(f, "{} {}", fixed.value, fixed.commodity),
+        }
+    }
+}
+
+lazy_static! {
+    static ref HIDDEN_FEE_RATE_FORMAT: Regex =
+        Regex::new(r"^\s*([0-9.]+)\s*([^ 0-9.]+)\s*$").unwrap();
+}
+
+impl std::str::FromStr for HiddenFeeRate {
+    type Err = HiddenFeeRateParseErr;
+
+    fn from_str(value: &str) -> Result<Self, <Self as std::str::FromStr>::Err> {
+        let cs = HIDDEN_FEE_RATE_FORMAT
+            .captures(value)
+            .ok_or(HiddenFeeRateParseErr::InvalidFormat)?;
+        let value: Decimal = cs.get(1).map(|x| x.as_str()).unwrap_or("").parse()?;
+        Ok(match cs.get(2).map(|x| x.as_str()).unwrap_or("") {
+            "%" => Self::Percent(value),
+            commodity => Self::Fixed(OwnedAmount {
+                value,
+                commodity: commodity.to_string(),
+            }),
+        })
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum HiddenFeeRateParseErr {
+    #[error("invalid decimal: {0}")]
+    InvalidDecimal(#[from] rust_decimal::Error),
+    #[error("invalid format: hidden fee rate must be `1.23%` or `1.23 commodity`")]
+    InvalidFormat,
+}
+
+/// The condition logic when the hidden fee applied.
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum HiddenFeeCondition {
+    /// Hidden fee is always incurred, regardles of the transaction direction
+    /// (credit or debit).
+    #[default]
+    AlwaysIncurred,
+    /// Hidden fee is only incurred on debits.
+    /// On credits, instead fee is negatively applied assuming it's reimbursement.
+    DebitOnly,
+}
+
+impl Merge for HiddenFee {
+    fn merge(self, other: Self) -> Self {
+        Self {
+            spread: other.spread.or(self.spread),
+            condition: other.condition.or(self.condition),
+        }
+    }
+
+    fn merge_from(&mut self, other: Self) {
+        *self = self.clone().merge(other)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    use std::str::FromStr;
+
+    use assert_matches::assert_matches;
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
+    use rust_decimal_macros::dec;
 
     #[test]
     fn merge_commodity_config() {
@@ -200,6 +306,7 @@ mod tests {
                     commodity: None,
                     disabled: Some(false),
                 },
+                hidden_fee: None,
                 rename: hashmap! {"米ドル".to_string() => "USD".to_string()},
             }),
             AccountCommodityConfig::Spec(AccountCommoditySpec {
@@ -210,9 +317,53 @@ mod tests {
                     commodity: None,
                     disabled: Some(false),
                 },
+                hidden_fee: None,
                 rename: hashmap! {"米ドル".to_string() => "USD".to_string()},
             })
             .merge(AccountCommodityConfig::PrimaryCommodity("JPY".to_string()))
+        );
+    }
+
+    #[test]
+    fn hidden_fee_display() {
+        assert_eq!("0.12%", HiddenFeeRate::Percent(dec!(0.12)).to_string());
+        assert_eq!(
+            "1.50 JPY",
+            HiddenFeeRate::Fixed(OwnedAmount {
+                value: dec!(1.50),
+                commodity: "JPY".to_string()
+            })
+            .to_string()
+        );
+    }
+
+    #[test]
+    fn hidden_fee_parse() {
+        let got: HiddenFeeRate = ".1%".parse().unwrap();
+        assert_eq!(got, HiddenFeeRate::Percent(dec!(0.1)));
+        let got: HiddenFeeRate = " 10.12 % ".parse().unwrap();
+        assert_eq!(got, HiddenFeeRate::Percent(dec!(10.12)));
+
+        let got: HiddenFeeRate = "1.50 JPY".parse().unwrap();
+        assert_eq!(
+            got,
+            HiddenFeeRate::Fixed(OwnedAmount {
+                value: dec!(1.50),
+                commodity: "JPY".to_string()
+            })
+        );
+
+        assert_matches!(
+            HiddenFeeRate::from_str("ABC"),
+            Err(HiddenFeeRateParseErr::InvalidFormat)
+        );
+        assert_matches!(
+            HiddenFeeRate::from_str("0.12"),
+            Err(HiddenFeeRateParseErr::InvalidFormat)
+        );
+        assert_matches!(
+            HiddenFeeRate::from_str("0...12 USD"),
+            Err(HiddenFeeRateParseErr::InvalidDecimal(_))
         );
     }
 }

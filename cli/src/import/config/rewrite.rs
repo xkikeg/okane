@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::commodity::CommodityConversionSpec;
+use super::commodity::{CommodityConversionSpec, HiddenFee};
 
 /// RewriteRule specifies the rewrite rule matched against transaction.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
@@ -29,12 +29,19 @@ pub struct RewriteRule {
     /// the transcation has multi commodities. See details for [`CommodityConversionSpec`].
     #[serde(default)]
     pub conversion: Option<CommodityConversionSpec>,
+
+    /// Hidden fee applied to the commodity.
+    #[serde(default)]
+    pub hidden_fee: Option<HiddenFee>,
 }
 
+/// Each matcher applied to import fragments.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum RewriteMatcher {
+    /// Matches one of the specified [`FieldMatcher`].
     Or(Vec<FieldMatcher>),
+    /// Matches the specified [`FieldMatcher`].
     Field(FieldMatcher),
 }
 

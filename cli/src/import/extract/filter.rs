@@ -112,6 +112,7 @@ impl FieldFilter {
             Self::RegexMatch(fd, re) => {
                 let target: Option<&str> =
                     fragment.str_field(*fd).or_else(|| entity.str_field(*fd));
+                log::trace!("trying to match field {fd:?} regex {re:?} against target {target:?}");
                 Either::Right(target.and_then(|t| re.captures(t)).map(Matched::from))
             }
         };

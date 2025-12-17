@@ -68,7 +68,7 @@ where
                     format!(".//BkToCstmrStmt/Stmt[{}]/Ntry[{}]", si + 1, ni + 1)
                 });
                 txn.effective_date(entry.booking_date.as_naive_date());
-                add_charges(&mut txn, config, &entry.charges)?;
+                add_charges(&mut txn, &entry.charges)?;
                 res.push(txn);
             }
             for (di, transaction) in entry.details.transactions.iter().enumerate() {
@@ -113,8 +113,8 @@ where
                         );
                     }
                 }
-                add_charges(&mut txn, config, &entry.charges)?;
-                add_charges(&mut txn, config, &transaction.charges)?;
+                add_charges(&mut txn, &entry.charges)?;
+                add_charges(&mut txn, &transaction.charges)?;
                 res.push(txn);
             }
         }
@@ -137,7 +137,6 @@ fn find_balance(stmt: &xmlnode::Statement, code: xmlnode::BalanceCode) -> Option
 
 fn add_charges(
     txn: &mut single_entry::Txn,
-    config: &config::ConfigEntry,
     charges: &Option<xmlnode::Charges>,
 ) -> Result<(), ImportError> {
     let charges = match charges {
@@ -148,16 +147,13 @@ fn add_charges(
         if cr.amount.value.is_zero() {
             continue;
         }
-        let payee = config.operator.as_ref().ok_or(ImportError::InvalidConfig(
-            "config should have operator to have charge",
-        ))?;
         log::info!("ADDED cr: {:?}", cr);
         // charge_amount must be negated, as charge is by default debit.
         let charge_amount = -cr.amount.to_owned(cr.credit_or_debit.value);
         if !cr.is_charge_included {
-            txn.try_add_charge_not_included(payee, charge_amount)?;
+            txn.try_add_charge_not_included(charge_amount)?;
         } else {
-            txn.add_charge(payee, charge_amount);
+            txn.add_charge(charge_amount);
         }
     }
     Ok(())

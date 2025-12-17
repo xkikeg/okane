@@ -8,19 +8,20 @@ mod rewrite;
 
 pub use commodity::{
     AccountCommoditySpec, CommodityConversionSpec, ConversionAmountMode, ConversionRateMode,
+    HiddenFee, HiddenFeeCondition, HiddenFeeRate,
 };
 pub use format::{FieldKey, FieldPos, FormatSpec, RowOrder, SkipSpec, TemplateField};
 pub use output::{
     CommodityFormatStyle, OutputCommodityDetailsSpec, OutputCommoditySpec, OutputSpec,
 };
 pub use rewrite::{FieldMatcher, RewriteField, RewriteMatcher, RewriteRule};
-use soft_canonicalize::soft_canonicalize;
 
 use std::convert::{TryFrom, TryInto};
 use std::path::{Path, PathBuf};
 
 use path_slash::PathBufExt;
 use serde::{de, Deserialize, Serialize};
+use soft_canonicalize::soft_canonicalize;
 
 use super::error::ImportError;
 
@@ -324,7 +325,19 @@ mod tests {
         AccountCommoditySpec {
             primary,
             conversion: CommodityConversionSpec::default(),
+            hidden_fee: None,
             rename: HashMap::new(),
+        }
+    }
+
+    fn simple_rewrite_rule(matcher: RewriteMatcher, account: Option<String>) -> RewriteRule {
+        RewriteRule {
+            matcher,
+            account,
+            payee: None,
+            conversion: None,
+            hidden_fee: None,
+            pending: false,
         }
     }
 
@@ -341,17 +354,14 @@ mod tests {
                         date: "%Y/%m/%d".to_string(),
                         ..Default::default()
                     }),
-                    rewrite: vec![RewriteRule {
-                        matcher: RewriteMatcher::Field(FieldMatcher {
+                    rewrite: vec![simple_rewrite_rule(
+                        RewriteMatcher::Field(FieldMatcher {
                             fields: hashmap! {
                                 RewriteField::Payee => r#"foo"#.to_string(),
                             },
                         }),
-                        account: Some("Account Foo".to_string()),
-                        payee: None,
-                        conversion: None,
-                        pending: false,
-                    }],
+                        Some("Account Foo".to_string()),
+                    )],
                     ..create_empty_config_fragment()
                 },
                 ConfigFragment {
@@ -360,17 +370,14 @@ mod tests {
                         "CHF".to_string(),
                     ))),
                     account: Some("Assets:Banks:Checking".to_string()),
-                    rewrite: vec![RewriteRule {
-                        matcher: RewriteMatcher::Field(FieldMatcher {
+                    rewrite: vec![simple_rewrite_rule(
+                        RewriteMatcher::Field(FieldMatcher {
                             fields: hashmap! {
                                 RewriteField::Payee => r#"bar"#.to_string(),
                             },
                         }),
-                        account: Some("Account Bar".to_string()),
-                        payee: None,
-                        conversion: None,
-                        pending: false,
-                    }],
+                        Some("Account Bar".to_string()),
+                    )],
                     ..create_empty_config_fragment()
                 },
             ],
@@ -398,28 +405,22 @@ mod tests {
             },
             output: OutputSpec::default(),
             rewrite: vec![
-                RewriteRule {
-                    matcher: RewriteMatcher::Field(FieldMatcher {
+                simple_rewrite_rule(
+                    RewriteMatcher::Field(FieldMatcher {
                         fields: hashmap! {
                             RewriteField::Payee => r#"foo"#.to_string(),
                         },
                     }),
-                    account: Some("Account Foo".to_string()),
-                    payee: None,
-                    conversion: None,
-                    pending: false,
-                },
-                RewriteRule {
-                    matcher: RewriteMatcher::Field(FieldMatcher {
+                    Some("Account Foo".to_string()),
+                ),
+                simple_rewrite_rule(
+                    RewriteMatcher::Field(FieldMatcher {
                         fields: hashmap! {
                             RewriteField::Payee => r#"bar"#.to_string(),
                         },
                     }),
-                    account: Some("Account Bar".to_string()),
-                    payee: None,
-                    conversion: None,
-                    pending: false,
-                },
+                    Some("Account Bar".to_string()),
+                ),
             ],
         };
         assert_eq!(want, cfg);
@@ -537,30 +538,27 @@ mod tests {
             .expect("format.fields.date should exist");
         assert_eq!(*date, format::FieldPos::Label("お取り引き日".to_owned()));
         let rewrite = vec![
-            RewriteRule {
-                matcher: RewriteMatcher::Field(FieldMatcher {
+            simple_rewrite_rule(
+                RewriteMatcher::Field(FieldMatcher {
                     fields: hashmap! {
                         RewriteField::Payee => r#"Visaデビット　(?P<code>\d+)　(?P<payee>.*)"#.to_string(),
                     },
                 }),
-                pending: false,
-                payee: None,
-                account: None,
-                conversion: None,
-            },
+                None,
+            ),
             RewriteRule {
-                matcher: RewriteMatcher::Field(FieldMatcher {
-                    fields: hashmap! {
-                        RewriteField::Payee => "外貨普通預金（.*）(?:へ|より)振替".to_string(),
-                    },
-                }),
-                pending: false,
-                payee: None,
-                account: Some("Assets:Wire:Okane".to_string()),
                 conversion: Some(CommodityConversionSpec {
                     commodity: Some("EUR".to_string()),
                     ..CommodityConversionSpec::default()
                 }),
+                ..simple_rewrite_rule(
+                    RewriteMatcher::Field(FieldMatcher {
+                        fields: hashmap! {
+                            RewriteField::Payee => "外貨普通預金（.*）(?:へ|より)振替".to_string(),
+                        },
+                    }),
+                    Some("Assets:Wire:Okane".to_string()),
+                )
             },
         ];
         assert_eq!(&rewrite, &config.entries[0].rewrite);
@@ -623,18 +621,18 @@ mod tests {
         "#};
         let de = serde_yaml::Deserializer::from_str(input);
         let want = RewriteRule {
-            matcher: RewriteMatcher::Field(FieldMatcher {
-                fields: hashmap! {RewriteField::DomainCode => "PMNT".to_string()},
-            }),
-            pending: false,
-            payee: None,
-            account: Some("Income:Salary".to_string()),
             conversion: Some(CommodityConversionSpec {
                 amount: None,
                 commodity: None,
                 rate: Some(ConversionRateMode::PriceOfPrimary),
                 disabled: None,
             }),
+            ..simple_rewrite_rule(
+                RewriteMatcher::Field(FieldMatcher {
+                    fields: hashmap! {RewriteField::DomainCode => "PMNT".to_string()},
+                }),
+                Some("Income:Salary".to_string()),
+            )
         };
         assert_eq!(want, RewriteRule::deserialize(de).unwrap());
     }
@@ -664,46 +662,44 @@ mod tests {
         let config = load_from_yaml(input.as_bytes()).unwrap();
         let rewrite = vec![
             RewriteRule {
-                matcher: RewriteMatcher::Field(FieldMatcher {
-                    fields: hashmap! {
-                        RewriteField::DomainCode => "PMNT".to_string(),
-                        RewriteField::DomainFamily => "RCDT".to_string(),
-                        RewriteField::DomainSubFamily => "SALA".to_string(),
-                    },
-                }),
-                pending: false,
                 payee: Some("Okane Co. Ltd.".to_string()),
-                account: Some("Income:Salary".to_string()),
-                conversion: None,
+                ..simple_rewrite_rule(
+                    RewriteMatcher::Field(FieldMatcher {
+                        fields: hashmap! {
+                            RewriteField::DomainCode => "PMNT".to_string(),
+                            RewriteField::DomainFamily => "RCDT".to_string(),
+                            RewriteField::DomainSubFamily => "SALA".to_string(),
+                        },
+                    }),
+                    Some("Income:Salary".to_string()),
+                )
             },
             RewriteRule {
-                matcher: RewriteMatcher::Or(vec![
-                    FieldMatcher {
-                        fields: hashmap! {
-                            RewriteField::Payee => "Migros".to_string(),
+                ..simple_rewrite_rule(
+                    RewriteMatcher::Or(vec![
+                        FieldMatcher {
+                            fields: hashmap! {
+                                RewriteField::Payee => "Migros".to_string(),
+                            },
                         },
-                    },
-                    FieldMatcher {
-                        fields: hashmap! {
-                            RewriteField::Payee => "Coop".to_string(),
+                        FieldMatcher {
+                            fields: hashmap! {
+                                RewriteField::Payee => "Coop".to_string(),
+                            },
                         },
-                    },
-                ]),
-                pending: false,
-                account: Some("Expenses:Grocery".to_string()),
-                payee: None,
-                conversion: None,
+                    ]),
+                    Some("Expenses:Grocery".to_string()),
+                )
             },
             RewriteRule {
-                matcher: RewriteMatcher::Field(FieldMatcher {
-                    fields: hashmap! {
-                        RewriteField::AdditionalTransactionInfo => "Maestro(?P<payee>.*)".to_string(),
-                    },
-                }),
-                pending: false,
-                payee: None,
-                account: None,
-                conversion: None,
+                ..simple_rewrite_rule(
+                    RewriteMatcher::Field(FieldMatcher {
+                        fields: hashmap! {
+                            RewriteField::AdditionalTransactionInfo => "Maestro(?P<payee>.*)".to_string(),
+                        },
+                    }),
+                    None,
+                )
             },
         ];
         assert_eq!(&rewrite, &config.entries[0].rewrite);
