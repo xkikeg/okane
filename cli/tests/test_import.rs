@@ -12,7 +12,7 @@ fn init() {
 
 #[rstest]
 fn test_import_with_cli(
-    #[base_dir = "tests/testdata/import/"]
+    #[base_dir = "../testdata/import/"]
     #[files("*.csv")]
     #[files("iso_camt.xml")]
     #[files("viseca.txt")]
