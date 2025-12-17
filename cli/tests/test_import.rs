@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use pretty_assertions::assert_eq;
 use rstest::rstest;
 
 pub mod testing;
@@ -25,7 +24,7 @@ fn test_import_with_cli(
         "failed to set extension .ledger to input {}",
         input.display()
     );
-    let want = okane_golden::read_as_utf8(&golden_path).unwrap();
+    let golden = okane_golden::Golden::new(golden_path).unwrap();
 
     let result = assert_cmd::Command::new(&*testing::BIN_PATH)
         .args([
@@ -41,5 +40,5 @@ fn test_import_with_cli(
     use std::io::Write;
     std::io::stderr().write_all(&output.stderr).unwrap();
     let stdout = std::str::from_utf8(&output.stdout).unwrap();
-    assert_eq!(want, stdout);
+    golden.assert(stdout);
 }
