@@ -24,7 +24,7 @@ pub fn import<R>(r: R, config: &config::ConfigEntry) -> Result<Vec<single_entry:
 where
     R: std::io::Read,
 {
-    let extractor = extract::Extractor::try_new(&config.rewrite, CamtFormat)?;
+    let extractor = extract::Extractor::from_config(CamtFormat, &config)?;
     let mut buf = std::io::BufReader::new(r);
     let doc: xmlnode::Document = quick_xml::de::from_reader(&mut buf)?;
     let mut res = Vec::new();
