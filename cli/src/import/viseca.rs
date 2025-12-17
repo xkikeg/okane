@@ -12,7 +12,7 @@ pub fn import<R: std::io::Read>(
     r: R,
     config: &config::ConfigEntry,
 ) -> Result<Vec<single_entry::Txn>, ImportError> {
-    let extractor = extract::Extractor::try_new(&config.rewrite, VisecaFormat)?;
+    let extractor = extract::Extractor::from_config(VisecaFormat, &config)?;
     let mut parser =
         parser::Parser::new(std::io::BufReader::new(r), config.commodity.primary.clone());
     let mut result = Vec::new();

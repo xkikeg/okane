@@ -21,10 +21,18 @@ pub struct Extractor<'a> {
 }
 
 impl<'a> Extractor<'a> {
-    /// Create `Extractor` instance from [`config::RewriteRule`] items.
-    pub fn try_new<Ef: EntityFormat>(
-        rules: &'a [config::RewriteRule],
+    /// Create an instance from [`config::ConfigEntry`].
+    pub fn from_config<Ef: EntityFormat>(
         entity_format: Ef,
+        config: &'a config::ConfigEntry,
+    ) -> Result<Self, ImportError> {
+        Self::try_new(entity_format, &config.rewrite)
+    }
+
+    /// Create an instance from [`config::RewriteRule`] items.
+    pub fn try_new<Ef: EntityFormat>(
+        entity_format: Ef,
+        rules: &'a [config::RewriteRule],
     ) -> Result<Self, ImportError> {
         rules
             .iter()
@@ -157,13 +165,13 @@ impl<'a> Fragment<'a> {
 impl std::ops::AddAssign for Fragment<'_> {
     #[allow(clippy::suspicious_op_assign_impl)]
     fn add_assign(&mut self, other: Self) {
-        self.cleared = other.cleared || self.cleared;
-        self.payee = other.payee.or(self.payee);
-        self.account = other.account.or(self.account);
-        self.code = other.code.or(self.code);
-        if let Some(c) = other.conversion {
-            self.conversion = Some(c);
-        }
+        *self = Fragment {
+            cleared: other.cleared || self.cleared,
+            payee: other.payee.or(self.payee),
+            account: other.account.or(self.account),
+            code: other.code.or(self.code),
+            conversion: other.conversion.or(self.conversion),
+        };
     }
 }
 
@@ -288,6 +296,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use config::CommodityConversionSpec;
+
     use testing::{TestEntity, TestFormat};
 
     #[test]
@@ -420,7 +429,7 @@ mod tests {
             ..Fragment::default()
         };
 
-        let extractor = Extractor::try_new(&rw, &TestFormat::all()).unwrap();
+        let extractor = Extractor::try_new(&TestFormat::all(), &rw).unwrap();
         let fragment = extractor.extract(&input);
 
         assert_eq!(want, fragment);
@@ -458,7 +467,7 @@ mod tests {
             ..Fragment::default()
         };
 
-        let extractor = Extractor::try_new(&rw, &TestFormat::all()).unwrap();
+        let extractor = Extractor::try_new(&TestFormat::all(), &rw).unwrap();
         let fragment = extractor.extract(&input);
 
         assert_eq!(want, fragment);
@@ -572,7 +581,7 @@ mod tests {
             Fragment::default(),
         ];
 
-        let extractor = Extractor::try_new(&rw, &TestFormat::all()).unwrap();
+        let extractor = Extractor::try_new(&TestFormat::all(), &rw).unwrap();
         let got: Vec<Fragment> = input.iter().map(|t| extractor.extract(t)).collect();
         assert_eq!(want, got.as_slice());
     }
