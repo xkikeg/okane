@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::BTreeMap, collections::HashMap};
 
 use chrono::NaiveDate;
 use pretty_decimal::PrettyDecimal;
@@ -11,6 +11,7 @@ use okane_core::{
 };
 
 use super::amount::{AmountRef, BorrowedAmount, OwnedAmount};
+use super::config::{HiddenFee, HiddenFeeCondition, HiddenFeeRate};
 use super::ImportError;
 
 /// Represents single-entry transaction, associated with the particular account.
@@ -45,18 +46,23 @@ pub struct Txn {
     amount: OwnedAmount,
 
     /// Rate of the given commodity, useful if the statement amount is in foreign currency.
-    rates: HashMap<String, OwnedAmount>,
+    rates: RateRepository,
+
+    hidden_fee: HiddenFee,
 
     /// Asserted balance after the transaction.
     balance: Option<OwnedAmount>,
 
     /// List of charges incurred for the transaction.
-    charges: Vec<Charge>,
+    charges: Vec<OwnedAmount>,
 }
 
 /// Optional object to control the output (such as commodity renaming).
 #[derive(Debug, Default)]
 pub struct Options {
+    /// Operator of the account. Mandatory when charges are needed.
+    pub operator: Option<String>,
+
     /// Renames the commodity in the key into the corresponding value.
     pub commodity_rename: HashMap<String, String>,
 
@@ -64,18 +70,32 @@ pub struct Options {
     pub commodity_format: ConfigResolver<String, syntax::display::CommodityDisplayOption>,
 }
 
+impl Options {
+    /// Scale of the corresponding commodity.
+    fn scale(&self, commodity: &str) -> Option<u32> {
+        self.commodity_format
+            .get(commodity, |o| o.min_scale)
+            .map(Into::into)
+    }
+
+    /// Rounds the given amount to comply with the options.
+    fn round<'a>(&self, amount: BorrowedAmount<'a>) -> BorrowedAmount<'a> {
+        let Some(scale) = self.scale(amount.commodity) else {
+            // no scale found, ok to return as-is.
+            return amount;
+        };
+        BorrowedAmount {
+            value: amount.value.round_dp(scale.into()),
+            commodity: amount.commodity,
+        }
+    }
+}
+
 /// Pair of commodity, used for rate computation.
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct CommodityPair {
     pub source: String,
     pub target: String,
-}
-
-/// Represents the charge (commission) in the transaction.
-#[derive(Debug, Clone)]
-struct Charge {
-    payee: String,
-    amount: OwnedAmount,
 }
 
 // TODO: Allow injecting these values from config.
@@ -99,7 +119,8 @@ impl Txn {
             clear_state: None,
             transferred_amount: None,
             amount,
-            rates: HashMap::new(),
+            rates: RateRepository::new(),
+            hidden_fee: HiddenFee::default(),
             balance: None,
             charges: Vec::new(),
         }
@@ -146,32 +167,17 @@ impl Txn {
     }
 
     pub fn add_rate(&mut self, key: CommodityPair, rate: Decimal) -> Result<&mut Txn, ImportError> {
-        if key.source == key.target {
-            return Err(ImportError::Other(format!(
-                "cannot handle rate with the same commodity {}",
-                key.source
-            )));
-        }
-        match self.rates.insert(
-            key.target.clone(),
-            OwnedAmount {
-                value: rate,
-                commodity: key.source.clone(),
-            },
-        ) {
-            Some(existing) if (&existing.commodity, existing.value) != (&key.source, rate) => {
-                Err(ImportError::Other(format!(
-                    "given commodity {} has two distinct rates: @ {} {} and @ {} {}",
-                    key.target, existing.value, existing.commodity, key.source, rate
-                )))
-            }
-            _ => Ok(self),
-        }
+        self.rates.add(key, rate)?;
+        Ok(self)
+    }
+
+    pub fn hidden_fee(&mut self, hidden_fee: HiddenFee) -> &mut Txn {
+        self.hidden_fee = hidden_fee;
+        self
     }
 
     pub fn try_add_charge_not_included<'a>(
         &'a mut self,
-        payee: &str,
         amount: OwnedAmount,
     ) -> Result<&'a mut Txn, ImportError> {
         if amount.commodity != self.amount.commodity {
@@ -188,18 +194,12 @@ impl Txn {
             value: self.amount.value + amount.value,
             commodity: amount.commodity.clone(),
         });
-        self.charges.push(Charge {
-            payee: payee.to_string(),
-            amount,
-        });
+        self.charges.push(amount);
         Ok(self)
     }
 
-    pub fn add_charge<'a>(&'a mut self, payee: &str, amount: OwnedAmount) -> &'a mut Txn {
-        self.charges.push(Charge {
-            payee: payee.to_string(),
-            amount,
-        });
+    pub fn add_charge<'a>(&'a mut self, amount: OwnedAmount) -> &'a mut Txn {
+        self.charges.push(amount);
         self
     }
 
@@ -209,25 +209,38 @@ impl Txn {
         self
     }
 
-    fn rate<'a>(&'a self, target: &str) -> Option<BorrowedAmount<'a>> {
-        self.rates.get(target).map(|x| x.as_borrowed())
-    }
-
     /// Converts the given amount into [`PostingAmount`].
-    fn new_posting_amount<'a>(&'a self, amount: BorrowedAmount<'a>) -> PostingAmount<'a> {
-        PostingAmount {
+    fn new_posting_amount<'a>(
+        &'a self,
+        amount: BorrowedAmount<'a>,
+        opts: &Options,
+        original_fee: &mut BTreeMap<RateKey<'a>, Decimal>,
+    ) -> Result<(PostingAmount<'a>, Option<PostingAmount<'a>>), ImportError> {
+        let (main, hidden_fee) = PostingAmount {
             amount,
-            rate: self.rate(amount.commodity),
+            rate: self.rates.get(&amount.commodity),
+        }
+        .with_hidden_fee(&self.hidden_fee, opts)?;
+        match hidden_fee {
+            None => Ok((main, None)),
+            Some((rate_key, rate_value, hidden)) => {
+                original_fee.insert(rate_key, rate_value);
+                Ok((main, Some(hidden)))
+            }
         }
     }
 
-    fn dest_amount<'a>(&'a self) -> PostingAmount<'a> {
+    fn dest_amount<'a>(
+        &'a self,
+        opts: &Options,
+        original_fee: &mut BTreeMap<RateKey<'a>, Decimal>,
+    ) -> Result<(PostingAmount<'a>, Option<PostingAmount<'a>>), ImportError> {
         let a = self
             .transferred_amount
             .as_ref()
             .map(|transferred| transferred.as_borrowed())
             .unwrap_or_else(|| -self.amount.as_borrowed());
-        self.new_posting_amount(a)
+        self.new_posting_amount(a, opts, original_fee)
     }
 
     pub fn to_double_entry<'a>(
@@ -244,21 +257,42 @@ impl Txn {
             Some(_) => syntax::ClearState::Uncleared,
             None => syntax::ClearState::Pending,
         });
-        let add_charges = |posts: &mut Vec<Posting<'a>>| {
-            for chrg in &self.charges {
-                posts.push(Posting {
-                    account: LABEL_COMMISSIONS,
-                    clear_state: syntax::ClearState::Uncleared,
-                    amount: self.new_posting_amount(chrg.amount.as_borrowed()),
-                    balance: None,
-                    metadata: vec![syntax::Metadata::KeyValueTag {
-                        key: Cow::Borrowed("Payee"),
-                        value: syntax::MetadataValue::Text(chrg.payee.as_str().into()),
-                    }],
-                });
+        let mut original_rates = BTreeMap::new();
+        // here we store charge amounts into vec, as we may add some fee
+        // because of hidden fee.
+        let mut charge_amounts: Vec<PostingAmount<'_>> = Vec::new();
+        for chrg in &self.charges {
+            let (amount, hidden) =
+                self.new_posting_amount(chrg.as_borrowed(), opts, &mut original_rates)?;
+            charge_amounts.push(amount);
+            if let Some(hidden) = hidden {
+                charge_amounts.push(hidden);
             }
+        }
+        let charge_posting = |amount: PostingAmount<'a>| {
+            let payee = opts.operator.as_ref().ok_or(ImportError::InvalidConfig(
+                "config should have operator to have charge",
+            ))?;
+            Ok::<_, ImportError>(Posting {
+                account: LABEL_COMMISSIONS,
+                clear_state: syntax::ClearState::Uncleared,
+                amount,
+                balance: None,
+                metadata: vec![syntax::Metadata::KeyValueTag {
+                    key: Cow::Borrowed("Payee"),
+                    value: syntax::MetadataValue::Text(payee.into()),
+                }],
+            })
         };
-        let main_amount = self.new_posting_amount(self.amount.as_borrowed());
+        let add_charges = |posts: &mut Vec<Posting<'a>>| {
+            for chrg in charge_amounts {
+                posts.push(charge_posting(chrg)?);
+            }
+            Ok::<(), ImportError>(())
+        };
+        let (main_amount, hidden_main_amount) =
+            self.new_posting_amount(self.amount.as_borrowed(), opts, &mut original_rates)?;
+        let (dest_amount, hidden_amount) = self.dest_amount(opts, &mut original_rates)?;
         if self.amount.value.is_sign_positive() {
             posts.push(Posting {
                 account: src_account,
@@ -267,14 +301,20 @@ impl Txn {
                 balance: self.balance.as_ref().map(|x| x.as_borrowed()),
                 metadata: Vec::new(),
             });
-            add_charges(&mut posts);
+            if let Some(hidden) = hidden_main_amount {
+                posts.push(charge_posting(hidden)?);
+            }
+            add_charges(&mut posts)?;
             posts.push(Posting {
                 account: self.dest_account.as_deref().unwrap_or(LABEL_UNKNOWN_INCOME),
                 clear_state: post_clear,
-                amount: self.dest_amount(),
+                amount: dest_amount,
                 balance: None,
                 metadata: Vec::new(),
             });
+            if let Some(hidden) = hidden_amount {
+                posts.push(charge_posting(hidden)?);
+            }
         } else if self.amount.value.is_sign_negative() {
             posts.push(Posting {
                 account: self
@@ -282,11 +322,14 @@ impl Txn {
                     .as_deref()
                     .unwrap_or(LABEL_UNKNOWN_EXPENSE),
                 clear_state: post_clear,
-                amount: self.dest_amount(),
+                amount: dest_amount,
                 balance: None,
                 metadata: Vec::new(),
             });
-            add_charges(&mut posts);
+            if let Some(hidden) = hidden_amount {
+                posts.push(charge_posting(hidden)?);
+            }
+            add_charges(&mut posts)?;
             posts.push(Posting {
                 account: src_account,
                 clear_state: syntax::ClearState::Uncleared,
@@ -294,6 +337,9 @@ impl Txn {
                 balance: self.balance.as_ref().map(|x| x.as_borrowed()),
                 metadata: Vec::new(),
             });
+            if let Some(hidden) = hidden_main_amount {
+                posts.push(charge_posting(hidden)?);
+            }
         } else {
             // warning log or error?
             return Err(ImportError::Other("credit and debit both zero".to_string()));
@@ -302,7 +348,10 @@ impl Txn {
             posts.push(Posting {
                 account: LABEL_ADJUSTMENTS,
                 clear_state: syntax::ClearState::Pending,
-                amount: self.new_posting_amount(excess),
+                amount: PostingAmount {
+                    amount: excess,
+                    rate: None,
+                },
                 balance: None,
                 metadata: Vec::new(),
             });
@@ -311,6 +360,17 @@ impl Txn {
             .comments
             .iter()
             .map(|x| syntax::Metadata::Comment(Cow::Borrowed(x)))
+            .chain(
+                original_rates
+                    .iter()
+                    .map(|(key, rate)| syntax::Metadata::KeyValueTag {
+                        key: Cow::Borrowed("original_rate"),
+                        value: syntax::MetadataValue::Text(Cow::Owned(format!(
+                            "{} {}/{}",
+                            rate, key.target, key.base
+                        ))),
+                    }),
+            )
             .collect();
         Ok(syntax::Transaction {
             effective_date: self.effective_date,
@@ -355,18 +415,14 @@ fn posting_excess<'a>(
             c.to_owned_lossy(ctx.commodity_store())
         )));
     };
-    let scale = opts
-        .commodity_format
-        .get(commodity.as_str(), |o| o.min_scale)
-        .unwrap_or(0);
-    let excess = excess.round_dp(scale.into());
-    if excess == Decimal::ZERO {
-        return Ok(None);
-    }
-    Ok(Some(BorrowedAmount {
+    let excess = opts.round(BorrowedAmount {
         value: -excess,
         commodity: commodity.as_str(),
-    }))
+    });
+    if excess.value.is_zero() {
+        return Ok(None);
+    }
+    Ok(Some(excess))
 }
 
 /// Simple posting, which can be converted to [`syntax::plain::Posting`] later.
@@ -385,6 +441,13 @@ struct PostingAmount<'a> {
     amount: BorrowedAmount<'a>,
     /// Rate of the posting, eg @ part in 1234 USD @ 123.4 JPY
     rate: Option<BorrowedAmount<'a>>,
+}
+
+/// Rate key, mainly to sort them programatically.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct RateKey<'a> {
+    target: &'a str,
+    base: &'a str,
 }
 
 impl<'a> PostingAmount<'a> {
@@ -410,6 +473,103 @@ impl<'a> PostingAmount<'a> {
             lot: syntax::Lot::default(),
         }
     }
+
+    /// Consider hidden fee, and returns modified amount with the optional commission amount if exists.
+    fn with_hidden_fee(
+        self,
+        hidden_fee: &HiddenFee,
+        opts: &Options,
+    ) -> Result<(Self, Option<(RateKey<'a>, Decimal, Self)>), ImportError> {
+        // hidden fee isn't related when no commodity conversion applied.
+        let Some(original_rate) = self.rate else {
+            return Ok((self, None));
+        };
+        // hidden fee isn't configured.
+        let Some(hidden_rate) = &hidden_fee.spread else {
+            return Ok((self, None));
+        };
+        let condition = hidden_fee.condition.unwrap_or_default();
+        let real_rate_bigger = match condition {
+            // Example:
+            //   Assets    -5 USD @ 110 JPY
+            //   Assets   550 JPY
+            // If the bank spread is 10 JPY,
+            // the original rate is 120 JPY,
+            // and diff 5 * 10 is the commission.
+            HiddenFeeCondition::AlwaysIncurred if self.amount.value.is_sign_negative() => true,
+            // this case opposite to the above.
+            //   Assets     5 USD @ 110 JPY
+            //   Assets  -550 JPY
+            // If the bank spread is 10 JPY,
+            // the original rate is 100 JPY,
+            // and diff 5 * 10 is the commission.
+            HiddenFeeCondition::AlwaysIncurred => false,
+            // debit only always assume rated posting is expense.
+            // so it's the same as above.
+            // For credit card it makes sense as 99% of 'income' on the credit card
+            // is the reimbursement, and the rate won't be computed like AlwaysIncurred.
+            HiddenFeeCondition::DebitOnly => false,
+        };
+        let rate = detach_hidden_rate(original_rate, hidden_rate, real_rate_bigger, opts)?;
+        let diff = opts.round(BorrowedAmount {
+            value: self.amount.value * (original_rate.value - rate.value),
+            commodity: rate.commodity,
+        });
+        Ok((
+            PostingAmount {
+                amount: self.amount,
+                rate: Some(rate),
+            },
+            Some((
+                RateKey {
+                    target: original_rate.commodity,
+                    base: self.amount.commodity,
+                },
+                original_rate.value,
+                PostingAmount {
+                    amount: diff,
+                    rate: None,
+                },
+            )),
+        ))
+    }
+}
+
+fn detach_hidden_rate<'a>(
+    original_rate: BorrowedAmount<'a>,
+    hidden_rate: &HiddenFeeRate,
+    real_rate_bigger: bool,
+    opts: &Options,
+) -> Result<BorrowedAmount<'a>, ImportError> {
+    let hundred: Decimal = 100.into();
+    let mut value = match hidden_rate {
+        HiddenFeeRate::Percent(pct) => {
+            if real_rate_bigger {
+                original_rate.value * hundred / (hundred - pct)
+            } else {
+                original_rate.value * hundred / (hundred + pct)
+            }
+        }
+        HiddenFeeRate::Fixed(fixed) => {
+            if fixed.commodity != original_rate.commodity {
+                return Err(ImportError::Other(format!("hidden fee rate commodity {} must match against the transaciton rate commodity {}", fixed.commodity, original_rate.commodity)));
+            }
+            if real_rate_bigger {
+                original_rate.value + fixed.value
+            } else {
+                original_rate.value - fixed.value
+            }
+        }
+    };
+    let scale = match opts.scale(original_rate.commodity) {
+        Some(s) => std::cmp::max(original_rate.value.scale(), s),
+        None => original_rate.value.scale(),
+    };
+    value.rescale(scale);
+    Ok(BorrowedAmount {
+        value,
+        commodity: original_rate.commodity,
+    })
 }
 
 impl<'a> Posting<'a> {
@@ -446,6 +606,50 @@ where
 fn amount_with_sign(mut amount: OwnedAmount, sign: Decimal) -> OwnedAmount {
     amount.value.set_sign_positive(sign.is_sign_positive());
     amount
+}
+
+/// Stores rate information.
+#[derive(Debug, Clone)]
+struct RateRepository {
+    /// Rates from commodity to amount, such as USD => 120 JPY.
+    rates: HashMap<String, OwnedAmount>,
+}
+
+impl RateRepository {
+    fn new() -> Self {
+        Self {
+            rates: HashMap::new(),
+        }
+    }
+
+    fn get<'a>(&'a self, target: &str) -> Option<BorrowedAmount<'a>> {
+        self.rates.get(target).map(|x| x.as_borrowed())
+    }
+
+    fn add(&mut self, key: CommodityPair, rate: Decimal) -> Result<(), ImportError> {
+        if key.source == key.target {
+            return Err(ImportError::Other(format!(
+                "cannot handle rate with the same commodity {}",
+                key.source
+            )));
+        }
+        let Some(existing) = self.rates.insert(
+            key.target.clone(),
+            OwnedAmount {
+                value: rate,
+                commodity: key.source.clone(),
+            },
+        ) else {
+            return Ok(());
+        };
+        if (&existing.commodity, existing.value) != (&key.source, rate) {
+            return Err(ImportError::Other(format!(
+                "given commodity {} has two distinct rates: @ {} {} and @ {} {}",
+                key.target, existing.value, existing.commodity, key.source, rate
+            )));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -515,13 +719,18 @@ mod tests {
             "foo",
             owned_amount(dec!(10), "JPY"),
         );
+        let mut original_rates = BTreeMap::new();
 
         assert_eq!(
-            txn.dest_amount(),
-            PostingAmount {
-                amount: borrowed_amount(dec!(-10), "JPY"),
-                rate: None
-            }
+            txn.dest_amount(&Options::default(), &mut original_rates)
+                .unwrap(),
+            (
+                PostingAmount {
+                    amount: borrowed_amount(dec!(-10), "JPY"),
+                    rate: None
+                },
+                None
+            )
         );
     }
 
@@ -541,13 +750,18 @@ mod tests {
         )
         .unwrap();
         txn.transferred_amount(owned_amount(dec!(10.00), "USD"));
+        let mut original_rates = BTreeMap::new();
 
         assert_eq!(
-            txn.dest_amount(),
-            PostingAmount {
-                amount: borrowed_amount(dec!(-10.00), "USD"),
-                rate: Some(borrowed_amount(dec!(100), "JPY")),
-            },
+            txn.dest_amount(&Options::default(), &mut original_rates)
+                .unwrap(),
+            (
+                PostingAmount {
+                    amount: borrowed_amount(dec!(-10.00), "USD"),
+                    rate: Some(borrowed_amount(dec!(100), "JPY")),
+                },
+                None
+            )
         )
     }
 
@@ -567,13 +781,18 @@ mod tests {
         )
         .unwrap();
         txn.transferred_amount(owned_amount(dec!(-10.00), "USD"));
+        let mut original_rates = BTreeMap::new();
 
         assert_eq!(
-            txn.dest_amount(),
-            PostingAmount {
-                amount: borrowed_amount(dec!(-10.00), "USD"),
-                rate: Some(borrowed_amount(dec!(100), "JPY")),
-            },
+            txn.dest_amount(&Options::default(), &mut original_rates)
+                .unwrap(),
+            (
+                PostingAmount {
+                    amount: borrowed_amount(dec!(-10.00), "USD"),
+                    rate: Some(borrowed_amount(dec!(100), "JPY")),
+                },
+                None
+            )
         )
     }
 
@@ -610,6 +829,7 @@ mod tests {
             };
 
             let options = Options {
+                operator: None,
                 commodity_rename: hashmap! {
                     "米ドル".to_string() => "USD".to_string(),
                     "日本円".to_string() => "JPY".to_string(),

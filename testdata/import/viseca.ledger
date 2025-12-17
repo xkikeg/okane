@@ -7,10 +7,14 @@
     Liabilities:Okane Card                     -5.00 CHF
 
 2020/08/10=2020/08/11 * Europe Gas AT
-    ! Expenses:Car:Gas                         46.88 EUR @ 1.092432 CHF
+    ; original_rate: 1.092432 CHF/EUR
+    ! Expenses:Car:Gas                         46.88 EUR @ 1.073116 CHF
+    Expenses:Commissions                        0.91 CHF
+    ; Payee: Okane Card (fee)
     Expenses:Commissions                        0.90 CHF
     ; Payee: Okane Card (fee)
     Liabilities:Okane Card                    -52.10 CHF
+    ! Equity:Adjustments                       -0.02 CHF
 
 2020/08/11=2020/08/12 * GOOGLE *YouTubePremium, g.co/helppay# GB
     Expenses:Amusement                         23.90 CHF
@@ -27,14 +31,21 @@
     ! Income:Unknown                          -92.90 CHF
 
 2022/08/09=2022/08/11 * AMZNPRIME DE*YT5VO9JS5, Luxembourg LU
-    ! Expenses:Unknown                          7.99 EUR @ 0.98951 CHF
+    ; original_rate: 0.98951 CHF/EUR
+    ! Expenses:Unknown                          7.99 EUR @ 0.97201 CHF
+    Expenses:Commissions                        0.14 CHF
+    ; Payee: Okane Card (fee)
     Expenses:Commissions                        0.15 CHF
     ; Payee: Okane Card (fee)
     Liabilities:Okane Card                     -8.05 CHF
+    ! Equity:Adjustments                       -0.01 CHF
 
 2022/08/11=2022/07/23 * AMZNPRIME DE AMZN.DE/I, Luxembourg LU
+    ; original_rate: 0.988364 CHF/EUR
     Liabilities:Okane Card                      8.05 CHF
     Expenses:Commissions                       -0.15 CHF
     ; Payee: Okane Card (fee)
-    ! Income:Unknown                           -7.99 EUR @ 0.988364 CHF
+    ! Income:Unknown                           -7.99 EUR @ 0.970888 CHF
+    Expenses:Commissions                       -0.14 CHF
+    ; Payee: Okane Card (fee)
 

@@ -52,10 +52,7 @@ pub fn import<R: std::io::Read>(
             txn.transferred_amount(-spent);
         }
         if let Some(fee) = entry.fee {
-            let payee = config.operator.as_ref().ok_or(ImportError::InvalidConfig(
-                "config should have operator to have charge",
-            ))?;
-            txn.add_charge(payee, fee.amount);
+            txn.add_charge(fee.amount);
         }
         result.push(txn);
     }

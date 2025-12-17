@@ -136,18 +136,12 @@ fn extract_transaction(
         });
     }
     if let Some(charge) = resolver.extract(FieldKey::Charge, r)? {
-        let payee = config.operator.as_ref().ok_or(ImportError::InvalidConfig(
-            "config should have operator to have charge",
-        ))?;
         match str_to_comma_decimal(&charge)? {
             Some(value) if !value.is_zero() => {
-                txn.add_charge(
-                    payee,
-                    OwnedAmount {
-                        value,
-                        commodity: commodity.clone().into_owned(),
-                    },
-                );
+                txn.add_charge(OwnedAmount {
+                    value,
+                    commodity: commodity.clone().into_owned(),
+                });
             }
             _ => (),
         }

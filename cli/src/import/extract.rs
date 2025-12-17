@@ -17,7 +17,27 @@ use filter::FieldFilter;
 /// Extractor is a set of [`ExtractRule`], so to extract [`Fragment`] out of the [`Entity`].
 #[derive(Debug)]
 pub struct Extractor<'a> {
+    defaults: ExtractorDefault<'a>,
     rules: Vec<ExtractRule<'a>>,
+}
+
+/// Default value which [`Extractor`] would fill in into [`Fragment`].
+#[derive(Debug, Clone)]
+pub struct ExtractorDefault<'a> {
+    pub hidden_fee: Option<&'a config::HiddenFee>,
+}
+
+impl<'a> From<ExtractorDefault<'a>> for Fragment<'a> {
+    fn from(value: ExtractorDefault<'a>) -> Self {
+        Self {
+            cleared: false,
+            payee: None,
+            account: None,
+            code: None,
+            conversion: None,
+            hidden_fee: value.hidden_fee,
+        }
+    }
 }
 
 impl<'a> Extractor<'a> {
@@ -26,24 +46,31 @@ impl<'a> Extractor<'a> {
         entity_format: Ef,
         config: &'a config::ConfigEntry,
     ) -> Result<Self, ImportError> {
-        Self::try_new(entity_format, &config.rewrite)
+        Self::try_new(
+            entity_format,
+            ExtractorDefault {
+                hidden_fee: config.commodity.hidden_fee.as_ref(),
+            },
+            &config.rewrite,
+        )
     }
 
     /// Create an instance from [`config::RewriteRule`] items.
     pub fn try_new<Ef: EntityFormat>(
         entity_format: Ef,
+        defaults: ExtractorDefault<'a>,
         rules: &'a [config::RewriteRule],
     ) -> Result<Self, ImportError> {
         rules
             .iter()
             .map(|x| ExtractRule::try_new(x, entity_format))
             .collect::<Result<Vec<_>, _>>()
-            .map(|rules| Extractor { rules })
+            .map(|rules| Extractor { defaults, rules })
     }
 
     /// Extracts the entity information into [`Fragment`].
     pub fn extract<Et: Entity<'a>>(&'a self, entity: Et) -> Fragment<'a> {
-        let mut fragment = Fragment::default();
+        let mut fragment: Fragment<'_> = self.defaults.clone().into();
         for rule in &self.rules {
             if let Some(updated) = rule.extract(fragment.clone(), entity) {
                 fragment += updated;
@@ -117,6 +144,8 @@ pub struct Fragment<'a> {
     pub code: Option<&'a str>,
     /// Currency conversion, `None` if not found.
     pub conversion: Option<&'a config::CommodityConversionSpec>,
+    /// Hidden fee instruction.
+    pub hidden_fee: Option<&'a config::HiddenFee>,
 }
 
 impl<'a> Fragment<'a> {
@@ -143,6 +172,9 @@ impl<'a> Fragment<'a> {
             .dest_account_option(self.account);
         if !self.cleared {
             txn.clear_state(ClearState::Pending);
+        }
+        if let Some(hidden_fee) = self.hidden_fee {
+            txn.hidden_fee(hidden_fee.clone());
         }
         txn
     }
@@ -177,6 +209,7 @@ impl std::ops::AddAssign for Fragment<'_> {
             account: other.account.or(self.account),
             code: other.code.or(self.code),
             conversion: other.conversion.or(self.conversion),
+            hidden_fee: other.hidden_fee.or(self.hidden_fee),
         };
     }
 }
@@ -188,6 +221,7 @@ struct ExtractRule<'a> {
     payee: Option<&'a str>,
     account: Option<&'a str>,
     conversion: Option<&'a config::CommodityConversionSpec>,
+    hidden_fee: Option<&'a config::HiddenFee>,
 }
 
 impl<'a> ExtractRule<'a> {
@@ -203,6 +237,7 @@ impl<'a> ExtractRule<'a> {
             payee: from.payee.as_deref(),
             account: from.account.as_deref(),
             conversion: from.conversion.as_ref(),
+            hidden_fee: from.hidden_fee.as_ref(),
         })
     }
 }
@@ -213,6 +248,7 @@ impl<'a> ExtractRule<'a> {
             current.payee = self.payee.or(current.payee);
             current.account = self.account;
             current.conversion = self.conversion.or(current.conversion);
+            current.hidden_fee = self.hidden_fee.or(current.hidden_fee);
             if current.account.is_some() {
                 current.cleared = current.cleared || !self.pending;
             }
@@ -300,8 +336,9 @@ mod tests {
 
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
+    use rust_decimal_macros::dec;
 
-    use config::CommodityConversionSpec;
+    use config::{CommodityConversionSpec, HiddenFee};
 
     use testing::{TestEntity, TestFormat};
 
@@ -313,14 +350,17 @@ mod tests {
             account: None,
             code: None,
             conversion: None,
+            hidden_fee: None,
         };
         let conversion = CommodityConversionSpec::default();
+        let hidden_fee = HiddenFee::default();
         let y = Fragment {
             cleared: false,
             payee: Some("bar"),
             account: Some("baz"),
             code: Some("txn-id"),
             conversion: Some(&conversion),
+            hidden_fee: Some(&hidden_fee),
         };
         x += y;
         assert_eq!(
@@ -331,6 +371,7 @@ mod tests {
                 account: Some("baz"),
                 code: Some("txn-id"),
                 conversion: Some(&CommodityConversionSpec::default()),
+                hidden_fee: Some(&HiddenFee::default()),
             }
         );
     }
@@ -338,12 +379,14 @@ mod tests {
     #[test]
     fn fragment_add_assign_empty() {
         let conversion = CommodityConversionSpec::default();
+        let hidden_fee = HiddenFee::default();
         let orig = Fragment {
             cleared: false,
             payee: Some("foo"),
             account: None,
             code: Some("txn-id"),
             conversion: Some(&conversion),
+            hidden_fee: Some(&hidden_fee),
         };
         let mut x = orig.clone();
         x += Fragment::default();
@@ -357,6 +400,7 @@ mod tests {
             payee: None,
             account: None,
             conversion: None,
+            hidden_fee: None,
         }
     }
 
@@ -437,7 +481,12 @@ mod tests {
             ..Fragment::default()
         };
 
-        let extractor = Extractor::try_new(&TestFormat::all(), &rw).unwrap();
+        let extractor = Extractor::try_new(
+            &TestFormat::all(),
+            ExtractorDefault { hidden_fee: None },
+            &rw,
+        )
+        .unwrap();
         let fragment = extractor.extract(&input);
 
         assert_eq!(want, fragment);
@@ -475,7 +524,12 @@ mod tests {
             ..Fragment::default()
         };
 
-        let extractor = Extractor::try_new(&TestFormat::all(), &rw).unwrap();
+        let extractor = Extractor::try_new(
+            &TestFormat::all(),
+            ExtractorDefault { hidden_fee: None },
+            &rw,
+        )
+        .unwrap();
         let fragment = extractor.extract(&input);
 
         assert_eq!(want, fragment);
@@ -486,6 +540,10 @@ mod tests {
         let conversion = config::CommodityConversionSpec {
             commodity: Some("JPY".to_string()),
             ..config::CommodityConversionSpec::default()
+        };
+        let hidden_fee = config::HiddenFee {
+            spread: Some(config::HiddenFeeRate::Percent(dec!(1.8))),
+            condition: Some(config::HiddenFeeCondition::DebitOnly),
         };
         let rw = vec![
             config::RewriteRule {
@@ -520,6 +578,7 @@ mod tests {
                 payee: None,
                 account: Some("Expenses:Petrol".to_string()),
                 conversion: Some(conversion.clone()),
+                hidden_fee: Some(hidden_fee.clone()),
                 ..into_rule(config::RewriteMatcher::Field(config::FieldMatcher {
                     fields: hashmap! {
                         config::RewriteField::Payee => "Certain Petrol".to_string(),
@@ -578,6 +637,7 @@ mod tests {
                 payee: Some("Certain Petrol"),
                 code: Some("123"),
                 conversion: Some(&conversion),
+                hidden_fee: Some(&hidden_fee),
             },
             Fragment {
                 cleared: false,
@@ -589,7 +649,12 @@ mod tests {
             Fragment::default(),
         ];
 
-        let extractor = Extractor::try_new(&TestFormat::all(), &rw).unwrap();
+        let extractor = Extractor::try_new(
+            &TestFormat::all(),
+            ExtractorDefault { hidden_fee: None },
+            &rw,
+        )
+        .unwrap();
         let got: Vec<Fragment> = input.iter().map(|t| extractor.extract(t)).collect();
         assert_eq!(want, got.as_slice());
     }

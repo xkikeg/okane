@@ -1,3 +1,16 @@
+path: ""
+output:
+  commodity:
+    default:
+      scale: 2
+    overrides:
+      JPY:
+        scale: 0
+    # rate:
+    #   default:
+    #     significant_digits: 5
+    #     scale: 3 # which do we want?
+---
 path: index_amount.csv
 encoding: UTF-8
 account: "Liabilities:Okane Card"
@@ -69,10 +82,6 @@ output:
   commodity:
     default:
       style: comma3_dot
-      scale: 2
-    overrides:
-      JPY:
-        scale: 0
 rewrite:
   - matcher:
       payee: .*Visaデビット　(?P<code>\d+)　(?P<payee>.*)$
@@ -100,6 +109,37 @@ rewrite:
     matcher:
       payee: 外貨普通預金（米ドル）より振替
     # No need to do conversion, given conversion is happening just once
+  - hidden_fee:
+      spread: 0.15 JPY
+    matcher:
+      # TODO: allow using USD here.
+      # https://github.com/xkikeg/okane/issues/304
+      commodity: ドル
+      secondary_commodity: JPY
+  - hidden_fee:
+      spread: 0.15 JPY
+    matcher:
+      commodity: EUR
+      secondary_commodity: JPY
+  - hidden_fee:
+      spread: 0.45 JPY
+    matcher:
+      commodity: CHF
+      secondary_commodity: JPY
+  - hidden_fee:
+      spread: 0.0018 ドル
+    matcher:
+      # TODO: allow using USD here.
+      # https://github.com/xkikeg/okane/issues/304
+      commodity: ドル
+      secondary_commodity: EUR
+  - hidden_fee:
+      spread: 0.0050 CHF
+    matcher:
+      # TODO: allow using USD here.
+      # https://github.com/xkikeg/okane/issues/304
+      commodity: ドル
+      secondary_commodity: CHF
   - matcher:
       payee: Hamachi Super
     account: Expenses:Grocery
@@ -153,13 +193,6 @@ encoding: UTF-8
 account_type: asset
 operator: Okane Bank (fee)
 commodity: CHF
-output:
-  commodity:
-    overrides:
-      CHF:
-        scale: 2
-      EUR:
-        scale: 2
 rewrite:
   - matcher:
       additional_transaction_info: "Okanecard purchase [0-9.]+ [0-9:]+ (?P<payee>.*) Card number: \\d+"
@@ -208,7 +241,11 @@ encoding: UTF-8
 account: Liabilities:Okane Card
 account_type: liability
 operator: Okane Card (fee)
-commodity: CHF
+commodity:
+  primary: CHF
+  hidden_fee:
+    condition: DEBIT_ONLY
+    spread: 1.8%
 rewrite:
   - account: Assets:Wire
     matcher:

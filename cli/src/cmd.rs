@@ -118,6 +118,7 @@ impl ImportCmd {
             commodity: config_entry.output.commodity.into(),
         };
         let opts = import::single_entry::Options {
+            operator: config_entry.operator.clone(),
             commodity_rename: config_entry.commodity.rename.clone(),
             commodity_format: ctx.commodity.clone(),
         };
