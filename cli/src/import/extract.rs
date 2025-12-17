@@ -147,9 +147,12 @@ impl<'a> Fragment<'a> {
     }
 
     /// Returns field existence. Similar to [`EntityFormat::has_str_field`].
-    /// For now, fragment only supports payee.
+    /// For now, fragment supports payee and secondary_commodity.
     fn has_str_field(field: StrField) -> bool {
-        return field == StrField::Payee;
+        match field {
+            StrField::Payee | StrField::SecondaryCommodity => true,
+            _ => false,
+        }
     }
 
     /// Returns the corresponding field, similar to [`Entity::str_field`].
@@ -157,6 +160,8 @@ impl<'a> Fragment<'a> {
     fn str_field(&self, field: StrField) -> Option<&'a str> {
         match field {
             StrField::Payee => self.payee,
+            StrField::SecondaryCommodity => Some(self.conversion?.commodity.as_ref()?.as_str()),
+
             _ => None,
         }
     }

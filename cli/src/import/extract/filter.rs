@@ -29,6 +29,7 @@ impl FieldFilter {
         entity_format: Ef,
     ) -> Result<Self, ImportError> {
         let check_camt = || {
+            // Fragment doesn't have Camt specific codes, so only check the format.
             if !entity_format.has_camt_transaction_code() {
                 Err(ImportError::Other(format!(
                     "Format {} doesn't support match against {f}",
@@ -289,14 +290,10 @@ mod tests {
 
     #[test]
     fn unsupported_str_field() {
-        let got = FieldFilter::try_new(
-            config::RewriteField::SecondaryCommodity,
-            "",
-            &TestFormat::none(),
-        );
+        let got = FieldFilter::try_new(config::RewriteField::Category, "", &TestFormat::none());
 
         assert_matches!(got, Err(ImportError::Other(msg)) => {
-            assert!(msg.contains("doesn't support match against secondary_commodity"));
+            assert!(msg.contains("doesn't support match against category"));
         });
     }
 
