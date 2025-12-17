@@ -641,7 +641,7 @@ mod tests {
     #[test]
     fn parse_swiss_bank_camt_file() {
         let input: PathBuf =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/import/iso_camt.xml");
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../testdata/import/iso_camt.xml");
         let encoded = std::fs::read(&input).expect("must read iso_camt.xml");
 
         let decoded: Document =
@@ -656,7 +656,7 @@ mod tests {
     #[test]
     fn parse_wise_camt_file() {
         let input: PathBuf =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/testdata/import/iso_camt_wise.xml");
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../testdata/import/iso_camt_wise.xml");
         let encoded = std::fs::read(&input).expect("must read iso_camt_wise.xml");
 
         let decoded: Document =
