@@ -7,6 +7,6 @@ Library to support [Golden testing](https://en.wikipedia.org/wiki/Characterizati
 against the pre-captured *golden* input. This library supports pretty much simple string golden testing.
 
 For more details, see:
-- [docs.rs](https://docs.rs/okane-core/latest/okane_golden/)
+- [docs.rs](https://docs.rs/okane-golden/latest/okane_golden/)
 
 This library is licensed under [MIT](../LICENSE) license.
