@@ -377,6 +377,7 @@ mod tests {
             config::RewriteField::RemittanceUnstructuredInfo => "my remittance info".to_string(),
             config::RewriteField::AdditionalEntryInfo => "my entry info".to_string(),
             config::RewriteField::AdditionalTransactionInfo => "my transaction info: (?P<payee>.*)".to_string(),
+            config::RewriteField::Commodity => "JPY".to_string(),
             config::RewriteField::SecondaryCommodity => "CHF".to_string(),
             config::RewriteField::Category => "my category".to_string(),
             config::RewriteField::Payee => "my payee".to_string(),
@@ -423,6 +424,7 @@ mod tests {
                 // in practical, it's not recommended to use both
                 // payee in regex capture and payee filter at the same time.
                 StrField::Camt(CamtStrField::AdditionalTransactionInfo) => "my transaction info: my payee new".to_string(),
+                StrField::Commodity => "JPY".to_string(),
                 StrField::SecondaryCommodity => "CHF".to_string(),
                 StrField::Category => "my category".to_string(),
                 StrField::Payee => "my payee".to_string(),

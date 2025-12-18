@@ -57,6 +57,7 @@ impl FieldFilter {
             }
             config::RewriteField::Payee => StrField::Payee,
             config::RewriteField::Category => StrField::Category,
+            config::RewriteField::Commodity => StrField::Commodity,
             config::RewriteField::SecondaryCommodity => StrField::SecondaryCommodity,
             config::RewriteField::CreditorName => StrField::Camt(CamtStrField::CreditorName),
             config::RewriteField::CreditorAccountId => {
