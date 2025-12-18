@@ -33,7 +33,7 @@ fn as_test_filepath(input: &Path) -> Result<PathBuf, std::io::Error> {
 }
 
 fn new_loader(input: PathBuf) -> Result<load::Loader<load::FakeFileSystem>, std::io::Error> {
-    let src = okane_golden::read_as_utf8(&input)?;
+    let src = std::fs::read_to_string(&input)?;
     let filepath = as_test_filepath(&input)?;
     let fs = hashmap! {
         filepath.clone() => src.into_bytes(),
