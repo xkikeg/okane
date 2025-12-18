@@ -9,7 +9,7 @@ use super::ImportError;
 
 pub fn import<R: std::io::Read>(
     r: R,
-    config: &config::ConfigEntry,
+    config: &config::Config,
 ) -> Result<Vec<single_entry::Txn>, ImportError> {
     let extractor = extract::Extractor::from_config(format::VisecaFormat, config)?;
     let mut parser =

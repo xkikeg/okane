@@ -17,13 +17,19 @@ use utility::str_to_comma_decimal;
 
 pub fn import<R: std::io::Read>(
     r: R,
-    config: &config::ConfigEntry,
+    default_delimiter: &str,
+    config: &config::Config,
 ) -> Result<Vec<single_entry::Txn>, ImportError> {
     let mut res: Vec<single_entry::Txn> = Vec::new();
     let mut br = BufReader::new(r);
     let mut rb = csv::ReaderBuilder::new();
     rb.flexible(true);
-    if !config.format.delimiter.is_empty() {
+    let delimiter = if !config.format.delimiter.is_empty() {
+        &config.format.delimiter
+    } else {
+        default_delimiter
+    };
+    if !delimiter.is_empty() {
         rb.delimiter(config.format.delimiter.as_bytes()[0]);
     }
     let skip_config = &config.format.skip.unwrap_or_default();
@@ -54,7 +60,7 @@ pub fn import<R: std::io::Read>(
 }
 
 fn extract_transaction(
-    config: &config::ConfigEntry,
+    config: &config::Config,
     resolver: &field::FieldResolver,
     extractor: &extract::Extractor,
     default_conversion: &config::CommodityConversionSpec,
@@ -208,8 +214,8 @@ mod tests {
 
     use config::FieldPos;
 
-    fn empty_config() -> config::ConfigEntry {
-        config::ConfigEntry {
+    fn empty_config() -> config::Config {
+        config::Config {
             path: "/not/used".to_string(),
             encoding: config::Encoding(encoding_rs::UTF_8),
             account: "Assets:Bank".to_string(),
@@ -230,7 +236,8 @@ mod tests {
         "};
         let err = import(
             input.as_bytes(),
-            &config::ConfigEntry {
+            "",
+            &config::Config {
                 format: config::FormatSpec {
                     date: "%Y/%m/%d".to_string(),
                     fields: hashmap! {

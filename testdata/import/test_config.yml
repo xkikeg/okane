@@ -57,7 +57,7 @@ rewrite:
       payee: Migros
     account: Expenses:Grocery
 ---
-path: csv_multi_currency.csv
+path: csv_multi_currency.tsv
 encoding: UTF-8
 account: Assets:Okane Bank
 account_type: asset

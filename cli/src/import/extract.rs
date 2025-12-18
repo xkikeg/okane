@@ -41,10 +41,10 @@ impl<'a> From<ExtractorDefault<'a>> for Fragment<'a> {
 }
 
 impl<'a> Extractor<'a> {
-    /// Create an instance from [`config::ConfigEntry`].
+    /// Create an instance from [`config::Config`].
     pub fn from_config<Ef: EntityFormat>(
         entity_format: Ef,
-        config: &'a config::ConfigEntry,
+        config: &'a config::Config,
     ) -> Result<Self, ImportError> {
         Self::try_new(
             entity_format,

@@ -35,11 +35,23 @@ pub struct ConfigSet {
 }
 
 impl ConfigSet {
-    pub fn select(&self, p: &Path) -> Result<Option<ConfigEntry>, ImportError> {
+    /// Creates a new ConfigSet from entries (only for testing).
+    #[cfg(test)]
+    pub(super) fn from_configs<I>(specs: I) -> Self
+    where
+        I: IntoIterator<Item = Config>,
+    {
+        Self {
+            entries: specs.into_iter().map(Config::into).collect(),
+        }
+    }
+
+    /// Selects a specific [`Config`] for the given path.
+    pub fn select(&self, p: &Path) -> Result<Option<Config>, ImportError> {
         self.select_impl(&soft_canonicalize(p)?).transpose()
     }
 
-    fn select_impl(&self, p: &Path) -> Option<Result<ConfigEntry, ImportError>> {
+    fn select_impl(&self, p: &Path) -> Option<Result<Config, ImportError>> {
         let fp: &str = match p.to_str() {
             None => {
                 return Some(Err(ImportError::Other(format!(
@@ -78,7 +90,7 @@ impl ConfigSet {
 
 /// One entry corresponding to particular file.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct ConfigEntry {
+pub struct Config {
     /// Path pattern which file the entry will match against.
     pub path: String,
     /// File encoding of the input.
@@ -96,10 +108,11 @@ pub struct ConfigEntry {
     pub format: format::FormatSpec,
     /// Specification about output file.
     pub output: OutputSpec,
+    /// Rewrite rules to configure accounts.
     pub rewrite: Vec<rewrite::RewriteRule>,
 }
 
-impl TryFrom<ConfigFragment> for ConfigEntry {
+impl TryFrom<ConfigFragment> for Config {
     type Error = ImportError;
     fn try_from(value: ConfigFragment) -> Result<Self, Self::Error> {
         let encoding = value
@@ -117,7 +130,7 @@ impl TryFrom<ConfigFragment> for ConfigEntry {
             .into();
         let format = value.format.unwrap_or_default();
         let output = value.output.unwrap_or_default();
-        Ok(ConfigEntry {
+        Ok(Config {
             path: value.path,
             encoding,
             account,
@@ -131,27 +144,43 @@ impl TryFrom<ConfigFragment> for ConfigEntry {
     }
 }
 
+impl From<Config> for ConfigFragment {
+    fn from(value: Config) -> Self {
+        Self {
+            path: value.path,
+            encoding: Some(value.encoding),
+            account: Some(value.account),
+            account_type: Some(value.account_type),
+            operator: value.operator,
+            commodity: Some(value.commodity.into()),
+            format: Some(value.format),
+            output: Some(value.output),
+            rewrite: value.rewrite,
+        }
+    }
+}
+
 /// One flagment of config corresponding to particular path prefix.
-/// It'll be merged into `ConfigEntry`.
+/// It'll be merged into `Config`.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 struct ConfigFragment {
     /// Path pattern which file the entry will match against.
-    pub path: String,
+    path: String,
     /// File encoding of the input.
-    pub encoding: Option<Encoding>,
+    encoding: Option<Encoding>,
     /// Account name used in the ledger.
-    pub account: Option<String>,
+    account: Option<String>,
     /// Type of account input.
-    pub account_type: Option<AccountType>,
+    account_type: Option<AccountType>,
     /// Operator of the import target.
     /// Required only when some charges applied.
-    pub operator: Option<String>,
-    pub commodity: Option<commodity::AccountCommodityConfig>,
-    pub format: Option<format::FormatSpec>,
-    pub output: Option<OutputSpec>,
+    operator: Option<String>,
+    commodity: Option<commodity::AccountCommodityConfig>,
+    format: Option<format::FormatSpec>,
+    output: Option<OutputSpec>,
     #[serde(default)]
-    pub rewrite: Vec<rewrite::RewriteRule>,
+    rewrite: Vec<rewrite::RewriteRule>,
 }
 
 impl Merge for ConfigFragment {
@@ -251,10 +280,9 @@ mod tests {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
-    /// Create an empty ConfigFragment.
-    fn create_empty_config_fragment() -> ConfigFragment {
+    fn create_empty_config_fragment(path: String) -> ConfigFragment {
         ConfigFragment {
-            path: "empty/".to_string(),
+            path,
             account: None,
             account_type: None,
             commodity: None,
@@ -266,7 +294,7 @@ mod tests {
         }
     }
 
-    /// Create a minimal ConfigFragment to generate valid ConfigEntry.
+    /// Create a minimal ConfigFragment to generate valid Config.
     fn create_config_fragment(path: &str) -> ConfigFragment {
         ConfigFragment {
             account: Some("Account".to_owned()),
@@ -292,10 +320,10 @@ mod tests {
                 create_config_fragment("path/to/bar"),
             ],
         };
-        let cfg0: ConfigEntry = config_set.entries[0]
+        let cfg0: Config = config_set.entries[0]
             .clone()
             .try_into()
-            .expect("config[0] must be valid ConfigEntry");
+            .expect("config[0] must be valid Config");
         assert_eq!(
             cfg0,
             config_set
@@ -346,7 +374,6 @@ mod tests {
         let config_set = ConfigSet {
             entries: vec![
                 ConfigFragment {
-                    path: "bank/".to_string(),
                     encoding: Some(Encoding(encoding_rs::UTF_8)),
                     account_type: Some(AccountType::Asset),
                     commodity: Some(AccountCommodityConfig::PrimaryCommodity("JPY".to_string())),
@@ -362,10 +389,9 @@ mod tests {
                         }),
                         Some("Account Foo".to_string()),
                     )],
-                    ..create_empty_config_fragment()
+                    ..create_empty_config_fragment("bank/".to_string())
                 },
                 ConfigFragment {
-                    path: "bank/checking/".to_string(),
                     commodity: Some(AccountCommodityConfig::Spec(simple_commodity_spec(
                         "CHF".to_string(),
                     ))),
@@ -378,7 +404,7 @@ mod tests {
                         }),
                         Some("Account Bar".to_string()),
                     )],
-                    ..create_empty_config_fragment()
+                    ..create_empty_config_fragment("bank/checking/".to_string())
                 },
             ],
         };
@@ -392,7 +418,7 @@ mod tests {
             )
             .expect("select must not fail")
             .expect("entry should be found");
-        let want = ConfigEntry {
+        let want = Config {
             path: "bank/checking/".to_string(),
             encoding: Encoding(encoding_rs::UTF_8),
             account: "Assets:Banks:Checking".to_string(),
@@ -429,7 +455,7 @@ mod tests {
     #[test]
     fn test_config_entry_try_from() {
         let f = create_config_fragment("tmp/foo");
-        let tryinto = TryInto::<ConfigEntry>::try_into;
+        let tryinto = TryInto::<Config>::try_into;
         tryinto(f.clone()).expect("create_config_fragment() should return solo valid fragment");
         let err = |x| tryinto(x).unwrap_err().to_string();
         assert!(err(ConfigFragment {
@@ -456,28 +482,23 @@ mod tests {
 
     #[test]
     fn test_config_fragment_merge() {
-        let empty = create_empty_config_fragment;
         let account = || ConfigFragment {
-            path: "account/".to_string(),
             account: Some("foo".to_string()),
-            ..empty()
+            ..create_empty_config_fragment("account/".to_string())
         };
         let account_type = || ConfigFragment {
-            path: "account_type/".to_string(),
             account_type: Some(AccountType::Liability),
-            ..empty()
+            ..create_empty_config_fragment("account_type/".to_string())
         };
         let commodity = || ConfigFragment {
-            path: "commodity/".to_string(),
             commodity: Some(AccountCommodityConfig::Spec(simple_commodity_spec(
                 "primary commodity".to_string(),
             ))),
-            ..empty()
+            ..create_empty_config_fragment("commodity/".to_string())
         };
         let operator = || ConfigFragment {
-            path: "fragment/".to_string(),
             operator: Some("foo operator".to_string()),
-            ..empty()
+            ..create_empty_config_fragment("fragment/".to_string())
         };
         let cases: Vec<Box<dyn Fn() -> ConfigFragment>> = vec![
             Box::new(account),
@@ -486,11 +507,14 @@ mod tests {
             Box::new(operator),
         ];
         for case in cases {
-            assert_eq!(empty().merge(case()), case());
             assert_eq!(
-                case().merge(empty()),
+                create_empty_config_fragment("/empty".to_string()).merge(case()),
+                case()
+            );
+            assert_eq!(
+                case().merge(create_empty_config_fragment("/empty".to_string())),
                 ConfigFragment {
-                    path: "empty/".to_string(),
+                    path: "/empty".to_string(),
                     ..case()
                 }
             );
