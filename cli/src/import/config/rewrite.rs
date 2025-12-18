@@ -71,6 +71,7 @@ pub enum RewriteField {
     RemittanceUnstructuredInfo,
     AdditionalEntryInfo,
     AdditionalTransactionInfo,
+    Commodity,
     SecondaryCommodity,
     Category,
     Payee,
