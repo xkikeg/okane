@@ -15,15 +15,7 @@ use std::path::{Path, PathBuf};
 
 use pretty_assertions::assert_str_eq;
 
-/// Returns content of testdata directory, as UTF-8.
-/// This fucntion replaces CRLF to LF.
-pub fn read_as_utf8(filename: &Path) -> std::io::Result<String> {
-    // Needs to replace CRLF to LF for Windows, as all files may have CRLF
-    // depending on the git config core.autocrlf.
-    std::fs::read_to_string(filename).map(|s| s.replace("\r\n", "\n"))
-}
-
-/// Golden file, which maintains the expected content and assert over that.
+/// Golden object to maintain the expected content.
 #[derive(Debug)]
 pub struct Golden {
     path: PathBuf,
@@ -38,6 +30,7 @@ fn is_update_golden() -> bool {
 
 impl Golden {
     /// Returns a new instance.
+    /// Note returned instance ignores CR/CRLF difference.
     pub fn new(path: PathBuf) -> Result<Self, std::io::Error> {
         let content = read_as_utf8(&path).or_else(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
@@ -70,6 +63,14 @@ impl Golden {
             "comparison against golden failed. Pass UPDATE_GOLDEN=1 to update the golden."
         );
     }
+}
+
+/// Returns content of testdata directory, as UTF-8.
+/// This fucntion replaces CRLF to LF.
+fn read_as_utf8(filename: &Path) -> std::io::Result<String> {
+    // Needs to replace CRLF to LF for Windows, as all files may have CRLF
+    // depending on the git config core.autocrlf.
+    std::fs::read_to_string(filename).map(|s| s.replace("\r\n", "\n"))
 }
 
 #[cfg(test)]

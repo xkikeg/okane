@@ -1,4 +1,4 @@
-use okane_golden::{read_as_utf8, Golden};
+use okane_golden::Golden;
 
 use pretty_assertions::assert_str_eq;
 use tempfile::{tempdir_in, NamedTempFile};
@@ -76,7 +76,8 @@ mod update_golden_set {
 
             golden.assert("Veni, vidi, vici\n");
 
-            assert_str_eq!(read_as_utf8(golden_path).unwrap(), "Veni, vidi, vici\n");
+            let updated = std::fs::read_to_string(golden_path).unwrap();
+            assert_str_eq!("Veni, vidi, vici\n", updated);
         });
     }
 
@@ -92,7 +93,8 @@ mod update_golden_set {
 
             golden.assert("Zazen\nBoys\n\n");
 
-            assert_str_eq!(read_as_utf8(golden_path).unwrap(), "Zazen\nBoys\n\n");
+            let updated = std::fs::read_to_string(golden_path).unwrap();
+            assert_str_eq!("Zazen\nBoys\n\n", updated);
         });
     }
 }
