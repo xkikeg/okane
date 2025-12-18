@@ -83,6 +83,7 @@ pub trait Entity<'a>: Copy {
 pub enum StrField {
     Payee,
     Category,
+    Commodity,
     SecondaryCommodity,
     /// Camt specific field.
     /// With this approach other format (CSV) can avoid skipping all camt arm one by one.

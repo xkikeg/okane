@@ -192,8 +192,10 @@ impl extract::EntityFormat for CamtFormat {
     fn has_str_field(&self, field: StrField) -> bool {
         match field {
             StrField::Camt(_) => true,
+            StrField::Payee => false,
+            StrField::Category => false,
+            StrField::Commodity => true,
             StrField::SecondaryCommodity => true,
-            _ => false,
         }
     }
 }
@@ -243,12 +245,13 @@ impl<'a> extract::Entity<'a> for CamtEntity<'a> {
                     .and_then(|t| t.additional_info.as_ref())
                     .map(|ai| ai.as_str()),
             },
+            StrField::Commodity => Some(entry.amount.currency.as_str()),
             StrField::SecondaryCommodity => transaction
                 .as_ref()
                 .and_then(|x| x.amount_details.as_ref())
                 .and_then(|x| x.transaction.as_ref())
                 .map(|x| x.amount.currency.as_str()),
-            _ => None,
+            StrField::Payee | StrField::Category => None,
         }
     }
 }

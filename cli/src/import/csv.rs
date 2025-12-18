@@ -95,13 +95,14 @@ fn extract_transaction(
     let rate = resolver
         .extract(FieldKey::Rate, r)?
         .map_or_else(|| Ok(None), |s| str_to_comma_decimal(&s))?;
-    // TODO: remove this temporary record.
-    let tmp_record = record::Record {
+    // this temporary record exists to handle the error on wrong template outside the extractor.
+    let record = record::Record {
         payee: &original_payee,
         category: category.as_deref(),
+        commodity: &commodity.clone(),
         secondary_commodity: secondary_commodity.as_deref(),
     };
-    let fragment = extractor.extract(&tmp_record);
+    let fragment = extractor.extract(&record);
     let payee = fragment.payee.unwrap_or(&original_payee);
     let fragment = extract::Fragment {
         payee: Some(payee),
