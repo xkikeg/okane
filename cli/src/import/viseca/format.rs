@@ -20,13 +20,52 @@ pub struct Entry {
     pub fee: Option<Fee>,
 }
 
-impl<'a> extract::Entity<'a> for &'a Entry {
+impl Entry {
+    pub fn as_entity<'a>(&'a self, commodity: &'a str) -> impl extract::Entity<'a> {
+        Entity {
+            entry: self,
+            commodity,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Entity<'a> {
+    entry: &'a Entry,
+    commodity: &'a str,
+}
+
+impl<'a> extract::Entity<'a> for Entity<'a> {
     fn str_field(&self, field: StrField) -> Option<&'a str> {
         match field {
             StrField::Camt(_) => None,
-            StrField::Payee => Some(&self.payee),
-            StrField::Category => Some(&self.category),
-            StrField::SecondaryCommodity => self.spent.as_ref().map(|x| x.commodity.as_str()),
+            StrField::Payee => Some(&self.entry.payee),
+            StrField::Category => Some(&self.entry.category),
+            StrField::Commodity => Some(&self.commodity),
+            StrField::SecondaryCommodity => self.entry.spent.as_ref().map(|x| x.commodity.as_str()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct VisecaFormat;
+
+impl extract::EntityFormat for VisecaFormat {
+    fn name(&self) -> &'static str {
+        "viseca"
+    }
+
+    fn has_camt_transaction_code(&self) -> bool {
+        false
+    }
+
+    fn has_str_field(&self, field: StrField) -> bool {
+        match field {
+            StrField::Camt(_) => false,
+            StrField::Payee => true,
+            StrField::Category => true,
+            StrField::Commodity => true,
+            StrField::SecondaryCommodity => true,
         }
     }
 }
@@ -70,12 +109,20 @@ mod tests {
             fee: None,
         };
 
-        assert_eq!(Some("Super gas"), (&entry).str_field(StrField::Payee));
+        assert_eq!(
+            Some("Super gas"),
+            entry.as_entity("CHF").str_field(StrField::Payee)
+        );
         assert_eq!(
             Some("Service stations"),
-            (&entry).str_field(StrField::Category)
+            entry.as_entity("CHF").str_field(StrField::Category)
         );
-        assert_eq!(None, (&entry).str_field(StrField::SecondaryCommodity));
+        assert_eq!(
+            None,
+            entry
+                .as_entity("CHF")
+                .str_field(StrField::SecondaryCommodity)
+        );
     }
 
     #[test]
@@ -109,8 +156,14 @@ mod tests {
         };
 
         assert_eq!(
+            Some("CHF"),
+            entry.as_entity("CHF").str_field(StrField::Commodity)
+        );
+        assert_eq!(
             Some("EUR"),
-            (&entry).str_field(StrField::SecondaryCommodity)
+            entry
+                .as_entity("CHF")
+                .str_field(StrField::SecondaryCommodity)
         );
     }
 }

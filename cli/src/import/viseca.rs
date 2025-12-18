@@ -3,7 +3,7 @@ pub mod parser;
 
 use super::amount::OwnedAmount;
 use super::config;
-use super::extract::{self, StrField};
+use super::extract::{self};
 use super::single_entry;
 use super::single_entry::CommodityPair;
 use super::ImportError;
@@ -12,13 +12,13 @@ pub fn import<R: std::io::Read>(
     r: R,
     config: &config::ConfigEntry,
 ) -> Result<Vec<single_entry::Txn>, ImportError> {
-    let extractor = extract::Extractor::from_config(VisecaFormat, &config)?;
+    let extractor = extract::Extractor::from_config(format::VisecaFormat, &config)?;
     let mut parser =
         parser::Parser::new(std::io::BufReader::new(r), config.commodity.primary.clone());
     let mut result = Vec::new();
     while let Some(entry) = parser.parse_entry()? {
         let line_count = entry.line_count;
-        let fragment = extractor.extract(&entry);
+        let fragment = extractor.extract(entry.as_entity(&config.commodity.primary));
         let payee = fragment.payee.unwrap_or(entry.payee.as_str());
         let fragment = extract::Fragment {
             payee: Some(payee),
@@ -60,26 +60,4 @@ pub fn import<R: std::io::Read>(
         result.push(txn);
     }
     Ok(result)
-}
-
-#[derive(Debug, Clone, Copy)]
-struct VisecaFormat;
-
-impl extract::EntityFormat for VisecaFormat {
-    fn name(&self) -> &'static str {
-        "viseca"
-    }
-
-    fn has_camt_transaction_code(&self) -> bool {
-        false
-    }
-
-    fn has_str_field(&self, field: StrField) -> bool {
-        match field {
-            StrField::Camt(_) => false,
-            StrField::Payee => true,
-            StrField::Category => true,
-            StrField::SecondaryCommodity => true,
-        }
-    }
 }
