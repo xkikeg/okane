@@ -112,6 +112,12 @@ impl From<AccountCommodityConfig> for AccountCommoditySpec {
     }
 }
 
+impl From<AccountCommoditySpec> for AccountCommodityConfig {
+    fn from(value: AccountCommoditySpec) -> Self {
+        AccountCommodityConfig::Spec(value)
+    }
+}
+
 impl Merge for AccountCommoditySpec {
     fn merge(self, other: Self) -> Self {
         let mut rename = self.rename;

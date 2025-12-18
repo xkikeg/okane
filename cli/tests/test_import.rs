@@ -13,6 +13,7 @@ fn init() {
 fn test_import_with_cli(
     #[base_dir = "../testdata/import/"]
     #[files("*.csv")]
+    #[files("*.tsv")]
     #[files("iso_camt.xml")]
     #[files("viseca.txt")]
     input: PathBuf,

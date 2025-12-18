@@ -20,7 +20,7 @@ impl xmlnode::Entry {
     }
 }
 
-pub fn import<R>(r: R, config: &config::ConfigEntry) -> Result<Vec<single_entry::Txn>, ImportError>
+pub fn import<R>(r: R, config: &config::Config) -> Result<Vec<single_entry::Txn>, ImportError>
 where
     R: std::io::Read,
 {

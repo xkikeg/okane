@@ -1,4 +1,3 @@
-use std::ffi::OsStr;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -6,16 +5,15 @@ use std::path::PathBuf;
 use bumpalo::Bump;
 use chrono::NaiveDate;
 use clap::{Args, Subcommand};
-use encoding_rs_io::DecodeReaderBytesBuilder;
 
 use okane_core::report::query;
 use okane_core::syntax::display::DisplayContext;
 use okane_core::syntax::plain::LedgerEntry;
-use okane_core::{load, report, syntax};
+use okane_core::{load, report};
 
 use crate::build::CLAP_LONG_VERSION;
 use crate::format;
-use crate::import::{self, Format, ImportError};
+use crate::import::{self, ImportError};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -109,42 +107,8 @@ impl ImportCmd {
     where
         W: std::io::Write,
     {
-        let config_file = File::open(&self.config)?;
-        let config_set = import::config::load_from_yaml(config_file)?;
-        let config_entry = config_set.select(&self.source)?.ok_or_else(|| {
-            ImportError::Other(format!(
-                "config matching {} not found",
-                self.source.display()
-            ))
-        })?;
-        log::debug!("config: {:?}", config_entry);
-        let file = File::open(&self.source)?;
-        // Use dedicated flags or config systems instead.
-        let format = match self.source.extension().and_then(OsStr::to_str) {
-            Some("csv") => Ok(Format::Csv),
-            Some("xml") => Ok(Format::IsoCamt053),
-            Some("txt") => Ok(Format::Viseca),
-            _ => Err(ImportError::UnknownFormat),
-        }?;
-        let decoded = DecodeReaderBytesBuilder::new()
-            .encoding(Some(config_entry.encoding.as_encoding()))
-            .build(file);
-        let xacts = import::import(decoded, format, &config_entry)?;
-        let ctx = syntax::display::DisplayContext {
-            commodity: config_entry.output.commodity.into(),
-        };
-        let opts = import::single_entry::Options {
-            operator: config_entry.operator.clone(),
-            commodity_rename: config_entry.commodity.rename.clone(),
-            commodity_format: ctx.commodity.clone(),
-        };
-        let arena = Bump::new();
-        let mut rctx = report::ReportContext::new(&arena);
-        for xact in &xacts {
-            let xact: syntax::plain::Transaction =
-                xact.to_double_entry(&config_entry.account, &opts, &mut rctx)?;
-            writeln!(w, "{}", ctx.as_display(&xact))?;
-        }
+        let importer = import::Importer::new(&self.config)?;
+        importer.import(&self.source, w)?;
         Ok(())
     }
 }
