@@ -3,9 +3,8 @@ pub mod parser;
 
 use super::amount::OwnedAmount;
 use super::config;
-use super::extract::{self};
+use super::extract;
 use super::single_entry;
-use super::single_entry::CommodityPair;
 use super::ImportError;
 
 pub fn import<R: std::io::Read>(
@@ -41,11 +40,11 @@ pub fn import<R: std::io::Read>(
                 ))
             })?;
             txn.add_rate(
-                CommodityPair {
-                    source: exchange.equivalent.commodity,
-                    target: spent.commodity.clone(),
+                spent.commodity.clone(),
+                OwnedAmount {
+                    commodity: exchange.equivalent.commodity,
+                    value: exchange.rate,
                 },
-                exchange.rate,
             )?;
             txn.transferred_amount(-spent);
         } else if let Some(spent) = entry.spent {

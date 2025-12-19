@@ -91,13 +91,6 @@ impl Options {
     }
 }
 
-/// Pair of commodity, used for rate computation.
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub struct CommodityPair {
-    pub source: String,
-    pub target: String,
-}
-
 // TODO: Allow injecting these values from config.
 // https://github.com/xkikeg/okane/issues/287
 const LABEL_COMMISSIONS: &str = "Expenses:Commissions";
@@ -166,8 +159,11 @@ impl Txn {
         self
     }
 
-    pub fn add_rate(&mut self, key: CommodityPair, rate: Decimal) -> Result<&mut Txn, ImportError> {
-        self.rates.add(key, rate)?;
+    /// Adds the commodity rate information.
+    ///
+    /// 1 target == rate.
+    pub fn add_rate(&mut self, target: String, rate: OwnedAmount) -> Result<&mut Txn, ImportError> {
+        self.rates.add(target, rate)?;
         Ok(self)
     }
 
@@ -626,26 +622,20 @@ impl RateRepository {
         self.rates.get(target).map(|x| x.to_borrowed())
     }
 
-    fn add(&mut self, key: CommodityPair, rate: Decimal) -> Result<(), ImportError> {
-        if key.source == key.target {
+    fn add(&mut self, target: String, rate: OwnedAmount) -> Result<(), ImportError> {
+        if rate.commodity == target {
             return Err(ImportError::Other(format!(
                 "cannot handle rate with the same commodity {}",
-                key.source
+                target
             )));
         }
-        let Some(existing) = self.rates.insert(
-            key.target.clone(),
-            OwnedAmount {
-                value: rate,
-                commodity: key.source.clone(),
-            },
-        ) else {
+        let Some(existing) = self.rates.insert(target.clone(), rate.clone()) else {
             return Ok(());
         };
-        if (&existing.commodity, existing.value) != (&key.source, rate) {
+        if existing != rate {
             return Err(ImportError::Other(format!(
                 "given commodity {} has two distinct rates: @ {} {} and @ {} {}",
-                key.target, existing.value, existing.commodity, key.source, rate
+                target, existing.value, existing.commodity, rate.value, rate.commodity
             )));
         }
         Ok(())
@@ -742,11 +732,11 @@ mod tests {
             owned_amount(dec!(1000), "JPY"),
         );
         txn.add_rate(
-            CommodityPair {
-                source: "JPY".to_owned(),
-                target: "USD".to_owned(),
+            "USD".to_owned(),
+            OwnedAmount {
+                commodity: "JPY".to_owned(),
+                value: dec!(100),
             },
-            dec!(100),
         )
         .unwrap();
         txn.transferred_amount(owned_amount(dec!(10.00), "USD"));
@@ -773,11 +763,11 @@ mod tests {
             owned_amount(dec!(1000), "JPY"),
         );
         txn.add_rate(
-            CommodityPair {
-                source: "JPY".to_owned(),
-                target: "USD".to_owned(),
+            "USD".to_owned(),
+            OwnedAmount {
+                commodity: "JPY".to_owned(),
+                value: dec!(100),
             },
-            dec!(100),
         )
         .unwrap();
         txn.transferred_amount(owned_amount(dec!(-10.00), "USD"));
