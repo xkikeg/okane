@@ -1,3 +1,10 @@
+2025/08/05 * Sell - NINTENDO LTD FSPONSORED ADR 1 ADR REP 0.25 ORD SHS
+    ; NINTENDO LTD FSPONSORED ADR 1 ADR REP 0.25 ORD SHS
+    Assets:Brokers:Schrank                   1127.29 USD
+    Expenses:Commissions                        6.96 USD
+    ; Payee: Broker Schrank
+    ! Income:Unknown                          -50.00 NTDOY @ 22.685 USD
+
 2024/07/30 * Credit Interest - SCHWAB1 INT 06/27-07/29
     ; SCHWAB1 INT 06/27-07/29
     Assets:Brokers:Schrank                     11.81 USD
