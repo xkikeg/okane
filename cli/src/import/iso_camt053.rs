@@ -7,7 +7,7 @@ use rust_decimal::Decimal;
 use super::amount::OwnedAmount;
 use super::config;
 use super::extract::{self, CamtStrField, StrField};
-use super::single_entry::{self, CommodityPair};
+use super::single_entry;
 use super::ImportError;
 
 impl xmlnode::Entry {
@@ -99,11 +99,11 @@ where
                     if transaction.amount != detail_amount.amount {
                         if let Some(exchange) = detail_amount.currency_exchange.as_ref() {
                             txn.add_rate(
-                                CommodityPair {
-                                    source: exchange.source_currency.clone(),
-                                    target: exchange.target_currency.clone(),
+                                exchange.target_currency.clone(),
+                                OwnedAmount {
+                                    commodity: exchange.source_currency.clone(),
+                                    value: exchange.exchange_rate.value,
                                 },
-                                exchange.exchange_rate.value,
                             )?;
                         }
                         txn.transferred_amount(

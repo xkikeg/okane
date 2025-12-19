@@ -11,7 +11,7 @@ use chrono::NaiveDate;
 use super::amount::OwnedAmount;
 use super::config::{self, FieldKey};
 use super::extract;
-use super::single_entry::{self, CommodityPair};
+use super::single_entry;
 use super::ImportError;
 use utility::str_to_comma_decimal;
 
@@ -165,23 +165,25 @@ fn extract_transaction(
         })?;
         let secondary_commodity = conv.commodity.as_deref().or(secondary_commodity.as_deref())
                 .ok_or_else(||ImportError::Other(format!("either rewrite.conversion.commodity or secondary_commodity field must be set @ line {}", pos.line())))?;
-        let (rate_key, computed_transferred) = match conv.rate.unwrap_or_default() {
+        let (target, rate, computed_transferred) = match conv.rate.unwrap_or_default() {
             config::ConversionRateMode::PriceOfPrimary => (
-                CommodityPair {
-                    source: secondary_commodity.to_owned(),
-                    target: commodity.into_owned(),
+                commodity.into_owned(),
+                OwnedAmount {
+                    commodity: secondary_commodity.to_owned(),
+                    value: rate,
                 },
                 amount * rate,
             ),
             config::ConversionRateMode::PriceOfSecondary => (
-                CommodityPair {
-                    source: commodity.into_owned(),
-                    target: secondary_commodity.to_owned(),
+                secondary_commodity.to_owned(),
+                OwnedAmount {
+                    commodity: commodity.into_owned(),
+                    value: rate,
                 },
                 amount / rate,
             ),
         };
-        txn.add_rate(rate_key, rate)?;
+        txn.add_rate(target, rate)?;
         let transferred = match conv.amount.unwrap_or_default() {
                     config::ConversionAmountMode::Extract => secondary_amount.ok_or_else(|| ImportError::Other(format!(
                             "secondary_amount should be specified when conversion.amount is set to extract @ line {}", pos.line()
