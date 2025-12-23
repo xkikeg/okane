@@ -168,7 +168,7 @@ impl<'a> Fragment<'a> {
             }
         };
         let mut txn = single_entry::Txn::new(date, payee, amount);
-        txn.code_option(self.code.map(|x| x.into()).into())
+        txn.code_option(self.code.map(|x| x.into()))
             .dest_account_option(self.account);
         if !self.cleared {
             txn.clear_state(ClearState::Pending);
@@ -182,10 +182,7 @@ impl<'a> Fragment<'a> {
     /// Returns field existence. Similar to [`EntityFormat::has_str_field`].
     /// For now, fragment supports payee and secondary_commodity.
     fn has_str_field(field: StrField) -> bool {
-        match field {
-            StrField::Payee | StrField::SecondaryCommodity => true,
-            _ => false,
-        }
+        matches!(field, StrField::Payee | StrField::SecondaryCommodity)
     }
 
     /// Returns the corresponding field, similar to [`Entity::str_field`].
