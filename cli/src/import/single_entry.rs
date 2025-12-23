@@ -85,7 +85,7 @@ impl Options {
             return amount;
         };
         BorrowedAmount {
-            value: amount.value.round_dp(scale.into()),
+            value: amount.value.round_dp(scale),
             commodity: amount.commodity,
         }
     }
@@ -176,10 +176,10 @@ impl Txn {
         self
     }
 
-    pub fn try_add_charge_not_included<'a>(
-        &'a mut self,
+    pub fn try_add_charge_not_included(
+        &mut self,
         amount: OwnedAmount,
-    ) -> Result<&'a mut Txn, ImportError> {
+    ) -> Result<&mut Txn, ImportError> {
         if amount.commodity != self.amount.commodity {
             return Err(ImportError::Unimplemented(
                 "different commodity charge not supported",
@@ -198,7 +198,7 @@ impl Txn {
         Ok(self)
     }
 
-    pub fn add_charge<'a>(&'a mut self, amount: OwnedAmount) -> &'a mut Txn {
+    pub fn add_charge(&mut self, amount: OwnedAmount) -> &mut Txn {
         self.charges.push(amount);
         self
     }
@@ -218,7 +218,7 @@ impl Txn {
     ) -> Result<(PostingAmount<'a>, Option<PostingAmount<'a>>), ImportError> {
         let (main, hidden_fee) = PostingAmount {
             amount,
-            rate: self.rates.get(&amount.commodity),
+            rate: self.rates.get(amount.commodity),
         }
         .with_hidden_fee(&self.hidden_fee, opts)?;
         match hidden_fee {
@@ -238,8 +238,8 @@ impl Txn {
         let a = self
             .transferred_amount
             .as_ref()
-            .map(|transferred| transferred.as_borrowed())
-            .unwrap_or_else(|| -self.amount.as_borrowed());
+            .map(|transferred| transferred.to_borrowed())
+            .unwrap_or_else(|| -self.amount.to_borrowed());
         self.new_posting_amount(a, opts, original_fee)
     }
 
@@ -263,7 +263,7 @@ impl Txn {
         let mut charge_amounts: Vec<PostingAmount<'_>> = Vec::new();
         for chrg in &self.charges {
             let (amount, hidden) =
-                self.new_posting_amount(chrg.as_borrowed(), opts, &mut original_rates)?;
+                self.new_posting_amount(chrg.to_borrowed(), opts, &mut original_rates)?;
             charge_amounts.push(amount);
             if let Some(hidden) = hidden {
                 charge_amounts.push(hidden);
@@ -291,14 +291,14 @@ impl Txn {
             Ok::<(), ImportError>(())
         };
         let (main_amount, hidden_main_amount) =
-            self.new_posting_amount(self.amount.as_borrowed(), opts, &mut original_rates)?;
+            self.new_posting_amount(self.amount.to_borrowed(), opts, &mut original_rates)?;
         let (dest_amount, hidden_amount) = self.dest_amount(opts, &mut original_rates)?;
         if self.amount.value.is_sign_positive() {
             posts.push(Posting {
                 account: src_account,
                 clear_state: syntax::ClearState::Uncleared,
                 amount: main_amount,
-                balance: self.balance.as_ref().map(|x| x.as_borrowed()),
+                balance: self.balance.as_ref().map(|x| x.to_borrowed()),
                 metadata: Vec::new(),
             });
             if let Some(hidden) = hidden_main_amount {
@@ -334,7 +334,7 @@ impl Txn {
                 account: src_account,
                 clear_state: syntax::ClearState::Uncleared,
                 amount: main_amount,
-                balance: self.balance.as_ref().map(|x| x.as_borrowed()),
+                balance: self.balance.as_ref().map(|x| x.to_borrowed()),
                 metadata: Vec::new(),
             });
             if let Some(hidden) = hidden_main_amount {
@@ -589,7 +589,7 @@ fn as_syntax_amount<'a, T>(amount: T, opts: &'a Options) -> syntax::expr::Amount
 where
     T: AmountRef<'a>,
 {
-    let amount = amount.as_borrowed();
+    let amount = amount.to_borrowed();
     let commodity = Cow::Borrowed(
         opts.commodity_rename
             .get(amount.commodity)
@@ -623,7 +623,7 @@ impl RateRepository {
     }
 
     fn get<'a>(&'a self, target: &str) -> Option<BorrowedAmount<'a>> {
-        self.rates.get(target).map(|x| x.as_borrowed())
+        self.rates.get(target).map(|x| x.to_borrowed())
     }
 
     fn add(&mut self, key: CommodityPair, rate: Decimal) -> Result<(), ImportError> {

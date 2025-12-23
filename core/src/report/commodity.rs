@@ -170,6 +170,12 @@ impl<'arena> CommodityStore<'arena> {
         self.formatting.set(commodity, format);
     }
 
+    /// Returns if the commodity store is empty.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.intern.is_empty()
+    }
+
     /// Returns the total length of the commodity.
     #[inline]
     pub fn len(&self) -> usize {
@@ -251,6 +257,16 @@ mod tests {
             OwnedCommodity::from_string("unknown#1".to_string()),
             unknown.to_owned_lossy(&commodities)
         );
+    }
+
+    #[test]
+    fn is_empty_works() {
+        let arena = Bump::new();
+        let mut commodities = CommodityStore::new(&arena);
+        assert!(commodities.is_empty());
+
+        commodities.insert("JPY").unwrap();
+        assert!(!commodities.is_empty());
     }
 
     #[test]

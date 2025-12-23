@@ -41,7 +41,7 @@ impl<'a> extract::Entity<'a> for Entity<'a> {
             StrField::Camt(_) => None,
             StrField::Payee => Some(&self.entry.payee),
             StrField::Category => Some(&self.entry.category),
-            StrField::Commodity => Some(&self.commodity),
+            StrField::Commodity => Some(self.commodity),
             StrField::SecondaryCommodity => self.entry.spent.as_ref().map(|x| x.commodity.as_str()),
         }
     }

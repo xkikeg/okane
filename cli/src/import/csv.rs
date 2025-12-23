@@ -35,7 +35,7 @@ pub fn import<R: std::io::Read>(
     let mut rdr = rb.from_reader(br);
     let header = rdr.headers()?;
     let resolver = field::FieldResolver::try_new(&config.format.fields, header)?;
-    let extractor = extract::Extractor::from_config(record::CsvFormat, &config)?;
+    let extractor = extract::Extractor::from_config(record::CsvFormat, config)?;
     let default_conversion: &config::CommodityConversionSpec = &config.commodity.conversion;
     for record in rdr.records() {
         if let Some(txn) =

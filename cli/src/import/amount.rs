@@ -21,11 +21,11 @@ impl std::ops::Neg for OwnedAmount {
 
 /// AmountRef unifies [`OwnedAmount`] reference and [`BorrowedAmount`].
 pub trait AmountRef<'a> {
-    fn as_borrowed(self) -> BorrowedAmount<'a>;
+    fn to_borrowed(self) -> BorrowedAmount<'a>;
 }
 
 impl<'a> AmountRef<'a> for &'a OwnedAmount {
-    fn as_borrowed(self) -> BorrowedAmount<'a> {
+    fn to_borrowed(self) -> BorrowedAmount<'a> {
         BorrowedAmount {
             value: self.value,
             commodity: &self.commodity,
@@ -43,7 +43,7 @@ pub struct BorrowedAmount<'a> {
 }
 
 impl<'a> AmountRef<'a> for BorrowedAmount<'a> {
-    fn as_borrowed(self) -> BorrowedAmount<'a> {
+    fn to_borrowed(self) -> BorrowedAmount<'a> {
         self
     }
 }
