@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::BTreeMap, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap};
 
 use chrono::NaiveDate;
 use pretty_decimal::PrettyDecimal;
@@ -46,7 +46,7 @@ pub struct Txn {
     amount: OwnedAmount,
 
     /// Rate of the given commodity, useful if the statement amount is in foreign currency.
-    rates: RateRepository,
+    rate: Option<Rate>,
 
     hidden_fee: HiddenFee,
 
@@ -71,6 +71,14 @@ pub struct Options {
 }
 
 impl Options {
+    /// Returns commodity name.
+    fn commodity<'a>(&'a self, commodity: &'a str) -> &'a str {
+        self.commodity_rename
+            .get(commodity)
+            .map(String::as_str)
+            .unwrap_or(commodity)
+    }
+
     /// Scale of the corresponding commodity.
     fn scale(&self, commodity: &str) -> Option<u32> {
         self.commodity_format
@@ -112,7 +120,7 @@ impl Txn {
             clear_state: None,
             transferred_amount: None,
             amount,
-            rates: RateRepository::new(),
+            rate: None,
             hidden_fee: HiddenFee::default(),
             balance: None,
             charges: Vec::new(),
@@ -162,9 +170,9 @@ impl Txn {
     /// Adds the commodity rate information.
     ///
     /// 1 target == rate.
-    pub fn add_rate(&mut self, target: String, rate: OwnedAmount) -> Result<&mut Txn, ImportError> {
-        self.rates.add(target, rate)?;
-        Ok(self)
+    pub fn rate(&mut self, target: String, rate: OwnedAmount) -> &mut Txn {
+        self.rate = Some(Rate { target, rate });
+        self
     }
 
     pub fn hidden_fee(&mut self, hidden_fee: HiddenFee) -> &mut Txn {
@@ -172,6 +180,7 @@ impl Txn {
         self
     }
 
+    /// Add charge that is not a part of transferred_amount.
     pub fn try_add_charge_not_included(
         &mut self,
         amount: OwnedAmount,
@@ -205,38 +214,11 @@ impl Txn {
         self
     }
 
-    /// Converts the given amount into [`PostingAmount`].
-    fn new_posting_amount<'a>(
-        &'a self,
-        amount: BorrowedAmount<'a>,
-        opts: &Options,
-        original_fee: &mut BTreeMap<RateKey<'a>, Decimal>,
-    ) -> Result<(PostingAmount<'a>, Option<PostingAmount<'a>>), ImportError> {
-        let (main, hidden_fee) = PostingAmount {
-            amount,
-            rate: self.rates.get(amount.commodity),
-        }
-        .with_hidden_fee(&self.hidden_fee, opts)?;
-        match hidden_fee {
-            None => Ok((main, None)),
-            Some((rate_key, rate_value, hidden)) => {
-                original_fee.insert(rate_key, rate_value);
-                Ok((main, Some(hidden)))
-            }
-        }
-    }
-
-    fn dest_amount<'a>(
-        &'a self,
-        opts: &Options,
-        original_fee: &mut BTreeMap<RateKey<'a>, Decimal>,
-    ) -> Result<(PostingAmount<'a>, Option<PostingAmount<'a>>), ImportError> {
-        let a = self
-            .transferred_amount
+    fn dest_amount<'a>(&'a self) -> BorrowedAmount<'a> {
+        self.transferred_amount
             .as_ref()
             .map(|transferred| transferred.to_borrowed())
-            .unwrap_or_else(|| -self.amount.to_borrowed());
-        self.new_posting_amount(a, opts, original_fee)
+            .unwrap_or_else(|| -self.amount.to_borrowed())
     }
 
     pub fn to_double_entry<'a>(
@@ -245,138 +227,216 @@ impl Txn {
         opts: &'a Options,
         ctx: &mut ReportContext<'a>,
     ) -> Result<syntax::plain::Transaction<'a>, ImportError> {
-        // technically we don't need to store this intermediate Posting
-        // into Vec but just use iterator. However, we're not that constrainted
-        // to save that extra heap allocation after all.
-        let mut posts: Vec<Posting> = Vec::new();
-        let post_clear = self.clear_state.unwrap_or(match &self.dest_account {
+        let mut postings: Vec<PostingWithoutRate<'a>> = Vec::new();
+        let charges = || self.charges.iter().map(<&OwnedAmount>::to_borrowed);
+        let add_charges = |postings: &mut Vec<PostingWithoutRate<'a>>| {
+            postings
+                .extend(charges().map(|charge| PostingWithoutRate(PostingType::Commission, charge)))
+        };
+        let dest_account: &str;
+        if self.amount.value.is_sign_positive() {
+            postings.push(PostingWithoutRate(
+                PostingType::Main,
+                self.amount.to_borrowed(),
+            ));
+            add_charges(&mut postings);
+            postings.push(PostingWithoutRate(PostingType::Dest, self.dest_amount()));
+            dest_account = self.dest_account.as_deref().unwrap_or(LABEL_UNKNOWN_INCOME);
+        } else {
+            postings.push(PostingWithoutRate(PostingType::Dest, self.dest_amount()));
+            dest_account = self
+                .dest_account
+                .as_deref()
+                .unwrap_or(LABEL_UNKNOWN_EXPENSE);
+            add_charges(&mut postings);
+            postings.push(PostingWithoutRate(
+                PostingType::Main,
+                self.amount.to_borrowed(),
+            ));
+        }
+        let rate: Option<AmendedRate<'_>> = self
+            .rate
+            .as_ref()
+            .map(|r| {
+                r.apply_hidden_fee(
+                    opts,
+                    &self.hidden_fee,
+                    // prefer main / dest amount rather than charges.
+                    ([self.amount.to_borrowed(), self.dest_amount()])
+                        .into_iter()
+                        .chain(charges()),
+                )
+            })
+            .transpose()?;
+        let mut rated_postings: Vec<Posting<'_>> = Vec::new();
+        for p in postings {
+            let (converted, hidden) = p.with_rate(rate.as_ref(), opts);
+            rated_postings.push(converted);
+            if let Some(hidden) = hidden {
+                rated_postings.push(hidden);
+            }
+        }
+        if let Some(excess) = posting_excess(ctx, &rated_postings, opts)? {
+            rated_postings.push(Posting {
+                posting_type: PostingType::Adjustment,
+                amount: excess,
+            });
+        }
+        let operator = || {
+            opts.operator
+                .as_ref()
+                .map(|o| Cow::Borrowed(o.as_str()))
+                .ok_or(ImportError::InvalidConfig(
+                    "config should have operator to have charge",
+                ))
+        };
+        let post_cleared = self.clear_state.unwrap_or(match &self.dest_account {
             Some(_) => syntax::ClearState::Uncleared,
             None => syntax::ClearState::Pending,
         });
-        let mut original_rates = BTreeMap::new();
-        // here we store charge amounts into vec, as we may add some fee
-        // because of hidden fee.
-        let mut charge_amounts: Vec<PostingAmount<'_>> = Vec::new();
-        for chrg in &self.charges {
-            let (amount, hidden) =
-                self.new_posting_amount(chrg.to_borrowed(), opts, &mut original_rates)?;
-            charge_amounts.push(amount);
-            if let Some(hidden) = hidden {
-                charge_amounts.push(hidden);
-            }
-        }
-        let charge_posting = |amount: PostingAmount<'a>| {
-            let payee = opts.operator.as_ref().ok_or(ImportError::InvalidConfig(
-                "config should have operator to have charge",
-            ))?;
-            Ok::<_, ImportError>(Posting {
-                account: LABEL_COMMISSIONS,
-                clear_state: syntax::ClearState::Uncleared,
-                amount,
-                balance: None,
-                metadata: vec![syntax::Metadata::KeyValueTag {
-                    key: Cow::Borrowed("Payee"),
-                    value: syntax::MetadataValue::Text(payee.into()),
-                }],
-            })
-        };
-        let add_charges = |posts: &mut Vec<Posting<'a>>| {
-            for chrg in charge_amounts {
-                posts.push(charge_posting(chrg)?);
-            }
-            Ok::<(), ImportError>(())
-        };
-        let (main_amount, hidden_main_amount) =
-            self.new_posting_amount(self.amount.to_borrowed(), opts, &mut original_rates)?;
-        let (dest_amount, hidden_amount) = self.dest_amount(opts, &mut original_rates)?;
-        if self.amount.value.is_sign_positive() {
-            posts.push(Posting {
-                account: src_account,
-                clear_state: syntax::ClearState::Uncleared,
-                amount: main_amount,
-                balance: self.balance.as_ref().map(|x| x.to_borrowed()),
-                metadata: Vec::new(),
-            });
-            if let Some(hidden) = hidden_main_amount {
-                posts.push(charge_posting(hidden)?);
-            }
-            add_charges(&mut posts)?;
-            posts.push(Posting {
-                account: self.dest_account.as_deref().unwrap_or(LABEL_UNKNOWN_INCOME),
-                clear_state: post_clear,
-                amount: dest_amount,
-                balance: None,
-                metadata: Vec::new(),
-            });
-            if let Some(hidden) = hidden_amount {
-                posts.push(charge_posting(hidden)?);
-            }
-        } else if self.amount.value.is_sign_negative() {
-            posts.push(Posting {
-                account: self
-                    .dest_account
-                    .as_deref()
-                    .unwrap_or(LABEL_UNKNOWN_EXPENSE),
-                clear_state: post_clear,
-                amount: dest_amount,
-                balance: None,
-                metadata: Vec::new(),
-            });
-            if let Some(hidden) = hidden_amount {
-                posts.push(charge_posting(hidden)?);
-            }
-            add_charges(&mut posts)?;
-            posts.push(Posting {
-                account: src_account,
-                clear_state: syntax::ClearState::Uncleared,
-                amount: main_amount,
-                balance: self.balance.as_ref().map(|x| x.to_borrowed()),
-                metadata: Vec::new(),
-            });
-            if let Some(hidden) = hidden_main_amount {
-                posts.push(charge_posting(hidden)?);
-            }
-        } else {
-            // warning log or error?
-            return Err(ImportError::Other("credit and debit both zero".to_string()));
-        }
-        if let Some(excess) = posting_excess(ctx, &posts, opts)? {
-            posts.push(Posting {
-                account: LABEL_ADJUSTMENTS,
-                clear_state: syntax::ClearState::Pending,
-                amount: PostingAmount {
-                    amount: excess,
-                    rate: None,
+        let mut postings = Vec::new();
+        for p in rated_postings {
+            let sp = match p.posting_type {
+                PostingType::Main => syntax::Posting {
+                    clear_state: syntax::ClearState::Uncleared,
+                    amount: Some(p.amount.into_syntax(opts)),
+                    balance: self
+                        .balance
+                        .as_ref()
+                        .map(|x| into_syntax_amount(x.to_borrowed(), opts).into()),
+                    metadata: Vec::new(),
+                    ..syntax::Posting::new_untracked(src_account)
                 },
-                balance: None,
-                metadata: Vec::new(),
-            });
+                PostingType::Dest => syntax::Posting {
+                    clear_state: post_cleared,
+                    amount: Some(p.amount.into_syntax(opts)),
+                    balance: None,
+                    metadata: Vec::new(),
+                    ..syntax::Posting::new_untracked(dest_account)
+                },
+                PostingType::Commission => syntax::Posting {
+                    clear_state: syntax::ClearState::Uncleared,
+                    amount: Some(p.amount.into_syntax(opts)),
+                    balance: None,
+                    metadata: vec![syntax::Metadata::KeyValueTag {
+                        key: Cow::Borrowed("Payee"),
+                        value: syntax::MetadataValue::Text(operator()?),
+                    }],
+                    ..syntax::Posting::new_untracked(LABEL_COMMISSIONS)
+                },
+                PostingType::Adjustment => syntax::Posting {
+                    clear_state: syntax::ClearState::Pending,
+                    amount: Some(p.amount.into_syntax(opts)),
+                    balance: None,
+                    metadata: vec![syntax::Metadata::KeyValueTag {
+                        key: Cow::Borrowed("Payee"),
+                        value: syntax::MetadataValue::Text(operator()?),
+                    }],
+                    ..syntax::Posting::new_untracked(LABEL_ADJUSTMENTS)
+                },
+            };
+            postings.push(sp);
         }
-        let metadata = self
+        let mut metadata: Vec<syntax::Metadata<'_>> = self
             .comments
             .iter()
             .map(|x| syntax::Metadata::Comment(Cow::Borrowed(x)))
-            .chain(
-                original_rates
-                    .iter()
-                    .map(|(key, rate)| syntax::Metadata::KeyValueTag {
-                        key: Cow::Borrowed("original_rate"),
-                        value: syntax::MetadataValue::Text(Cow::Owned(format!(
-                            "{} {}/{}",
-                            rate, key.target, key.base
-                        ))),
-                    }),
-            )
             .collect();
+        if let Some(rate) = &rate {
+            if !rate.spread.value.is_zero() {
+                metadata.push(syntax::Metadata::KeyValueTag {
+                    key: Cow::Borrowed("original_rate"),
+                    value: syntax::MetadataValue::Text(Cow::Owned(format!(
+                        "{} {}/{}",
+                        rate.original.value,
+                        opts.commodity(rate.original.commodity),
+                        opts.commodity(rate.target),
+                    ))),
+                });
+            }
+        }
         Ok(syntax::Transaction {
             effective_date: self.effective_date,
             clear_state: syntax::ClearState::Cleared,
             code: self.code.as_deref().map(Into::into),
-            posts: posts.into_iter().map(|p| p.as_syntax(opts)).collect(),
+            posts: postings,
             metadata,
             ..syntax::Transaction::new(self.date, &self.payee)
         })
     }
+}
+
+/// Abstracted posting type, which will be converted [`syntax::Posting`] later.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum PostingType {
+    /// The amount you get or lose.
+    Main,
+    /// Destionation, the amount on the counter party.
+    Dest,
+    /// Commission incurred by the operator.
+    Commission,
+    /// adjustments to balance posting.
+    Adjustment,
+}
+
+/// Posting without rate, later will be converted into [`Posting`].
+#[derive(Debug, PartialEq, Eq)]
+struct PostingWithoutRate<'a>(PostingType, BorrowedAmount<'a>);
+
+impl<'a> PostingWithoutRate<'a> {
+    fn with_rate(
+        self,
+        rate: Option<&AmendedRate<'a>>,
+        opts: &Options,
+    ) -> (Posting<'a>, Option<Posting<'a>>) {
+        let Self(posting_type, amount) = self;
+        let posting = Posting {
+            posting_type,
+            amount: PostingAmount { amount, rate: None },
+        };
+        let Some(rate) = rate else {
+            return (posting, None);
+        };
+        if rate.target != posting.amount.amount.commodity {
+            return (posting, None);
+        }
+        let posting = Posting {
+            posting_type,
+            amount: PostingAmount {
+                amount,
+                rate: Some(rate.amended),
+            },
+        };
+        if rate.spread.value.is_zero() {
+            return (posting, None);
+        }
+        let hidden = Posting {
+            posting_type: PostingType::Commission,
+            amount: PostingAmount {
+                amount: opts.round(BorrowedAmount {
+                    commodity: rate.amended.commodity,
+                    value: amount.value * rate.spread.value,
+                }),
+                rate: None,
+            },
+        };
+        (posting, Some(hidden))
+    }
+}
+
+/// Simple posting, which can be converted to [`syntax::plain::Posting`] later.
+#[derive(Debug, PartialEq, Eq)]
+struct Posting<'a> {
+    posting_type: PostingType,
+    amount: PostingAmount<'a>,
+}
+
+/// Simple PostingAmount, which can be converted into [`syntax::plain::PostingAmount`] later.
+#[derive(Debug, PartialEq, Eq)]
+struct PostingAmount<'a> {
+    amount: BorrowedAmount<'a>,
+    /// Rate of the posting, eg @ part in 1234 USD @ 123.4 JPY
+    rate: Option<BorrowedAmount<'a>>,
 }
 
 /// Balances the given posting.
@@ -386,7 +446,7 @@ fn posting_excess<'a>(
     ctx: &mut ReportContext<'a>,
     postings: &[Posting<'a>],
     opts: &Options,
-) -> Result<Option<BorrowedAmount<'a>>, ImportError> {
+) -> Result<Option<PostingAmount<'a>>, ImportError> {
     let mut total = report::Amount::zero();
     for posting in postings {
         total += posting.amount.contributing_amount(ctx);
@@ -418,32 +478,10 @@ fn posting_excess<'a>(
     if excess.value.is_zero() {
         return Ok(None);
     }
-    Ok(Some(excess))
-}
-
-/// Simple posting, which can be converted to [`syntax::plain::Posting`] later.
-#[derive(Debug, PartialEq, Eq)]
-struct Posting<'a> {
-    account: &'a str,
-    amount: PostingAmount<'a>,
-    balance: Option<BorrowedAmount<'a>>,
-    clear_state: syntax::ClearState,
-    metadata: Vec<syntax::Metadata<'a>>,
-}
-
-/// Simple PostingAmount, which can be converted into [`syntax::plain::PostingAmount`] later.
-#[derive(Debug, PartialEq, Eq)]
-struct PostingAmount<'a> {
-    amount: BorrowedAmount<'a>,
-    /// Rate of the posting, eg @ part in 1234 USD @ 123.4 JPY
-    rate: Option<BorrowedAmount<'a>>,
-}
-
-/// Rate key, mainly to sort them programatically.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct RateKey<'a> {
-    target: &'a str,
-    base: &'a str,
+    Ok(Some(PostingAmount {
+        amount: excess,
+        rate: None,
+    }))
 }
 
 impl<'a> PostingAmount<'a> {
@@ -460,29 +498,85 @@ impl<'a> PostingAmount<'a> {
     }
 
     /// Gets the syntax version of posting.
-    fn as_syntax(self, opts: &'a Options) -> syntax::plain::PostingAmount<'a> {
+    fn into_syntax(self, opts: &'a Options) -> syntax::plain::PostingAmount<'a> {
         syntax::PostingAmount {
-            amount: as_syntax_amount(self.amount, opts).into(),
+            amount: into_syntax_amount(self.amount, opts).into(),
             cost: self
                 .rate
-                .map(|x| syntax::Exchange::Rate(as_syntax_amount(x, opts).into())),
+                .map(|x| syntax::Exchange::Rate(into_syntax_amount(x, opts).into())),
             lot: syntax::Lot::default(),
         }
     }
+}
 
-    /// Consider hidden fee, and returns modified amount with the optional commission amount if exists.
-    fn with_hidden_fee(
-        self,
+fn into_syntax_amount<'a, T>(amount: T, opts: &'a Options) -> syntax::expr::Amount<'a>
+where
+    T: AmountRef<'a>,
+{
+    let amount = amount.to_borrowed();
+    let commodity = Cow::Borrowed(
+        opts.commodity_rename
+            .get(amount.commodity)
+            .map(String::as_str)
+            .unwrap_or(amount.commodity),
+    );
+    syntax::expr::Amount {
+        // This amount is reformatted with DisplayContext at last.
+        value: PrettyDecimal::unformatted(amount.value),
+        commodity,
+    }
+}
+
+fn amount_with_sign(mut amount: OwnedAmount, sign: Decimal) -> OwnedAmount {
+    amount.value.set_sign_positive(sign.is_sign_positive());
+    amount
+}
+
+/// Stores rate information.
+#[derive(Debug, Clone)]
+struct Rate {
+    target: String,
+    rate: OwnedAmount,
+}
+
+/// Amended rate information by hidden fee.
+#[derive(Debug)]
+struct AmendedRate<'a> {
+    target: &'a str,
+    original: BorrowedAmount<'a>,
+    amended: BorrowedAmount<'a>,
+    /// if spread is zero, it means hidden fee was zero.
+    /// spread * amount will be the commission.
+    spread: BorrowedAmount<'a>,
+}
+
+impl Rate {
+    fn apply_hidden_fee<'a, T: Iterator<Item = BorrowedAmount<'a>>>(
+        &'a self,
+        opts: &'a Options,
         hidden_fee: &HiddenFee,
-        opts: &Options,
-    ) -> Result<(Self, Option<(RateKey<'a>, Decimal, Self)>), ImportError> {
-        // hidden fee isn't related when no commodity conversion applied.
-        let Some(original_rate) = self.rate else {
-            return Ok((self, None));
+        mut amount: T,
+    ) -> Result<AmendedRate<'a>, ImportError> {
+        let fallback = AmendedRate {
+            target: &self.target,
+            original: self.rate.to_borrowed(),
+            amended: self.rate.to_borrowed(),
+            spread: BorrowedAmount {
+                value: Decimal::ZERO,
+                commodity: "unused",
+            },
         };
         // hidden fee isn't configured.
         let Some(hidden_rate) = &hidden_fee.spread else {
-            return Ok((self, None));
+            return Ok(fallback);
+        };
+        // hidden fee isn't related when no commodity conversion applied.
+        let amount = amount.find(|x| x.commodity == self.target);
+        log::trace!(
+            "apply_hidden_fee target: rate: {self:?} hidden_fee: {hidden_fee:?} amount: {amount:?}"
+        );
+        let Some(amount) = amount else {
+            return Ok(fallback);
         };
         let condition = hidden_fee.condition.unwrap_or_default();
         let real_rate_bigger = match condition {
@@ -492,7 +586,7 @@ impl<'a> PostingAmount<'a> {
             // If the bank spread is 10 JPY,
             // the original rate is 120 JPY,
             // and diff 5 * 10 is the commission.
-            HiddenFeeCondition::AlwaysIncurred if self.amount.value.is_sign_negative() => true,
+            HiddenFeeCondition::AlwaysIncurred if amount.value.is_sign_negative() => true,
             // this case opposite to the above.
             //   Assets     5 USD @ 110 JPY
             //   Assets  -550 JPY
@@ -500,34 +594,27 @@ impl<'a> PostingAmount<'a> {
             // the original rate is 100 JPY,
             // and diff 5 * 10 is the commission.
             HiddenFeeCondition::AlwaysIncurred => false,
+
             // debit only always assume rated posting is expense.
             // so it's the same as above.
             // For credit card it makes sense as 99% of 'income' on the credit card
             // is the reimbursement, and the rate won't be computed like AlwaysIncurred.
             HiddenFeeCondition::DebitOnly => false,
         };
-        let rate = detach_hidden_rate(original_rate, hidden_rate, real_rate_bigger, opts)?;
-        let diff = opts.round(BorrowedAmount {
-            value: self.amount.value * (original_rate.value - rate.value),
+        let rate =
+            detach_hidden_rate(self.rate.to_borrowed(), hidden_rate, real_rate_bigger, opts)?;
+        let spread = BorrowedAmount {
+            value: self.rate.value - rate.value,
             commodity: rate.commodity,
-        });
-        Ok((
-            PostingAmount {
-                amount: self.amount,
-                rate: Some(rate),
-            },
-            Some((
-                RateKey {
-                    target: original_rate.commodity,
-                    base: self.amount.commodity,
-                },
-                original_rate.value,
-                PostingAmount {
-                    amount: diff,
-                    rate: None,
-                },
-            )),
-        ))
+        };
+        let ret = AmendedRate {
+            target: &self.target,
+            original: self.rate.to_borrowed(),
+            amended: rate,
+            spread,
+        };
+        log::trace!("amended rate: {ret:?}");
+        Ok(ret)
     }
 }
 
@@ -566,80 +653,6 @@ fn detach_hidden_rate<'a>(
         value,
         commodity: original_rate.commodity,
     })
-}
-
-impl<'a> Posting<'a> {
-    /// Gets the syntax version of posting.
-    fn as_syntax(self, opts: &'a Options) -> syntax::plain::Posting<'a> {
-        syntax::Posting {
-            clear_state: self.clear_state,
-            amount: Some(self.amount.as_syntax(opts)),
-            balance: self.balance.map(|x| as_syntax_amount(x, opts).into()),
-            metadata: self.metadata,
-            ..syntax::Posting::new_untracked(self.account)
-        }
-    }
-}
-
-fn as_syntax_amount<'a, T>(amount: T, opts: &'a Options) -> syntax::expr::Amount<'a>
-where
-    T: AmountRef<'a>,
-{
-    let amount = amount.to_borrowed();
-    let commodity = Cow::Borrowed(
-        opts.commodity_rename
-            .get(amount.commodity)
-            .map(String::as_str)
-            .unwrap_or(amount.commodity),
-    );
-    syntax::expr::Amount {
-        // This amount is reformatted with DisplayContext at last.
-        value: PrettyDecimal::unformatted(amount.value),
-        commodity,
-    }
-}
-
-fn amount_with_sign(mut amount: OwnedAmount, sign: Decimal) -> OwnedAmount {
-    amount.value.set_sign_positive(sign.is_sign_positive());
-    amount
-}
-
-/// Stores rate information.
-#[derive(Debug, Clone)]
-struct RateRepository {
-    /// Rates from commodity to amount, such as USD => 120 JPY.
-    rates: HashMap<String, OwnedAmount>,
-}
-
-impl RateRepository {
-    fn new() -> Self {
-        Self {
-            rates: HashMap::new(),
-        }
-    }
-
-    fn get<'a>(&'a self, target: &str) -> Option<BorrowedAmount<'a>> {
-        self.rates.get(target).map(|x| x.to_borrowed())
-    }
-
-    fn add(&mut self, target: String, rate: OwnedAmount) -> Result<(), ImportError> {
-        if rate.commodity == target {
-            return Err(ImportError::Other(format!(
-                "cannot handle rate with the same commodity {}",
-                target
-            )));
-        }
-        let Some(existing) = self.rates.insert(target.clone(), rate.clone()) else {
-            return Ok(());
-        };
-        if existing != rate {
-            return Err(ImportError::Other(format!(
-                "given commodity {} has two distinct rates: @ {} {} and @ {} {}",
-                target, existing.value, existing.commodity, rate.value, rate.commodity
-            )));
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -709,19 +722,8 @@ mod tests {
             "foo",
             owned_amount(dec!(10), "JPY"),
         );
-        let mut original_rates = BTreeMap::new();
 
-        assert_eq!(
-            txn.dest_amount(&Options::default(), &mut original_rates)
-                .unwrap(),
-            (
-                PostingAmount {
-                    amount: borrowed_amount(dec!(-10), "JPY"),
-                    rate: None
-                },
-                None
-            )
-        );
+        assert_eq!(txn.dest_amount(), borrowed_amount(dec!(-10), "JPY"));
     }
 
     #[test]
@@ -731,28 +733,16 @@ mod tests {
             "foo",
             owned_amount(dec!(1000), "JPY"),
         );
-        txn.add_rate(
+        txn.rate(
             "USD".to_owned(),
             OwnedAmount {
                 commodity: "JPY".to_owned(),
                 value: dec!(100),
             },
-        )
-        .unwrap();
+        );
         txn.transferred_amount(owned_amount(dec!(10.00), "USD"));
-        let mut original_rates = BTreeMap::new();
 
-        assert_eq!(
-            txn.dest_amount(&Options::default(), &mut original_rates)
-                .unwrap(),
-            (
-                PostingAmount {
-                    amount: borrowed_amount(dec!(-10.00), "USD"),
-                    rate: Some(borrowed_amount(dec!(100), "JPY")),
-                },
-                None
-            )
-        )
+        assert_eq!(txn.dest_amount(), borrowed_amount(dec!(-10.00), "USD"));
     }
 
     #[test]
@@ -762,28 +752,16 @@ mod tests {
             "foo",
             owned_amount(dec!(1000), "JPY"),
         );
-        txn.add_rate(
+        txn.rate(
             "USD".to_owned(),
             OwnedAmount {
                 commodity: "JPY".to_owned(),
                 value: dec!(100),
             },
-        )
-        .unwrap();
+        );
         txn.transferred_amount(owned_amount(dec!(-10.00), "USD"));
-        let mut original_rates = BTreeMap::new();
 
-        assert_eq!(
-            txn.dest_amount(&Options::default(), &mut original_rates)
-                .unwrap(),
-            (
-                PostingAmount {
-                    amount: borrowed_amount(dec!(-10.00), "USD"),
-                    rate: Some(borrowed_amount(dec!(100), "JPY")),
-                },
-                None
-            )
-        )
+        assert_eq!(txn.dest_amount(), borrowed_amount(dec!(-10.00), "USD"));
     }
 
     mod posting_amount {
@@ -792,14 +770,14 @@ mod tests {
         use pretty_assertions::assert_eq;
 
         #[test]
-        fn as_syntax_with_rate() {
+        fn into_syntax_with_rate() {
             let amount = PostingAmount {
                 amount: borrowed_amount(dec!(-10.00), "USD"),
                 rate: Some(borrowed_amount(dec!(100), "JPY")),
             };
 
             assert_eq!(
-                amount.as_syntax(&Options::default()),
+                amount.into_syntax(&Options::default()),
                 syntax::PostingAmount {
                     amount: syntax_amount(PrettyDecimal::unformatted(dec!(-10.00)), "USD"),
                     cost: Some(syntax::Exchange::Rate(syntax_amount(
@@ -812,7 +790,7 @@ mod tests {
         }
 
         #[test]
-        fn as_syntax_with_alias() {
+        fn into_syntax_with_alias() {
             let amount = PostingAmount {
                 amount: borrowed_amount(dec!(-10.00), "米ドル"),
                 rate: Some(borrowed_amount(dec!(100), "日本円")),
@@ -828,7 +806,7 @@ mod tests {
             };
 
             assert_eq!(
-                amount.as_syntax(&options),
+                amount.into_syntax(&options),
                 syntax::PostingAmount {
                     amount: syntax_amount(PrettyDecimal::unformatted(dec!(-10.00)), "USD"),
                     cost: Some(syntax::Exchange::Rate(syntax_amount(

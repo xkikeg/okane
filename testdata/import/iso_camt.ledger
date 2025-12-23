@@ -30,6 +30,7 @@
     ; Payee: Okane Bank (fee)
     Assets:Okane Bank                         -14.15 CHF
     ! Equity:Adjustments                       -0.02 CHF
+    ; Payee: Okane Bank (fee)
 
 2021/10/06 * (20211031/6/1) Hanako Steinmann
     ! Expenses:Unknown                         24.75 CHF

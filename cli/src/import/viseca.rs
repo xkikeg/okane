@@ -39,13 +39,13 @@ pub fn import<R: std::io::Read>(
                     line_count
                 ))
             })?;
-            txn.add_rate(
+            txn.rate(
                 spent.commodity.clone(),
                 OwnedAmount {
                     commodity: exchange.equivalent.commodity,
                     value: exchange.rate,
                 },
-            )?;
+            );
             txn.transferred_amount(-spent);
         } else if let Some(spent) = entry.spent {
             txn.transferred_amount(-spent);
