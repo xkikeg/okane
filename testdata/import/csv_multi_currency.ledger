@@ -14,7 +14,7 @@
     Assets:Okane Bank                         -23.45 CHF = 0.00 CHF
 
 2020/07/29 * 外貨普通預金（スイスフラン）へ振替
-    ; original_rate: 0.9108 CHF/ドル
+    ; original_rate: 0.9108 CHF/USD
     Assets:Wire                         1,000.003752 CHF
     Assets:Okane Bank                      -1,097.94 USD @ 0.9158 CHF = 31,691.78 USD
     Expenses:Commissions                        5.49 CHF
@@ -25,7 +25,7 @@
     Assets:Wire                            -1,000.00 CHF
 
 2020/07/29 * 外貨普通預金（ユーロ）へ振替
-    ; original_rate: 1.1767 ドル/EUR
+    ; original_rate: 1.1767 USD/EUR
     Assets:Wire                             2,000.00 EUR @ 1.1749 USD
     Expenses:Commissions                        3.60 USD
     ; Payee: Okane Bank (commission)
@@ -36,14 +36,14 @@
     Assets:Wire                            -2,000.00 EUR
 
 2020/07/30 * 円普通預金へ振替
-    ; original_rate: 145.5200 JPY/ドル
+    ; original_rate: 145.5200 JPY/USD
     Assets:Wire                              398,819 JPY
     Assets:Okane Bank                      -2,740.65 USD @ 145.67 JPY = 26,597.73 USD
     Expenses:Commissions                         411 JPY
     ; Payee: Okane Bank (commission)
 
 2025/06/27 * 円普通預金へ振替
-    ; original_rate: 144.280000 JPY/ドル
+    ; original_rate: 144.280000 JPY/USD
     Assets:Wire                              721,400 JPY
     Assets:Okane Bank                      -5,000.00 USD @ 144.43 JPY = 21,597.73 USD
     Expenses:Commissions                         750 JPY
@@ -56,4 +56,5 @@
     ; Payee: Okane Bank (commission)
     Assets:Wire                             -100,000 JPY
     ! Equity:Adjustments                           1 JPY
+    ; Payee: Okane Bank (commission)
 

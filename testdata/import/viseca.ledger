@@ -15,6 +15,7 @@
     ; Payee: Okane Card (fee)
     Liabilities:Okane Card                    -52.10 CHF
     ! Equity:Adjustments                       -0.02 CHF
+    ; Payee: Okane Card (fee)
 
 2020/08/11=2020/08/12 * GOOGLE *YouTubePremium, g.co/helppay# GB
     Expenses:Amusement                         23.90 CHF
@@ -39,6 +40,7 @@
     ; Payee: Okane Card (fee)
     Liabilities:Okane Card                     -8.05 CHF
     ! Equity:Adjustments                       -0.01 CHF
+    ; Payee: Okane Card (fee)
 
 2022/08/11=2022/07/23 * AMZNPRIME DE AMZN.DE/I, Luxembourg LU
     ; original_rate: 0.988364 CHF/EUR

@@ -98,13 +98,13 @@ where
                     // For now, we use transaciton amount, without falling back to instructed amount.
                     if transaction.amount != detail_amount.amount {
                         if let Some(exchange) = detail_amount.currency_exchange.as_ref() {
-                            txn.add_rate(
+                            txn.rate(
                                 exchange.target_currency.clone(),
                                 OwnedAmount {
                                     commodity: exchange.source_currency.clone(),
                                     value: exchange.exchange_rate.value,
                                 },
-                            )?;
+                            );
                         }
                         txn.transferred_amount(
                             detail_amount

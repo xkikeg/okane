@@ -183,7 +183,7 @@ fn extract_transaction(
                 amount / rate,
             ),
         };
-        txn.add_rate(target, rate)?;
+        txn.rate(target, rate);
         let transferred = match conv.amount.unwrap_or_default() {
                     config::ConversionAmountMode::Extract => secondary_amount.ok_or_else(|| ImportError::Other(format!(
                             "secondary_amount should be specified when conversion.amount is set to extract @ line {}", pos.line()
