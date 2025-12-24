@@ -8,6 +8,25 @@
 
 ### Fixed
 
+## [0.17.0] - 2025-12-25
+
+### Added
+
+* CLI: import balances posting (https://github.com/xkikeg/okane/pull/288).
+
+### Changed
+
+* CLI: Supports more ISO Camt053 related to `<AmtDtls>` (https://github.com/xkikeg/okane/pull/290).
+* CLI: Removed duplciated integration test (https://github.com/xkikeg/okane/pull/293).
+* CLI: Added `commodity` matcher (https://github.com/xkikeg/okane/pull/301, https://github.com/xkikeg/okane/pull/303).
+* CLI: Supports `secondary_commodity` matcher for all formats (https://github.com/xkikeg/okane/pull/296, https://github.com/xkikeg/okane/pull/297).
+* CLI: Added hidden fee support (https://github.com/xkikeg/okane/pull/298).
+
+### Fixed
+
+* meta: Add clippy CI (https://github.com/xkikeg/okane/pull/286).
+* CLI: refactored extract logic (https://github.com/xkikeg/okane/pull/292, https://github.com/xkikeg/okane/pull/295).
+
 ## [0.16.0] - 2025-11-02
 
 ### Added
