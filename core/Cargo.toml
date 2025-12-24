@@ -28,7 +28,7 @@ unicode-width = "0.2"
 winnow.workspace = true
 
 [dev-dependencies]
-okane-golden = { version = "0.1.0", path = "../golden" }
+okane-golden = { version = "0.2.0", path = "../golden" }
 
 annotate-snippets = { version = "0.12.8", features = ["testing-colors"] }
 ctor.workspace = true
