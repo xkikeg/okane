@@ -318,12 +318,11 @@ impl MatchAndExpr {
         current: Fragment<'a>,
         entity: Et,
     ) -> Option<Fragment<'a>> {
-        let got = self.0.iter().try_fold(current, |prev, matcher| {
+        self.0.iter().try_fold(current, |prev, matcher| {
             matcher
                 .captures(&prev, entity)
                 .map(|matched| prev + matched)
-        });
-        got
+        })
     }
 }
 
