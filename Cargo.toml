@@ -11,8 +11,8 @@ resolver = "2"
 [workspace.package]
 version = "0.17.0"
 authors = ["kikeg"]
-edition = "2021"
-rust-version = "1.82.0"
+edition = "2024"
+rust-version = "1.86.0"
 license = "MIT"
 repository = "https://github.com/xkikeg/okane"
 
@@ -26,14 +26,14 @@ regex = "1.12"
 rust_decimal = "1.39"
 strum = { version = "0.27", features = ["derive"] }
 thiserror = "2.0"
-winnow = "0.7.13"
+winnow = "0.7.14"
 
 # middle
 env_logger = "0.11"
 lazy_static = "1.5"
 
 # dev-dependencies
-ctor = "0.6.0"
+ctor = "0.6.3"
 indoc = "2.0"
 maplit = "1.0"
 pretty_assertions = "1.4"
