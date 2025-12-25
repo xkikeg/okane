@@ -6,6 +6,9 @@
 
 ### Changed
 
+* Both: Updated to edition 2024, minimum version 1.86 (https://github.com/xkikeg/okane/pull/309).
+* CLI: Changed `okane --version` to return a long version (https://github.com/xkikeg/okane/pull/285).
+
 ### Fixed
 
 ## [0.17.0] - 2025-12-25
