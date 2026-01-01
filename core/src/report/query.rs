@@ -56,11 +56,12 @@ pub struct PostingQuery {
 pub enum ConversionStrategy {
     /// Converts the amount on the date of transaction.
     Historical,
-    /// Converts the amount on the up-to-date date.
+    /// Converts the amount on the given date's rate.
     /// Not implemented for register report.
+    /// https://github.com/xkikeg/okane/issues/313
     UpToDate {
         /// Date for the conversion to be _up-to-date_.
-        now: NaiveDate,
+        today: NaiveDate,
     },
 }
 
@@ -134,6 +135,10 @@ impl<'ctx> Ledger<'ctx> {
     }
 
     /// Returns all postings following the queries.
+    // TODO: Support date range query.
+    // https://github.com/xkikeg/okane/issues/208
+    // TODO: Support currency conversion.
+    // https://github.com/xkikeg/okane/issues/313
     pub fn postings<'a>(
         &'a self,
         ctx: &ReportContext<'ctx>,
@@ -205,7 +210,7 @@ impl<'ctx> Ledger<'ctx> {
                 ..
             }) => Ok(balance),
             Some(Conversion {
-                strategy: ConversionStrategy::UpToDate { now },
+                strategy: ConversionStrategy::UpToDate { today },
                 target,
             }) => {
                 let mut converted = Balance::default();
@@ -217,7 +222,7 @@ impl<'ctx> Ledger<'ctx> {
                             &mut self.price_repos,
                             original_amount,
                             target,
-                            now,
+                            today,
                         )
                         .map_err(|err| QueryError::CommodityConversionFailure(err.to_string()))?,
                     );
@@ -514,7 +519,7 @@ mod tests {
                 &BalanceQuery {
                     conversion: Some(Conversion {
                         strategy: ConversionStrategy::UpToDate {
-                            now: NaiveDate::from_ymd_opt(2024, 1, 16).unwrap(),
+                            today: NaiveDate::from_ymd_opt(2024, 1, 16).unwrap(),
                         },
                         target: jpy,
                     }),

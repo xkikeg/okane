@@ -475,7 +475,7 @@ impl EvalOptions {
         let strategy = if self.historical {
             query::ConversionStrategy::Historical
         } else {
-            query::ConversionStrategy::UpToDate { now: self.today }
+            query::ConversionStrategy::UpToDate { today: self.today }
         };
         Ok(Some(query::Conversion { strategy, target }))
     }
