@@ -190,7 +190,7 @@ fn query_balance(c: &mut Criterion) {
             date_range: report::query::DateRange::default(),
             conversion: Some(report::query::Conversion {
                 strategy: report::query::ConversionStrategy::UpToDate {
-                    now: NaiveDate::from_ymd_opt(2025, 12, 31).unwrap(),
+                    today: NaiveDate::from_ymd_opt(2025, 12, 31).unwrap(),
                 },
                 target: usd,
             }),
