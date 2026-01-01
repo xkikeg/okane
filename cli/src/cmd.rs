@@ -33,6 +33,10 @@ pub enum Error {
     Query(#[from] query::QueryError),
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error("invalid flag: {0}")]
+pub struct InvalidFlagError(String);
+
 #[derive(clap::Parser, Debug)]
 #[clap(about, version, author, long_version = CLAP_LONG_VERSION)]
 #[command(infer_subcommands = true)]
@@ -42,6 +46,10 @@ pub struct Cli {
 }
 
 impl Cli {
+    pub fn validate(&self) -> Result<(), InvalidFlagError> {
+        self.command.validate()
+    }
+
     pub fn run<W>(self, w: &mut W) -> Result<(), Error>
     where
         W: std::io::Write,
@@ -67,6 +75,13 @@ pub enum Command {
 }
 
 impl Command {
+    fn validate(&self) -> Result<(), InvalidFlagError> {
+        match self {
+            Command::Balance(cmd) => cmd.validate(),
+            _ => Ok(()),
+        }
+    }
+
     pub fn run<W>(self, w: &mut W) -> Result<(), Error>
     where
         W: std::io::Write,
@@ -288,6 +303,10 @@ pub struct BalanceCmd {
 }
 
 impl BalanceCmd {
+    fn validate(&self) -> Result<(), InvalidFlagError> {
+        self.eval_options.validate()?;
+        Ok(())
+    }
     pub fn run<W>(self, w: &mut W) -> Result<(), Error>
     where
         W: std::io::Write,
@@ -301,7 +320,7 @@ impl BalanceCmd {
         )?;
         let query = query::BalanceQuery {
             conversion: self.eval_options.to_conversion(&ctx)?,
-            date_range: self.eval_options.to_date_range(),
+            date_range: self.eval_options.to_date_range()?,
         };
         for (account, amount) in ledger.balance(&ctx, &query)?.into_owned().into_vec() {
             writeln!(
@@ -381,8 +400,12 @@ pub struct EvalOptions {
     #[arg(long, default_value_t)]
     historical: bool,
 
-    #[arg(long, default_value_t = chrono::Local::now().date_naive())]
-    now: NaiveDate,
+    /// Today's date in YYYY-mm-dd format.
+    ///
+    /// By default it points to the current local date.
+    /// This value is used in `--current`, as well as currency conversion.
+    #[arg(long, visible_alias("now"),default_value_t = chrono::Local::now().date_naive())]
+    today: NaiveDate,
 
     /// Beginning of date range (inclusive).
     ///
@@ -395,20 +418,45 @@ pub struct EvalOptions {
     /// If specified, only transaction with the date before `--end` is considered.
     #[arg(long)]
     end: Option<NaiveDate>,
+
+    /// If specified, sets the end date to `--today`.
+    ///
+    /// If this is specified with `--end`, it causes an error.
+    #[arg(long, default_value_t)]
+    current: bool,
 }
 
 impl EvalOptions {
+    fn validate(&self) -> Result<(), InvalidFlagError> {
+        if self.current && self.end.is_some() {
+            return Err(InvalidFlagError(
+                "--current and --end cannot be set simultaneously".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
     fn to_process_options(&self) -> report::ProcessOptions {
         report::ProcessOptions {
             price_db_path: self.price_db.clone(),
         }
     }
 
-    fn to_date_range(&self) -> query::DateRange {
-        query::DateRange {
+    // TODO: Use anyhow::Error.
+    // https://github.com/xkikeg/okane/issues/310
+    fn to_date_range(&self) -> Result<query::DateRange, ImportError> {
+        let end = if self.current {
+            let tomorrow = self.today.succ_opt().ok_or_else(|| {
+                ImportError::Other(format!("cannot compute one day after today {}", self.today))
+            })?;
+            Some(tomorrow)
+        } else {
+            self.end
+        };
+        Ok(query::DateRange {
             start: self.start,
-            end: self.end,
-        }
+            end,
+        })
     }
 
     fn to_conversion<'ctx>(
@@ -427,7 +475,7 @@ impl EvalOptions {
         let strategy = if self.historical {
             query::ConversionStrategy::Historical
         } else {
-            query::ConversionStrategy::UpToDate { now: self.now }
+            query::ConversionStrategy::UpToDate { now: self.today }
         };
         Ok(Some(query::Conversion { strategy, target }))
     }
