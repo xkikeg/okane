@@ -35,8 +35,13 @@ use super::{
 pub enum BookKeepError {
     #[error("failed to evaluate the expression: {0}")]
     EvalFailure(#[source] OwnedEvalError, TrackedSpan),
-    #[error("failed to meet balance condition: {0}")]
-    BalanceFailure(#[from] BalanceError),
+    #[error("failed balance assertion: {source}")]
+    BalanceFailure {
+        #[source]
+        source: BalanceError,
+        account: TrackedSpan,
+        balance: TrackedSpan,
+    },
     #[error("transaction cannot have multiple postings without constraints")]
     UndeduciblePostingAmount(Tracked<usize>, Tracked<usize>),
     #[error("transaction cannot have unbalanced postings: {0}")]
@@ -75,6 +80,18 @@ impl BookKeepError {
             BookKeepError::EvalFailure(err, pos) => vec![AnnotationKind::Primary
                 .span(parsed_span.resolve(pos))
                 .label(bumpalo::format!(in &bump, "{}", err).into_bump_str())],
+            BookKeepError::BalanceFailure {
+                source: err,
+                account,
+                balance,
+            } => vec![
+                AnnotationKind::Primary
+                    .span(parsed_span.resolve(balance))
+                    .label(bumpalo::format!(in &bump, "{}", err).into_bump_str()),
+                AnnotationKind::Context
+                    .span(parsed_span.resolve(account))
+                    .label(bumpalo::format!(in &bump, "{}", err.note()).into_bump_str()),
+            ],
             BookKeepError::UndeduciblePostingAmount(first, second) => vec![
                 AnnotationKind::Context
                     .span(parsed_span.resolve(&first.span()))
@@ -341,7 +358,13 @@ fn process_posting<'ctx>(
                 .map_err(|e| map_eval_err(ctx, e, balance_span.clone()))?
                 .try_into()
                 .map_err(|e| map_eval_err(ctx, e, balance_span.clone()))?;
-            let prev: PostingAmount = bal.set_partial(ctx, account, current)?;
+            let prev: PostingAmount = bal.set_partial(ctx, account, current).map_err(|e| {
+                BookKeepError::BalanceFailure {
+                    source: e,
+                    account: posting.account.span(),
+                    balance: balance_span.clone(),
+                }
+            })?;
             let amount = current
                 .check_sub(prev)
                 .map_err(|e| map_eval_err(ctx, e, balance_span))?;
