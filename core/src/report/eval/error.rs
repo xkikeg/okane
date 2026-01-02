@@ -6,9 +6,9 @@ use crate::report::{
 /// Errors specific to expression evaluation.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum EvalError<'ctx> {
-    #[error("operator can't be applied to unmatched types")]
+    #[error("the operator can't be applied to unmatching types")]
     UnmatchingOperation,
-    #[error("unmatching commodities {} and {}", .0.as_index(), .1.as_index())]
+    #[error("unmatching commodities: {} and {}", .0.as_index(), .1.as_index())]
     UnmatchingCommodities(CommodityTag<'ctx>, CommodityTag<'ctx>),
     #[error("unknown commodity {0}")]
     UnknownCommodity(OwnedCommodity),
@@ -16,20 +16,20 @@ pub enum EvalError<'ctx> {
     DivideByZero,
     #[error("overflow happened")]
     NumberOverflow,
-    #[error("expected 0 or amount with commodity")]
+    #[error("expected 0 or an amount with commodities")]
     AmountRequired,
-    #[error("0 or amount with single commodity expected")]
+    #[error("expected 0 or an amount with the single commodity")]
     PostingAmountRequired,
-    #[error("amount with single commodity expected")]
+    #[error("expected an amount with the single commodity")]
     SingleAmountRequired,
 }
 
 /// Owned version of [`EvalError`].
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum OwnedEvalError {
-    #[error("operator can't be applied to unmatched types")]
+    #[error("the operator can't be applied to unmatching types")]
     UnmatchingOperation,
-    #[error("unmatching commodities {0} and {1}")]
+    #[error("unmatching commodities: {0} and {1}")]
     UnmatchingCommodities(OwnedCommodity, OwnedCommodity),
     #[error("unknown commodity {0}")]
     UnknownCommodity(OwnedCommodity),
@@ -37,11 +37,11 @@ pub enum OwnedEvalError {
     DivideByZero,
     #[error("overflow happened")]
     NumberOverflow,
-    #[error("expected 0 or amount with commodity")]
+    #[error("expected 0 or an amount with commodities")]
     AmountRequired,
-    #[error("0 or amount with single commodity expected")]
+    #[error("expected 0 or an amount with the single commodity")]
     PostingAmountRequired,
-    #[error("amount with single commodity expected")]
+    #[error("expected an amount with the single commodity")]
     SingleAmountRequired,
 }
 

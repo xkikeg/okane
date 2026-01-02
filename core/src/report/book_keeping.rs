@@ -3,10 +3,13 @@
 
 use std::{borrow::Borrow, path::PathBuf};
 
+use annotate_snippets::{Annotation, AnnotationKind};
 use bumpalo::collections as bcc;
+use bumpalo::Bump;
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
 
+use crate::parse::ParsedSpan;
 use crate::{
     load,
     report::eval::EvalError,
@@ -28,15 +31,12 @@ use super::{
 };
 
 /// Error related to transaction understanding.
-// TODO: Reconsider the error in details.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum BookKeepError {
     #[error("failed to evaluate the expression: {0}")]
-    EvalFailure(#[from] OwnedEvalError),
+    EvalFailure(#[source] OwnedEvalError, TrackedSpan),
     #[error("failed to meet balance condition: {0}")]
     BalanceFailure(#[from] BalanceError),
-    #[error("posting amount must be resolved as a simple value with commodity or zero")]
-    ComplexPostingAmount,
     #[error("transaction cannot have multiple postings without constraints")]
     UndeduciblePostingAmount(Tracked<usize>, Tracked<usize>),
     #[error("transaction cannot have unbalanced postings: {0}")]
@@ -61,6 +61,74 @@ pub enum BookKeepError {
         posting_amount: TrackedSpan,
         exchange: TrackedSpan,
     },
+}
+
+impl BookKeepError {
+    /// Returns annotations corresponding to the given span.
+    pub(super) fn annotations<'arena>(
+        &self,
+        bump: &'arena Bump,
+        parsed_span: &ParsedSpan,
+        text: &str,
+    ) -> Vec<Annotation<'arena>> {
+        match self {
+            BookKeepError::EvalFailure(err, pos) => vec![AnnotationKind::Primary
+                .span(parsed_span.resolve(pos))
+                .label(bumpalo::format!(in &bump, "{}", err).into_bump_str())],
+            BookKeepError::UndeduciblePostingAmount(first, second) => vec![
+                AnnotationKind::Context
+                    .span(parsed_span.resolve(&first.span()))
+                    .label("first posting without constraints"),
+                AnnotationKind::Primary
+                    .span(parsed_span.resolve(&second.span()))
+                    .label("cannot deduce this posting"),
+            ],
+            BookKeepError::BalanceAssertionFailure {
+                balance_span,
+                account_span,
+                computed,
+                ..
+            } => {
+                let msg = bumpalo::format!(
+                    in &bump,
+                    "computed balance: {}", computed,
+                );
+                vec![
+                    AnnotationKind::Primary
+                        .span(parsed_span.resolve(balance_span))
+                        .label("not match the computed balance"),
+                    AnnotationKind::Context
+                        .span(parsed_span.resolve(account_span))
+                        .label(msg.into_bump_str()),
+                ]
+            }
+            BookKeepError::ZeroAmountWithExchange(exchange) => vec![AnnotationKind::Primary
+                .span(parsed_span.resolve(exchange))
+                .label("absolute zero posting should not have exchange")],
+            BookKeepError::ZeroExchangeRate(exchange) => vec![AnnotationKind::Primary
+                .span(parsed_span.resolve(exchange))
+                .label("exchange with zero amount")],
+            BookKeepError::ExchangeWithAmountCommodity {
+                posting_amount,
+                exchange,
+            } => vec![
+                AnnotationKind::Context
+                    .span(parsed_span.resolve(posting_amount))
+                    .label("posting amount"),
+                AnnotationKind::Primary
+                    .span(parsed_span.resolve(exchange))
+                    .label("exchange cannot have the same commodity with posting"),
+            ],
+            _ => {
+                // TODO: Add more detailed error into this.
+                // Also, put these logic into BookKeepError.
+                // https://github.com/xkikeg/okane/issues/189
+                vec![AnnotationKind::Primary
+                    .span(0..text.len())
+                    .label("error occured")]
+            }
+        }
+    }
 }
 
 /// Options to control process behavior.
@@ -246,6 +314,14 @@ struct EvaluatedPosting<'ctx> {
     balance_delta: PostingAmount<'ctx>,
 }
 
+fn map_eval_err<'ctx>(
+    ctx: &mut ReportContext<'ctx>,
+    e: EvalError<'ctx>,
+    span: TrackedSpan,
+) -> BookKeepError {
+    BookKeepError::EvalFailure(e.into_owned(ctx), span)
+}
+
 fn process_posting<'ctx>(
     ctx: &mut ReportContext<'ctx>,
     bal: &mut Balance<'ctx>,
@@ -258,16 +334,17 @@ fn process_posting<'ctx>(
         (None, None) => Ok((None, None)),
         // posting with `Account   = X`.
         (None, Some(balance_constraints)) => {
+            let balance_span = balance_constraints.span();
             let current: PostingAmount = balance_constraints
                 .as_undecorated()
                 .eval_mut(ctx)
-                .map_err(|e| e.into_owned(ctx))?
+                .map_err(|e| map_eval_err(ctx, e, balance_span.clone()))?
                 .try_into()
-                .map_err(|e: EvalError<'ctx>| e.into_owned(ctx))?;
+                .map_err(|e| map_eval_err(ctx, e, balance_span.clone()))?;
             let prev: PostingAmount = bal.set_partial(ctx, account, current)?;
             let amount = current
                 .check_sub(prev)
-                .map_err(|e: EvalError<'ctx>| e.into_owned(ctx))?;
+                .map_err(|e| map_eval_err(ctx, e, balance_span))?;
             Ok((
                 Some(EvaluatedPosting {
                     amount,
@@ -282,12 +359,13 @@ fn process_posting<'ctx>(
             let computed = ComputedPosting::compute_from_syntax(ctx, syntax_amount)?;
             let current = bal.add_posting_amount(account, computed.amount);
             if let Some(balance_constraints) = balance_constraints.as_ref() {
+                let balance_span = balance_constraints.span();
                 let expected: PostingAmount = balance_constraints
                     .as_undecorated()
                     .eval_mut(ctx)
-                    .map_err(|e| e.into_owned(ctx))?
+                    .map_err(|e| map_eval_err(ctx, e, balance_span.clone()))?
                     .try_into()
-                    .map_err(|e: EvalError<'ctx>| e.into_owned(ctx))?;
+                    .map_err(|e| map_eval_err(ctx, e, balance_span.clone()))?;
                 let diff = current.assert_balance(&expected);
                 if !diff.is_absolute_zero() {
                     return Err(BookKeepError::BalanceAssertionFailure {
@@ -313,6 +391,7 @@ fn process_posting<'ctx>(
 
 /// Pre-computed [syntax::Posting].
 struct ComputedPosting<'ctx> {
+    amount_span: TrackedSpan,
     amount: PostingAmount<'ctx>,
     cost: Option<Exchange<'ctx>>,
     lot: Option<Exchange<'ctx>>,
@@ -324,43 +403,46 @@ impl<'ctx> ComputedPosting<'ctx> {
         ctx: &mut ReportContext<'ctx>,
         syntax_amount: &syntax::tracked::PostingAmount<'_>,
     ) -> Result<Self, BookKeepError> {
+        let amount_span = syntax_amount.amount.span();
         let amount: PostingAmount = syntax_amount
             .amount
             .as_undecorated()
             .eval_mut(ctx)
-            .map_err(|e| e.into_owned(ctx))?
+            .map_err(|e| map_eval_err(ctx, e, amount_span.clone()))?
             .try_into()
-            .map_err(|e: EvalError<'ctx>| e.into_owned(ctx))?;
+            .map_err(|e| map_eval_err(ctx, e, amount_span.clone()))?;
         let cost = posting_cost_exchange(syntax_amount)
             .map(|exchange| Exchange::try_from_syntax(ctx, syntax_amount, &amount, exchange))
             .transpose()?;
         let lot = posting_lot_exchange(syntax_amount)
             .map(|exchange| Exchange::try_from_syntax(ctx, syntax_amount, &amount, exchange))
             .transpose()?;
-        Ok(ComputedPosting { amount, cost, lot })
+        Ok(ComputedPosting {
+            amount_span,
+            amount,
+            cost,
+            lot,
+        })
     }
 
     fn calculate_converted_amount(
         &self,
-        ctx: &ReportContext<'ctx>,
+        ctx: &mut ReportContext<'ctx>,
     ) -> Result<Option<SingleAmount<'ctx>>, BookKeepError> {
-        self.cost
-            .as_ref()
-            .or(self.lot.as_ref())
-            .map(|x| {
-                Ok(x.exchange(
-                    self.amount
-                        .try_into()
-                        .map_err(|e: EvalError<'ctx>| e.into_owned(ctx))?,
-                ))
-            })
-            .transpose()
+        let Some(rate) = self.cost.as_ref().or(self.lot.as_ref()) else {
+            return Ok(None);
+        };
+        let amount = self
+            .amount
+            .try_into()
+            .map_err(|e| map_eval_err(ctx, e, self.amount_span.clone()))?;
+        Ok(Some(rate.exchange(amount)))
     }
 
     /// Returns the amount which sums up to the balance within the transaction.
     fn calculate_balance_amount(
         &self,
-        ctx: &ReportContext<'ctx>,
+        ctx: &mut ReportContext<'ctx>,
     ) -> Result<PostingAmount<'ctx>, BookKeepError> {
         // Actually, there's no point to compute cost if lot price is provided.
         // Example: if you sell a X with cost p Y lot q Y.
@@ -373,13 +455,13 @@ impl<'ctx> ComputedPosting<'ctx> {
         // t = -q Y
         // so actually cost is pointless in this case.
         match self.lot.as_ref().or(self.cost.as_ref()) {
-            Some(x) => Ok(x
-                .exchange(
-                    self.amount
-                        .try_into()
-                        .map_err(|e: EvalError<'ctx>| e.into_owned(ctx))?,
-                )
-                .into()),
+            Some(x) => {
+                let amount = self
+                    .amount
+                    .try_into()
+                    .map_err(|e| map_eval_err(ctx, e, self.amount_span.clone()))?;
+                Ok(x.exchange(amount).into())
+            }
             None => Ok(self.amount),
         }
     }
@@ -438,17 +520,17 @@ impl<'ctx> Exchange<'ctx> {
             syntax::Exchange::Rate(rate) => {
                 let rate: SingleAmount<'ctx> = rate
                     .eval_mut(ctx)
-                    .map_err(|e| e.into_owned(ctx))?
+                    .map_err(|e| map_eval_err(ctx, e, exchange.span()))?
                     .try_into()
-                    .map_err(|e: EvalError<'ctx>| e.into_owned(ctx))?;
+                    .map_err(|e| map_eval_err(ctx, e, exchange.span()))?;
                 (rate.commodity, Exchange::Rate(rate))
             }
             syntax::Exchange::Total(rate) => {
                 let rate: SingleAmount<'ctx> = rate
                     .eval_mut(ctx)
-                    .map_err(|e| e.into_owned(ctx))?
+                    .map_err(|e| map_eval_err(ctx, e, exchange.span()))?
                     .try_into()
-                    .map_err(|e: EvalError<'ctx>| e.into_owned(ctx))?;
+                    .map_err(|e| map_eval_err(ctx, e, exchange.span()))?;
                 (rate.commodity, Exchange::Total(rate))
             }
         };

@@ -2,7 +2,7 @@
 
 use std::{fmt::Display, path::PathBuf};
 
-use annotate_snippets::{Annotation, AnnotationKind, Level, Snippet};
+use annotate_snippets::{Annotation, Level, Snippet};
 use bumpalo::Bump;
 
 use crate::{
@@ -48,59 +48,7 @@ impl ErrorContext {
         let message = err.to_string();
         let path = self.path.to_string_lossy();
         let bump = Bump::new();
-        let annotations: Vec<Annotation> = match err {
-            BookKeepError::UndeduciblePostingAmount(first, second) => vec![
-                AnnotationKind::Context
-                    .span(self.parsed_span.resolve(&first.span()))
-                    .label("first posting without constraints"),
-                AnnotationKind::Primary
-                    .span(self.parsed_span.resolve(&second.span()))
-                    .label("cannot deduce this posting"),
-            ],
-            BookKeepError::BalanceAssertionFailure {
-                balance_span,
-                account_span,
-                computed,
-                ..
-            } => {
-                let msg = bumpalo::format!(
-                    in &bump,
-                    "computed balance: {}", computed,
-                );
-                vec![
-                    AnnotationKind::Primary
-                        .span(self.parsed_span.resolve(balance_span))
-                        .label("not match the computed balance"),
-                    AnnotationKind::Context
-                        .span(self.parsed_span.resolve(account_span))
-                        .label(msg.into_bump_str()),
-                ]
-            }
-            BookKeepError::ZeroAmountWithExchange(exchange) => vec![AnnotationKind::Primary
-                .span(self.parsed_span.resolve(exchange))
-                .label("absolute zero posting should not have exchange")],
-            BookKeepError::ZeroExchangeRate(exchange) => vec![AnnotationKind::Primary
-                .span(self.parsed_span.resolve(exchange))
-                .label("exchange with zero amount")],
-            BookKeepError::ExchangeWithAmountCommodity {
-                posting_amount,
-                exchange,
-            } => vec![
-                AnnotationKind::Context
-                    .span(self.parsed_span.resolve(posting_amount))
-                    .label("posting amount"),
-                AnnotationKind::Primary
-                    .span(self.parsed_span.resolve(exchange))
-                    .label("exchange cannot have the same commodity with posting"),
-            ],
-            _ => {
-                // TODO: Add more detailed error into this.
-                // Also, put these logic into BookKeepError.
-                vec![AnnotationKind::Primary
-                    .span(0..self.text.len())
-                    .label("error occured")]
-            }
-        };
+        let annotations: Vec<Annotation> = err.annotations(&bump, &self.parsed_span, &self.text);
         let message = Level::ERROR.primary_title(&message).element(
             Snippet::source(&self.text)
                 .path(&path)
