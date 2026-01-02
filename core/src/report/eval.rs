@@ -96,7 +96,7 @@ mod tests {
     use super::*;
 
     use bumpalo::Bump;
-    use maplit::hashmap;
+    use maplit::btreemap;
     use pretty_assertions::assert_eq;
     use pretty_decimal::PrettyDecimal;
     use rust_decimal_macros::dec;
@@ -112,7 +112,7 @@ mod tests {
         let got = input.eval_mut(&mut ctx).unwrap();
         let got: Amount<'_> = got.try_into().expect("not an amount");
         assert_eq!(
-            hashmap! {
+            btreemap! {
                 ctx.commodities.ensure("USD") => dec!(100.12345),
             },
             got.into_values()
@@ -128,7 +128,7 @@ mod tests {
         let got = input.eval_mut(&mut ctx).unwrap();
         let got: Amount<'_> = got.try_into().expect("not an amount");
         assert_eq!(
-            hashmap! {
+            btreemap! {
                 ctx.commodities.ensure("USD") => dec!(0),
                 ctx.commodities.ensure("EUR") => dec!(300),
                 ctx.commodities.ensure("JPY") => dec!(20000),
@@ -146,7 +146,7 @@ mod tests {
         let got = input.eval_mut(&mut ctx).unwrap();
         let got: Amount<'_> = got.try_into().expect("not an amount");
         assert_eq!(
-            hashmap! {
+            btreemap! {
                 ctx.commodities.ensure("USD") => dec!(180),
                 ctx.commodities.ensure("EUR") => dec!(400),
             },
