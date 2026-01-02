@@ -1,8 +1,9 @@
-error: failed to meet balance condition: balance = 0 cannot deduce posting amount when balance has multi commodities
-  --> okane/testdata/error/balance_zero_multi_commodities.ledger:8:1
+error: failed balance assertion: balance = 0 should be used on single commodity balance
+  --> okane/testdata/error/balance_zero_multi_commodities.ledger:9:58
    |
- 8 | / 2024/01/20 * Shop
- 9 | |     Assets:Bank                                          = 0
-10 | |     ; this could be 100k JPY + 1k CHF, but it's prohibited.
-11 | |     Expenses:Cash                            100,000 JPY
-   | |_________________________________________________________^ error occured
+ 8 | 2024/01/20 * Shop
+ 9 |     Assets:Bank                                          = 0
+   |     ----------- actual: (100000 JPY + 1000 CHF)          ^^^ balance = 0 should be used on single commodity balance
+10 |     ; this could be 100k JPY + 1k CHF, but it's prohibited.
+11 |     Expenses:Cash                            100,000 JPY
+   |

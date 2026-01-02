@@ -121,12 +121,14 @@ impl<'ctx> Amount<'ctx> {
         self.values
     }
 
-    /// Returns iterator over its amount.
+    /// Returns an iterator over its amount.
     pub fn iter(&self) -> impl Iterator<Item = SingleAmount<'ctx>> + '_ {
         AmountIter(self.values.iter())
     }
 
-    /// Returns an objectt to print the amount as inline.
+    /// Returns an object to print the amount as inline.
+    ///
+    /// The commodity is ordered by the appearing order, and deterministic.
     pub fn as_inline_display<'a>(&'a self, ctx: &'a ReportContext<'ctx>) -> impl Display + 'a + 'ctx
     where
         'a: 'ctx,
@@ -282,24 +284,23 @@ struct InlinePrintAmount<'a, 'ctx> {
 impl Display for InlinePrintAmount<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let vs = &self.amount.values;
-        match vs.len() {
-            0 | 1 => match vs.iter().next() {
+        if vs.len() <= 1 {
+            return match vs.iter().next() {
                 Some((c, v)) => {
                     write!(f, "{} {}", v, c.to_str_lossy(self.commodity_store))
                 }
                 None => write!(f, "0"),
-            },
-            _ => {
-                write!(f, "(")?;
-                for (i, (c, v)) in vs.iter().enumerate() {
-                    if i != 0 {
-                        write!(f, " + ")?;
-                    }
-                    write!(f, "{} {}", v, c.to_str_lossy(self.commodity_store))?;
-                }
-                write!(f, ")")
-            }
+            };
         }
+        // wrap in () for 2 or more commodities case.
+        write!(f, "(")?;
+        for (i, (c, v)) in vs.iter().enumerate() {
+            if i != 0 {
+                write!(f, " + ")?;
+            }
+            write!(f, "{} {}", v, c.to_str_lossy(self.commodity_store))?;
+        }
+        write!(f, ")")
     }
 }
 
@@ -699,6 +700,30 @@ mod tests {
                 (dec!(6.6665), chf)
             ])
             .round(&ctx),
+        );
+    }
+
+    #[test]
+    fn test_to_string() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let jpy = ctx.commodities.ensure("JPY");
+        let chf = ctx.commodities.ensure("CHF");
+
+        assert_eq!("0", Amount::default().as_inline_display(&ctx).to_string());
+
+        assert_eq!(
+            "10 JPY",
+            Amount::from_value(dec!(10), jpy)
+                .as_inline_display(&ctx)
+                .to_string()
+        );
+
+        assert_eq!(
+            "(10 JPY + 1 CHF)",
+            Amount::from_values([(dec!(10), jpy), (dec!(1), chf)])
+                .as_inline_display(&ctx)
+                .to_string()
         );
     }
 }

@@ -11,8 +11,26 @@ use super::{
 /// Error related to [Balance] operations.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum BalanceError {
-    #[error("balance = 0 cannot deduce posting amount when balance has multi commodities")]
-    MultiCommodityWithPartialSet(#[from] OwnedEvalError),
+    #[error("balance = 0 should be used on single commodity balance")]
+    MultiCommodityWithPartialSet(#[source] OwnedEvalError, String),
+}
+
+impl BalanceError {
+    pub(super) fn note(&self) -> impl std::fmt::Display + '_ {
+        BalanceErrorNote(self)
+    }
+}
+
+struct BalanceErrorNote<'a>(&'a BalanceError);
+
+impl std::fmt::Display for BalanceErrorNote<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            BalanceError::MultiCommodityWithPartialSet(_, balance) => {
+                write!(f, "actual: {balance}")
+            }
+        }
+    }
 }
 
 /// Accumulated balance of accounts.
@@ -69,7 +87,10 @@ impl<'ctx> Balance<'ctx> {
                     .insert(account, Amount::zero())
                     .unwrap_or_default();
                 (&prev).try_into().map_err(|e: EvalError<'_>| {
-                    BalanceError::MultiCommodityWithPartialSet(e.into_owned(ctx))
+                    BalanceError::MultiCommodityWithPartialSet(
+                        e.into_owned(ctx),
+                        prev.as_inline_display(ctx).to_string(),
+                    )
                 })
             }
             PostingAmount::Single(single_amount) => {
@@ -315,7 +336,10 @@ mod tests {
 
         assert_eq!(
             err,
-            BalanceError::MultiCommodityWithPartialSet(OwnedEvalError::PostingAmountRequired)
+            BalanceError::MultiCommodityWithPartialSet(
+                OwnedEvalError::PostingAmountRequired,
+                "(1000 JPY + 200 CHF)".to_string()
+            )
         );
     }
 }
