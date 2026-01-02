@@ -31,6 +31,7 @@ winnow.workspace = true
 okane-golden = { version = "0.2.0", path = "../golden" }
 
 annotate-snippets = { version = "0.12.10", features = ["testing-colors"] }
+criterion = {version = "0.8.1", features = ["html_reports"]}
 ctor.workspace = true
 env_logger.workspace = true
 indoc.workspace = true
@@ -38,7 +39,6 @@ maplit.workspace = true
 pretty_assertions.workspace = true
 rstest.workspace = true
 rust_decimal_macros.workspace = true
-criterion = {version = "0.8.1", features = ["html_reports"]}
 
 [[bench]]
 name = "report_bench"

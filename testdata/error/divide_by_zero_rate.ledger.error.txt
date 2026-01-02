@@ -1,7 +1,8 @@
 error: failed to evaluate the expression: cannot divide by zero
- --> okane/testdata/error/divide_by_zero_rate.ledger:3:1
+ --> okane/testdata/error/divide_by_zero_rate.ledger:4:58
   |
-3 | / 2024/09/01 Shop
-4 | |     Expenses                                      10 CHF @ (1 / 0 JPY)
-5 | |     Assets:Banks
-  | |_________________^ error occured
+3 | 2024/09/01 Shop
+4 |     Expenses                                      10 CHF @ (1 / 0 JPY)
+  |                                                          ^^^^^^^^^^^^^ cannot divide by zero
+5 |     Assets:Banks
+  |

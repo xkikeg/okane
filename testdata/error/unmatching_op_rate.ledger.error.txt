@@ -1,7 +1,8 @@
-error: failed to evaluate the expression: operator can't be applied to unmatched types
- --> okane/testdata/error/unmatching_op_rate.ledger:3:1
+error: failed to evaluate the expression: the operator can't be applied to unmatching types
+ --> okane/testdata/error/unmatching_op_rate.ledger:4:60
   |
-3 | / 2024/09/01 Shop
-4 | |     Expenses                                     100 OKANE @ (1 + 5 JPY)
-5 | |     Assets:Banks
-  | |_________________^ error occured
+3 | 2024/09/01 Shop
+4 |     Expenses                                     100 OKANE @ (1 + 5 JPY)
+  |                                                            ^^^^^^^^^^^^^ the operator can't be applied to unmatching types
+5 |     Assets:Banks
+  |
