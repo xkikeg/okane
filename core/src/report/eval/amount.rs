@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map, HashMap},
+    collections::{btree_map, BTreeMap},
     fmt::Display,
     iter::FusedIterator,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
@@ -20,7 +20,7 @@ pub struct Amount<'ctx> {
     // if values.len == zero, then it'll be completely zero.
     // TODO: Consider optimizing for small number of commodities,
     // as most of the case it needs to be just a few elements.
-    values: HashMap<CommodityTag<'ctx>, Decimal>,
+    values: BTreeMap<CommodityTag<'ctx>, Decimal>,
 }
 
 impl<'ctx> TryFrom<Amount<'ctx>> for SingleAmount<'ctx> {
@@ -117,7 +117,7 @@ impl<'ctx> Amount<'ctx> {
     }
 
     /// Takes out the instance and returns map from commodity to its value.
-    pub fn into_values(self) -> HashMap<CommodityTag<'ctx>, Decimal> {
+    pub fn into_values(self) -> BTreeMap<CommodityTag<'ctx>, Decimal> {
         self.values
     }
 
@@ -261,7 +261,7 @@ impl<'ctx> Amount<'ctx> {
 }
 
 #[derive(Debug)]
-struct AmountIter<'a, 'ctx>(hash_map::Iter<'a, CommodityTag<'ctx>, Decimal>);
+struct AmountIter<'a, 'ctx>(btree_map::Iter<'a, CommodityTag<'ctx>, Decimal>);
 
 impl<'ctx> Iterator for AmountIter<'_, 'ctx> {
     type Item = SingleAmount<'ctx>;
@@ -396,7 +396,7 @@ mod tests {
     use super::*;
 
     use bumpalo::Bump;
-    use maplit::hashmap;
+    use maplit::btreemap;
     use pretty_assertions::assert_eq;
     use pretty_decimal::PrettyDecimal;
     use rust_decimal_macros::dec;
@@ -430,14 +430,14 @@ mod tests {
         let amount = Amount::from_values([(dec!(10), jpy), (dec!(1), chf)]);
         assert_eq!(
             amount.into_values(),
-            hashmap! {jpy => dec!(10), chf => dec!(1)},
+            btreemap! {jpy => dec!(10), chf => dec!(1)},
         );
 
         let amount = Amount::from_values([(dec!(10), jpy), (dec!(1), jpy)]);
-        assert_eq!(amount.into_values(), hashmap! {jpy => dec!(11)});
+        assert_eq!(amount.into_values(), btreemap! {jpy => dec!(11)});
 
         let amount = Amount::from_values([(dec!(10), jpy), (dec!(-10), jpy)]);
-        assert_eq!(amount.into_values(), hashmap! {jpy => dec!(0)});
+        assert_eq!(amount.into_values(), btreemap! {jpy => dec!(0)});
     }
 
     #[test]

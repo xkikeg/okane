@@ -73,7 +73,19 @@ impl Display for OwnedCommodity {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-pub struct CommodityTag<'a>(InternTag<Commodity<'a>>);
+pub struct CommodityTag<'ctx>(InternTag<Commodity<'ctx>>);
+
+impl PartialOrd for CommodityTag<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CommodityTag<'_> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.as_index().cmp(&other.as_index())
+    }
+}
 
 impl<'ctx> CommodityTag<'ctx> {
     /// Returns the index of the commodity.
@@ -257,6 +269,17 @@ mod tests {
             OwnedCommodity::from_string("unknown#1".to_string()),
             unknown.to_owned_lossy(&commodities)
         );
+    }
+
+    #[test]
+    fn commodity_tag_ord() {
+        let arena = Bump::new();
+        let mut commodities = CommodityStore::new(&arena);
+        let usd = commodities.insert("USD").unwrap();
+        let chf = commodities.insert("CHF").unwrap();
+
+        assert_eq!(Some(std::cmp::Ordering::Equal), usd.partial_cmp(&usd));
+        assert!(usd < chf);
     }
 
     #[test]
