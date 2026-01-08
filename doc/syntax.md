@@ -23,9 +23,9 @@ directive ::= transaction
 Transaction is the most important directive.
 
 ```ebnf
-transaction ::= transaction-header metadata* posting*
+transaction ::= transaction-header transaction-metadata* posting*
 
-transaction-header ::= transaction-date (sp+ transcation-note)? (new-line | metadata)
+transaction-header ::= transaction-date (sp+ transcation-note)? metadata? new-line
 
 ; secondary date is called "effective date",
 ; which can be used to represent the date when the transaction took effect after some delay.
@@ -39,9 +39,15 @@ transaction-code ::= "(" sp* [^()\r\n]* sp* ")"
 
 payee ::= [^\r\n;]*
 
-posting ::= posting-line metadata? new-line (metadata new-line)*
+posting ::= posting-line metadata? new-line posting-metadata*
 
 posting-line ::= sp+ (clear-state sp*)? account posting-value?
+
+transaction-metadata ::= line-metadata
+
+posting-metadata ::= line-metadata
+
+line-metadata ::= sp+ metadata new-line
 
 ; account can't contain \t or two spaces
 account ::= no-sp (no-sp | " " no-sp)*
