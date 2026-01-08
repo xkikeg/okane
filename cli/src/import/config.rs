@@ -78,13 +78,15 @@ impl ConfigSet {
             .filter_map(|x| has_matches(x, fp))
             .collect();
         matched.sort_by_key(|x| x.0);
-        matched
-            .into_iter()
-            .fold(None, |res, item| match res {
-                None => Some(item.1.clone()),
-                Some(prev) => Some(prev.merge(item.1.clone())),
-            })
-            .map(|x| x.try_into())
+        let merged = matched.into_iter().fold(None, |res, item| match res {
+            None => Some(item.1.clone()),
+            Some(prev) => Some(prev.merge(item.1.clone())),
+        })?;
+        if merged.template {
+            None
+        } else {
+            Some(merged.try_into())
+        }
     }
 }
 
@@ -152,6 +154,7 @@ impl From<Config> for ConfigFragment {
             account: Some(value.account),
             account_type: Some(value.account_type),
             operator: value.operator,
+            template: false,
             commodity: Some(value.commodity.into()),
             format: Some(value.format),
             output: Some(value.output),
@@ -176,6 +179,11 @@ struct ConfigFragment {
     /// Operator of the import target.
     /// Required only when some charges applied.
     operator: Option<String>,
+    /// Set `true` to make this fragment "template".
+    /// If the resolved config is all made up from template,
+    /// It means no concrete config is matched and thus error.
+    #[serde(default)]
+    template: bool,
     commodity: Option<commodity::AccountCommodityConfig>,
     format: Option<format::FormatSpec>,
     output: Option<OutputSpec>,
@@ -195,6 +203,7 @@ impl Merge for ConfigFragment {
             account: other.account.or(self.account),
             account_type: other.account_type.or(self.account_type),
             operator: other.operator.or(self.operator),
+            template: other.template && self.template,
             commodity: self.commodity,
             format: self.format,
             output: self.output,
@@ -287,9 +296,10 @@ mod tests {
             account_type: None,
             commodity: None,
             encoding: None,
+            operator: None,
+            template: false,
             format: None,
             output: None,
-            operator: None,
             rewrite: Vec::new(),
         }
     }
@@ -302,6 +312,7 @@ mod tests {
             path: path.to_owned(),
             account_type: Some(AccountType::Asset),
             operator: None,
+            template: false,
             commodity: Some(AccountCommodityConfig::PrimaryCommodity("JPY".to_owned())),
             format: Some(format::FormatSpec {
                 date: "%Y%m%d".to_owned(),
@@ -338,6 +349,25 @@ mod tests {
         let config_set = ConfigSet {
             entries: vec![
                 create_config_fragment("path/to/foo"),
+                create_config_fragment("path/to/bar"),
+            ],
+        };
+        assert_eq!(
+            None,
+            config_set
+                .select(&Path::new("path").join("to").join("baz").join("202109.csv"))
+                .expect("select must not fail")
+        );
+    }
+
+    #[test]
+    fn test_config_select_template_only_match_fails() {
+        let config_set = ConfigSet {
+            entries: vec![
+                ConfigFragment {
+                    template: true,
+                    ..create_config_fragment("")
+                },
                 create_config_fragment("path/to/bar"),
             ],
         };
@@ -519,6 +549,21 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn test_config_fragment_merge_template() {
+        let template = ConfigFragment {
+            template: true,
+            ..create_empty_config_fragment("".to_string())
+        };
+        let leaf = ConfigFragment {
+            template: false,
+            ..create_empty_config_fragment("".to_string())
+        };
+        assert_eq!(template.clone().merge(leaf.clone()), leaf);
+        assert_eq!(leaf.clone().merge(template.clone()), leaf);
+        assert_eq!(template.clone().merge(template.clone()), template);
     }
 
     #[test]
