@@ -10,6 +10,7 @@ output:
     #   default:
     #     significant_digits: 5
     #     scale: 3 # which do we want?
+template: true
 ---
 path: index_amount.csv
 encoding: UTF-8
