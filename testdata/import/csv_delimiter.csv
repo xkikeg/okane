@@ -1,0 +1,8 @@
+; CSV must use comma for separator.
+; However, some bank uses random char.
+; This example is for such a case.
+; TODO: Allows non-header CSV and removes the first header line.
+; https://github.com/xkikeg/okane/issues/239
+date;payee;amount
+2026-01-01;salary;150.00
+2026-01-02;coop;-10.00

@@ -57,6 +57,33 @@ rewrite:
       payee: Migros
     account: Expenses:Grocery
 ---
+path: csv_delimiter.csv
+encoding: UTF-8
+account: Assets:Okane Bank
+account_type: asset
+commodity:
+  primary: CHF
+format:
+  date: "%Y-%m-%d"
+  delimiter: ";"
+  fields:
+    date: 1
+    payee: 2
+    amount: 3
+  skip:
+    head: 5
+output:
+  commodity:
+    default:
+      style: plain
+rewrite:
+  - account: Income:Salary
+    matcher:
+      payee: salary
+  - account: Expenses:Grocery
+    matcher:
+      payee: coop
+---
 path: csv_multi_currency.tsv
 encoding: UTF-8
 account: Assets:Okane Bank
