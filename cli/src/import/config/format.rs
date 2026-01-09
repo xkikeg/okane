@@ -12,7 +12,13 @@ use super::merge::{merge_non_empty, Merge};
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct FormatSpec {
-    /// Specify the date format, in [chrono::format::strftime] compatible format.
+    /// File type. If the field is not set, we'll guess from the suffix for the following files.
+    /// * .csv: CSV
+    /// * .tsv: TSV (CSV with tab delimiter)
+    /// For others, it's mandatory to set this field.
+    #[serde(default)]
+    pub file_type: Option<FileType>,
+    /// Specify the date format, in [`chrono::format::strftime`] compatible format.
     #[serde(default)]
     pub date: String,
     /// Mapping from abstracted field key to abstracted position.
@@ -34,6 +40,7 @@ impl Merge for FormatSpec {
         let skip = other.skip.or(self.skip);
         let row_order = other.row_order.or(self.row_order);
         Self {
+            file_type: other.file_type.or(self.file_type),
             date,
             fields,
             delimiter,
@@ -46,6 +53,19 @@ impl Merge for FormatSpec {
         // insufficient implementation, but safer unless we have derive macro.
         *self = self.clone().merge(other)
     }
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum FileType {
+    /// CSV (comma separated values) file.
+    Csv,
+    /// TSV (tab separated values) file, which is equivalent to CSV with `\t` delimiter.
+    Tsv,
+    /// ISO Camt053 format.
+    IsoCamt053,
+    /// Viseca format.
+    Viseca,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
@@ -198,6 +218,7 @@ mod tests {
     #[test]
     fn merge_format_spec() {
         let spec1 = FormatSpec {
+            file_type: Some(FileType::Tsv),
             date: "%Y/%m/%d".to_string(),
             fields: hashmap! {
                 FieldKey::Date => FieldPos::Index(one_based_32!(3)),
@@ -207,6 +228,7 @@ mod tests {
             row_order: Some(RowOrder::OldToNew),
         };
         let spec2 = FormatSpec {
+            file_type: Some(FileType::Csv),
             date: "%Y-%m-%d".to_string(),
             fields: hashmap! {
                 FieldKey::Payee => FieldPos::Index(one_based_32!(4)),

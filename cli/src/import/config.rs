@@ -10,7 +10,7 @@ pub use commodity::{
     AccountCommoditySpec, CommodityConversionSpec, ConversionAmountMode, ConversionRateMode,
     HiddenFee, HiddenFeeCondition, HiddenFeeRate,
 };
-pub use format::{FieldKey, FieldPos, FormatSpec, RowOrder, SkipSpec, TemplateField};
+pub use format::{FieldKey, FieldPos, FileType, FormatSpec, RowOrder, SkipSpec, TemplateField};
 pub use output::{
     CommodityFormatStyle, OutputCommodityDetailsSpec, OutputCommoditySpec, OutputSpec,
 };
