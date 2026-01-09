@@ -250,6 +250,8 @@ rewrite:
 ---
 path: iso_camt.xml
 account: Assets:Okane Bank
+format:
+  file_type: ISO_CAMT053
 rewrite:
   - matcher:
       payee: "Herr.*Frau.*"
@@ -268,6 +270,8 @@ encoding: UTF-8
 account: Liabilities:Okane Card
 account_type: liability
 operator: Okane Card (fee)
+format:
+  file_type: VISECA
 commodity:
   primary: CHF
   hidden_fee:

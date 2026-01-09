@@ -273,6 +273,7 @@ mod tests {
             "",
             &config::Config {
                 format: config::FormatSpec {
+                    file_type: None,
                     date: "%Y/%m/%d".to_string(),
                     fields: hashmap! {
                         FieldKey::Date => FieldPos::Index(OneBasedU32::from_one_based(1).unwrap()),

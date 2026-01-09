@@ -39,44 +39,36 @@ impl Importer {
         source_path: &Path,
         w: &mut W,
     ) -> Result<(), ImportError> {
-        let config_entry = self.config_set.select(source_path)?.ok_or_else(|| {
+        let config = self.config_set.select(source_path)?.ok_or_else(|| {
             ImportError::Other(format!(
                 "config matching {} not found",
                 source_path.display()
             ))
         })?;
-        log::debug!("config: {:?}", config_entry);
-        // TODO: Allow injecting source format with config.
-        // https://github.com/xkikeg/okane/issues/319
-        let format = match source_path.extension().and_then(OsStr::to_str) {
-            Some("csv") => Ok(Format::Csv("")),
-            Some("tsv") => Ok(Format::Csv("\t")),
-            Some("xml") => Ok(Format::IsoCamt053),
-            Some("txt") => Ok(Format::Viseca),
-            _ => Err(ImportError::UnknownFormat),
-        }?;
+        log::debug!("config: {:?}", config);
+        let format = Format::try_new(config.format.file_type, source_path)?;
         let file = File::open(source_path)?;
         let decoded = DecodeReaderBytesBuilder::new()
-            .encoding(Some(config_entry.encoding.as_encoding()))
+            .encoding(Some(config.encoding.as_encoding()))
             .build(file);
         let txns: Vec<single_entry::Txn> = match format {
-            Format::Csv(delimiter) => csv::import(decoded, delimiter, &config_entry),
-            Format::IsoCamt053 => iso_camt053::import(decoded, &config_entry),
-            Format::Viseca => viseca::import(decoded, &config_entry),
+            Format::Csv(delimiter) => csv::import(decoded, delimiter, &config),
+            Format::IsoCamt053 => iso_camt053::import(decoded, &config),
+            Format::Viseca => viseca::import(decoded, &config),
         }?;
         let ctx = DisplayContext {
-            commodity: config_entry.output.commodity.into(),
+            commodity: config.output.commodity.into(),
         };
         let opts = single_entry::Options {
-            operator: config_entry.operator.clone(),
-            commodity_rename: config_entry.commodity.rename.clone(),
+            operator: config.operator.clone(),
+            commodity_rename: config.commodity.rename.clone(),
             commodity_format: ctx.commodity.clone(),
         };
         let arena = Bump::new();
         let mut rctx = report::ReportContext::new(&arena);
         for txn in &txns {
             let txn: syntax::plain::Transaction =
-                txn.to_double_entry(&config_entry.account, &opts, &mut rctx)?;
+                txn.to_double_entry(&config.account, &opts, &mut rctx)?;
             writeln!(w, "{}", ctx.as_display(&txn))?;
         }
         Ok(())
@@ -91,11 +83,75 @@ enum Format {
     Viseca,
 }
 
+impl Format {
+    fn try_new(config_value: Option<config::FileType>, path: &Path) -> Result<Self, ImportError> {
+        config_value
+            .map(Self::from_config)
+            .or_else(|| Self::from_path(path))
+            .ok_or(ImportError::UnknownFormat)
+    }
+
+    fn from_config(v: config::FileType) -> Self {
+        match v {
+            config::FileType::Csv => Self::Csv(""),
+            config::FileType::Tsv => Self::Csv("\t"),
+            config::FileType::IsoCamt053 => Self::IsoCamt053,
+            config::FileType::Viseca => Self::Viseca,
+        }
+    }
+
+    fn from_path(path: &Path) -> Option<Self> {
+        match path.extension().and_then(OsStr::to_str) {
+            Some("csv") => Some(Format::Csv("")),
+            Some("tsv") => Some(Format::Csv("\t")),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use assert_matches::assert_matches;
+
+    mod format {
+        use super::*;
+
+        use pretty_assertions::assert_eq;
+
+        #[test]
+        fn try_new_prefers_config_specified_value() {
+            assert_eq!(
+                Format::Viseca,
+                Format::try_new(Some(config::FileType::Viseca), Path::new("test.csv")).unwrap()
+            );
+            assert_eq!(
+                Format::Csv("\t"),
+                Format::try_new(Some(config::FileType::Tsv), Path::new("test.csv")).unwrap()
+            );
+        }
+
+        #[test]
+        fn try_new_fallback_to_guess() {
+            assert_eq!(
+                Format::Csv(""),
+                Format::try_new(None, Path::new("test.csv")).unwrap()
+            );
+            assert_eq!(
+                Format::Csv("\t"),
+                Format::try_new(None, Path::new("test.tsv")).unwrap()
+            );
+        }
+
+        #[test]
+        fn try_new_fails_on_unknown_suffix() {
+            assert_matches!(
+                Format::try_new(None, Path::new("test.xml")),
+                Err(ImportError::UnknownFormat)
+            );
+        }
+    }
 
     fn simple_config() -> config::Config {
         config::Config {
