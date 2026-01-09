@@ -287,7 +287,7 @@ impl Txn {
                 .as_ref()
                 .map(|o| Cow::Borrowed(o.as_str()))
                 .ok_or(ImportError::InvalidConfig(
-                    "config should have operator to have charge",
+                    "config should have operator to have charge".to_string(),
                 ))
         };
         let post_cleared = self.clear_state.unwrap_or(match &self.dest_account {

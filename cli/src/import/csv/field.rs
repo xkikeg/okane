@@ -149,11 +149,15 @@ impl FieldResolver {
         let date = ki
             .get(&config::FieldKey::Date)
             .cloned()
-            .ok_or(ImportError::InvalidConfig("no Date field specified"))?;
+            .ok_or(ImportError::InvalidConfig(
+                "no Date field specified".to_string(),
+            ))?;
         let payee = ki
             .get(&config::FieldKey::Payee)
             .cloned()
-            .ok_or(ImportError::InvalidConfig("no Payee field specified"))?;
+            .ok_or(ImportError::InvalidConfig(
+                "no Payee field specified".to_string(),
+            ))?;
         let amount = ki.get(&config::FieldKey::Amount).cloned();
         let credit = ki.get(&config::FieldKey::Credit).cloned();
         let debit = ki.get(&config::FieldKey::Debit).cloned();
@@ -166,7 +170,7 @@ impl FieldResolver {
                     debit: d,
                 })
                 .ok_or(ImportError::InvalidConfig(
-                    "either amount or credit/debit pair should be set",
+                    "either amount or credit/debit pair should be set".to_string(),
                 )),
         }?;
         Ok(FieldResolver {

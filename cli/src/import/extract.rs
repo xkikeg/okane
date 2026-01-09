@@ -309,7 +309,7 @@ impl MatchAndExpr {
         let matchers = matchers?;
         if matchers.is_empty() {
             Err(ImportError::InvalidConfig(
-                "empty field matcher is not allowed",
+                "empty field matcher is not allowed".to_string(),
             ))
         } else {
             Ok(MatchAndExpr(matchers))

@@ -117,18 +117,20 @@ pub struct Config {
 impl TryFrom<ConfigFragment> for Config {
     type Error = ImportError;
     fn try_from(value: ConfigFragment) -> Result<Self, Self::Error> {
-        let encoding = value
-            .encoding
-            .ok_or(ImportError::InvalidConfig("no encoding specified"))?;
-        let account = value
-            .account
-            .ok_or(ImportError::InvalidConfig("no account specified"))?;
-        let account_type = value
-            .account_type
-            .ok_or(ImportError::InvalidConfig("no account_type specified"))?;
+        let encoding = value.encoding.ok_or(ImportError::InvalidConfig(
+            "no encoding specified".to_string(),
+        ))?;
+        let account = value.account.ok_or(ImportError::InvalidConfig(
+            "no account specified".to_string(),
+        ))?;
+        let account_type = value.account_type.ok_or(ImportError::InvalidConfig(
+            "no account_type specified".to_string(),
+        ))?;
         let commodity = value
             .commodity
-            .ok_or(ImportError::InvalidConfig("no commodity specified"))?
+            .ok_or(ImportError::InvalidConfig(
+                "no commodity specified".to_string(),
+            ))?
             .into();
         let format = value.format.unwrap_or_default();
         let output = value.output.unwrap_or_default();
