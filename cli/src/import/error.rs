@@ -15,10 +15,10 @@ pub enum ImportError {
     YAML(#[from] serde_yaml::Error),
     #[error("failed to parse VISECA file: {0}")]
     Viseca(String),
-    #[error("invalid flag {0}")]
+    #[error("invalid flag: {0}")]
     InvalidFlag(&'static str),
-    #[error("invalid config {0}")]
-    InvalidConfig(&'static str),
+    #[error("invalid config: {0}")]
+    InvalidConfig(String),
     #[error("invalid datetime")]
     InvalidDatetime(#[from] chrono::ParseError),
     #[error("invalid decimal")]
