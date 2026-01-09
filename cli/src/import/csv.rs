@@ -30,7 +30,13 @@ pub fn import<R: std::io::Read>(
         default_delimiter
     };
     if !delimiter.is_empty() {
-        rb.delimiter(config.format.delimiter.as_bytes()[0]);
+        if delimiter.len() != 1 || !delimiter.is_ascii() {
+            return Err(ImportError::InvalidConfig(format!(
+                "delimiter must be a single ASCII char: got {}",
+                delimiter.escape_debug()
+            )));
+        }
+        rb.delimiter(delimiter.as_bytes()[0]);
     }
     let skip_config = &config.format.skip.unwrap_or_default();
     for i in 0..skip_config.head {
@@ -208,6 +214,7 @@ fn extract_transaction(
 mod tests {
     use super::*;
 
+    use assert_matches::assert_matches;
     use indoc::indoc;
     use maplit::hashmap;
     use one_based::OneBasedU32;
@@ -226,6 +233,33 @@ mod tests {
             output: config::OutputSpec::default(),
             rewrite: Vec::new(),
         }
+    }
+
+    #[test]
+    fn import_fails_if_delimiter_is_non_ascii() {
+        let input = "";
+        let err = import(
+            input.as_bytes(),
+            "",
+            &config::Config {
+                format: config::FormatSpec {
+                    delimiter: "闇".to_string(),
+                    ..config::FormatSpec::default()
+                },
+                ..empty_config()
+            },
+        )
+        .unwrap_err();
+
+        assert_matches!(err, ImportError::InvalidConfig(msg) => assert_eq!(msg, "delimiter must be a single ASCII char: got 闇"));
+    }
+
+    #[test]
+    fn import_fails_if_delimiter_is_multi_chars() {
+        let input = "";
+        let err = import(input.as_bytes(), "foobar", &empty_config()).unwrap_err();
+
+        assert_matches!(err, ImportError::InvalidConfig(msg) => assert_eq!(msg, "delimiter must be a single ASCII char: got foobar"));
     }
 
     #[test]
@@ -253,9 +287,7 @@ mod tests {
             },
         )
         .unwrap_err();
-        assert!(
-            matches!(&err, ImportError::Other(s) if s.contains("csv record length too short")),
-            "unexpected error: {err}"
-        );
+
+        assert_matches!(err, ImportError::Other(s) => s.contains("csv record length too short"));
     }
 }

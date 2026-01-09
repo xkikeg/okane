@@ -96,7 +96,6 @@ commodity:
 operator: Okane Bank (commission)
 format:
   date: "%Y/%m/%d"
-  delimiter: "\t"
   fields:
     date: お取り引き日
     payee: 摘要
