@@ -4,12 +4,25 @@
 
 ### Added
 
+* CLI: Now `import` supports tsv file (https://github.com/xkikeg/okane/pull/302).
+* CLI: `balance` and `register` supports `--current` flag (https://github.com/xkikeg/okane/pull/312).
+* Core: Improved error message for report API (https://github.com/xkikeg/okane/pull/318).
+* CLI: Now `import` config supports `template` field (https://github.com/xkikeg/okane/pull/326). \
+  This clarifies the config is only meant for template, not a final config for `import`.
+
 ### Changed
 
 * Both: Updated to edition 2024, minimum version 1.86 (https://github.com/xkikeg/okane/pull/309).
+* CLI: `report::Amount` now uses `BTreeMap` under the hood (https://github.com/xkikeg/okane/pull/317).
 * CLI: Changed `okane --version` to return a long version (https://github.com/xkikeg/okane/pull/285).
+* CLI: Introduced `format.file_type` (https://github.com/xkikeg/okane/pull/329). \
+  Now you **need** to specify `format.file_type` to `ISO_CAMT053` or `VISECA` for corresponding formats. \
+  CSV and TSV files are still automatically inferred, however, user can also set the config value to `CSV` / `TSV` if they want.
 
 ### Fixed
+
+* CLI: Revert warning logs on unmatched transaction import (https://github.com/xkikeg/okane/pull/322).
+* Other: Fixed bug in syntax documentation (https://github.com/xkikeg/okane/pull/325).
 
 ## [0.17.0] - 2025-12-25
 
