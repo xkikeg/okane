@@ -2,7 +2,7 @@ Assets:Banks:Swiss Bank: 44018.47 CHF
 Assets:Banks:あおによし: 100000 JPY
 Assets:Brokers:US Broker: (13270.00 USD + 390.0000 OKANE + 12.300 GOLD)
 Assets:Wire:US Broker: 0
-Equity:Initial: (-48000.00 CHF + 900000 JPY + -26230.0000 USD)
+Equity:Initial: (-48000.00 CHF + 900000 JPY - 26230.0000 USD)
 Expenses:Cash: 511.00 EUR
 Expenses:Comissions: 11.06 USD
 Expenses:Commissions: 7.50 EUR
