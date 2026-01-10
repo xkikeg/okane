@@ -13,8 +13,10 @@ use super::merge::{merge_non_empty, Merge};
 #[serde(deny_unknown_fields)]
 pub struct FormatSpec {
     /// File type. If the field is not set, we'll guess from the suffix for the following files.
-    /// * .csv: CSV
-    /// * .tsv: TSV (CSV with tab delimiter)
+    ///
+    /// * `.csv`: CSV
+    /// * `.tsv`: TSV (CSV with tab delimiter)
+    ///
     /// For others, it's mandatory to set this field.
     #[serde(default)]
     pub file_type: Option<FileType>,
