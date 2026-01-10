@@ -1,8 +1,7 @@
-use core::str;
-use std::{fmt::Display, path::PathBuf};
+use std::ffi::OsStr;
+use std::io::Write;
+use std::path::PathBuf;
 
-use clap::Parser as _;
-use okane::cmd;
 use rstest::rstest;
 
 pub mod testing;
@@ -10,11 +9,6 @@ pub mod testing;
 #[ctor::ctor]
 fn init() {
     env_logger::init();
-}
-
-fn print_err<E: Display>(x: E) -> E {
-    eprintln!("{}", x);
-    x
 }
 
 #[rstest]
@@ -38,18 +32,15 @@ fn balance_default(
     log::info!("golden_path: {}", golden_path.display());
     let golden = okane_golden::Golden::new(golden_path).unwrap();
 
-    let args = vec![
-        "binary".to_string(),
-        "balance".to_string(),
-        input.display().to_string(),
-    ];
+    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+        .args(["balance".as_ref(), input.as_os_str()])
+        .assert()
+        .success();
 
-    let cli = cmd::Cli::try_parse_from(&args).map_err(print_err).unwrap();
-    let mut got: Vec<u8> = Vec::new();
-
-    cli.run(&mut got).map_err(print_err).unwrap();
-
-    golden.assert(str::from_utf8(&got).unwrap());
+    let output = result.get_output();
+    std::io::stderr().write_all(&output.stderr).unwrap();
+    let stdout = std::str::from_utf8(&output.stdout).unwrap();
+    golden.assert(stdout);
 }
 
 #[rstest]
@@ -71,20 +62,20 @@ fn balance_in_jpy_up_to_date(
     log::info!("golden_path: {}", golden_path.display());
     let golden = okane_golden::Golden::new(golden_path).unwrap();
 
-    let args = vec![
-        "binary".to_string(),
-        "balance".to_string(),
-        input.display().to_string(),
-        "-X".to_string(),
-        "JPY".to_string(),
-    ];
+    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+        .args([
+            "balance".as_ref(),
+            input.as_os_str(),
+            OsStr::new("-X"),
+            OsStr::new("JPY"),
+        ])
+        .assert()
+        .success();
 
-    let cli = cmd::Cli::try_parse_from(&args).map_err(print_err).unwrap();
-    let mut got: Vec<u8> = Vec::new();
-
-    cli.run(&mut got).map_err(print_err).unwrap();
-
-    golden.assert(str::from_utf8(&got).unwrap());
+    let output = result.get_output();
+    std::io::stderr().write_all(&output.stderr).unwrap();
+    let stdout = std::str::from_utf8(&output.stdout).unwrap();
+    golden.assert(stdout);
 }
 
 #[rstest]
@@ -106,19 +97,19 @@ fn balance_in_usd_historical(
     log::info!("golden_path: {}", golden_path.display());
     let golden = okane_golden::Golden::new(golden_path).unwrap();
 
-    let args = vec![
-        "binary".to_string(),
-        "balance".to_string(),
-        input.display().to_string(),
-        "-X".to_string(),
-        "USD".to_string(),
-        "--historical".to_string(),
-    ];
+    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+        .args([
+            "balance".as_ref(),
+            input.as_os_str(),
+            OsStr::new("-X"),
+            OsStr::new("USD"),
+            OsStr::new("--historical"),
+        ])
+        .assert()
+        .success();
 
-    let cli = cmd::Cli::try_parse_from(&args).map_err(print_err).unwrap();
-    let mut got: Vec<u8> = Vec::new();
-
-    cli.run(&mut got).map_err(print_err).unwrap();
-
-    golden.assert(str::from_utf8(&got).unwrap());
+    let output = result.get_output();
+    std::io::stderr().write_all(&output.stderr).unwrap();
+    let stdout = std::str::from_utf8(&output.stdout).unwrap();
+    golden.assert(stdout);
 }

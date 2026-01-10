@@ -8,15 +8,13 @@ pub enum ImportError {
     #[error("failed to perform IO")]
     IO(#[from] std::io::Error),
     #[error("failed to parse CSV")]
-    CSV(#[from] CsvError),
+    Csv(#[from] CsvError),
     #[error("failed to parse XML")]
-    XML(#[from] quick_xml::DeError),
+    Xml(#[from] quick_xml::DeError),
     #[error("failed to parse YAML")]
-    YAML(#[from] serde_yaml::Error),
+    Yaml(#[from] serde_yaml::Error),
     #[error("failed to parse VISECA file: {0}")]
     Viseca(String),
-    #[error("invalid flag: {0}")]
-    InvalidFlag(&'static str),
     #[error("invalid config: {0}")]
     InvalidConfig(String),
     #[error("invalid datetime")]

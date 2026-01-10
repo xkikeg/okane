@@ -9,6 +9,9 @@ description = "CLI tool to support Ledger (https://www.ledger-cli.org/) equivale
 readme = "../README.md"
 repository.workspace = true
 
+[[bin]]
+name = "okane"
+
 [dependencies]
 okane-core = { version = "0.17.0", path = "../core" }
 

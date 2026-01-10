@@ -190,7 +190,7 @@ mod tests {
     fn invalid_camt_domains(camt_format: TestFormat, #[case] field: config::RewriteField) {
         let got = FieldFilter::try_new(field, "foo", &camt_format);
 
-        assert_matches!(got, Err(ImportError::YAML(cause)) => {
+        assert_matches!(got, Err(ImportError::Yaml(cause)) => {
             assert!( cause.to_string().contains("unknown variant `foo`"),
                     "{:?} did not contains expected error",
                     cause

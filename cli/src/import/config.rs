@@ -6,14 +6,16 @@ mod merge;
 mod output;
 mod rewrite;
 
+#[cfg(test)]
+pub use commodity::AccountCommoditySpec;
 pub use commodity::{
-    AccountCommoditySpec, CommodityConversionSpec, ConversionAmountMode, ConversionRateMode,
-    HiddenFee, HiddenFeeCondition, HiddenFeeRate,
+    CommodityConversionSpec, ConversionAmountMode, ConversionRateMode, HiddenFee,
+    HiddenFeeCondition, HiddenFeeRate,
 };
-pub use format::{FieldKey, FieldPos, FileType, FormatSpec, RowOrder, SkipSpec, TemplateField};
-pub use output::{
-    CommodityFormatStyle, OutputCommodityDetailsSpec, OutputCommoditySpec, OutputSpec,
-};
+#[cfg(test)]
+pub use format::FormatSpec;
+pub use format::{FieldKey, FieldPos, FileType, RowOrder, TemplateField};
+pub use output::OutputSpec;
 pub use rewrite::{FieldMatcher, RewriteField, RewriteMatcher, RewriteRule};
 
 use std::convert::{TryFrom, TryInto};
