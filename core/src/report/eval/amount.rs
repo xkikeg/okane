@@ -295,8 +295,14 @@ impl Display for InlinePrintAmount<'_, '_> {
         // wrap in () for 2 or more commodities case.
         write!(f, "(")?;
         for (i, (c, v)) in vs.iter().enumerate() {
+            let mut v = v.clone();
             if i != 0 {
-                write!(f, " + ")?;
+                if v.is_sign_negative() {
+                    v.set_sign_negative(false);
+                    write!(f, " - ")?;
+                } else {
+                    write!(f, " + ")?;
+                }
             }
             write!(f, "{} {}", v, c.to_str_lossy(self.commodity_store))?;
         }
@@ -722,6 +728,13 @@ mod tests {
         assert_eq!(
             "(10 JPY + 1 CHF)",
             Amount::from_values([(dec!(10), jpy), (dec!(1), chf)])
+                .as_inline_display(&ctx)
+                .to_string()
+        );
+
+        assert_eq!(
+            "(-10 JPY - 1 CHF)",
+            Amount::from_values([(dec!(-10), jpy), (dec!(-1), chf)])
                 .as_inline_display(&ctx)
                 .to_string()
         );
