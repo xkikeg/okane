@@ -18,6 +18,7 @@
 * CLI: Introduced `format.file_type` (https://github.com/xkikeg/okane/pull/329). \
   Now you **need** to specify `format.file_type` to `ISO_CAMT053` or `VISECA` for corresponding formats. \
   CSV and TSV files are still automatically inferred, however, user can also set the config value to `CSV` / `TSV` if they want.
+* CLI: Made all module private (https://github.com/xkikeg/okane/pull/332).
 
 ### Fixed
 

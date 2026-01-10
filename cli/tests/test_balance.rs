@@ -15,7 +15,6 @@ fn init() {
 fn balance_default(
     #[base_dir = "../testdata/report"]
     #[files("*.ledger")]
-    #[exclude("multi_commodity")]
     input: PathBuf,
 ) {
     println!("test input file path: {}", input.display());
