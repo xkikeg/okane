@@ -9,10 +9,10 @@ use std::{
 use one_based::OneBasedU32;
 use serde::{Deserialize, Serialize};
 use winnow::{
+    Parser,
     combinator::{alt, delimited, repeat},
     error::ContextError,
     token::{one_of, take_till},
-    Parser,
 };
 
 use super::config::FieldKey;
@@ -56,28 +56,29 @@ pub struct Template {
     segments: Vec<Segment>,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum ParseError {
-    #[error("invalid template: {0}")]
-    InvalidTemplate(String),
-    #[error("unknown template_key {template_key}: template key must be a positive integer or known field key")]
-    UnknownTemplateKey { template_key: String },
-    #[error("index-based template key must be a positive integer")]
-    InvalidIndexTemplateKey(#[from] ParseIntError),
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-enum Segment {
-    Literal(String),
-    Reference(TemplateKey),
-}
-
-impl Display for Segment {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Segment::Literal(s) => write!(f, "{}", s),
-            Segment::Reference(tk) => write!(f, "{{{}}}", tk),
+impl Template {
+    /// Renders the template.
+    /// Args:
+    ///  * `current_field`: Currently rendered field to avoid infinite recursion.
+    pub fn render<'a, T: Interpolate<'a>>(
+        &'a self,
+        current_field: FieldKey,
+        values: T,
+    ) -> Result<impl Debug + Display + 'a, RenderError> {
+        let mut parts = Vec::with_capacity(self.segments.len());
+        for segment in &self.segments {
+            let part = match segment {
+                Segment::Literal(l) => l.as_str(),
+                Segment::Reference(fk) if *fk == current_field => {
+                    Err(RenderError::SelfRecursiveFieldKey(current_field))?
+                }
+                Segment::Reference(fk) => values
+                    .interpolate(*fk)
+                    .ok_or(RenderError::FieldKeyUnsupported(*fk))?,
+            };
+            parts.push(part);
         }
+        Ok(RenderedTemplate { parts })
     }
 }
 
@@ -145,6 +146,33 @@ impl<'de> Deserialize<'de> for Template {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum ParseError {
+    #[error("invalid template: {0}")]
+    InvalidTemplate(String),
+    #[error(
+        "unknown template_key {template_key}: template key must be a positive integer or known field key"
+    )]
+    UnknownTemplateKey { template_key: String },
+    #[error("index-based template key must be a positive integer")]
+    InvalidIndexTemplateKey(#[from] ParseIntError),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+enum Segment {
+    Literal(String),
+    Reference(TemplateKey),
+}
+
+impl Display for Segment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Segment::Literal(s) => write!(f, "{}", s),
+            Segment::Reference(tk) => write!(f, "{{{}}}", tk),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum RenderError {
     #[error("template field {0} in template is not supported")]
@@ -163,32 +191,6 @@ pub trait Interpolate<'a> {
     /// Returns the `&str` corresponding to the given `key`.
     /// It may return `None` if it's impossible.
     fn interpolate(&self, key: TemplateKey) -> Option<&'a str>;
-}
-
-impl Template {
-    /// Renders the template.
-    /// Args:
-    ///  * `current_field`: Currently rendered field to avoid infinite recursion.
-    pub fn render<'a, T: Interpolate<'a>>(
-        &'a self,
-        current_field: FieldKey,
-        values: T,
-    ) -> Result<impl Debug + Display + 'a, RenderError> {
-        let mut parts = Vec::with_capacity(self.segments.len());
-        for segment in &self.segments {
-            let part = match segment {
-                Segment::Literal(l) => l.as_str(),
-                Segment::Reference(fk) if *fk == current_field => {
-                    Err(RenderError::SelfRecursiveFieldKey(current_field))?
-                }
-                Segment::Reference(fk) => values
-                    .interpolate(*fk)
-                    .ok_or(RenderError::FieldKeyUnsupported(*fk))?,
-            };
-            parts.push(part);
-        }
-        Ok(RenderedTemplate { parts })
-    }
 }
 
 impl Display for RenderedTemplate<'_> {

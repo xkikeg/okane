@@ -10,10 +10,11 @@ pub mod single_entry;
 pub(crate) mod template;
 pub mod viseca;
 
-pub use error::ImportError;
+pub use error::{ImportError, ImportErrorKind};
 
 use std::ffi::OsStr;
 use std::fs::File;
+use std::io::Write;
 use std::path::Path;
 
 use bumpalo::Bump;
@@ -22,32 +23,37 @@ use encoding_rs_io::DecodeReaderBytesBuilder;
 use okane_core::report;
 use okane_core::syntax::{self, display::DisplayContext};
 
+use error::IntoImportError;
+
 /// Operates file import into Ledger format.
+#[derive(Debug)]
 pub struct Importer {
     config_set: config::ConfigSet,
 }
 
 impl Importer {
     pub fn new(config_path: &Path) -> Result<Self, ImportError> {
-        let config_file = File::open(config_path)?;
+        let config_file = File::open(config_path)
+            .into_import_err(ImportErrorKind::ConfigFileReadFailed, || {
+                format!("failed to read config file {}", config_path.display())
+            })?;
         let config_set = config::load_from_yaml(config_file)?;
         Ok(Self { config_set })
     }
 
-    pub fn import<W: std::io::Write>(
-        &self,
-        source_path: &Path,
-        w: &mut W,
-    ) -> Result<(), ImportError> {
-        let config = self.config_set.select(source_path)?.ok_or_else(|| {
-            ImportError::Other(format!(
-                "config matching {} not found",
-                source_path.display()
-            ))
-        })?;
+    pub fn import<W: Write>(&self, source_path: &Path, w: &mut W) -> Result<(), ImportError> {
+        let config = self
+            .config_set
+            .select(source_path)?
+            .into_import_err(ImportErrorKind::ConfigNotFound, || {
+                format!("config for {} is not found", source_path.display())
+            })?;
         log::debug!("config: {:?}", config);
         let format = Format::try_new(config.format.file_type, source_path)?;
-        let file = File::open(source_path)?;
+        let file = File::open(source_path)
+            .into_import_err(ImportErrorKind::SourceFileReadFailed, || {
+                format!("failed to read source file {}", source_path.display())
+            })?;
         let decoded = DecodeReaderBytesBuilder::new()
             .encoding(Some(config.encoding.as_encoding()))
             .build(file);
@@ -66,10 +72,13 @@ impl Importer {
         };
         let arena = Bump::new();
         let mut rctx = report::ReportContext::new(&arena);
-        for txn in &txns {
+        for (i, txn) in txns.iter().enumerate() {
             let txn: syntax::plain::Transaction =
                 txn.to_double_entry(&config.account, &opts, &mut rctx)?;
-            writeln!(w, "{}", ctx.as_display(&txn))?;
+            writeln!(w, "{}", ctx.as_display(&txn))
+                .into_import_err(ImportErrorKind::OutputFailed, || {
+                    format!("output failed at transaction {}", i + 1)
+                })?;
         }
         Ok(())
     }
@@ -88,7 +97,9 @@ impl Format {
         config_value
             .map(Self::from_config)
             .or_else(|| Self::from_path(path))
-            .ok_or(ImportError::UnknownFormat)
+            .into_import_err(ImportErrorKind::UnknownSourceFileFormat, || {
+                format!("config.format.file_type must be set for {}", path.display())
+            })
     }
 
     fn from_config(v: config::FileType) -> Self {
@@ -148,9 +159,16 @@ mod tests {
         fn try_new_fails_on_unknown_suffix() {
             assert_matches!(
                 Format::try_new(None, Path::new("test.xml")),
-                Err(ImportError::UnknownFormat)
+                Err(err) => assert_eq!(ImportErrorKind::UnknownSourceFileFormat, err.error_kind())
             );
         }
+    }
+
+    #[test]
+    fn importer_creation_fails_on_config_read_failure() {
+        let got_err = Importer::new(Path::new("does/not/exist.yml")).unwrap_err();
+
+        assert_eq!(ImportErrorKind::ConfigFileReadFailed, got_err.error_kind());
     }
 
     fn simple_config() -> config::Config {
@@ -174,12 +192,12 @@ mod tests {
         };
         let mut buf: Vec<u8> = Vec::new();
 
-        assert_matches!(
-            importer.import(Path::new("unrelated.csv"), &mut buf),
-            Err(ImportError::Other(msg)) => {
-                assert!(msg.contains("config matching unrelated.csv not found"), "msg {msg:?} does not match");
-            }
-        );
+        let got_err = importer
+            .import(Path::new("unrelated.csv"), &mut buf)
+            .unwrap_err();
+
+        assert_eq!(ImportErrorKind::ConfigNotFound, got_err.error_kind());
+        assert_eq!("config for unrelated.csv is not found", got_err.message());
     }
 
     #[test]
@@ -189,9 +207,45 @@ mod tests {
         };
         let mut buf: Vec<u8> = Vec::new();
 
-        assert_matches!(
-            importer.import(Path::new("matched/unknown_format"), &mut buf),
-            Err(ImportError::UnknownFormat)
+        let got_err = importer
+            .import(Path::new("matched/unknown_format"), &mut buf)
+            .unwrap_err();
+
+        assert_eq!(
+            ImportErrorKind::UnknownSourceFileFormat,
+            got_err.error_kind()
+        );
+    }
+
+    #[test]
+    fn import_fails_when_file_not_found() {
+        let importer = Importer {
+            config_set: config::ConfigSet::from_configs(vec![simple_config()]),
+        };
+        let mut buf: Vec<u8> = Vec::new();
+
+        let got_err = importer
+            .import(Path::new("matched/not_existing.csv"), &mut buf)
+            .unwrap_err();
+
+        assert_eq!(ImportErrorKind::SourceFileReadFailed, got_err.error_kind());
+    }
+
+    #[test]
+    fn import_fails_when_failed_to_write_output() {
+        let testdata_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../testdata/import/");
+        // buf is just 1 byte buffer, fails to write long.
+        let mut buf = [0u8; 1];
+        let importer = Importer::new(&testdata_dir.join("test_config.yml")).unwrap();
+        let target = testdata_dir.join("index_amount.csv");
+
+        let mut buf_slice = &mut buf[..];
+        let got_err = importer.import(&target, &mut buf_slice).unwrap_err();
+        assert_eq!(ImportErrorKind::OutputFailed, got_err.error_kind());
+        assert!(
+            got_err.message().contains("at transaction 1"),
+            "original message: {}",
+            got_err.message()
         );
     }
 }

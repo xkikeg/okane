@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use super::{xmlnode, Entity, EntityFormat, StrField};
+use super::{Entity, EntityFormat, StrField, xmlnode};
 
 /// [`EntityFormat`] for unit tests.
 #[derive(Debug, Default)]

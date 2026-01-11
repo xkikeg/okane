@@ -7,9 +7,10 @@ use rust_decimal::Decimal;
 
 use super::utility::str_to_comma_decimal;
 use crate::import::{
-    config::{self, FieldKey},
+    config,
+    config::FieldKey,
+    error::{ImportError, ImportErrorKind, IntoImportError},
     template::{self, Template, TemplateKey},
-    ImportError,
 };
 
 /// Manages all CSV field positions.
@@ -23,34 +24,46 @@ pub struct FieldResolver {
 }
 
 impl FieldResolver {
-    /// Returns the maximum column index.
-    pub fn max(&self) -> OneBasedUsize {
-        self.max_column
-    }
-
-    /// Extracts the given field out of the `record`.
+    /// Extracts the given `field_key` out of the `record`.
+    /// If the CSV doesn't have the corresponding field,
+    /// returns `Ok(None)`.
     pub fn extract<'a>(
         &self,
         field_key: FieldKey,
         record: &'a csv::StringRecord,
-    ) -> Result<Option<Cow<'a, str>>, template::RenderError> {
-        self.field(field_key)
-            .and_then(|x| self.resolve(field_key, x, record).transpose())
-            .transpose()
+    ) -> Result<Option<Cow<'a, str>>, ImportError> {
+        if record.len() <= self.max_column.as_zero_based() {
+            return Err(ImportError::new(
+                ImportErrorKind::InvalidSource,
+                format!(
+                    "csv record length too short: want columns at least {}, but got {}",
+                    self.max_column.as_one_based(),
+                    record.len()
+                ),
+            ));
+        }
+        let Some(field) = self.field(field_key) else {
+            return Ok(None);
+        };
+        self.value(field_key, field, record).map(Some)
     }
 
     fn field(&self, field_key: FieldKey) -> Option<&Field> {
         self.all_fields.get(&field_key)
     }
 
-    fn resolve<'a>(
+    /// Returns the value corresponding to the given `field`.
+    /// This fails when template rendering fails or
+    /// column index is out of range as that the error must be caught already
+    /// by confirming max_column.
+    fn value<'a>(
         &self,
         field_key: FieldKey,
         field: &Field,
         record: &'a csv::StringRecord,
-    ) -> Result<Option<Cow<'a, str>>, template::RenderError> {
+    ) -> Result<Cow<'a, str>, ImportError> {
         match field {
-            Field::ColumnIndex(i) => Ok(record.get(i.as_zero_based()).map(Cow::Borrowed)),
+            Field::ColumnIndex(i) => Ok(Cow::Borrowed(record.get(i.as_zero_based()).into_import_err(ImportErrorKind::Internal, || format!("field {field_key} @ column {i} is out-of-range for record with length {}, this is an error and must be a bug", record.len()))?)),
             Field::Template(template) => template
                 .render(
                     field_key,
@@ -59,7 +72,10 @@ impl FieldResolver {
                         record,
                     },
                 )
-                .map(|x| Some(Cow::Owned(format!("{}", x)))),
+                .map(|x| Cow::Owned(x.to_string()))
+                .into_import_err(ImportErrorKind::InvalidConfig, || {
+                    format!("field {} has invalid template {}", field_key, template)
+                }),
         }
     }
 
@@ -70,26 +86,21 @@ impl FieldResolver {
     ) -> Result<Decimal, ImportError> {
         match &self.value {
             AmountField::CreditDebit { credit, debit } => {
-                let credit = self
-                    .resolve(FieldKey::Credit, credit, r)?
-                    .ok_or_else(|| ImportError::Other("Field credit must exist".to_string()))?;
-                let debit = self
-                    .resolve(FieldKey::Debit, debit, r)?
-                    .ok_or_else(|| ImportError::Other("Field debit must exist".to_string()))?;
+                let credit = self.value(FieldKey::Credit, credit, r)?;
+                let debit = self.value(FieldKey::Debit, debit, r)?;
                 if !credit.is_empty() {
                     Ok(str_to_comma_decimal(&credit)?.unwrap_or(Decimal::ZERO))
                 } else if !debit.is_empty() {
                     Ok(-str_to_comma_decimal(&debit)?.unwrap_or(Decimal::ZERO))
                 } else {
-                    Err(ImportError::Other(
+                    Err(ImportError::new(
+                        ImportErrorKind::InvalidSource,
                         "either credit or debit must be non-empty".to_string(),
                     ))
                 }
             }
             AmountField::Absolute(a) => {
-                let s = self
-                    .resolve(FieldKey::Amount, a, r)?
-                    .ok_or_else(|| ImportError::Other("Field amount must exist".to_string()))?;
+                let s = self.value(FieldKey::Amount, a, r)?;
                 let amount = str_to_comma_decimal(&s)?.unwrap_or(Decimal::ZERO);
                 Ok(match at {
                     config::AccountType::Asset => amount,
@@ -118,8 +129,12 @@ impl FieldResolver {
                     }
                 },
                 config::FieldPos::Template(config::TemplateField { template }) => {
-                    let template = template.parse()?;
-                    Some(Field::Template(template))
+                    let parsed_template = template
+                        .parse()
+                        .into_import_err(ImportErrorKind::InvalidConfig, || {
+                            format!("field {k} has invalid template {template}")
+                        })?;
+                    Some(Field::Template(parsed_template))
                 }
             };
             if let Some(field) = field {
@@ -130,11 +145,14 @@ impl FieldResolver {
             let mut actual_labels: Vec<&str> = hm.keys().cloned().collect();
             actual_labels.sort_unstable();
             not_found_labels.sort_unstable();
-            return Err(ImportError::Other(format!(
-                "specified labels not found: {} actual labels: {}",
-                not_found_labels.join(","),
-                actual_labels.join(",")
-            )));
+            return Err(ImportError::new(
+                ImportErrorKind::InvalidConfig,
+                format!(
+                    "specified labels not found: {} actual labels: {}",
+                    not_found_labels.join(","),
+                    actual_labels.join(",")
+                ),
+            ));
         }
         let max_column = ki
             .values()
@@ -145,18 +163,14 @@ impl FieldResolver {
             .copied()
             .max()
             .unwrap_or(OneBasedUsize::MIN);
-        let date = ki
-            .get(&config::FieldKey::Date)
-            .cloned()
-            .ok_or(ImportError::InvalidConfig(
-                "no Date field specified".to_string(),
-            ))?;
-        let payee = ki
-            .get(&config::FieldKey::Payee)
-            .cloned()
-            .ok_or(ImportError::InvalidConfig(
-                "no Payee field specified".to_string(),
-            ))?;
+        let date = ki.get(&config::FieldKey::Date).cloned().into_import_err(
+            ImportErrorKind::InvalidConfig,
+            "date field must be always specified",
+        )?;
+        let payee = ki.get(&config::FieldKey::Payee).cloned().into_import_err(
+            ImportErrorKind::InvalidConfig,
+            "payee field must be always specified",
+        )?;
         let amount = ki.get(&config::FieldKey::Amount).cloned();
         let credit = ki.get(&config::FieldKey::Credit).cloned();
         let debit = ki.get(&config::FieldKey::Debit).cloned();
@@ -168,9 +182,10 @@ impl FieldResolver {
                     credit: c,
                     debit: d,
                 })
-                .ok_or(ImportError::InvalidConfig(
-                    "either amount or credit/debit pair should be set".to_string(),
-                )),
+                .into_import_err(
+                    ImportErrorKind::InvalidConfig,
+                    "either amount or credit/debit pair should be set",
+                ),
         }?;
         Ok(FieldResolver {
             date,
@@ -187,14 +202,15 @@ fn column_index(header: &csv::StringRecord) -> Result<HashMap<&str, OneBasedUsiz
     let mut m = HashMap::with_capacity(header.len());
     for key in header.iter() {
         if let Some(j) = m.insert(key, i) {
-            return Err(ImportError::Other(format!(
-                "column {} appears twice at {} and {}",
-                key, j, i
-            )));
+            return Err(ImportError::new(
+                ImportErrorKind::InvalidSource,
+                format!("header column {key} is duplicated: column {j} and {i}"),
+            ));
         }
-        i = i.checked_add(1).ok_or_else(|| {
-            ImportError::Other("header has usize::MAX or more columns".to_string())
-        })?;
+        i = i.checked_add(1).into_import_err(
+            ImportErrorKind::InvalidSource,
+            "header has usize::MAX or more columns",
+        )?;
     }
     Ok(m)
 }
@@ -209,6 +225,15 @@ enum AmountField {
 enum Field {
     ColumnIndex(OneBasedUsize),
     Template(Template),
+}
+
+impl std::fmt::Display for Field {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ColumnIndex(col) => write!(f, "column at {col}"),
+            Self::Template(template) => write!(f, "column with template {template}"),
+        }
+    }
 }
 
 /// CSV record with [`FieldResolver`],
@@ -242,7 +267,6 @@ impl<'a> template::Interpolate<'a> for MappedRecord<'a> {
 mod tests {
     use super::*;
 
-    use assert_matches::assert_matches;
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
@@ -252,7 +276,7 @@ mod tests {
     use crate::one_based_macro::zero_based_usize;
 
     #[test]
-    fn field_map_try_new_failed_on_duplicated_header() {
+    fn field_map_try_new_fails_on_duplicated_header() {
         let config: HashMap<FieldKey, FieldPos> = hashmap! {
             FieldKey::Date => FieldPos::Label("日付".to_owned()),
             FieldKey::Payee => FieldPos::Label("摘要".to_owned()),
@@ -265,7 +289,34 @@ mod tests {
         )
         .unwrap_err();
 
-        assert_matches!(got_err, ImportError::Other(msg) => assert_eq!(msg,"column 日付 appears twice at 1 and 4"));
+        assert_eq!(ImportErrorKind::InvalidSource, got_err.error_kind());
+        assert_eq!(
+            "header column 日付 is duplicated: column 1 and 4",
+            got_err.message()
+        );
+    }
+
+    #[test]
+    fn field_map_try_new_fails_on_invalid_template() {
+        let config: HashMap<FieldKey, FieldPos> = hashmap! {
+            FieldKey::Date => FieldPos::Index(one_based_32!(1)),
+            FieldKey::Payee => FieldPos::Template(config::TemplateField { template: "{category} - {unknown}".to_string() }),
+            FieldKey::Amount => FieldPos::Index(one_based_32!(2)),
+            FieldKey::Category => FieldPos::Index(one_based_32!(3)),
+            FieldKey::Note => FieldPos::Index(one_based_32!(4)),
+        };
+
+        let got_err = FieldResolver::try_new(
+            &config,
+            &csv::StringRecord::from(vec!["日付", "摘要", "お預け入れ額", "お引き出し額", "残高"]),
+        )
+        .unwrap_err();
+
+        assert_eq!(ImportErrorKind::InvalidConfig, got_err.error_kind());
+        assert_eq!(
+            "field payee has invalid template {category} - {unknown}",
+            got_err.message()
+        );
     }
 
     #[test]
@@ -277,11 +328,13 @@ mod tests {
             FieldKey::Debit => FieldPos::Label("お引き出し額".to_owned()),
             FieldKey::Balance => FieldPos::Label("残高".to_owned()),
         };
+
         let got = FieldResolver::try_new(
             &config,
             &csv::StringRecord::from(vec!["日付", "摘要", "お預け入れ額", "お引き出し額", "残高"]),
         )
         .unwrap();
+
         assert_eq!(
             FieldResolver {
                 date: Field::ColumnIndex(zero_based_usize!(0)),
@@ -366,10 +419,53 @@ mod tests {
     }
 
     #[test]
+    fn field_map_extract_credit_debit() {
+        let config: HashMap<FieldKey, FieldPos> = hashmap! {
+            FieldKey::Date => FieldPos::Label("date".to_string()),
+            FieldKey::Payee => FieldPos::Label("payee".to_string()),
+            FieldKey::Credit => FieldPos::Label("credit".to_string()),
+            FieldKey::Debit => FieldPos::Label("debit".to_string()),
+        };
+        let resolver = FieldResolver::try_new(
+            &config,
+            &csv::StringRecord::from(vec!["date", "payee", "credit", "debit", "残高"]),
+        )
+        .unwrap();
+
+        // credit only
+        let record = csv::StringRecord::from(["2024/07/01", "買い物", "10", ""].as_slice());
+        let got = resolver
+            .amount(config::AccountType::Asset, &record)
+            .unwrap();
+
+        assert_eq!(got, dec!(10));
+
+        // debit only
+        let record = csv::StringRecord::from(["2024/07/01", "買い物", "", "12.3"].as_slice());
+        let got = resolver
+            .amount(config::AccountType::Asset, &record)
+            .unwrap();
+
+        assert_eq!(got, dec!(-12.3));
+
+        // both empty
+        let record = csv::StringRecord::from(["2024/07/01", "買い物", "", ""].as_slice());
+        let got_err = resolver
+            .amount(config::AccountType::Asset, &record)
+            .unwrap_err();
+
+        assert_eq!(ImportErrorKind::InvalidSource, got_err.error_kind());
+        assert_eq!(
+            "either credit or debit must be non-empty",
+            got_err.message()
+        );
+    }
+
+    #[test]
     fn field_map_extract() {
         let config: HashMap<FieldKey, FieldPos> = hashmap! {
             FieldKey::Date => FieldPos::Index(one_based_32!(1)),
-            FieldKey::Payee => FieldPos::Template(config::TemplateField { template: "{category} - {note}".parse().expect("this must be the correct template") }),
+            FieldKey::Payee => FieldPos::Template(config::TemplateField { template: "{category} - {4}".parse().expect("this must be the correct template") }),
             FieldKey::Amount => FieldPos::Index(one_based_32!(2)),
             FieldKey::Category => FieldPos::Index(one_based_32!(3)),
             FieldKey::Note => FieldPos::Index(one_based_32!(4)),

@@ -9,7 +9,8 @@ use regex::Regex;
 use rust_decimal::Decimal;
 
 use super::format::{Entry, Exchange, Fee};
-use crate::import::{amount::OwnedAmount, ImportError};
+use crate::import::amount::OwnedAmount;
+use crate::import::error::{ImportError, ImportErrorKind, IntoImportError};
 
 lazy_static! {
     static ref FIRST_LINE: Regex = Regex::new(r"^(?P<date>\d{2}.\d{2}.\d{2}) (?P<edate>\d{2}.\d{2}.\d{2}) (?P<payee>.*?)(?: (?P<currency>[A-Z]{3}) (?P<examount>[0-9.']+))? (?P<amount>[0-9.']+)(?P<neg> -)?$").unwrap();
@@ -32,26 +33,28 @@ impl<T: BufRead> Parser<T> {
     }
 
     pub fn parse_entry(&mut self) -> Result<Option<Entry>, ImportError> {
-        let read_bytes = self.reader.read_line()?;
-        if read_bytes == 0 {
-            return Ok(None);
+        let entry_base = match self.read_first_line()? {
+            Some(e) => e,
+            None => return Ok(None),
         };
-        let l = self.reader.buf.as_str().trim_end();
-        let line_count = self.reader.line_count;
-        let c = FIRST_LINE
-            .captures(l)
-            .ok_or_else(|| self.err(format!("unsupported entry line: {:?}", l)))?;
-        let entry_base = self.parse_first_line(c)?;
-        let next_line_size = self.reader.peek()?;
+        let next_line_size =
+            self.reader
+                .peek()
+                .into_import_err(ImportErrorKind::InvalidSource, || {
+                    format!(
+                        "failed to read Viseca input @ line {}",
+                        self.reader.line_count + 1
+                    )
+                })?;
         if next_line_size == 0 || self.reader.buf.chars().next().unwrap().is_ascii_digit() {
-            return Ok(Some(Entry {
-                line_count,
-                ..entry_base
-            }));
+            return Ok(Some(entry_base));
         }
         let read_bytes = self.reader.read_line()?;
         if read_bytes == 0 {
-            return Err(self.err("category line not found"));
+            return Err(ImportError::new(
+                ImportErrorKind::InvalidSource,
+                format!("category line not found @ line {}", self.reader.line_count),
+            ));
         }
         let category = self.reader.buf.trim().to_string();
         let exchange = entry_base
@@ -68,7 +71,6 @@ impl<T: BufRead> Parser<T> {
             .flatten();
         self.skip_air_tags()?;
         Ok(Some(Entry {
-            line_count,
             category,
             exchange,
             fee,
@@ -76,12 +78,23 @@ impl<T: BufRead> Parser<T> {
         }))
     }
 
-    fn parse_first_line(&self, c: regex::Captures) -> Result<Entry, ImportError> {
+    /// Parses the given first line.
+    fn read_first_line(&mut self) -> Result<Option<Entry>, ImportError> {
+        let read_bytes = self.reader.read_line()?;
+        if read_bytes == 0 {
+            return Ok(None);
+        };
+        let l = self.reader.buf.as_str().trim_end();
+        let line_count = self.reader.line_count;
+        let c = FIRST_LINE
+            .captures(l)
+            .into_import_err(ImportErrorKind::InvalidSource, || {
+                self.err_msg(format!("unsupported entry line: {:?}", l))
+            })?;
         let date_str = self.expect_name(&c, "date", "date should exist")?;
-        let date =
-            parse_euro_date(date_str).map_err(|x| self.err(format!("invalid date: {}", x)))?;
+        let date = self.parse_euro_date("date", date_str)?;
         let edate_str = self.expect_name(&c, "edate", "effective date should exist")?;
-        let edate = parse_euro_date(edate_str)?;
+        let edate = self.parse_euro_date("effective date", edate_str)?;
         let payee = self
             .expect_name(&c, "payee", "payee should exist")
             .map(ToOwned::to_owned)?;
@@ -97,7 +110,7 @@ impl<T: BufRead> Parser<T> {
                     "examount",
                     "currency and examount should exist together",
                 )?;
-                let examount = parse_decimal(examount_str)?;
+                let examount = self.parse_decimal("exchanged amount", examount_str)?;
                 Some(OwnedAmount {
                     commodity: currency.as_str().to_string(),
                     value: sign * examount,
@@ -105,9 +118,9 @@ impl<T: BufRead> Parser<T> {
             }
         };
         let amount_str = self.expect_name(&c, "amount", "amount should exist")?;
-        let amount = parse_decimal(amount_str)?;
-        Ok(Entry {
-            line_count: 0,
+        let amount = self.parse_decimal("amount", amount_str)?;
+        Ok(Some(Entry {
+            line_count,
             date,
             effective_date: edate,
             payee,
@@ -116,26 +129,31 @@ impl<T: BufRead> Parser<T> {
             spent,
             exchange: None,
             fee: None,
-        })
+        }))
     }
 
     fn parse_exchange(&mut self) -> Result<Exchange, ImportError> {
         let read_bytes = self.reader.read_line()?;
         if read_bytes == 0 {
-            return Err(self.err("exchange rate line not found"));
+            return Err(ImportError::new(
+                ImportErrorKind::InvalidSource,
+                self.err_msg("exchange rate line not found"),
+            ));
         }
         let c = EXCHANGE_RATE_LINE
             .captures(self.reader.buf.trim_end())
-            .ok_or_else(|| self.err("Exchange rate ... line expected"))?;
+            .into_import_err(ImportErrorKind::InvalidSource, || {
+                self.err_msg("Exchange rate ... line expected")
+            })?;
         let rate = self.expect_name(&c, "rate", "rate must appear")?;
-        let rate = parse_decimal(rate)?;
+        let rate = self.parse_decimal("rate", rate)?;
         let date = self.expect_name(&c, "date", "date must appear")?;
-        let date = parse_euro_date(date)?;
+        let date = self.parse_euro_date("rate date", date)?;
         let equiv_currency = self
             .expect_name(&c, "scurrency", "equivalent currency must appear")
             .map(ToOwned::to_owned)?;
         let equiv_amount = self.expect_name(&c, "samount", "equivalent amount must appear")?;
-        let equiv_amount = parse_decimal(equiv_amount)?;
+        let equiv_amount = self.parse_decimal("equivalent amount", equiv_amount)?;
         Ok(Exchange {
             rate,
             rate_date: date,
@@ -157,22 +175,27 @@ impl<T: BufRead> Parser<T> {
         }
         let read_bytes = self.reader.read_line()?;
         if read_bytes == 0 {
-            return Err(self.err("Processing fee line not found"));
+            return Err(ImportError::new(
+                ImportErrorKind::InvalidSource,
+                self.err_msg("Processing fee line not found"),
+            ));
         }
         let c = FEE_LINE
             .captures(self.reader.buf.trim_end())
-            .ok_or_else(|| self.err("Processing fee ... line expected"))?;
+            .into_import_err(ImportErrorKind::InvalidSource, || {
+                self.err_msg("Processing fee ... line expected")
+            })?;
         let credit_applier = c
             .name("credit")
             .map(|_| Decimal::NEGATIVE_ONE)
             .unwrap_or(Decimal::ONE);
         let percent = self.expect_name(&c, "percent", "fee percent must appear")?;
-        let percent = parse_decimal(percent)?;
+        let percent = self.parse_decimal("fee percent", percent)?;
         let fee_currency = self
             .expect_name(&c, "fcurrency", "fee currency must appear")
             .map(ToOwned::to_owned)?;
         let fee_amount = self.expect_name(&c, "famount", "fee amount must appear")?;
-        let fee_amount = parse_decimal(fee_amount)?;
+        let fee_amount = self.parse_decimal("fee amount", fee_amount)?;
         Ok(Some(Fee {
             percent,
             amount: OwnedAmount {
@@ -201,15 +224,27 @@ impl<T: BufRead> Parser<T> {
     ) -> Result<&'a str, ImportError> {
         c.name(name)
             .map(|m| m.as_str())
-            .ok_or_else(|| self.err(msg))
+            .into_import_err(ImportErrorKind::InvalidSource, || {
+                format!("{msg} @ line {}", self.reader.line_count)
+            })
     }
 
-    fn err<U: AsRef<str>>(&self, msg: U) -> ImportError {
-        ImportError::Viseca(format!(
-            "{} @ line {}",
-            msg.as_ref(),
-            self.reader.line_count
-        ))
+    fn parse_decimal(&self, name: &str, value: &str) -> Result<Decimal, ImportError> {
+        parse_decimal(value).into_import_err(ImportErrorKind::InvalidSource, || {
+            self.err_msg(format!("failed to parse {name} as decimal from {value}"))
+        })
+    }
+
+    fn parse_euro_date(&self, name: &str, value: &str) -> Result<NaiveDate, ImportError> {
+        parse_euro_date(value).into_import_err(ImportErrorKind::InvalidSource, || {
+            self.err_msg(format!(
+                "failed to parse the given {name} as date from {value}"
+            ))
+        })
+    }
+
+    fn err_msg<U: std::fmt::Display>(&self, msg: U) -> String {
+        format!("{} @ line {}", msg, self.reader.line_count)
     }
 }
 
@@ -218,6 +253,7 @@ struct LineReader<T: BufRead> {
     buf: String,
     // read byte
     is_peek: Option<usize>,
+    /// Line count, starting from 1.
     line_count: usize,
 }
 
@@ -233,12 +269,17 @@ impl<T: BufRead> LineReader<T> {
 
     /// Peek the next line, and returns the ref if available, None in EOF.
     /// It'll invalidate the previous buf.
-    fn peek(&mut self) -> Result<usize, std::io::Error> {
+    fn peek(&mut self) -> Result<usize, ImportError> {
         if let Some(read_bytes) = self.is_peek {
             return Ok(read_bytes);
         }
         self.buf.clear();
-        let read_bytes = self.reader.read_line(&mut self.buf)?;
+        let read_bytes = self
+            .reader
+            .read_line(&mut self.buf)
+            .into_import_err(ImportErrorKind::SourceFileReadFailed, || {
+                format!("failed to peek the line @ {}", self.line_count + 1)
+            })?;
         self.is_peek = Some(read_bytes);
         Ok(read_bytes)
     }
@@ -250,8 +291,13 @@ impl<T: BufRead> LineReader<T> {
             return Ok(read_bytes);
         }
         self.buf.clear();
-        let read_bytes = self.reader.read_line(&mut self.buf)?;
         self.line_count += 1;
+        let read_bytes = self
+            .reader
+            .read_line(&mut self.buf)
+            .into_import_err(ImportErrorKind::SourceFileReadFailed, || {
+                format!("failed to read the line @ {}", self.line_count)
+            })?;
         Ok(read_bytes)
     }
 }

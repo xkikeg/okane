@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map, HashMap},
+    collections::{HashMap, hash_map},
     hash::Hash,
 };
 
@@ -42,11 +42,7 @@ impl<K: Eq + Hash, T: Merge> Merge for HashMap<K, T> {
 /// so that to choose non-empty one.
 macro_rules! merge_non_empty {
     ($a:expr, $b:expr) => {
-        if !$b.is_empty() {
-            $b
-        } else {
-            $a
-        }
+        if !$b.is_empty() { $b } else { $a }
     };
 }
 

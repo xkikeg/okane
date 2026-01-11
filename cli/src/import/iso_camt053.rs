@@ -6,9 +6,9 @@ use rust_decimal::Decimal;
 
 use super::amount::OwnedAmount;
 use super::config;
+use super::error::{ImportError, ImportErrorKind, IntoImportError};
 use super::extract::{self, CamtStrField, StrField};
 use super::single_entry;
-use super::ImportError;
 
 impl xmlnode::Entry {
     /// Returns value_date if available, otherwise booking date.
@@ -26,7 +26,10 @@ where
 {
     let extractor = extract::Extractor::from_config(CamtFormat, config)?;
     let mut buf = std::io::BufReader::new(r);
-    let doc: xmlnode::Document = quick_xml::de::from_reader(&mut buf)?;
+    let doc: xmlnode::Document = quick_xml::de::from_reader(&mut buf).into_import_err(
+        ImportErrorKind::InvalidSource,
+        "failed to parse the input as ISO Camt053 XML",
+    )?;
     let mut res = Vec::new();
     for (si, stmt) in doc.bank_to_customer.statements.into_iter().enumerate() {
         if let Some(opening_balance) = find_balance(&stmt, xmlnode::BalanceCode::Opening) {

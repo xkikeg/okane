@@ -12,7 +12,7 @@ use okane_core::{
 
 use super::amount::{AmountRef, BorrowedAmount, OwnedAmount};
 use super::config::{HiddenFee, HiddenFeeCondition, HiddenFeeRate};
-use super::ImportError;
+use super::error::{ImportError, ImportErrorKind, IntoImportError};
 
 /// Represents single-entry transaction, associated with the particular account.
 #[derive(Debug, Clone)]
@@ -186,13 +186,16 @@ impl Txn {
         amount: OwnedAmount,
     ) -> Result<&mut Txn, ImportError> {
         if amount.commodity != self.amount.commodity {
-            return Err(ImportError::Unimplemented(
-                "different commodity charge not supported",
+            return Err(ImportError::new(
+                ImportErrorKind::Unimplemented,
+                "non-inclusive charge with different commodity not supported".to_string(),
             ));
         }
         if self.transferred_amount.is_some() {
-            return Err(ImportError::Unimplemented(
-                "already set transferred_amount isn't supported",
+            return Err(ImportError::new(
+                ImportErrorKind::Unimplemented,
+                "non-inclusive charge with already set transferred_amount isn't supported"
+                    .to_string(),
             ));
         }
         self.transferred_amount(OwnedAmount {
@@ -286,9 +289,13 @@ impl Txn {
             opts.operator
                 .as_ref()
                 .map(|o| Cow::Borrowed(o.as_str()))
-                .ok_or(ImportError::InvalidConfig(
-                    "config should have operator to have charge".to_string(),
-                ))
+                .into_import_err(
+                    ImportErrorKind::InvalidConfig,
+                    concat!(
+                        "config operator field is missing:",
+                        " config should have operator to import transactions with charges"
+                    ),
+                )
         };
         let post_cleared = self.clear_state.unwrap_or(match &self.dest_account {
             Some(_) => syntax::ClearState::Uncleared,
@@ -458,18 +465,25 @@ fn posting_excess<'a>(
     }
     let v = total.into_values();
     if v.len() > 1 {
-        return Err(ImportError::Other(
-            "unbalanced posting because of too many commodities without rate".to_string(),
+        return Err(ImportError::new(
+            ImportErrorKind::Unimplemented,
+            format!(
+                "impossible to balance posting excess {} due to too many commodities without rate",
+                report::Amount::from_values(v).as_inline_display(&ctx)
+            ),
         ));
     }
     let Some((c, excess)) = v.into_iter().next() else {
         return Ok(None);
     };
     let Some(commodity) = ctx.commodity_store().get(c) else {
-        return Err(ImportError::Other(format!(
-            "unknown commodity: {}",
-            c.to_owned_lossy(ctx.commodity_store())
-        )));
+        return Err(ImportError::new(
+            ImportErrorKind::Internal,
+            format!(
+                "unknown commodity: {}",
+                c.to_owned_lossy(ctx.commodity_store())
+            ),
+        ));
     };
     let excess = opts.round(BorrowedAmount {
         value: -excess,
@@ -635,7 +649,13 @@ fn detach_hidden_rate<'a>(
         }
         HiddenFeeRate::Fixed(fixed) => {
             if fixed.commodity != original_rate.commodity {
-                return Err(ImportError::Other(format!("hidden fee rate commodity {} must match against the transaciton rate commodity {}", fixed.commodity, original_rate.commodity)));
+                return Err(ImportError::new(
+                    ImportErrorKind::InvalidConfig,
+                    format!(
+                        "hidden fee rate commodity {} must match against the transaciton rate commodity {}",
+                        fixed.commodity, original_rate.commodity
+                    ),
+                ));
             }
             if real_rate_bigger {
                 original_rate.value + fixed.value
@@ -716,6 +736,75 @@ mod tests {
     }
 
     #[test]
+    fn try_add_charge_not_included_fails_on_different_commodity() {
+        let mut txn = Txn::new(
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            "foo",
+            owned_amount(dec!(1000), "JPY"),
+        );
+
+        let got_err = txn
+            .try_add_charge_not_included(owned_amount(dec!(1), "CHF"))
+            .unwrap_err();
+
+        assert_eq!(ImportErrorKind::Unimplemented, got_err.error_kind());
+        assert_eq!(
+            "non-inclusive charge with different commodity not supported",
+            got_err.message()
+        );
+    }
+
+    #[test]
+    fn try_add_charge_not_included_fails_on_already_transferred_amount_set_txn() {
+        let mut txn = Txn::new(
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            "foo",
+            owned_amount(dec!(1000), "JPY"),
+        );
+
+        let got_err = txn
+            .transferred_amount(owned_amount(dec!(900), "JPY"))
+            .try_add_charge_not_included(owned_amount(dec!(100), "JPY"))
+            .unwrap_err();
+
+        assert_eq!(ImportErrorKind::Unimplemented, got_err.error_kind());
+        assert_eq!(
+            "non-inclusive charge with already set transferred_amount isn't supported",
+            got_err.message()
+        );
+    }
+
+    #[test]
+    fn try_add_charge_not_included_with_negative_amount() {
+        let mut txn = Txn::new(
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            "foo",
+            owned_amount(dec!(-1000), "JPY"),
+        );
+
+        txn.try_add_charge_not_included(owned_amount(dec!(100), "JPY"))
+            .expect("try_add_charge must succeed");
+
+        assert_eq!(vec![owned_amount(dec!(100), "JPY")], txn.charges);
+        assert_eq!(borrowed_amount(dec!(900), "JPY"), txn.dest_amount());
+    }
+
+    #[test]
+    fn try_add_charge_not_included_positive_amount() {
+        let mut txn = Txn::new(
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            "foo",
+            owned_amount(dec!(1000), "JPY"),
+        );
+
+        txn.try_add_charge_not_included(owned_amount(dec!(100), "JPY"))
+            .expect("try_add_charge must succeed");
+
+        assert_eq!(vec![owned_amount(dec!(100), "JPY")], txn.charges);
+        assert_eq!(borrowed_amount(dec!(-1100), "JPY"), txn.dest_amount());
+    }
+
+    #[test]
     fn dest_amount_plain() {
         let txn = Txn::new(
             NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
@@ -762,6 +851,75 @@ mod tests {
         txn.transferred_amount(owned_amount(dec!(-10.00), "USD"));
 
         assert_eq!(txn.dest_amount(), borrowed_amount(dec!(-10.00), "USD"));
+    }
+
+    mod to_double_entry {
+        use super::*;
+
+        use bumpalo::Bump;
+        use pretty_assertions::assert_eq;
+
+        #[test]
+        fn fails_on_unrated_operator_unset() {
+            let arena = Bump::new();
+            let mut ctx = ReportContext::new(&arena);
+            let opts = Options {
+                operator: None,
+                commodity_format: ConfigResolver::default(),
+                commodity_rename: HashMap::new(),
+            };
+            let mut txn = Txn::new(
+                NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+                "foo",
+                owned_amount(dec!(1000), "JPY"),
+            );
+            txn.add_charge(owned_amount(dec!(10), "JPY"))
+                .transferred_amount(owned_amount(dec!(1010), "JPY"));
+
+            let got_err = txn
+                .to_double_entry("Assets:Bank", &opts, &mut ctx)
+                .unwrap_err();
+            assert_eq!(
+                ImportErrorKind::InvalidConfig,
+                got_err.error_kind(),
+                "error={got_err:?}"
+            );
+            assert_eq!(
+                concat!(
+                    "config operator field is missing:",
+                    " config should have operator to import transactions with charges"
+                ),
+                got_err.message()
+            );
+        }
+
+        #[test]
+        fn fails_on_unrated_three_or_more_commodities() {
+            let arena = Bump::new();
+            let mut ctx = ReportContext::new(&arena);
+            let opts = Options {
+                operator: Some("Okane bank".to_string()),
+                commodity_format: ConfigResolver::default(),
+                commodity_rename: HashMap::new(),
+            };
+            let mut txn = Txn::new(
+                NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+                "foo",
+                owned_amount(dec!(-9000), "JPY"),
+            );
+            txn.add_charge(owned_amount(dec!(1), "USD"))
+                .add_charge(owned_amount(dec!(1), "CHF"))
+                .transferred_amount(owned_amount(dec!(8700), "JPY"));
+
+            let got_err = txn
+                .to_double_entry("Assets:Bank", &opts, &mut ctx)
+                .unwrap_err();
+            assert_eq!(
+                ImportErrorKind::Unimplemented,
+                got_err.error_kind(),
+                "error={got_err:?}"
+            );
+        }
     }
 
     mod posting_amount {

@@ -22,10 +22,10 @@ use std::convert::{TryFrom, TryInto};
 use std::path::{Path, PathBuf};
 
 use path_slash::PathBufExt;
-use serde::{de, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de};
 use soft_canonicalize::soft_canonicalize;
 
-use super::error::ImportError;
+use super::error::{ImportError, ImportErrorKind, IntoImportError};
 
 use merge::Merge;
 
@@ -50,16 +50,19 @@ impl ConfigSet {
 
     /// Selects a specific [`Config`] for the given path.
     pub fn select(&self, p: &Path) -> Result<Option<Config>, ImportError> {
-        self.select_impl(&soft_canonicalize(p)?).transpose()
+        let p = soft_canonicalize(p).into_import_err(ImportErrorKind::ConfigNotFound, || {
+            format!("failed to canonicalize source file path {}", p.display())
+        })?;
+        self.select_impl(&p).transpose()
     }
 
     fn select_impl(&self, p: &Path) -> Option<Result<Config, ImportError>> {
         let fp: &str = match p.to_str() {
             None => {
-                return Some(Err(ImportError::Other(format!(
-                    "invalid Unicode path: {}",
-                    p.display()
-                ))));
+                return Some(Err(ImportError::new(
+                    ImportErrorKind::Unimplemented,
+                    format!("invalid Unicode path isn't supported: {}", p.display()),
+                )));
             }
             Some(x) => x,
         };
@@ -119,20 +122,18 @@ pub struct Config {
 impl TryFrom<ConfigFragment> for Config {
     type Error = ImportError;
     fn try_from(value: ConfigFragment) -> Result<Self, Self::Error> {
-        let encoding = value.encoding.ok_or(ImportError::InvalidConfig(
-            "no encoding specified".to_string(),
-        ))?;
-        let account = value.account.ok_or(ImportError::InvalidConfig(
-            "no account specified".to_string(),
-        ))?;
-        let account_type = value.account_type.ok_or(ImportError::InvalidConfig(
-            "no account_type specified".to_string(),
-        ))?;
+        let encoding = value
+            .encoding
+            .into_import_err(ImportErrorKind::InvalidConfig, "no encoding specified")?;
+        let account = value
+            .account
+            .into_import_err(ImportErrorKind::InvalidConfig, "no account specified")?;
+        let account_type = value
+            .account_type
+            .into_import_err(ImportErrorKind::InvalidConfig, "no account_type specified")?;
         let commodity = value
             .commodity
-            .ok_or(ImportError::InvalidConfig(
-                "no commodity specified".to_string(),
-            ))?
+            .into_import_err(ImportErrorKind::InvalidConfig, "no commodity specified")?
             .into();
         let format = value.format.unwrap_or_default();
         let output = value.output.unwrap_or_default();
@@ -268,7 +269,10 @@ pub fn load_from_yaml<R: std::io::Read>(r: R) -> Result<ConfigSet, ImportError> 
     let mut entries = Vec::new();
     let docs = serde_yaml::Deserializer::from_reader(r);
     for doc in docs {
-        let entry = ConfigFragment::deserialize(doc)?;
+        let entry = ConfigFragment::deserialize(doc).into_import_err(
+            ImportErrorKind::InvalidConfig,
+            "failed to parse config file",
+        )?;
         entries.push(entry);
     }
     Ok(ConfigSet { entries })
@@ -492,26 +496,34 @@ mod tests {
         let tryinto = TryInto::<Config>::try_into;
         tryinto(f.clone()).expect("create_config_fragment() should return solo valid fragment");
         let err = |x| tryinto(x).unwrap_err().to_string();
-        assert!(err(ConfigFragment {
-            account: None,
-            ..f.clone()
-        })
-        .contains("account"));
-        assert!(err(ConfigFragment {
-            encoding: None,
-            ..f.clone()
-        })
-        .contains("encoding"));
-        assert!(err(ConfigFragment {
-            account_type: None,
-            ..f.clone()
-        })
-        .contains("account_type"));
-        assert!(err(ConfigFragment {
-            commodity: None,
-            ..f
-        })
-        .contains("commodity"));
+        assert!(
+            err(ConfigFragment {
+                account: None,
+                ..f.clone()
+            })
+            .contains("account")
+        );
+        assert!(
+            err(ConfigFragment {
+                encoding: None,
+                ..f.clone()
+            })
+            .contains("encoding")
+        );
+        assert!(
+            err(ConfigFragment {
+                account_type: None,
+                ..f.clone()
+            })
+            .contains("account_type")
+        );
+        assert!(
+            err(ConfigFragment {
+                commodity: None,
+                ..f
+            })
+            .contains("commodity")
+        );
     }
 
     #[test]

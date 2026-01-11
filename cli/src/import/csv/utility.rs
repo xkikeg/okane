@@ -2,7 +2,7 @@ use rust_decimal::Decimal;
 
 use okane_core::syntax;
 
-use crate::import::ImportError;
+use crate::import::error::{ImportError, ImportErrorKind, IntoImportError};
 
 pub(super) fn str_to_comma_decimal(input: &str) -> Result<Option<Decimal>, ImportError> {
     if input.is_empty() {
@@ -10,7 +10,9 @@ pub(super) fn str_to_comma_decimal(input: &str) -> Result<Option<Decimal>, Impor
     }
     let a: syntax::expr::Amount = input
         .try_into()
-        .map_err(|e| ImportError::Other(format!("failed to parse comma decimal: {}", e)))?;
+        .into_import_err(ImportErrorKind::InvalidSource, || {
+            format!("failed to parse {input} as comma decimal")
+        })?;
     Ok(Some(a.value.value))
 }
 
@@ -44,9 +46,8 @@ mod tests {
 
     #[test]
     fn parses_invalid() {
-        assert!(matches!(
-            str_to_comma_decimal("invalid"),
-            Err(ImportError::Other(_))
-        ));
+        let got = str_to_comma_decimal("invalid").unwrap_err();
+        assert_eq!(got.error_kind(), ImportErrorKind::InvalidSource);
+        assert_eq!("failed to parse invalid as comma decimal", got.message());
     }
 }

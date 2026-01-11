@@ -11,7 +11,7 @@ use serde_with::{DeserializeFromStr, SerializeDisplay};
 
 use crate::import::amount::OwnedAmount;
 
-use super::merge::{merge_non_empty, Merge};
+use super::merge::{Merge, merge_non_empty};
 
 /// CommodityConfig contains either primary commodity string, or more complex CommoditySpec.
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
