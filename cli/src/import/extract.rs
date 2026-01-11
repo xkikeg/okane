@@ -8,7 +8,7 @@ use okane_core::syntax::ClearState;
 
 use super::amount::OwnedAmount;
 use super::config;
-use super::error::ImportError;
+use super::error::{ImportError, ImportErrorKind};
 use super::iso_camt053::xmlnode;
 use super::single_entry;
 
@@ -106,7 +106,8 @@ pub trait Entity<'a>: Copy {
 }
 
 /// String fields.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, strum::Display)]
+#[strum(serialize_all = "snake_case")]
 pub enum StrField {
     Payee,
     Category,
@@ -308,7 +309,8 @@ impl MatchAndExpr {
             .collect();
         let matchers = matchers?;
         if matchers.is_empty() {
-            Err(ImportError::InvalidConfig(
+            Err(ImportError::new(
+                ImportErrorKind::InvalidConfig,
                 "empty field matcher is not allowed".to_string(),
             ))
         } else {

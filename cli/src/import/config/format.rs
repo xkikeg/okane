@@ -2,11 +2,11 @@ use std::collections::HashMap;
 
 use one_based::OneBasedU32;
 use serde::{
-    de::{self, value::MapAccessDeserializer},
     Deserialize, Serialize,
+    de::{self, value::MapAccessDeserializer},
 };
 
-use super::merge::{merge_non_empty, Merge};
+use super::merge::{Merge, merge_non_empty};
 
 /// FormatSpec describes the several format used in import target.
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
@@ -87,8 +87,9 @@ pub enum RowOrder {
 }
 
 /// Key represents the field abstracted way.
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, Serialize, Deserialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum FieldKey {
     /// Date of the transaction.
     Date,
@@ -245,7 +246,7 @@ mod tests {
     mod deserialize_field_pos {
         use super::*;
 
-        use serde_test::{assert_de_tokens, assert_de_tokens_error, Token};
+        use serde_test::{Token, assert_de_tokens, assert_de_tokens_error};
 
         #[test]
         fn positive_integer_succeeds() {

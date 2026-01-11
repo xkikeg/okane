@@ -3,7 +3,8 @@
 use either::Either;
 use regex::Regex;
 
-use crate::import::{config, error::ImportError, iso_camt053::xmlnode};
+use crate::import::error::{ImportError, ImportErrorKind, IntoImportError};
+use crate::import::{config, iso_camt053::xmlnode};
 
 use super::CamtStrField;
 use super::Entity;
@@ -31,10 +32,13 @@ impl FieldFilter {
         let check_camt = || {
             // Fragment doesn't have Camt specific codes, so only check the format.
             if !entity_format.has_camt_transaction_code() {
-                Err(ImportError::Other(format!(
-                    "Format {} doesn't support match against {f}",
-                    entity_format.name()
-                )))
+                Err(ImportError::new(
+                    ImportErrorKind::InvalidConfig,
+                    format!(
+                        "Format {} doesn't support match against {f}",
+                        entity_format.name()
+                    ),
+                ))
             } else {
                 Ok(())
             }
@@ -42,17 +46,26 @@ impl FieldFilter {
         let field = match f {
             config::RewriteField::DomainCode => {
                 check_camt()?;
-                let code = serde_yaml::from_str(v)?;
+                let code = serde_yaml::from_str(v)
+                    .into_import_err(ImportErrorKind::InvalidConfig, || {
+                        format!("matcher has invalid domain code {v}")
+                    })?;
                 return Ok(Self::DomainCode(code));
             }
             config::RewriteField::DomainFamily => {
                 check_camt()?;
-                let code = serde_yaml::from_str(v)?;
+                let code = serde_yaml::from_str(v)
+                    .into_import_err(ImportErrorKind::InvalidConfig, || {
+                        format!("matcher has invalid domain family {v}")
+                    })?;
                 return Ok(Self::DomainFamily(code));
             }
             config::RewriteField::DomainSubFamily => {
                 check_camt()?;
-                let code = serde_yaml::from_str(v)?;
+                let code = serde_yaml::from_str(v)
+                    .into_import_err(ImportErrorKind::InvalidConfig, || {
+                        format!("matcher has invalid domain sub family {v}")
+                    })?;
                 return Ok(Self::DomainSubFamily(code));
             }
             config::RewriteField::Payee => StrField::Payee,
@@ -83,12 +96,15 @@ impl FieldFilter {
         };
         // Since Fragment always exists, Fragment supported fields are always supported.
         if !Fragment::has_str_field(field) && !entity_format.has_str_field(field) {
-            return Err(ImportError::Other(format!(
-                "Format {} doesn't support match against {f}",
-                entity_format.name()
-            )));
+            return Err(ImportError::new(
+                ImportErrorKind::InvalidConfig,
+                format!(
+                    "Format {} doesn't support match against {f}",
+                    entity_format.name()
+                ),
+            ));
         }
-        let pattern = regex_matcher(v)?;
+        let pattern = regex_matcher(v, field)?;
         Ok(Self::RegexMatch(field, pattern))
     }
 
@@ -127,11 +143,13 @@ impl FieldFilter {
 }
 
 /// Creates standard regex matcher.
-fn regex_matcher(value: &str) -> Result<regex::Regex, ImportError> {
+fn regex_matcher(value: &str, field: StrField) -> Result<regex::Regex, ImportError> {
     regex::RegexBuilder::new(value)
         .case_insensitive(true)
         .build()
-        .map_err(Into::into)
+        .into_import_err(ImportErrorKind::InvalidConfig, || {
+            format!("field {field} matcher value {value} is invalid regex")
+        })
 }
 
 /// Matched is a result of [`FieldFilter::captures`] method,
@@ -167,8 +185,8 @@ mod tests {
     use super::*;
 
     use std::collections::{HashMap, HashSet};
+    use std::error::Error;
 
-    use assert_matches::assert_matches;
     use pretty_assertions::assert_eq;
     use rstest::{fixture, rstest};
 
@@ -188,14 +206,15 @@ mod tests {
     #[case(config::RewriteField::DomainFamily)]
     #[case(config::RewriteField::DomainSubFamily)]
     fn invalid_camt_domains(camt_format: TestFormat, #[case] field: config::RewriteField) {
-        let got = FieldFilter::try_new(field, "foo", &camt_format);
+        let got_err = FieldFilter::try_new(field, "foo", &camt_format).unwrap_err();
 
-        assert_matches!(got, Err(ImportError::Yaml(cause)) => {
-            assert!( cause.to_string().contains("unknown variant `foo`"),
-                    "{:?} did not contains expected error",
-                    cause
-            );
-        });
+        assert_eq!(ImportErrorKind::InvalidConfig, got_err.error_kind());
+        let cause = got_err.source().expect("this failure should have cause");
+        assert!(
+            cause.to_string().contains("unknown variant `foo`"),
+            "{:?} did not contains expected error",
+            cause
+        );
     }
 
     #[rstest]
@@ -203,13 +222,13 @@ mod tests {
     #[case(config::RewriteField::DomainFamily)]
     #[case(config::RewriteField::DomainSubFamily)]
     fn unsupported_camt(#[case] field: config::RewriteField) {
-        let got = FieldFilter::try_new(field, "foo", &TestFormat::none());
+        let got_err = FieldFilter::try_new(field, "foo", &TestFormat::none()).unwrap_err();
 
-        assert_matches!(
-            got,
-            Err(ImportError::Other(msg)) => {
-                assert!(msg.contains("doesn't support match against domain"));
-            }
+        assert_eq!(ImportErrorKind::InvalidConfig, got_err.error_kind());
+        assert!(
+            got_err
+                .message()
+                .contains("doesn't support match against domain")
         );
     }
 
@@ -292,18 +311,24 @@ mod tests {
 
     #[test]
     fn unsupported_str_field() {
-        let got = FieldFilter::try_new(config::RewriteField::Category, "", &TestFormat::none());
+        let got_err = FieldFilter::try_new(config::RewriteField::Category, "", &TestFormat::none())
+            .unwrap_err();
 
-        assert_matches!(got, Err(ImportError::Other(msg)) => {
-            assert!(msg.contains("doesn't support match against category"));
-        });
+        assert_eq!(ImportErrorKind::InvalidConfig, got_err.error_kind());
+        assert!(
+            got_err
+                .message()
+                .contains("doesn't support match against category")
+        );
     }
 
     #[test]
     fn invalid_regex_match() {
-        let got = FieldFilter::try_new(config::RewriteField::Payee, "*", &TestFormat::all());
+        let got_err =
+            FieldFilter::try_new(config::RewriteField::Payee, "*", &TestFormat::all()).unwrap_err();
 
-        assert_matches!(got, Err(ImportError::InvalidRegex(_)));
+        assert_eq!(ImportErrorKind::InvalidConfig, got_err.error_kind());
+        assert!(got_err.message().contains("invalid regex"));
     }
 
     #[test]

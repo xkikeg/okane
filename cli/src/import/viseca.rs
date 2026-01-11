@@ -3,9 +3,9 @@ pub mod parser;
 
 use super::amount::OwnedAmount;
 use super::config;
+use super::error::{ImportError, ImportErrorKind, IntoImportError};
 use super::extract;
 use super::single_entry;
-use super::ImportError;
 
 pub fn import<R: std::io::Read>(
     r: R,
@@ -33,12 +33,14 @@ pub fn import<R: std::io::Read>(
         );
         txn.effective_date(entry.effective_date);
         if let Some(exchange) = entry.exchange {
-            let spent = entry.spent.ok_or_else(|| {
-                ImportError::Viseca(format!(
-                    "internal error: exchange should set aside with spent: {}",
-                    line_count
-                ))
-            })?;
+            let spent = entry
+                .spent
+                .into_import_err(ImportErrorKind::InvalidSource, || {
+                    format!(
+                        "internal error: exchange should set aside with spent: {}",
+                        line_count
+                    )
+                })?;
             txn.rate(
                 spent.commodity.clone(),
                 OwnedAmount {

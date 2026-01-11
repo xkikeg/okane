@@ -10,9 +10,9 @@ use chrono::NaiveDate;
 
 use super::amount::OwnedAmount;
 use super::config::{self, FieldKey};
+use super::error::{AnnotateImportError, ImportError, ImportErrorKind, IntoImportError};
 use super::extract;
 use super::single_entry;
-use super::ImportError;
 use utility::str_to_comma_decimal;
 
 pub fn import<R: std::io::Read>(
@@ -31,27 +31,50 @@ pub fn import<R: std::io::Read>(
     };
     if !delimiter.is_empty() {
         if delimiter.len() != 1 || !delimiter.is_ascii() {
-            return Err(ImportError::InvalidConfig(format!(
-                "delimiter must be a single ASCII char: got {}",
-                delimiter.escape_debug()
-            )));
+            return Err(ImportError::new(
+                ImportErrorKind::InvalidConfig,
+                format!(
+                    "delimiter must be a single ASCII char: got {}",
+                    delimiter.escape_debug()
+                ),
+            ));
         }
         rb.delimiter(delimiter.as_bytes()[0]);
     }
     let skip_config = &config.format.skip.unwrap_or_default();
+    let mut line_count: u64 = 0;
     for i in 0..skip_config.head {
         let mut skipped = String::new();
-        br.read_line(&mut skipped)?;
-        log::info!("skipped {}-th line: {}", i, skipped.as_str().trim_end());
+        br.read_line(&mut skipped)
+            .into_import_err(ImportErrorKind::SourceFileReadFailed, || {
+                format!("at skipped line {}", i + 1)
+            })?;
+        log::info!("skipped {}-th line: {}", i + 1, skipped.as_str().trim_end());
+        line_count += 1;
     }
     let mut rdr = rb.from_reader(br);
-    let header = rdr.headers()?;
+    let header = rdr.headers().into_import_err(
+        ImportErrorKind::SourceFileReadFailed,
+        "failed to read CSV header",
+    )?;
     let resolver = field::FieldResolver::try_new(&config.format.fields, header)?;
     let extractor = extract::Extractor::from_config(record::CsvFormat, config)?;
     let default_conversion: &config::CommodityConversionSpec = &config.commodity.conversion;
     for record in rdr.records() {
+        let record = record.into_import_err(
+            ImportErrorKind::SourceFileReadFailed,
+            "failed to read a CSV record",
+        )?;
+        let pos = record.position();
         if let Some(txn) =
-            extract_transaction(config, &resolver, &extractor, default_conversion, &record?)?
+            extract_transaction(config, &resolver, &extractor, default_conversion, &record)
+                .annotate(|| {
+                    let line = match pos {
+                        Some(pos) => format!("{}", line_count + pos.line()),
+                        None => "unknown line".to_string(),
+                    };
+                    format!("csv import failed at line {line}")
+                })?
         {
             res.push(txn);
         }
@@ -73,25 +96,27 @@ fn extract_transaction(
     r: &csv::StringRecord,
 ) -> Result<Option<single_entry::Txn>, ImportError> {
     let pos = r.position().expect("csv record position");
-    if r.len() <= resolver.max().as_zero_based() {
-        return Err(ImportError::Other(format!(
-            "csv record length too short at line {}: want {}, got {}",
-            pos.line(),
-            resolver.max(),
-            r.len()
-        )));
-    }
-    let datestr = resolver
-        .extract(FieldKey::Date, r)?
-        .ok_or_else(|| ImportError::Other("Field date must be present".to_string()))?;
+    let datestr = resolver.extract(FieldKey::Date, r)?.into_import_err(
+        ImportErrorKind::InvalidConfig,
+        "input doesn't have date column",
+    )?;
     if datestr.is_empty() {
         log::info!("skip empty date at line {}", pos.line());
         return Ok(None);
     }
-    let date = NaiveDate::parse_from_str(&datestr, config.format.date.as_str())?;
-    let original_payee = resolver
-        .extract(FieldKey::Payee, r)?
-        .ok_or_else(|| ImportError::Other("Field payee must be present".to_string()))?;
+    let date = NaiveDate::parse_from_str(&datestr, config.format.date.as_str()).into_import_err(
+        ImportErrorKind::InvalidSource,
+        || {
+            format!(
+                "failed to parse {datestr} as date using format {}",
+                config.format.date
+            )
+        },
+    )?;
+    let original_payee = resolver.extract(FieldKey::Payee, r)?.into_import_err(
+        ImportErrorKind::InvalidSource,
+        "input doesn't have payee column",
+    )?;
     let amount = resolver.amount(config.account_type, r)?;
     let balance = resolver
         .extract(FieldKey::Balance, r)?
@@ -169,14 +194,22 @@ fn extract_transaction(
         .or(default_conversion)
         .filter(|x| !x.disabled.unwrap_or_default());
     if let Some(conv) = conversion {
-        let rate = rate.ok_or_else(|| {
-            ImportError::Other(format!(
-                "no rate specified for transcation with conversion: line {}",
-                pos.line()
-            ))
-        })?;
-        let secondary_commodity = conv.commodity.as_deref().or(secondary_commodity.as_deref())
-                .ok_or_else(||ImportError::Other(format!("either rewrite.conversion.commodity or secondary_commodity field must be set @ line {}", pos.line())))?;
+        let rate = rate.into_import_err(
+            ImportErrorKind::InvalidConfig,
+            "no rate specified for transcation with conversion",
+        )?;
+        let secondary_commodity = conv
+            .commodity
+            .as_deref()
+            .or(secondary_commodity.as_deref())
+            .into_import_err(
+                ImportErrorKind::InvalidConfig,
+                concat!(
+                    "either rewrite.conversion.commodity or",
+                    " format.fields.secondary_commodity config must be set",
+                    " for transaction with conversion"
+                ),
+            )?;
         let (target, rate, computed_transferred) = match conv.rate.unwrap_or_default() {
             config::ConversionRateMode::PriceOfPrimary => (
                 commodity.into_owned(),
@@ -197,11 +230,12 @@ fn extract_transaction(
         };
         txn.rate(target, rate);
         let transferred = match conv.amount.unwrap_or_default() {
-                    config::ConversionAmountMode::Extract => secondary_amount.ok_or_else(|| ImportError::Other(format!(
-                            "secondary_amount should be specified when conversion.amount is set to extract @ line {}", pos.line()
-                    )))?,
-                    config::ConversionAmountMode::Compute => computed_transferred,
-                };
+            config::ConversionAmountMode::Extract => secondary_amount.into_import_err(
+                ImportErrorKind::InvalidConfig,
+                "secondary_amount should be specified when conversion.amount is set to extract",
+            )?,
+            config::ConversionAmountMode::Compute => computed_transferred,
+        };
         txn.transferred_amount(OwnedAmount {
             value: transferred,
             commodity: secondary_commodity.to_owned(),
@@ -214,7 +248,6 @@ fn extract_transaction(
 mod tests {
     use super::*;
 
-    use assert_matches::assert_matches;
     use indoc::indoc;
     use maplit::hashmap;
     use one_based::OneBasedU32;
@@ -238,7 +271,7 @@ mod tests {
     #[test]
     fn import_fails_if_delimiter_is_non_ascii() {
         let input = "";
-        let err = import(
+        let got_err = import(
             input.as_bytes(),
             "",
             &config::Config {
@@ -251,15 +284,23 @@ mod tests {
         )
         .unwrap_err();
 
-        assert_matches!(err, ImportError::InvalidConfig(msg) => assert_eq!(msg, "delimiter must be a single ASCII char: got 闇"));
+        assert_eq!(ImportErrorKind::InvalidConfig, got_err.error_kind());
+        assert_eq!(
+            "delimiter must be a single ASCII char: got 闇",
+            got_err.message()
+        );
     }
 
     #[test]
     fn import_fails_if_delimiter_is_multi_chars() {
         let input = "";
-        let err = import(input.as_bytes(), "foobar", &empty_config()).unwrap_err();
+        let got_err = import(input.as_bytes(), "foobar", &empty_config()).unwrap_err();
 
-        assert_matches!(err, ImportError::InvalidConfig(msg) => assert_eq!(msg, "delimiter must be a single ASCII char: got foobar"));
+        assert_eq!(ImportErrorKind::InvalidConfig, got_err.error_kind());
+        assert_eq!(
+            "delimiter must be a single ASCII char: got foobar",
+            got_err.message()
+        );
     }
 
     #[test]
@@ -268,7 +309,7 @@ mod tests {
             date,payee,amount
             2025/01/02,foo
         "};
-        let err = import(
+        let got_err = import(
             input.as_bytes(),
             "",
             &config::Config {
@@ -289,6 +330,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert_matches!(err, ImportError::Other(s) => s.contains("csv record length too short"));
+        assert_eq!(ImportErrorKind::InvalidSource, got_err.error_kind());
+        assert!(got_err.message().contains("csv record length too short"));
     }
 }

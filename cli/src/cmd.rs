@@ -13,7 +13,7 @@ use okane_core::{load, report};
 
 use crate::build::CLAP_LONG_VERSION;
 use crate::format;
-use crate::import::{self, ImportError};
+use crate::import;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -29,6 +29,8 @@ pub enum Error {
     Report(#[from] report::ReportError),
     #[error("failed to query")]
     Query(#[from] query::QueryError),
+    #[error("{0}")]
+    Other(String),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -408,10 +410,10 @@ impl EvalOptions {
 
     // TODO: Use anyhow::Error.
     // https://github.com/xkikeg/okane/issues/310
-    fn to_date_range(&self) -> Result<query::DateRange, ImportError> {
+    fn to_date_range(&self) -> Result<query::DateRange, Error> {
         let end = if self.current {
             let tomorrow = self.today.succ_opt().ok_or_else(|| {
-                ImportError::Other(format!("cannot compute one day after today {}", self.today))
+                Error::Other(format!("cannot compute one day after today {}", self.today))
             })?;
             Some(tomorrow)
         } else {

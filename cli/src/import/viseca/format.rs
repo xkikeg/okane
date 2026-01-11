@@ -9,6 +9,7 @@ use crate::import::{
 /// Entry represents one entry in Viseca PDF.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Entry {
+    /// Initial line number, 1-origin.
     pub line_count: usize,
     pub date: NaiveDate,
     pub effective_date: NaiveDate,

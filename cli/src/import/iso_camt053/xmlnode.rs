@@ -2,8 +2,8 @@ use std::{borrow::Cow, marker::PhantomData};
 
 use rust_decimal::Decimal;
 use serde::{
-    de::value::{CowStrDeserializer, MapAccessDeserializer},
     Deserialize, Serialize,
+    de::value::{CowStrDeserializer, MapAccessDeserializer},
 };
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
