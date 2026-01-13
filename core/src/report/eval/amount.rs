@@ -295,7 +295,7 @@ impl Display for InlinePrintAmount<'_, '_> {
         // wrap in () for 2 or more commodities case.
         write!(f, "(")?;
         for (i, (c, v)) in vs.iter().enumerate() {
-            let mut v = v.clone();
+            let mut v = *v;
             if i != 0 {
                 if v.is_sign_negative() {
                     v.set_sign_negative(false);
