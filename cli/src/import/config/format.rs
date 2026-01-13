@@ -171,13 +171,9 @@ impl<'de> de::Visitor<'de> for FieldPosVisitor {
         let v: u32 = v
             .try_into()
             .map_err(|_| E::invalid_value(de::Unexpected::Unsigned(v), &POS_ERR_MSG))?;
-        match OneBasedU32::from_one_based(v) {
-            Ok(x) => Ok(FieldPos::Index(x)),
-            Err(_) => Err(E::invalid_value(
-                de::Unexpected::Unsigned(v.into()),
-                &POS_ERR_MSG,
-            )),
-        }
+        OneBasedU32::from_one_based(v)
+            .map(FieldPos::Index)
+            .ok_or_else(|| E::invalid_value(de::Unexpected::Unsigned(v.into()), &POS_ERR_MSG))
     }
 
     fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>

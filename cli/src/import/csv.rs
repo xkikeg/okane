@@ -73,7 +73,7 @@ fn extract_transaction(
     r: &csv::StringRecord,
 ) -> Result<Option<single_entry::Txn>, ImportError> {
     let pos = r.position().expect("csv record position");
-    if r.len() <= resolver.max() {
+    if r.len() <= resolver.max().as_zero_based() {
         return Err(ImportError::Other(format!(
             "csv record length too short at line {}: want {}, got {}",
             pos.line(),
