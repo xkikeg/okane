@@ -2,6 +2,7 @@
 
 use std::{borrow::Cow, collections::HashMap};
 
+use one_based::OneBasedUsize;
 use rust_decimal::Decimal;
 
 use super::utility::str_to_comma_decimal;
@@ -18,12 +19,12 @@ pub struct FieldResolver {
     payee: Field,
     value: AmountField,
     all_fields: HashMap<FieldKey, Field>,
-    max_column: usize,
+    max_column: OneBasedUsize,
 }
 
 impl FieldResolver {
-    /// Returns the maximum column size (0-index).
-    pub fn max(&self) -> usize {
+    /// Returns the maximum column index.
+    pub fn max(&self) -> OneBasedUsize {
         self.max_column
     }
 
@@ -49,7 +50,7 @@ impl FieldResolver {
         record: &'a csv::StringRecord,
     ) -> Result<Option<Cow<'a, str>>, template::RenderError> {
         match field {
-            Field::ColumnIndex(i) => Ok(record.get(*i).map(Cow::Borrowed)),
+            Field::ColumnIndex(i) => Ok(record.get(i.as_zero_based()).map(Cow::Borrowed)),
             Field::Template(template) => template
                 .render(
                     field_key,
@@ -102,14 +103,12 @@ impl FieldResolver {
         config_mapping: &HashMap<config::FieldKey, config::FieldPos>,
         header: &csv::StringRecord,
     ) -> Result<Self, ImportError> {
-        let hm: HashMap<&str, usize> = header.iter().enumerate().map(|(k, v)| (v, k)).collect();
+        let hm: HashMap<&str, OneBasedUsize> = column_index(header)?;
         let mut not_found_labels: Vec<&str> = Vec::new();
         let mut ki: HashMap<config::FieldKey, Field> = HashMap::with_capacity(config_mapping.len());
         for (&k, pos) in config_mapping {
             let field = match &pos {
-                config::FieldPos::Index(i) => {
-                    Some(Field::ColumnIndex(i.as_zero_based().try_into().unwrap()))
-                }
+                config::FieldPos::Index(i) => Some(Field::ColumnIndex((*i).try_into().unwrap())),
                 config::FieldPos::Label(label) => match hm.get(label.as_str()).cloned() {
                     Some(i) => Some(Field::ColumnIndex(i)),
                     None => {
@@ -145,7 +144,7 @@ impl FieldResolver {
             })
             .copied()
             .max()
-            .unwrap_or(0);
+            .unwrap_or(OneBasedUsize::MIN);
         let date = ki
             .get(&config::FieldKey::Date)
             .cloned()
@@ -183,6 +182,23 @@ impl FieldResolver {
     }
 }
 
+fn column_index(header: &csv::StringRecord) -> Result<HashMap<&str, OneBasedUsize>, ImportError> {
+    let mut i = OneBasedUsize::MIN;
+    let mut m = HashMap::with_capacity(header.len());
+    for key in header.iter() {
+        if let Some(j) = m.insert(key, i) {
+            return Err(ImportError::Other(format!(
+                "column {} appears twice at {} and {}",
+                key, j, i
+            )));
+        }
+        i = i.checked_add(1).ok_or_else(|| {
+            ImportError::Other("header has usize::MAX or more columns".to_string())
+        })?;
+    }
+    Ok(m)
+}
+
 #[derive(Debug, PartialEq)]
 enum AmountField {
     CreditDebit { credit: Field, debit: Field },
@@ -191,7 +207,7 @@ enum AmountField {
 
 #[derive(Debug, PartialEq, Clone)]
 enum Field {
-    ColumnIndex(usize),
+    ColumnIndex(OneBasedUsize),
     Template(Template),
 }
 
@@ -211,13 +227,13 @@ impl<'a> template::Interpolate<'a> for MappedRecord<'a> {
             // Clone here might have penalty on template,
             // but it will be a failure path so good to go.
             TemplateKey::Named(fk) => self.field_resolver.field(fk)?.clone(),
-            TemplateKey::Indexed(i) => Field::ColumnIndex(i.as_zero_based().try_into().unwrap()),
+            TemplateKey::Indexed(i) => Field::ColumnIndex(i.try_into().ok()?),
         };
         match key {
             // It might cause inifite loop if we resolve another template during template rendering.
             // Thus we only support simple column reference.
             Field::Template(_) => None,
-            Field::ColumnIndex(c) => self.record.get(c),
+            Field::ColumnIndex(c) => self.record.get(c.as_zero_based()),
         }
     }
 }
@@ -226,12 +242,31 @@ impl<'a> template::Interpolate<'a> for MappedRecord<'a> {
 mod tests {
     use super::*;
 
+    use assert_matches::assert_matches;
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
     use super::config::{AccountType, FieldPos};
     use crate::one_based_macro::one_based_32;
+    use crate::one_based_macro::zero_based_usize;
+
+    #[test]
+    fn field_map_try_new_failed_on_duplicated_header() {
+        let config: HashMap<FieldKey, FieldPos> = hashmap! {
+            FieldKey::Date => FieldPos::Label("日付".to_owned()),
+            FieldKey::Payee => FieldPos::Label("摘要".to_owned()),
+            FieldKey::Amount => FieldPos::Label("金額".to_owned()),
+        };
+
+        let got_err = FieldResolver::try_new(
+            &config,
+            &csv::StringRecord::from(vec!["日付", "摘要", "金額", "日付"]),
+        )
+        .unwrap_err();
+
+        assert_matches!(got_err, ImportError::Other(msg) => assert_eq!(msg,"column 日付 appears twice at 1 and 4"));
+    }
 
     #[test]
     fn field_map_try_new_label_credit_debit() {
@@ -249,20 +284,20 @@ mod tests {
         .unwrap();
         assert_eq!(
             FieldResolver {
-                date: Field::ColumnIndex(0),
-                payee: Field::ColumnIndex(1),
+                date: Field::ColumnIndex(zero_based_usize!(0)),
+                payee: Field::ColumnIndex(zero_based_usize!(1)),
                 value: AmountField::CreditDebit {
-                    credit: Field::ColumnIndex(2),
-                    debit: Field::ColumnIndex(3)
+                    credit: Field::ColumnIndex(zero_based_usize!(2)),
+                    debit: Field::ColumnIndex(zero_based_usize!(3))
                 },
                 all_fields: hashmap! {
-                    FieldKey::Date => Field::ColumnIndex(0),
-                    FieldKey::Payee => Field::ColumnIndex(1),
-                    FieldKey::Credit => Field::ColumnIndex(2),
-                    FieldKey::Debit => Field::ColumnIndex(3),
-                    FieldKey::Balance => Field::ColumnIndex(4),
+                    FieldKey::Date => Field::ColumnIndex(zero_based_usize!(0)),
+                    FieldKey::Payee => Field::ColumnIndex(zero_based_usize!(1)),
+                    FieldKey::Credit => Field::ColumnIndex(zero_based_usize!(2)),
+                    FieldKey::Debit => Field::ColumnIndex(zero_based_usize!(3)),
+                    FieldKey::Balance => Field::ColumnIndex(zero_based_usize!(4)),
                 },
-                max_column: 4,
+                max_column: zero_based_usize!(4),
             },
             got,
         );
@@ -280,15 +315,15 @@ mod tests {
         assert_eq!(
             got,
             FieldResolver {
-                date: Field::ColumnIndex(0),
-                payee: Field::ColumnIndex(1),
-                value: AmountField::Absolute(Field::ColumnIndex(2)),
+                date: Field::ColumnIndex(zero_based_usize!(0)),
+                payee: Field::ColumnIndex(zero_based_usize!(1)),
+                value: AmountField::Absolute(Field::ColumnIndex(zero_based_usize!(2))),
                 all_fields: hashmap! {
-                    FieldKey::Date => Field::ColumnIndex(0),
-                    FieldKey::Payee => Field::ColumnIndex(1),
-                    FieldKey::Amount => Field::ColumnIndex(2),
+                    FieldKey::Date => Field::ColumnIndex(zero_based_usize!(0)),
+                    FieldKey::Payee => Field::ColumnIndex(zero_based_usize!(1)),
+                    FieldKey::Amount => Field::ColumnIndex(zero_based_usize!(2)),
                 },
-                max_column: 2,
+                max_column: zero_based_usize!(2),
             }
         );
     }
@@ -311,21 +346,21 @@ mod tests {
         assert_eq!(
             got,
             FieldResolver {
-                date: Field::ColumnIndex(0),
-                payee: Field::ColumnIndex(1),
-                value: AmountField::Absolute(Field::ColumnIndex(2)),
+                date: Field::ColumnIndex(zero_based_usize!(0)),
+                payee: Field::ColumnIndex(zero_based_usize!(1)),
+                value: AmountField::Absolute(Field::ColumnIndex(zero_based_usize!(2))),
                 all_fields: hashmap! {
-                    FieldKey::Date => Field::ColumnIndex(0),
-                    FieldKey::Payee => Field::ColumnIndex(1),
-                    FieldKey::Amount => Field::ColumnIndex(2),
-                    FieldKey::Balance => Field::ColumnIndex(3),
-                    FieldKey::Category => Field::ColumnIndex(4),
-                    FieldKey::Commodity => Field::ColumnIndex(5),
-                    FieldKey::Rate => Field::ColumnIndex(6),
-                    FieldKey::SecondaryAmount => Field::ColumnIndex(7),
-                    FieldKey::SecondaryCommodity => Field::ColumnIndex(8),
+                    FieldKey::Date => Field::ColumnIndex(zero_based_usize!(0)),
+                    FieldKey::Payee => Field::ColumnIndex(zero_based_usize!(1)),
+                    FieldKey::Amount => Field::ColumnIndex(zero_based_usize!(2)),
+                    FieldKey::Balance => Field::ColumnIndex(zero_based_usize!(3)),
+                    FieldKey::Category => Field::ColumnIndex(zero_based_usize!(4)),
+                    FieldKey::Commodity => Field::ColumnIndex(zero_based_usize!(5)),
+                    FieldKey::Rate => Field::ColumnIndex(zero_based_usize!(6)),
+                    FieldKey::SecondaryAmount => Field::ColumnIndex(zero_based_usize!(7)),
+                    FieldKey::SecondaryCommodity => Field::ColumnIndex(zero_based_usize!(8)),
                 },
-                max_column: 8,
+                max_column: zero_based_usize!(8),
             }
         );
     }
