@@ -194,7 +194,7 @@ where
 struct ProcessAccumulator<'ctx> {
     balance: Balance<'ctx>,
     txns: Vec<Transaction<'ctx>>,
-    price_repos: PriceRepositoryBuilder<'ctx>,
+    price_repos: PriceRepositoryBuilder,
 }
 
 impl<'ctx> ProcessAccumulator<'ctx> {
@@ -258,7 +258,7 @@ impl<'ctx> ProcessAccumulator<'ctx> {
 /// Adds a syntax transaction, and converts it into a processed Transaction.
 fn add_transaction<'ctx>(
     ctx: &mut ReportContext<'ctx>,
-    price_repos: &mut PriceRepositoryBuilder<'ctx>,
+    price_repos: &mut PriceRepositoryBuilder,
     bal: &mut Balance<'ctx>,
     txn: &syntax::tracked::Transaction,
 ) -> Result<Transaction<'ctx>, BookKeepError> {
@@ -588,7 +588,7 @@ impl<'ctx> Exchange<'ctx> {
 /// Checks if the posting amounts sum to zero.
 fn check_balance<'ctx>(
     ctx: &ReportContext<'ctx>,
-    price_repos: &mut PriceRepositoryBuilder<'ctx>,
+    price_repos: &mut PriceRepositoryBuilder,
     postings: &mut bcc::Vec<'ctx, Posting<'ctx>>,
     date: NaiveDate,
     balance: Amount<'ctx>,

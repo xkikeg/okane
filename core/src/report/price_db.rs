@@ -36,13 +36,15 @@ pub(super) enum PriceSource {
     PriceDB,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Entry(PriceSource, Vec<(NaiveDate, Decimal)>);
 
 /// Builder of [`PriceRepository`].
 #[derive(Debug, Default)]
-pub(super) struct PriceRepositoryBuilder<'ctx> {
-    records: HashMap<CommodityTag<'ctx>, HashMap<CommodityTag<'ctx>, Entry>>,
+pub(super) struct PriceRepositoryBuilder {
+    /// Records of price information.
+    /// This is map of map, as it must be possible to query all commodities linked from one commodity.
+    records: CommodityMap<CommodityMap<Entry>>,
 }
 
 /// Event of commodity price.
@@ -79,8 +81,8 @@ impl<'ctx> PriceEvent<'ctx> {
     }
 }
 
-impl<'ctx> PriceRepositoryBuilder<'ctx> {
-    pub fn insert_price(&mut self, source: PriceSource, event: PriceEvent<'ctx>) {
+impl PriceRepositoryBuilder {
+    pub fn insert_price<'ctx>(&mut self, source: PriceSource, event: PriceEvent<'ctx>) {
         if event.price_x.commodity == event.price_y.commodity {
             // this must be an error returned, instead of log error.
             log::error!("price log should not contain the self-mention rate");
@@ -89,7 +91,7 @@ impl<'ctx> PriceRepositoryBuilder<'ctx> {
         self.insert_impl(source, event.date, event.price_y, event.price_x);
     }
 
-    fn insert_impl(
+    fn insert_impl<'ctx>(
         &mut self,
         source: PriceSource,
         date: NaiveDate,
@@ -98,10 +100,10 @@ impl<'ctx> PriceRepositoryBuilder<'ctx> {
     ) {
         let Entry(stored_source, entries): &mut _ = self
             .records
-            .entry(price_with.commodity)
-            .or_default()
-            .entry(price_of.commodity)
-            .or_insert(Entry(PriceSource::Ledger, Vec::new()));
+            .get_mut(price_with.commodity)
+            .get_or_insert(CommodityMap::new())
+            .get_mut(price_of.commodity)
+            .get_or_insert(Entry(PriceSource::Ledger, Vec::new()));
         if *stored_source < source {
             *stored_source = source;
             entries.clear();
@@ -115,7 +117,7 @@ impl<'ctx> PriceRepositoryBuilder<'ctx> {
     }
 
     /// Loads PriceDB information from the given file.
-    pub fn load_price_db(
+    pub fn load_price_db<'ctx>(
         &mut self,
         ctx: &mut ReportContext<'ctx>,
         path: &Path,
@@ -147,15 +149,15 @@ impl<'ctx> PriceRepositoryBuilder<'ctx> {
     }
 
     #[cfg(test)]
-    pub fn into_events(self) -> Vec<PriceEvent<'ctx>> {
+    pub fn into_events<'ctx>(self) -> Vec<PriceEvent<'ctx>> {
         let mut ret = Vec::new();
-        for (price_with, v) in self.records {
-            for (price_of, Entry(_, v)) in v {
+        for (price_with, v) in self.records.iter() {
+            for (price_of, Entry(_, v)) in v.iter() {
                 for (date, rate) in v {
                     ret.push(PriceEvent {
                         price_x: SingleAmount::from_value(Decimal::ONE, price_of),
-                        price_y: SingleAmount::from_value(rate, price_with),
-                        date,
+                        price_y: SingleAmount::from_value(*rate, price_with),
+                        date: *date,
                     });
                 }
             }
@@ -164,14 +166,12 @@ impl<'ctx> PriceRepositoryBuilder<'ctx> {
         ret
     }
 
-    pub fn build(self) -> PriceRepository<'ctx> {
+    pub fn build<'ctx>(self) -> PriceRepository<'ctx> {
         PriceRepository::new(self.build_naive())
     }
 
-    fn build_naive(mut self) -> NaivePriceRepository<'ctx> {
-        self.records
-            .values_mut()
-            .for_each(|x| x.values_mut().for_each(|x| x.1.sort()));
+    fn build_naive(mut self) -> NaivePriceRepository {
+        self.records.for_each(|m| m.for_each(|x| x.1.sort()));
         NaivePriceRepository {
             records: self.records,
         }
@@ -202,7 +202,7 @@ pub fn convert_amount<'ctx>(
 /// Repository which user can query the conversion rate with.
 #[derive(Debug)]
 pub struct PriceRepository<'ctx> {
-    inner: NaivePriceRepository<'ctx>,
+    inner: NaivePriceRepository,
     // TODO: add price_with as a key, otherwise it's wrong.
     // BTreeMap could be used if cursor support is ready.
     // Then, we can avoid computing rates over and over if no rate update happens.
@@ -210,7 +210,7 @@ pub struct PriceRepository<'ctx> {
 }
 
 impl<'ctx> PriceRepository<'ctx> {
-    fn new(inner: NaivePriceRepository<'ctx>) -> Self {
+    fn new(inner: NaivePriceRepository) -> Self {
         Self {
             inner,
             cache: HashMap::new(),
@@ -249,17 +249,17 @@ impl<'ctx> PriceRepository<'ctx> {
 }
 
 #[derive(Debug)]
-struct NaivePriceRepository<'ctx> {
+struct NaivePriceRepository {
     // from comodity -> to commodity -> date -> price.
     // e.g. USD AAPL 2024-01-01 100 means 1 AAPL == 100 USD at 2024-01-01.
     // the value are sorted in NaiveDate order.
-    records: HashMap<CommodityTag<'ctx>, HashMap<CommodityTag<'ctx>, Entry>>,
+    records: CommodityMap<CommodityMap<Entry>>,
 }
 
-impl<'ctx> NaivePriceRepository<'ctx> {
+impl NaivePriceRepository {
     /// Copied from CachedPriceRepository, needs to be factored out properly.
     #[cfg(test)]
-    fn convert(
+    fn convert<'ctx>(
         &self,
         ctx: &ReportContext<'ctx>,
         value: SingleAmount<'ctx>,
@@ -279,7 +279,7 @@ impl<'ctx> NaivePriceRepository<'ctx> {
         }
     }
 
-    fn compute_price_table(
+    fn compute_price_table<'ctx>(
         &self,
         ctx: &ReportContext<'ctx>,
         price_with: CommodityTag<'ctx>,
@@ -310,10 +310,12 @@ impl<'ctx> NaivePriceRepository<'ctx> {
                     continue;
                 }
             }
-            for (j, Entry(source, rates)) in match self.records.get(&prev) {
+            for (j, Entry(source, rates)) in match self.records.get(prev) {
                 None => continue,
                 Some(x) => x,
-            } {
+            }
+            .iter()
+            {
                 let bound = rates.partition_point(|(record_date, _)| record_date <= &date);
                 log::debug!(
                     "found next commodity #{} with date bound {}",
@@ -328,8 +330,8 @@ impl<'ctx> NaivePriceRepository<'ctx> {
                 let (record_date, rate) = rates[bound - 1];
                 let next_dist = curr_dist.extend(*source, date - record_date);
                 let rate = prev_rate * rate;
-                let next = WithDistance(next_dist.clone(), (*j, rate));
-                let e: &mut Option<_> = distances.get_mut(*j);
+                let next = WithDistance(next_dist.clone(), (j, rate));
+                let e: &mut Option<_> = distances.get_mut(j);
                 let updated = match e.as_mut() {
                     Some(e) => {
                         if *e <= next_dist {
