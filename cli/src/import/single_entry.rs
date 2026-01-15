@@ -494,7 +494,7 @@ impl<'a> PostingAmount<'a> {
             None => (self.amount.value, self.amount.commodity),
             Some(rate) => (self.amount.value * rate.value, rate.commodity),
         };
-        report::SingleAmount::from_value(v, ctx.commodity_store_mut().ensure(c))
+        report::SingleAmount::from_value(ctx.commodity_store_mut().ensure(c), v)
     }
 
     /// Gets the syntax version of posting.

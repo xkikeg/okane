@@ -157,13 +157,13 @@ mod tests {
         let updated = balance
             .add_posting_amount(
                 ctx.accounts.ensure("Expenses"),
-                PostingAmount::from_value(dec!(1000), ctx.commodities.ensure("JPY")),
+                PostingAmount::from_value(ctx.commodities.ensure("JPY"), dec!(1000)),
             )
             .clone();
 
         assert_eq!(
             updated,
-            Amount::from_value(dec!(1000), ctx.commodities.ensure("JPY"))
+            Amount::from_value(ctx.commodities.ensure("JPY"), dec!(1000))
         );
         assert_eq!(
             balance.get(&ctx.accounts.ensure("Expenses")),
@@ -173,7 +173,7 @@ mod tests {
         let updated = balance
             .add_posting_amount(
                 ctx.accounts.ensure("Expenses"),
-                PostingAmount::from_value(dec!(-1000), ctx.commodities.ensure("JPY")),
+                PostingAmount::from_value(ctx.commodities.ensure("JPY"), dec!(-1000)),
             )
             .clone();
 
@@ -193,15 +193,15 @@ mod tests {
         let expenses = ctx.accounts.ensure("Expenses");
         let jpy = ctx.commodities.insert("JPY").unwrap();
         let prev = balance
-            .set_partial(&ctx, expenses, PostingAmount::from_value(dec!(1000), jpy))
+            .set_partial(&ctx, expenses, PostingAmount::from_value(jpy, dec!(1000)))
             .unwrap();
 
         // Note it won't be PostingAmount::zero(),
         // as set_partial is called with commodity amount.
-        assert_eq!(prev, PostingAmount::from_value(dec!(0), jpy));
+        assert_eq!(prev, PostingAmount::from_value(jpy, dec!(0)));
         assert_eq!(
             balance.get(&expenses),
-            Some(&Amount::from_value(dec!(1000), jpy))
+            Some(&Amount::from_value(jpy, dec!(1000)))
         );
     }
 
@@ -210,28 +210,22 @@ mod tests {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
         let mut balance = Balance::default();
+        let jpy = ctx.commodities.ensure("JPY");
         balance.add_posting_amount(
             ctx.accounts.ensure("Expenses"),
-            PostingAmount::from_value(dec!(1000), ctx.commodities.ensure("JPY")),
+            PostingAmount::from_value(jpy, dec!(1000)),
         );
 
         let expenses = ctx.accounts.ensure("Expenses");
-        let jpy = ctx.commodities.ensure("JPY");
 
         let prev = balance
-            .set_partial(&ctx, expenses, PostingAmount::from_value(dec!(-1000), jpy))
+            .set_partial(&ctx, expenses, PostingAmount::from_value(jpy, dec!(-1000)))
             .unwrap();
 
-        assert_eq!(
-            prev,
-            PostingAmount::from_value(dec!(1000), ctx.commodities.ensure("JPY"))
-        );
+        assert_eq!(prev, PostingAmount::from_value(jpy, dec!(1000)));
         assert_eq!(
             balance.get(&ctx.accounts.ensure("Expenses")),
-            Some(&Amount::from_value(
-                dec!(-1000),
-                ctx.commodities.ensure("JPY")
-            ))
+            Some(&Amount::from_value(jpy, dec!(-1000)))
         );
     }
 
@@ -240,32 +234,27 @@ mod tests {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
         let mut balance = Balance::default();
+        let jpy = ctx.commodities.ensure("JPY");
+        let chf = ctx.commodities.ensure("CHF");
         balance.add_posting_amount(
             ctx.accounts.ensure("Expenses"),
-            PostingAmount::from_value(dec!(1000), ctx.commodities.ensure("JPY")),
+            PostingAmount::from_value(jpy, dec!(1000)),
         );
         balance.add_posting_amount(
             ctx.accounts.ensure("Expenses"),
-            PostingAmount::from_value(dec!(200), ctx.commodities.ensure("CHF")),
+            PostingAmount::from_value(chf, dec!(200)),
         );
 
         let expenses = ctx.accounts.ensure("Expenses");
-        let chf = ctx.commodities.ensure("CHF");
 
         let prev = balance
-            .set_partial(&ctx, expenses, PostingAmount::from_value(dec!(100), chf))
+            .set_partial(&ctx, expenses, PostingAmount::from_value(chf, dec!(100)))
             .unwrap();
 
-        assert_eq!(
-            prev,
-            PostingAmount::from_value(dec!(200), ctx.commodities.ensure("CHF"))
-        );
+        assert_eq!(prev, PostingAmount::from_value(chf, dec!(200)));
         assert_eq!(
             balance.get(&ctx.accounts.ensure("Expenses")),
-            Some(&Amount::from_values([
-                (dec!(1000), ctx.commodities.ensure("JPY")),
-                (dec!(100), ctx.commodities.ensure("CHF")),
-            ]))
+            Some(&Amount::from_values([(jpy, dec!(1000)), (chf, dec!(100)),]))
         );
     }
 
@@ -293,9 +282,10 @@ mod tests {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
         let mut balance = Balance::default();
+        let jpy = ctx.commodities.ensure("JPY");
         balance.add_posting_amount(
             ctx.accounts.ensure("Expenses"),
-            PostingAmount::from_value(dec!(1000), ctx.commodities.ensure("JPY")),
+            PostingAmount::from_value(jpy, dec!(1000)),
         );
 
         let expenses = ctx.accounts.ensure("Expenses");
@@ -304,10 +294,7 @@ mod tests {
             .set_partial(&ctx, expenses, PostingAmount::zero())
             .unwrap();
 
-        assert_eq!(
-            prev,
-            PostingAmount::from_value(dec!(1000), ctx.commodities.ensure("JPY"))
-        );
+        assert_eq!(prev, PostingAmount::from_value(jpy, dec!(1000)));
         assert_eq!(
             balance.get(&ctx.accounts.ensure("Expenses")),
             Some(&Amount::zero())
@@ -321,11 +308,11 @@ mod tests {
         let mut balance = Balance::default();
         balance.add_posting_amount(
             ctx.accounts.ensure("Expenses"),
-            PostingAmount::from_value(dec!(1000), ctx.commodities.ensure("JPY")),
+            PostingAmount::from_value(ctx.commodities.ensure("JPY"), dec!(1000)),
         );
         balance.add_posting_amount(
             ctx.accounts.ensure("Expenses"),
-            PostingAmount::from_value(dec!(200), ctx.commodities.ensure("CHF")),
+            PostingAmount::from_value(ctx.commodities.ensure("CHF"), dec!(200)),
         );
 
         let expenses = ctx.accounts.ensure("Expenses");

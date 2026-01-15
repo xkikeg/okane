@@ -131,13 +131,13 @@ impl<'ctx> PriceRepositoryBuilder<'ctx> {
             // price DB might expose AUD/EUR EUR/CHF CHF/JPY conversion.
             let target = ctx.commodities.ensure(entry.target.as_ref());
             let rate: SingleAmount<'ctx> = SingleAmount::from_value(
-                entry.rate.value.value,
                 ctx.commodities.ensure(&entry.rate.commodity),
+                entry.rate.value.value,
             );
             self.insert_price(
                 PriceSource::PriceDB,
                 PriceEvent {
-                    price_x: SingleAmount::from_value(Decimal::ONE, target),
+                    price_x: SingleAmount::from_value(target, Decimal::ONE),
                     price_y: rate,
                     date: entry.datetime.date(),
                 },
@@ -153,8 +153,8 @@ impl<'ctx> PriceRepositoryBuilder<'ctx> {
             for (price_of, Entry(_, v)) in v {
                 for (date, rate) in v {
                     ret.push(PriceEvent {
-                        price_x: SingleAmount::from_value(Decimal::ONE, price_of),
-                        price_y: SingleAmount::from_value(rate, price_with),
+                        price_x: SingleAmount::from_value(price_of, Decimal::ONE),
+                        price_y: SingleAmount::from_value(price_with, rate),
                         date,
                     });
                 }
@@ -237,7 +237,7 @@ impl<'ctx> PriceRepository<'ctx> {
             .get(value.commodity);
         match rate {
             Some(WithDistance(_, rate)) => {
-                Ok(SingleAmount::from_value(value.value * rate, commodity_with))
+                Ok(SingleAmount::from_value(commodity_with, value.value * rate))
             }
             None => Err(ConversionError::RateNotFound(
                 value.commodity.to_owned_lossy(&ctx.commodities),
@@ -274,7 +274,7 @@ impl<'ctx> NaivePriceRepository<'ctx> {
             .get(value.commodity)
             .map(|x| x.1);
         match rate {
-            Some(rate) => Ok(SingleAmount::from_value(value.value * rate, commodity_with)),
+            Some(rate) => Ok(SingleAmount::from_value(commodity_with, value.value * rate)),
             None => Err(value),
         }
     }
@@ -438,8 +438,8 @@ mod tests {
             PriceSource::Ledger,
             PriceEvent {
                 date: NaiveDate::from_ymd_opt(2024, 10, 1).unwrap(),
-                price_x: SingleAmount::from_value(dec!(1), eur),
-                price_y: SingleAmount::from_value(dec!(0.8), chf),
+                price_x: SingleAmount::from_value(eur, dec!(1)),
+                price_y: SingleAmount::from_value(chf, dec!(0.8)),
             },
         );
 
@@ -448,35 +448,35 @@ mod tests {
         // before the event date, we can't convert the value, thus see Right.
         let got = db.convert(
             &ctx,
-            SingleAmount::from_value(dec!(1), eur),
+            SingleAmount::from_value(eur, dec!(1)),
             chf,
             NaiveDate::from_ymd_opt(2024, 9, 30).unwrap(),
         );
-        assert_eq!(got, Err(SingleAmount::from_value(dec!(1), eur)));
+        assert_eq!(got, Err(SingleAmount::from_value(eur, dec!(1))));
 
         let got = db.convert(
             &ctx,
-            SingleAmount::from_value(dec!(10), chf),
+            SingleAmount::from_value(chf, dec!(10)),
             eur,
             NaiveDate::from_ymd_opt(2024, 9, 30).unwrap(),
         );
-        assert_eq!(got, Err(SingleAmount::from_value(dec!(10), chf)));
+        assert_eq!(got, Err(SingleAmount::from_value(chf, dec!(10))));
 
         let got = db.convert(
             &ctx,
-            SingleAmount::from_value(dec!(1.0), eur),
+            SingleAmount::from_value(eur, dec!(1.0)),
             chf,
             NaiveDate::from_ymd_opt(2024, 10, 1).unwrap(),
         );
-        assert_eq!(got, Ok(SingleAmount::from_value(dec!(0.8), chf)));
+        assert_eq!(got, Ok(SingleAmount::from_value(chf, dec!(0.8))));
 
         let got = db.convert(
             &ctx,
-            SingleAmount::from_value(dec!(10.0), chf),
+            SingleAmount::from_value(chf, dec!(10.0)),
             eur,
             NaiveDate::from_ymd_opt(2024, 10, 1).unwrap(),
         );
-        assert_eq!(got, Ok(SingleAmount::from_value(dec!(12.5), eur)));
+        assert_eq!(got, Ok(SingleAmount::from_value(eur, dec!(12.5))));
     }
 
     #[test]
@@ -493,24 +493,24 @@ mod tests {
             PriceSource::Ledger,
             PriceEvent {
                 date: NaiveDate::from_ymd_opt(2024, 10, 1).unwrap(),
-                price_x: SingleAmount::from_value(dec!(0.8), chf),
-                price_y: SingleAmount::from_value(dec!(1), eur),
+                price_x: SingleAmount::from_value(chf, dec!(0.8)),
+                price_y: SingleAmount::from_value(eur, dec!(1)),
             },
         );
         builder.insert_price(
             PriceSource::Ledger,
             PriceEvent {
                 date: NaiveDate::from_ymd_opt(2024, 10, 2).unwrap(),
-                price_x: SingleAmount::from_value(dec!(0.8), eur),
-                price_y: SingleAmount::from_value(dec!(1), usd),
+                price_x: SingleAmount::from_value(eur, dec!(0.8)),
+                price_y: SingleAmount::from_value(usd, dec!(1)),
             },
         );
         builder.insert_price(
             PriceSource::Ledger,
             PriceEvent {
                 date: NaiveDate::from_ymd_opt(2024, 10, 3).unwrap(),
-                price_x: SingleAmount::from_value(dec!(100), jpy),
-                price_y: SingleAmount::from_value(dec!(1), usd),
+                price_x: SingleAmount::from_value(jpy, dec!(100)),
+                price_y: SingleAmount::from_value(usd, dec!(1)),
             },
         );
 
@@ -523,10 +523,10 @@ mod tests {
 
         let got = db.convert(
             &ctx,
-            SingleAmount::from_value(dec!(1), chf),
+            SingleAmount::from_value(chf, dec!(1)),
             jpy,
             NaiveDate::from_ymd_opt(2024, 10, 3).unwrap(),
         );
-        assert_eq!(got, Ok(SingleAmount::from_value(dec!(156.25), jpy)));
+        assert_eq!(got, Ok(SingleAmount::from_value(jpy, dec!(156.25))));
     }
 }

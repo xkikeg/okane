@@ -89,10 +89,10 @@ impl<'ctx> PostingAmount<'ctx> {
 
     /// Constructs an instance with single commodity.
     pub(crate) fn from_value(
-        value: rust_decimal::Decimal,
         commodity: crate::report::commodity::CommodityTag<'ctx>,
+        value: rust_decimal::Decimal,
     ) -> Self {
-        PostingAmount::Single(SingleAmount::from_value(value, commodity))
+        PostingAmount::Single(SingleAmount::from_value(commodity, value))
     }
 }
 
@@ -116,8 +116,8 @@ mod tests {
         assert_eq!(PostingAmount::Zero, -PostingAmount::zero());
 
         assert_eq!(
-            PostingAmount::from_value(dec!(5), jpy),
-            -PostingAmount::from_value(dec!(-5), jpy),
+            PostingAmount::from_value(jpy, dec!(5)),
+            -PostingAmount::from_value(jpy, dec!(-5)),
         );
     }
 
@@ -129,16 +129,16 @@ mod tests {
         let jpy = ctx.commodities.insert("JPY").unwrap();
 
         assert_eq!(
-            PostingAmount::from_value(dec!(5), jpy),
-            PostingAmount::from_value(dec!(5), jpy)
+            PostingAmount::from_value(jpy, dec!(5)),
+            PostingAmount::from_value(jpy, dec!(5))
                 .check_add(PostingAmount::zero())
                 .unwrap(),
         );
 
         assert_eq!(
-            PostingAmount::from_value(dec!(5), jpy),
+            PostingAmount::from_value(jpy, dec!(5)),
             PostingAmount::zero()
-                .check_add(PostingAmount::from_value(dec!(5), jpy))
+                .check_add(PostingAmount::from_value(jpy, dec!(5)))
                 .unwrap(),
         );
     }
@@ -155,7 +155,7 @@ mod tests {
             "1.23 JPY",
             format!(
                 "{}",
-                PostingAmount::from_value(dec!(1.23), jpy).as_display(&ctx)
+                PostingAmount::from_value(jpy, dec!(1.23)).as_display(&ctx)
             )
         );
     }

@@ -384,38 +384,38 @@ mod tests {
         let want: Balance = [
             (
                 ctx.account("Assets:CH Bank").unwrap(),
-                Amount::from_value(dec!(1858.04), chf),
+                Amount::from_value(chf, dec!(1858.04)),
             ),
             (
                 ctx.account("Assets:Broker").unwrap(),
-                Amount::from_values([(dec!(4900.0000), okane), (dec!(12300), jpy)]),
+                Amount::from_values([(okane, dec!(4900.0000)), (jpy, dec!(12300))]),
             ),
             (
                 ctx.account("Assets:J 銀行").unwrap(),
-                Amount::from_value(dec!(980090), jpy),
+                Amount::from_value(jpy, dec!(980090)),
             ),
             (
                 ctx.account("Liabilities:EUR Card").unwrap(),
-                Amount::from_value(dec!(-300.00), eur),
+                Amount::from_value(eur, dec!(-300.00)),
             ),
             (
                 ctx.account("Income:Capital Gain").unwrap(),
-                Amount::from_value(dec!(-1540), jpy),
+                Amount::from_value(jpy, dec!(-1540)),
             ),
             (
                 ctx.account("Expenses:Food").unwrap(),
-                Amount::from_value(dec!(150.00), eur),
+                Amount::from_value(eur, dec!(150.00)),
             ),
             (
                 ctx.account("Expenses:Grocery").unwrap(),
-                Amount::from_value(dec!(100.00), chf),
+                Amount::from_value(chf, dec!(100.00)),
             ),
             (
                 ctx.account("Equity").unwrap(),
                 Amount::from_values([
-                    (dec!(-1_400_000), jpy),
-                    (dec!(-2000.00), chf),
-                    (dec!(300.00), eur),
+                    (jpy, dec!(-1_400_000)),
+                    (chf, dec!(-2000.00)),
+                    (eur, dec!(300.00)),
                 ]),
             ),
         ]
@@ -453,7 +453,7 @@ mod tests {
             (
                 ctx.account("Assets:CH Bank").unwrap(),
                 // 2000.00 * 168.24 - 141.96 * 171.50
-                Amount::from_value(dec!(312_134), jpy),
+                Amount::from_value(jpy, dec!(312_134)),
             ),
             (
                 ctx.account("Assets:Broker").unwrap(),
@@ -462,41 +462,41 @@ mod tests {
                 // -100 * 100 = -10_000
                 // -23 * 100 = -2_300
                 Amount::from_values([
-                    (dec!(400_000), jpy),
-                    (dec!(2_760), jpy),
-                    (dec!(-10_000), jpy),
-                    (dec!(-2_300), jpy),
-                    (dec!(12_300), jpy),
+                    (jpy, dec!(400_000)),
+                    (jpy, dec!(2_760)),
+                    (jpy, dec!(-10_000)),
+                    (jpy, dec!(-2_300)),
+                    (jpy, dec!(12_300)),
                 ]),
             ),
             (
                 ctx.account("Assets:J 銀行").unwrap(),
-                Amount::from_value(dec!(980090), jpy),
+                Amount::from_value(jpy, dec!(980090)),
             ),
             (
                 ctx.account("Liabilities:EUR Card").unwrap(),
-                Amount::from_value(dec!(-47_136), jpy),
+                Amount::from_value(jpy, dec!(-47_136)),
             ),
             (
                 ctx.account("Income:Capital Gain").unwrap(),
-                Amount::from_value(dec!(-1_540), jpy),
+                Amount::from_value(jpy, dec!(-1_540)),
             ),
             (
                 ctx.account("Expenses:Grocery").unwrap(),
-                Amount::from_value(dec!(17_150), jpy),
+                Amount::from_value(jpy, dec!(17_150)),
             ),
             (
                 ctx.account("Expenses:Food").unwrap(),
-                Amount::from_value(dec!(23_568), jpy),
+                Amount::from_value(jpy, dec!(23_568)),
             ),
             (
                 ctx.account("Equity").unwrap(),
                 Amount::from_values([
-                    (dec!(-1_400_000), jpy),
+                    (jpy, dec!(-1_400_000)),
                     // -2000 * 168.24, historical rate.
-                    (dec!(-336_480), jpy),
+                    (jpy, dec!(-336_480)),
                     // 300 * 157.12
-                    (dec!(47_136), jpy),
+                    (jpy, dec!(47_136)),
                 ]),
             ),
         ]
@@ -532,42 +532,42 @@ mod tests {
             (
                 ctx.account("Assets:CH Bank").unwrap(),
                 // 1858.04 * 171.50
-                Amount::from_value(dec!(318_654), jpy),
+                Amount::from_value(jpy, dec!(318_654)),
             ),
             (
                 ctx.account("Assets:Broker").unwrap(),
-                Amount::from_value(dec!(502_300), jpy),
+                Amount::from_value(jpy, dec!(502_300)),
             ),
             (
                 ctx.account("Assets:J 銀行").unwrap(),
-                Amount::from_value(dec!(980090), jpy),
+                Amount::from_value(jpy, dec!(980090)),
             ),
             (
                 ctx.account("Liabilities:EUR Card").unwrap(),
                 // -300 * 157.12, EUR/JPY rate won't use EUR/CHF CHF/JPY.
-                Amount::from_value(dec!(-47_136), jpy),
+                Amount::from_value(jpy, dec!(-47_136)),
             ),
             (
                 ctx.account("Income:Capital Gain").unwrap(),
-                Amount::from_value(dec!(-1540), jpy),
+                Amount::from_value(jpy, dec!(-1540)),
             ),
             (
                 ctx.account("Expenses:Food").unwrap(),
                 // 150.00 EUR * 157.12
-                Amount::from_value(dec!(23_568), jpy),
+                Amount::from_value(jpy, dec!(23_568)),
             ),
             (
                 ctx.account("Expenses:Grocery").unwrap(),
-                Amount::from_value(dec!(17_150), jpy),
+                Amount::from_value(jpy, dec!(17_150)),
             ),
             (
                 ctx.account("Equity").unwrap(),
                 Amount::from_values([
-                    (dec!(-1_400_000), jpy),
+                    (jpy, dec!(-1_400_000)),
                     // -2000 CHF * 171.50
-                    (dec!(-343_000), jpy),
+                    (jpy, dec!(-343_000)),
                     // 300 EUR * 157.12
-                    (dec!(47_136), jpy),
+                    (jpy, dec!(47_136)),
                 ]),
             ),
         ]
@@ -602,11 +602,11 @@ mod tests {
         let want: Balance = [
             (
                 ctx.account("Assets:J 銀行").unwrap(),
-                Amount::from_value(dec!(-17150), jpy),
+                Amount::from_value(jpy, dec!(-17150)),
             ),
             (
                 ctx.account("Expenses:Grocery").unwrap(),
-                Amount::from_value(dec!(100.00), chf),
+                Amount::from_value(chf, dec!(100.00)),
             ),
         ]
         .into_iter()
@@ -632,7 +632,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            Amount::from_value(dec!(1), ctx.commodities.resolve("JPY").unwrap()),
+            Amount::from_value(ctx.commodities.resolve("JPY").unwrap(), dec!(1)),
             evaluated
         );
     }
