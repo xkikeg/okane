@@ -69,7 +69,7 @@ impl<'ctx> Evaluated<'ctx> {
             return amount.value.value.into();
         }
         let commodity = ctx.commodities.ensure(&amount.commodity);
-        Amount::from_value(amount.value.into(), commodity).into()
+        Amount::from_value(commodity, amount.value.into()).into()
     }
 
     /// Creates [`Evaluated`] from [`expr::Amount`],
@@ -86,7 +86,7 @@ impl<'ctx> Evaluated<'ctx> {
                 amount.commodity.clone().into_owned(),
             ))
         })?;
-        Ok(Amount::from_value(amount.value.into(), commodity).into())
+        Ok(Amount::from_value(commodity, amount.value.into()).into())
     }
 
     /// Returns if the amount is zero.
@@ -160,7 +160,7 @@ impl<'ctx> Evaluated<'ctx> {
             }
             (Evaluated::Number(x), Evaluated::Commodities(y)) => {
                 let y: SingleAmount = y.try_into()?;
-                let ret = SingleAmount::from_value(x, y.commodity).check_div(y.value)?;
+                let ret = SingleAmount::from_value(y.commodity, x).check_div(y.value)?;
                 Ok(Evaluated::Commodities(ret.into()))
             }
             _ => Err(EvalError::UnmatchingOperation),
@@ -199,6 +199,7 @@ mod tests {
     fn test_into_amount() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
+        let usd = ctx.commodities.ensure("USD");
 
         assert_eq!(
             Amount::try_from(Evaluated::from(dec!(5))).unwrap_err(),
@@ -211,12 +212,8 @@ mod tests {
         );
 
         assert_eq!(
-            Amount::try_from(Evaluated::from(Amount::from_value(
-                dec!(1000),
-                ctx.commodities.ensure("USD")
-            )))
-            .unwrap(),
-            Amount::from_value(dec!(1000), ctx.commodities.ensure("USD"))
+            Amount::try_from(Evaluated::from(Amount::from_value(usd, dec!(1000)))).unwrap(),
+            Amount::from_value(usd, dec!(1000))
         );
     }
 
@@ -224,6 +221,7 @@ mod tests {
     fn test_display() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
+        let usd = ctx.commodities.ensure("USD");
 
         assert_eq!("0", &Evaluated::from(dec!(0)).as_display(&ctx).to_string());
         assert_eq!(
@@ -233,7 +231,7 @@ mod tests {
 
         assert_eq!(
             "0 USD",
-            Evaluated::from(Amount::from_value(dec!(0), ctx.commodities.ensure("USD")))
+            Evaluated::from(Amount::from_value(usd, dec!(0)))
                 .as_display(&ctx)
                 .to_string()
         );
@@ -243,25 +241,21 @@ mod tests {
     fn test_is_zero() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
+        let usd = ctx.commodities.ensure("USD");
 
         assert!(Evaluated::from(dec!(0)).is_zero());
         assert!(!Evaluated::from(dec!(1.5)).is_zero());
 
         assert!(Evaluated::from(Amount::zero()).is_zero());
-        assert!(
-            Evaluated::from(Amount::from_value(dec!(0), ctx.commodities.ensure("USD"))).is_zero()
-        );
-        assert!(!Evaluated::from(Amount::from_value(
-            dec!(1000),
-            ctx.commodities.ensure("USD")
-        ))
-        .is_zero());
+        assert!(Evaluated::from(Amount::from_value(usd, dec!(0))).is_zero());
+        assert!(!Evaluated::from(Amount::from_value(usd, dec!(1000))).is_zero());
     }
 
     #[test]
     fn test_negate() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
+        let usd = ctx.commodities.ensure("USD");
 
         assert_eq!(
             Evaluated::from(dec!(1.5)).negate(),
@@ -269,15 +263,8 @@ mod tests {
         );
 
         assert_eq!(
-            Evaluated::from(Amount::from_value(
-                dec!(1000),
-                ctx.commodities.ensure("USD")
-            ))
-            .negate(),
-            Evaluated::from(Amount::from_value(
-                dec!(-1000),
-                ctx.commodities.ensure("USD")
-            ))
+            Evaluated::from(Amount::from_value(usd, dec!(1000))).negate(),
+            Evaluated::from(Amount::from_value(usd, dec!(-1000)))
         );
     }
 
@@ -285,6 +272,8 @@ mod tests {
     fn test_check_add() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
+        let jpy = ctx.commodities.ensure("JPY");
+        let usd = ctx.commodities.ensure("USD");
 
         assert_eq!(
             Evaluated::from(dec!(1))
@@ -294,37 +283,22 @@ mod tests {
         );
 
         assert_eq!(
-            Evaluated::from(Amount::from_value(
-                dec!(1000),
-                ctx.commodities.ensure("JPY")
-            ))
-            .check_add(Evaluated::from(Amount::from_value(
-                dec!(100),
-                ctx.commodities.ensure("USD")
-            )))
-            .unwrap(),
-            Evaluated::from(Amount::from_values([
-                (dec!(1000), ctx.commodities.ensure("JPY")),
-                (dec!(100), ctx.commodities.ensure("USD")),
-            ]))
+            Evaluated::from(Amount::from_value(jpy, dec!(1000)))
+                .check_add(Evaluated::from(Amount::from_value(usd, dec!(100))))
+                .unwrap(),
+            Evaluated::from(Amount::from_values([(jpy, dec!(1000)), (usd, dec!(100)),]))
         );
 
         assert_eq!(
             Evaluated::from(dec!(1))
-                .check_add(Evaluated::from(Amount::from_value(
-                    dec!(1000),
-                    ctx.commodities.ensure("JPY")
-                )))
+                .check_add(Evaluated::from(Amount::from_value(jpy, dec!(1000))))
                 .unwrap_err(),
             EvalError::UnmatchingOperation
         );
         assert_eq!(
-            Evaluated::from(Amount::from_value(
-                dec!(1000),
-                ctx.commodities.ensure("JPY")
-            ))
-            .check_add(Evaluated::from(dec!(1)))
-            .unwrap_err(),
+            Evaluated::from(Amount::from_value(jpy, dec!(1000)))
+                .check_add(Evaluated::from(dec!(1)))
+                .unwrap_err(),
             EvalError::UnmatchingOperation
         );
     }
@@ -333,6 +307,8 @@ mod tests {
     fn test_check_sub() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
+        let jpy = ctx.commodities.ensure("JPY");
+        let usd = ctx.commodities.ensure("USD");
 
         assert_eq!(
             Evaluated::from(dec!(1))
@@ -342,37 +318,22 @@ mod tests {
         );
 
         assert_eq!(
-            Evaluated::from(Amount::from_value(
-                dec!(1000),
-                ctx.commodities.ensure("JPY")
-            ))
-            .check_sub(Evaluated::from(Amount::from_value(
-                dec!(100),
-                ctx.commodities.ensure("USD")
-            )))
-            .unwrap(),
-            Evaluated::from(Amount::from_values([
-                (dec!(1000), ctx.commodities.ensure("JPY")),
-                (dec!(-100), ctx.commodities.ensure("USD")),
-            ]))
+            Evaluated::from(Amount::from_value(jpy, dec!(1000)))
+                .check_sub(Evaluated::from(Amount::from_value(usd, dec!(100))))
+                .unwrap(),
+            Evaluated::from(Amount::from_values([(jpy, dec!(1000)), (usd, dec!(-100)),]))
         );
 
         assert_eq!(
             Evaluated::from(dec!(1))
-                .check_sub(Evaluated::from(Amount::from_value(
-                    dec!(1000),
-                    ctx.commodities.ensure("JPY")
-                )))
+                .check_sub(Evaluated::from(Amount::from_value(jpy, dec!(1000))))
                 .unwrap_err(),
             EvalError::UnmatchingOperation
         );
         assert_eq!(
-            Evaluated::from(Amount::from_value(
-                dec!(1000),
-                ctx.commodities.ensure("JPY")
-            ))
-            .check_sub(Evaluated::from(dec!(1)))
-            .unwrap_err(),
+            Evaluated::from(Amount::from_value(jpy, dec!(1000)))
+                .check_sub(Evaluated::from(dec!(1)))
+                .unwrap_err(),
             EvalError::UnmatchingOperation
         );
     }
@@ -381,6 +342,8 @@ mod tests {
     fn test_check_mul() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
+        let jpy = ctx.commodities.ensure("JPY");
+        let usd = ctx.commodities.ensure("USD");
 
         assert_eq!(
             Evaluated::from(dec!(1.5))
@@ -391,40 +354,22 @@ mod tests {
 
         assert_eq!(
             Evaluated::from(dec!(-0.2))
-                .check_mul(Evaluated::from(Amount::from_value(
-                    dec!(1000),
-                    ctx.commodities.ensure("JPY")
-                )))
+                .check_mul(Evaluated::from(Amount::from_value(jpy, dec!(1000))))
                 .unwrap(),
-            Evaluated::from(Amount::from_value(
-                dec!(-200),
-                ctx.commodities.ensure("JPY")
-            ))
+            Evaluated::from(Amount::from_value(jpy, dec!(-200)))
         );
 
         assert_eq!(
-            Evaluated::from(Amount::from_value(
-                dec!(3.15),
-                ctx.commodities.ensure("USD")
-            ))
-            .check_mul(Evaluated::from(dec!(0.5)))
-            .unwrap(),
-            Evaluated::from(Amount::from_value(
-                dec!(1.575),
-                ctx.commodities.ensure("USD")
-            ))
+            Evaluated::from(Amount::from_value(usd, dec!(3.15)))
+                .check_mul(Evaluated::from(dec!(0.5)))
+                .unwrap(),
+            Evaluated::from(Amount::from_value(usd, dec!(1.575)))
         );
 
         assert_eq!(
-            Evaluated::from(Amount::from_value(
-                dec!(1000),
-                ctx.commodities.ensure("JPY")
-            ))
-            .check_mul(Evaluated::from(Amount::from_value(
-                dec!(100),
-                ctx.commodities.ensure("USD")
-            )))
-            .unwrap_err(),
+            Evaluated::from(Amount::from_value(jpy, dec!(1000)))
+                .check_mul(Evaluated::from(Amount::from_value(usd, dec!(100))))
+                .unwrap_err(),
             EvalError::UnmatchingOperation
         );
     }
@@ -433,6 +378,8 @@ mod tests {
     fn test_check_div() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
+        let jpy = ctx.commodities.ensure("JPY");
+        let usd = ctx.commodities.ensure("USD");
 
         assert_eq!(
             Evaluated::from(dec!(1.5))
@@ -449,43 +396,25 @@ mod tests {
         );
 
         assert_eq!(
-            Evaluated::from(Amount::from_value(
-                dec!(3.15),
-                ctx.commodities.ensure("USD")
-            ))
-            .check_div(Evaluated::from(dec!(0.5)))
-            .unwrap(),
-            Evaluated::from(Amount::from_value(
-                dec!(6.30),
-                ctx.commodities.ensure("USD")
-            ))
+            Evaluated::from(Amount::from_value(usd, dec!(3.15)))
+                .check_div(Evaluated::from(dec!(0.5)))
+                .unwrap(),
+            Evaluated::from(Amount::from_value(usd, dec!(6.30)))
         );
 
         assert_eq!(
             Evaluated::from(dec!(-0.2))
-                .check_div(Evaluated::from(Amount::from_value(
-                    dec!(100),
-                    ctx.commodities.ensure("JPY")
-                )))
+                .check_div(Evaluated::from(Amount::from_value(jpy, dec!(100))))
                 .unwrap(),
-            Evaluated::from(Amount::from_value(
-                dec!(-0.002),
-                ctx.commodities.ensure("JPY")
-            ))
+            Evaluated::from(Amount::from_value(jpy, dec!(-0.002)))
         );
 
         // Division across the same currency could be supported,
         // but it's cumbersome with little value.
         assert_eq!(
-            Evaluated::from(Amount::from_value(
-                dec!(1000),
-                ctx.commodities.ensure("JPY")
-            ))
-            .check_div(Evaluated::from(Amount::from_value(
-                dec!(100),
-                ctx.commodities.ensure("JPY")
-            )))
-            .unwrap_err(),
+            Evaluated::from(Amount::from_value(jpy, dec!(1000)))
+                .check_div(Evaluated::from(Amount::from_value(jpy, dec!(100))))
+                .unwrap_err(),
             EvalError::UnmatchingOperation
         );
     }

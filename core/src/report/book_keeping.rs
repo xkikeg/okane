@@ -506,7 +506,7 @@ fn posting_price_event<'ctx>(
         }
         PostingAmount::Single(amount) => match exchange {
             Exchange::Rate(rate) => PriceEvent {
-                price_x: SingleAmount::from_value(Decimal::ONE, amount.commodity),
+                price_x: SingleAmount::from_value(amount.commodity, Decimal::ONE),
                 price_y: *rate,
                 date,
             },
@@ -610,13 +610,13 @@ fn check_balance<'ctx>(
                 // so we ignore the error.
                 if a1.commodity == amount.commodity {
                     p.converted_amount = Some(SingleAmount::from_value(
-                        (a2.value / a1.value).abs() * amount.value,
                         a2.commodity,
+                        (a2.value / a1.value).abs() * amount.value,
                     ));
                 } else if a2.commodity == amount.commodity {
                     p.converted_amount = Some(SingleAmount::from_value(
-                        (a1.value / a2.value).abs() * amount.value,
                         a1.commodity,
+                        (a1.value / a2.value).abs() * amount.value,
                     ));
                 }
             }
@@ -685,7 +685,7 @@ mod tests {
         let mut bal = Balance::default();
         bal.add_posting_amount(
             ctx.accounts.ensure("Account 1"),
-            PostingAmount::from_value(dec!(1000), ctx.commodities.ensure("JPY")),
+            PostingAmount::from_value(ctx.commodities.ensure("JPY"), dec!(1000)),
         );
         let input = indoc! {"
             2024/08/01 Sample
@@ -711,7 +711,7 @@ mod tests {
         let mut bal = Balance::default();
         bal.add_posting_amount(
             ctx.accounts.ensure("Account 1"),
-            PostingAmount::from_value(dec!(1000), ctx.commodities.ensure("JPY")),
+            PostingAmount::from_value(ctx.commodities.ensure("JPY"), dec!(1000)),
         );
         let input = indoc! {"
             2024/08/01 Sample
@@ -737,19 +737,19 @@ mod tests {
         let mut bal = Balance::default();
         bal.add_posting_amount(
             ctx.accounts.ensure("Account 1"),
-            PostingAmount::from_value(dec!(1000), ctx.commodities.ensure("JPY")),
+            PostingAmount::from_value(ctx.commodities.ensure("JPY"), dec!(1000)),
         );
         bal.add_posting_amount(
             ctx.accounts.ensure("Account 1"),
-            PostingAmount::from_value(dec!(123), ctx.commodities.ensure("EUR")),
+            PostingAmount::from_value(ctx.commodities.ensure("EUR"), dec!(123)),
         );
         bal.add_posting_amount(
             ctx.accounts.ensure("Account 2"),
-            PostingAmount::from_value(dec!(1), ctx.commodities.ensure("EUR")),
+            PostingAmount::from_value(ctx.commodities.ensure("EUR"), dec!(1)),
         );
         bal.add_posting_amount(
             ctx.accounts.ensure("Account 4"),
-            PostingAmount::from_value(dec!(10), ctx.commodities.ensure("CHF")),
+            PostingAmount::from_value(ctx.commodities.ensure("CHF"), dec!(10)),
         );
         let input = indoc! {"
             2024/08/01 Sample
@@ -768,20 +768,20 @@ mod tests {
         let want_balance: Balance = hashmap! {
             ctx.accounts.ensure("Account 1") =>
                 Amount::from_values([
-                    (dec!(1200), ctx.commodities.ensure("JPY")),
-                    (dec!(123), ctx.commodities.ensure("EUR")),
+                    (ctx.commodities.ensure("JPY"), dec!(1200)),
+                    (ctx.commodities.ensure("EUR"), dec!(123)),
                 ]),
             ctx.accounts.ensure("Account 2") =>
                 Amount::from_values([
-                    (dec!(-200), ctx.commodities.ensure("JPY")),
-                    (dec!(1), ctx.commodities.ensure("EUR")),
+                    (ctx.commodities.ensure("JPY"), dec!(-200)),
+                    (ctx.commodities.ensure("EUR"), dec!(1)),
                 ]),
             ctx.accounts.ensure("Account 3") =>
-                Amount::from_value(dec!(2), ctx.commodities.ensure("CHF")),
+                Amount::from_value(ctx.commodities.ensure("CHF"), dec!(2)),
             ctx.accounts.ensure("Account 4") =>
                 Amount::from_values([
-                    (dec!(-300), ctx.commodities.ensure("JPY")),
-                    (dec!(10), ctx.commodities.ensure("CHF")),
+                    (ctx.commodities.ensure("JPY"), dec!(-300)),
+                    (ctx.commodities.ensure("CHF"), dec!(10)),
                 ]),
         }
         .into_iter()
@@ -812,17 +812,17 @@ mod tests {
                 [
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
-                        amount: Amount::from_value(dec!(200), ctx.commodities.ensure("JPY")),
+                        amount: Amount::from_value(ctx.commodities.ensure("JPY"), dec!(200)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
-                        amount: Amount::from_value(dec!(-100), ctx.commodities.ensure("JPY")),
+                        amount: Amount::from_value(ctx.commodities.ensure("JPY"), dec!(-100)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
-                        amount: Amount::from_value(dec!(-100), ctx.commodities.ensure("JPY")),
+                        amount: Amount::from_value(ctx.commodities.ensure("JPY"), dec!(-100)),
                         converted_amount: None,
                     },
                 ],
@@ -838,25 +838,27 @@ mod tests {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
         let mut bal = Balance::default();
+        let jpy = ctx.commodities.ensure("JPY");
+        let usd = ctx.commodities.ensure("USD");
         bal.add_posting_amount(
             ctx.accounts.ensure("Account 1"),
-            PostingAmount::from_value(dec!(1000), ctx.commodities.ensure("JPY")),
+            PostingAmount::from_value(jpy, dec!(1000)),
         );
         bal.add_posting_amount(
             ctx.accounts.ensure("Account 1"),
-            PostingAmount::from_value(dec!(123), ctx.commodities.ensure("USD")),
+            PostingAmount::from_value(usd, dec!(123)),
         );
         bal.add_posting_amount(
             ctx.accounts.ensure("Account 2"),
-            PostingAmount::from_value(dec!(-100), ctx.commodities.ensure("JPY")),
+            PostingAmount::from_value(jpy, dec!(-100)),
         );
         bal.add_posting_amount(
             ctx.accounts.ensure("Account 2"),
-            PostingAmount::from_value(dec!(-30), ctx.commodities.ensure("USD")),
+            PostingAmount::from_value(usd, dec!(-30)),
         );
         bal.add_posting_amount(
             ctx.accounts.ensure("Account 3"),
-            PostingAmount::from_value(dec!(-150), ctx.commodities.ensure("JPY")),
+            PostingAmount::from_value(jpy, dec!(-150)),
         );
         let input = indoc! {"
             2024/08/01 Sample
@@ -877,22 +879,22 @@ mod tests {
                 [
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
-                        amount: Amount::from_value(dec!(200), ctx.commodities.ensure("JPY")),
+                        amount: Amount::from_value(jpy, dec!(200)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
-                        amount: Amount::from_value(dec!(100), ctx.commodities.ensure("JPY")),
+                        amount: Amount::from_value(jpy, dec!(100)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 3"),
-                        amount: Amount::from_value(dec!(150), ctx.commodities.ensure("JPY")),
+                        amount: Amount::from_value(jpy, dec!(150)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 4"),
-                        amount: Amount::from_value(dec!(-450), ctx.commodities.ensure("JPY")),
+                        amount: Amount::from_value(jpy, dec!(-450)),
                         converted_amount: None,
                     },
                 ],
@@ -908,6 +910,9 @@ mod tests {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
         let mut bal = Balance::default();
+        let jpy = ctx.commodities.ensure("JPY");
+        let chf = ctx.commodities.ensure("CHF");
+        let eur = ctx.commodities.ensure("EUR");
         let input = indoc! {"
             2024/08/01 Sample
               Account 1         1200 JPY
@@ -925,25 +930,25 @@ mod tests {
                 [
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
-                        amount: Amount::from_value(dec!(1200), ctx.commodities.ensure("JPY")),
+                        amount: Amount::from_value(jpy, dec!(1200)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
-                        amount: Amount::from_value(dec!(234), ctx.commodities.ensure("EUR")),
+                        amount: Amount::from_value(eur, dec!(234)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 3"),
-                        amount: Amount::from_value(dec!(34.56), ctx.commodities.ensure("CHF")),
+                        amount: Amount::from_value(chf, dec!(34.56)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 4"),
                         amount: Amount::from_values([
-                            (dec!(-1200), ctx.commodities.ensure("JPY")),
-                            (dec!(-234), ctx.commodities.ensure("EUR")),
-                            (dec!(-34.56), ctx.commodities.ensure("CHF")),
+                            (jpy, dec!(-1200)),
+                            (eur, dec!(-234)),
+                            (chf, dec!(-34.56)),
                         ]),
                         converted_amount: None,
                     },
@@ -1026,12 +1031,12 @@ mod tests {
                 [
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
-                        amount: Amount::from_value(dec!(12), okane),
-                        converted_amount: Some(SingleAmount::from_value(dec!(1200), jpy)),
+                        amount: Amount::from_value(okane, dec!(12)),
+                        converted_amount: Some(SingleAmount::from_value(jpy, dec!(1200))),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
-                        amount: Amount::from_value(dec!(-1200), jpy),
+                        amount: Amount::from_value(jpy, dec!(-1200)),
                         converted_amount: None,
                     },
                 ],
@@ -1044,13 +1049,13 @@ mod tests {
         let want_prices = vec![
             PriceEvent {
                 date,
-                price_x: SingleAmount::from_value(dec!(1), okane),
-                price_y: SingleAmount::from_value(dec!(100), jpy),
+                price_x: SingleAmount::from_value(okane, dec!(1)),
+                price_y: SingleAmount::from_value(jpy, dec!(100)),
             },
             PriceEvent {
                 date,
-                price_x: SingleAmount::from_value(dec!(1), jpy),
-                price_y: SingleAmount::from_value(dec!(1) / dec!(100), okane),
+                price_x: SingleAmount::from_value(jpy, dec!(1)),
+                price_y: SingleAmount::from_value(okane, dec!(1) / dec!(100)),
             },
         ];
         assert_eq!(want_prices, price_repos.into_events());
@@ -1068,23 +1073,24 @@ mod tests {
         "};
         let txn = parse_transaction(input);
         let mut price_repos = PriceRepositoryBuilder::default();
+        let okane = ctx.commodities.ensure("OKANE");
+        let jpy = ctx.commodities.ensure("JPY");
+
         let got =
             add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
+
         let want = Transaction {
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
-                        amount: Amount::from_value(dec!(12), ctx.commodities.ensure("OKANE")),
-                        converted_amount: Some(SingleAmount::from_value(
-                            dec!(1200),
-                            ctx.commodities.ensure("JPY"),
-                        )),
+                        amount: Amount::from_value(okane, dec!(12)),
+                        converted_amount: Some(SingleAmount::from_value(jpy, dec!(1200))),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
-                        amount: Amount::from_value(dec!(-1200), ctx.commodities.ensure("JPY")),
+                        amount: Amount::from_value(jpy, dec!(-1200)),
                         converted_amount: None,
                     },
                 ],
@@ -1121,17 +1127,17 @@ mod tests {
                 [
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
-                        amount: Amount::from_value(dec!(-12), okane),
-                        converted_amount: Some(SingleAmount::from_value(dec!(-1440), jpy)),
+                        amount: Amount::from_value(okane, dec!(-12)),
+                        converted_amount: Some(SingleAmount::from_value(jpy, dec!(-1440))),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
-                        amount: Amount::from_value(dec!(1440), jpy),
+                        amount: Amount::from_value(jpy, dec!(1440)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Income"),
-                        amount: Amount::from_value(dec!(-240), jpy),
+                        amount: Amount::from_value(jpy, dec!(-240)),
                         converted_amount: None,
                     },
                 ],
@@ -1144,13 +1150,13 @@ mod tests {
         let want_prices = vec![
             PriceEvent {
                 date,
-                price_x: SingleAmount::from_value(dec!(1), okane),
-                price_y: SingleAmount::from_value(dec!(120), jpy),
+                price_x: SingleAmount::from_value(okane, dec!(1)),
+                price_y: SingleAmount::from_value(jpy, dec!(120)),
             },
             PriceEvent {
                 date,
-                price_x: SingleAmount::from_value(dec!(1), jpy),
-                price_y: SingleAmount::from_value(dec!(1) / dec!(120), okane),
+                price_x: SingleAmount::from_value(jpy, dec!(1)),
+                price_y: SingleAmount::from_value(okane, dec!(1) / dec!(120)),
             },
         ];
         assert_eq!(want_prices, price_repos.into_events());
@@ -1182,23 +1188,23 @@ mod tests {
                 [
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
-                        amount: Amount::from_value(dec!(-12), okane),
-                        converted_amount: Some(SingleAmount::from_value(dec!(-1440), jpy)),
+                        amount: Amount::from_value(okane, dec!(-12)),
+                        converted_amount: Some(SingleAmount::from_value(jpy, dec!(-1440))),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
-                        amount: Amount::from_value(dec!(1000), jpy),
+                        amount: Amount::from_value(jpy, dec!(1000)),
                         converted_amount: Some(SingleAmount::from_value(
-                            dec!(8.333333333333333333333333300),
                             okane,
+                            dec!(8.333333333333333333333333300),
                         )),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 3"),
-                        amount: Amount::from_value(dec!(440), jpy),
+                        amount: Amount::from_value(jpy, dec!(440)),
                         converted_amount: Some(SingleAmount::from_value(
-                            dec!(3.6666666666666666666666666520),
                             okane,
+                            dec!(3.6666666666666666666666666520),
                         )),
                     },
                 ],
@@ -1211,13 +1217,13 @@ mod tests {
         let want_prices = vec![
             PriceEvent {
                 date,
-                price_x: SingleAmount::from_value(dec!(1), okane),
-                price_y: SingleAmount::from_value(dec!(120), jpy),
+                price_x: SingleAmount::from_value(okane, dec!(1)),
+                price_y: SingleAmount::from_value(jpy, dec!(120)),
             },
             PriceEvent {
                 date,
-                price_x: SingleAmount::from_value(dec!(1), jpy),
-                price_y: SingleAmount::from_value(dec!(1) / dec!(120), okane),
+                price_x: SingleAmount::from_value(jpy, dec!(1)),
+                price_y: SingleAmount::from_value(okane, dec!(1) / dec!(120)),
             },
         ];
         assert_eq!(want_prices, price_repos.into_events());
@@ -1252,27 +1258,27 @@ mod tests {
                 [
                     Posting {
                         account: ctx.accounts.ensure("Expenses:Travel:Petrol"),
-                        amount: Amount::from_value(dec!(30.33), eur),
-                        converted_amount: Some(SingleAmount::from_value(dec!(33.065766), chf)),
+                        amount: Amount::from_value(eur, dec!(30.33)),
+                        converted_amount: Some(SingleAmount::from_value(chf, dec!(33.065766))),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Expenses:Commissions"),
-                        amount: Amount::from_value(dec!(1.50), chf),
+                        amount: Amount::from_value(chf, dec!(1.50)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Expenses:Commissions"),
-                        amount: Amount::from_value(dec!(0.06), eur),
-                        converted_amount: Some(SingleAmount::from_value(dec!(0.065412), chf)),
+                        amount: Amount::from_value(eur, dec!(0.06)),
+                        converted_amount: Some(SingleAmount::from_value(chf, dec!(0.065412))),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Expenses:Commissions"),
-                        amount: Amount::from_value(dec!(0.07), chf),
+                        amount: Amount::from_value(chf, dec!(0.07)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Assets:Banks"),
-                        amount: Amount::from_value(dec!(-34.70), chf),
+                        amount: Amount::from_value(chf, dec!(-34.70)),
                         converted_amount: None,
                     },
                 ],
@@ -1285,23 +1291,23 @@ mod tests {
         let want_prices = vec![
             PriceEvent {
                 date,
-                price_x: SingleAmount::from_value(dec!(1), chf),
-                price_y: SingleAmount::from_value(Decimal::ONE / dec!(1.0902), eur),
+                price_x: SingleAmount::from_value(chf, dec!(1)),
+                price_y: SingleAmount::from_value(eur, Decimal::ONE / dec!(1.0902)),
             },
             PriceEvent {
                 date,
-                price_x: SingleAmount::from_value(dec!(1), chf),
-                price_y: SingleAmount::from_value(Decimal::ONE / dec!(1.0902), eur),
+                price_x: SingleAmount::from_value(chf, dec!(1)),
+                price_y: SingleAmount::from_value(eur, Decimal::ONE / dec!(1.0902)),
             },
             PriceEvent {
                 date,
-                price_x: SingleAmount::from_value(dec!(1), eur),
-                price_y: SingleAmount::from_value(dec!(1.0902), chf),
+                price_x: SingleAmount::from_value(eur, dec!(1)),
+                price_y: SingleAmount::from_value(chf, dec!(1.0902)),
             },
             PriceEvent {
                 date,
-                price_x: SingleAmount::from_value(dec!(1), eur),
-                price_y: SingleAmount::from_value(dec!(1.0902), chf),
+                price_x: SingleAmount::from_value(eur, dec!(1)),
+                price_y: SingleAmount::from_value(chf, dec!(1.0902)),
             },
         ];
         assert_eq!(want_prices, price_repos.into_events());

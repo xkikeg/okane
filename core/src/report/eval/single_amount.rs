@@ -12,8 +12,8 @@ use super::error::EvalError;
 /// Amount with only one commodity.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct SingleAmount<'ctx> {
-    pub(crate) value: Decimal,
     pub(crate) commodity: CommodityTag<'ctx>,
+    pub(crate) value: Decimal,
 }
 
 impl Neg for SingleAmount<'_> {
@@ -41,7 +41,7 @@ impl Mul<Decimal> for SingleAmount<'_> {
 impl<'ctx> SingleAmount<'ctx> {
     /// Constructs an instance with single commodity.
     #[inline]
-    pub fn from_value(value: Decimal, commodity: CommodityTag<'ctx>) -> Self {
+    pub fn from_value(commodity: CommodityTag<'ctx>, value: Decimal) -> Self {
         Self { value, commodity }
     }
 
@@ -151,8 +151,8 @@ mod tests {
         let jpy = ctx.commodities.insert("JPY").unwrap();
 
         assert_eq!(
-            SingleAmount::from_value(dec!(-5), jpy),
-            -SingleAmount::from_value(dec!(5), jpy)
+            SingleAmount::from_value(jpy, dec!(-5)),
+            -SingleAmount::from_value(jpy, dec!(5))
         );
     }
 
@@ -166,8 +166,8 @@ mod tests {
 
         assert_eq!(
             Err(EvalError::UnmatchingCommodities(jpy, chf)),
-            SingleAmount::from_value(dec!(10), jpy)
-                .check_add(SingleAmount::from_value(dec!(20), chf))
+            SingleAmount::from_value(jpy, dec!(10))
+                .check_add(SingleAmount::from_value(chf, dec!(20)))
         );
     }
 
@@ -179,9 +179,9 @@ mod tests {
         let jpy = ctx.commodities.insert("JPY").unwrap();
 
         assert_eq!(
-            SingleAmount::from_value(dec!(-10), jpy),
-            SingleAmount::from_value(dec!(10), jpy)
-                .check_add(SingleAmount::from_value(dec!(-20), jpy))
+            SingleAmount::from_value(jpy, dec!(-10)),
+            SingleAmount::from_value(jpy, dec!(10))
+                .check_add(SingleAmount::from_value(jpy, dec!(-20)))
                 .unwrap()
         );
     }
@@ -196,8 +196,8 @@ mod tests {
 
         assert_eq!(
             Err(EvalError::UnmatchingCommodities(jpy, chf)),
-            SingleAmount::from_value(dec!(10), jpy)
-                .check_sub(SingleAmount::from_value(dec!(0), chf))
+            SingleAmount::from_value(jpy, dec!(10))
+                .check_sub(SingleAmount::from_value(chf, dec!(0)))
         );
     }
 
@@ -209,9 +209,9 @@ mod tests {
         let jpy = ctx.commodities.insert("JPY").unwrap();
 
         assert_eq!(
-            SingleAmount::from_value(dec!(5), jpy),
-            SingleAmount::from_value(dec!(10), jpy)
-                .check_sub(SingleAmount::from_value(dec!(5), jpy))
+            SingleAmount::from_value(jpy, dec!(5)),
+            SingleAmount::from_value(jpy, dec!(10))
+                .check_sub(SingleAmount::from_value(jpy, dec!(5)))
                 .unwrap()
         );
     }
@@ -225,7 +225,7 @@ mod tests {
 
         assert_eq!(
             "1.20 USD".to_string(),
-            SingleAmount::from_value(dec!(1.20), usd)
+            SingleAmount::from_value(usd, dec!(1.20))
                 .as_display(&ctx)
                 .to_string()
         );
@@ -248,29 +248,29 @@ mod tests {
 
         // as-is
         assert_eq!(
-            SingleAmount::from_value(dec!(812), jpy),
-            SingleAmount::from_value(dec!(812), jpy).round(&ctx),
+            SingleAmount::from_value(jpy, dec!(812)),
+            SingleAmount::from_value(jpy, dec!(812)).round(&ctx),
         );
         assert_eq!(
-            SingleAmount::from_value(dec!(-100.00), eur),
-            SingleAmount::from_value(dec!(-100.0), eur).round(&ctx),
+            SingleAmount::from_value(eur, dec!(-100.00)),
+            SingleAmount::from_value(eur, dec!(-100.0)).round(&ctx),
         );
         assert_eq!(
-            SingleAmount::from_value(dec!(6.660), chf),
-            SingleAmount::from_value(dec!(6.66), chf).round(&ctx),
+            SingleAmount::from_value(chf, dec!(6.660)),
+            SingleAmount::from_value(chf, dec!(6.66)).round(&ctx),
         );
 
         assert_eq!(
-            SingleAmount::from_value(dec!(812), jpy),
-            SingleAmount::from_value(dec!(812.5), jpy).round(&ctx),
+            SingleAmount::from_value(jpy, dec!(812)),
+            SingleAmount::from_value(jpy, dec!(812.5)).round(&ctx),
         );
         assert_eq!(
-            SingleAmount::from_value(dec!(-100.02), eur),
-            SingleAmount::from_value(dec!(-100.015), eur).round(&ctx),
+            SingleAmount::from_value(eur, dec!(-100.02)),
+            SingleAmount::from_value(eur, dec!(-100.015)).round(&ctx),
         );
         assert_eq!(
-            SingleAmount::from_value(dec!(6.666), chf),
-            SingleAmount::from_value(dec!(6.6665), chf).round(&ctx),
+            SingleAmount::from_value(chf, dec!(6.666)),
+            SingleAmount::from_value(chf, dec!(6.6665)).round(&ctx),
         );
     }
 
@@ -282,32 +282,32 @@ mod tests {
         let jpy = ctx.commodities.insert("JPY").unwrap();
         let eur = ctx.commodities.insert("EUR").unwrap();
 
-        let positive = SingleAmount::from_value(dec!(1000), jpy);
+        let positive = SingleAmount::from_value(jpy, dec!(1000));
         assert_eq!(
-            SingleAmount::from_value(dec!(15), eur),
-            SingleAmount::from_value(dec!(15), eur).with_sign_of(positive)
+            SingleAmount::from_value(eur, dec!(15)),
+            SingleAmount::from_value(eur, dec!(15)).with_sign_of(positive)
         );
         assert_eq!(
-            SingleAmount::from_value(dec!(0), eur),
-            SingleAmount::from_value(dec!(0), eur).with_sign_of(positive)
+            SingleAmount::from_value(eur, dec!(0)),
+            SingleAmount::from_value(eur, dec!(0)).with_sign_of(positive)
         );
         assert_eq!(
-            SingleAmount::from_value(dec!(15), eur),
-            SingleAmount::from_value(dec!(-15), eur).with_sign_of(positive)
+            SingleAmount::from_value(eur, dec!(15)),
+            SingleAmount::from_value(eur, dec!(-15)).with_sign_of(positive)
         );
 
-        let negative = SingleAmount::from_value(dec!(-1000), jpy);
+        let negative = SingleAmount::from_value(jpy, dec!(-1000));
         assert_eq!(
-            SingleAmount::from_value(dec!(-15), eur),
-            SingleAmount::from_value(dec!(15), eur).with_sign_of(negative)
+            SingleAmount::from_value(eur, dec!(-15)),
+            SingleAmount::from_value(eur, dec!(15)).with_sign_of(negative)
         );
         assert_eq!(
-            SingleAmount::from_value(dec!(0), eur),
-            SingleAmount::from_value(dec!(0), eur).with_sign_of(negative)
+            SingleAmount::from_value(eur, dec!(0)),
+            SingleAmount::from_value(eur, dec!(0)).with_sign_of(negative)
         );
         assert_eq!(
-            SingleAmount::from_value(dec!(-15), eur),
-            SingleAmount::from_value(dec!(-15), eur).with_sign_of(negative)
+            SingleAmount::from_value(eur, dec!(-15)),
+            SingleAmount::from_value(eur, dec!(-15)).with_sign_of(negative)
         );
     }
 }
