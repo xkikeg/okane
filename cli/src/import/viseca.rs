@@ -1,4 +1,5 @@
 pub mod format;
+mod line_reader;
 pub mod parser;
 
 use super::amount::OwnedAmount;

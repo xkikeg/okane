@@ -469,7 +469,7 @@ fn posting_excess<'a>(
             ImportErrorKind::Unimplemented,
             format!(
                 "impossible to balance posting excess {} due to too many commodities without rate",
-                report::Amount::from_values(v).as_inline_display(&ctx)
+                report::Amount::from_values(v).as_inline_display(ctx)
             ),
         ));
     }
