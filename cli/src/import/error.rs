@@ -105,7 +105,7 @@ pub trait LazyMessage {
     fn into(self) -> String;
 }
 
-impl<'a> LazyMessage for &'a str {
+impl LazyMessage for &str {
     fn into(self) -> String {
         self.to_string()
     }
@@ -160,16 +160,16 @@ impl<T> IntoImportError<T> for Option<T> {
 
 /// Allows annotating the given [`ImportError`].
 pub trait AnnotateImportError<T>: private::AnnotateImportErrorSeal {
-    fn annotate<F: FnOnce() -> Msg, Msg: Display>(self, prefix: F) -> Self;
+    fn annotate<M: LazyMessage>(self, prefix: M) -> Self;
 }
 
 impl<T> private::AnnotateImportErrorSeal for Result<T, ImportError> {}
 
 impl<T> AnnotateImportError<T> for Result<T, ImportError> {
-    fn annotate<F: FnOnce() -> Msg, Msg: Display>(self, prefix: F) -> Self {
+    fn annotate<M: LazyMessage>(self, prefix: M) -> Self {
         self.map_err(|e| ImportError {
             kind: e.kind,
-            message: format!("{}: {}", prefix(), e.message),
+            message: format!("{}: {}", prefix.into(), e.message),
             source: e.source,
         })
     }

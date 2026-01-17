@@ -9,11 +9,12 @@ use regex::Regex;
 use rust_decimal::Decimal;
 
 use super::format::{Entry, Exchange, Fee};
+use super::line_reader::{Line, LineReader};
 use crate::import::amount::OwnedAmount;
-use crate::import::error::{ImportError, ImportErrorKind, IntoImportError};
+use crate::import::error::{AnnotateImportError, ImportError, ImportErrorKind, IntoImportError};
 
 lazy_static! {
-    static ref FIRST_LINE: Regex = Regex::new(r"^(?P<date>\d{2}.\d{2}.\d{2}) (?P<edate>\d{2}.\d{2}.\d{2}) (?P<payee>.*?)(?: (?P<currency>[A-Z]{3}) (?P<examount>[0-9.']+))? (?P<amount>[0-9.']+)(?P<neg> -)?$").unwrap();
+    static ref TRANSACTION_LINE: Regex = Regex::new(r"^(?P<date>\d{2}.\d{2}.\d{2}) (?P<edate>\d{2}.\d{2}.\d{2}) (?P<payee>.*?)(?: (?P<currency>[A-Z]{3}) (?P<examount>[0-9.']+))? (?P<amount>[0-9.']+)(?P<neg> -)?$").unwrap();
     static ref EXCHANGE_RATE_LINE: Regex = Regex::new(r"^Exchange rate (?P<rate>[0-9.]+) of (?P<date>\d{2}.\d{2}.\d{2}) (?P<scurrency>[A-Z]{3}) (?P<samount>[0-9.']+)$").unwrap();
     static ref FEE_LINE: Regex = Regex::new(r"^(?P<credit>Credit of )?[Pp]rocessing fee (?P<percent>[0-9.]+)% (?P<fcurrency>[A-Z]{3}) (?P<famount>[0-9.']+)$").unwrap();
     static ref AIR_TAG_LINE: Regex = Regex::new(r"Air-[[:alnum:]-]+:").unwrap();
@@ -33,40 +34,52 @@ impl<T: BufRead> Parser<T> {
     }
 
     pub fn parse_entry(&mut self) -> Result<Option<Entry>, ImportError> {
-        let entry_base = match self.read_first_line()? {
-            Some(e) => e,
+        let line = match self.reader.read_line()? {
+            Some(l) => l,
             None => return Ok(None),
         };
-        let next_line_size =
-            self.reader
-                .peek()
-                .into_import_err(ImportErrorKind::InvalidSource, || {
-                    format!(
-                        "failed to read Viseca input @ line {}",
-                        self.reader.line_count + 1
-                    )
-                })?;
-        if next_line_size == 0 || self.reader.buf.chars().next().unwrap().is_ascii_digit() {
+        let entry_base = self.parse_transaction_line(&line).annotate(|| {
+            format!(
+                "failed to parse transcation line @ line {}",
+                line.line_count
+            )
+        })?;
+        // if next line is empty (EOF) or [0-9], go to next.
+        self.reader.peek()?;
+        if self
+            .reader
+            .peek_buf()
+            .unwrap_or("0")
+            .starts_with(|c: char| c.is_ascii_digit())
+        {
             return Ok(Some(entry_base));
         }
-        let read_bytes = self.reader.read_line()?;
-        if read_bytes == 0 {
-            return Err(ImportError::new(
-                ImportErrorKind::InvalidSource,
-                format!("category line not found @ line {}", self.reader.line_count),
-            ));
-        }
-        let category = self.reader.buf.trim().to_string();
-        let exchange = entry_base
-            .spent
-            .as_ref()
-            .filter(|spent| *spent.commodity != self.currency)
-            .map(|_| self.parse_exchange())
-            .transpose()?;
+        let line = self
+            .reader
+            .read_line()
+            .annotate("failed to read cateogry line")?
+            .into_import_err(ImportErrorKind::Internal, "category line should exist")?;
+        let line_count = line.line_count;
+        let category = line.value.trim().to_string();
+        let exchange = match &entry_base.spent {
+            Some(spent) if *spent.commodity != self.currency => {
+                let line = self
+                    .reader
+                    .read_line()
+                    .annotate("failed to read exchange line")?
+                    .into_import_err(ImportErrorKind::InvalidSource, || {
+                        format!("exchange line missing @ line {}", line_count)
+                    })?;
+                Some(self.parse_exchange(&line).annotate(|| {
+                    format!("failed to parse exchange line @ line {}", line.line_count)
+                })?)
+            }
+            _ => None,
+        };
         let fee = entry_base
             .spent
             .as_ref()
-            .map(|_| self.parse_fee())
+            .map(|_| self.consume_fee())
             .transpose()?
             .flatten();
         self.skip_air_tags()?;
@@ -78,26 +91,19 @@ impl<T: BufRead> Parser<T> {
         }))
     }
 
-    /// Parses the given first line.
-    fn read_first_line(&mut self) -> Result<Option<Entry>, ImportError> {
-        let read_bytes = self.reader.read_line()?;
-        if read_bytes == 0 {
-            return Ok(None);
-        };
-        let l = self.reader.buf.as_str().trim_end();
-        let line_count = self.reader.line_count;
-        let c = FIRST_LINE
+    /// Parses the given line as transaction line.
+    fn parse_transaction_line(&self, line: &Line) -> Result<Entry, ImportError> {
+        let l = line.value.trim_end();
+        let c = TRANSACTION_LINE
             .captures(l)
             .into_import_err(ImportErrorKind::InvalidSource, || {
-                self.err_msg(format!("unsupported entry line: {:?}", l))
+                format!("unsupported entry line: {:?}", l)
             })?;
-        let date_str = self.expect_name(&c, "date", "date should exist")?;
-        let date = self.parse_euro_date("date", date_str)?;
-        let edate_str = self.expect_name(&c, "edate", "effective date should exist")?;
-        let edate = self.parse_euro_date("effective date", edate_str)?;
-        let payee = self
-            .expect_name(&c, "payee", "payee should exist")
-            .map(ToOwned::to_owned)?;
+        let date_str = expect_name(&c, "date")?;
+        let date = parse_euro_date("date", date_str)?;
+        let edate_str = expect_name(&c, "edate")?;
+        let edate = parse_euro_date("effective date", edate_str)?;
+        let payee = expect_name(&c, "payee")?.to_string();
         let sign = c
             .name("neg")
             .map(|_| Decimal::NEGATIVE_ONE)
@@ -105,22 +111,18 @@ impl<T: BufRead> Parser<T> {
         let spent = match c.name("currency") {
             None => None,
             Some(currency) => {
-                let examount_str = self.expect_name(
-                    &c,
-                    "examount",
-                    "currency and examount should exist together",
-                )?;
-                let examount = self.parse_decimal("exchanged amount", examount_str)?;
+                let examount_str = expect_name(&c, "examount")?;
+                let examount = parse_decimal("exchanged amount", examount_str)?;
                 Some(OwnedAmount {
                     commodity: currency.as_str().to_string(),
                     value: sign * examount,
                 })
             }
         };
-        let amount_str = self.expect_name(&c, "amount", "amount should exist")?;
-        let amount = self.parse_decimal("amount", amount_str)?;
-        Ok(Some(Entry {
-            line_count,
+        let amount_str = expect_name(&c, "amount")?;
+        let amount = parse_decimal("amount", amount_str)?;
+        Ok(Entry {
+            line_count: line.line_count,
             date,
             effective_date: edate,
             payee,
@@ -129,31 +131,23 @@ impl<T: BufRead> Parser<T> {
             spent,
             exchange: None,
             fee: None,
-        }))
+        })
     }
 
-    fn parse_exchange(&mut self) -> Result<Exchange, ImportError> {
-        let read_bytes = self.reader.read_line()?;
-        if read_bytes == 0 {
-            return Err(ImportError::new(
-                ImportErrorKind::InvalidSource,
-                self.err_msg("exchange rate line not found"),
-            ));
-        }
+    fn parse_exchange(&self, line: &Line) -> Result<Exchange, ImportError> {
         let c = EXCHANGE_RATE_LINE
-            .captures(self.reader.buf.trim_end())
-            .into_import_err(ImportErrorKind::InvalidSource, || {
-                self.err_msg("Exchange rate ... line expected")
-            })?;
-        let rate = self.expect_name(&c, "rate", "rate must appear")?;
-        let rate = self.parse_decimal("rate", rate)?;
-        let date = self.expect_name(&c, "date", "date must appear")?;
-        let date = self.parse_euro_date("rate date", date)?;
-        let equiv_currency = self
-            .expect_name(&c, "scurrency", "equivalent currency must appear")
-            .map(ToOwned::to_owned)?;
-        let equiv_amount = self.expect_name(&c, "samount", "equivalent amount must appear")?;
-        let equiv_amount = self.parse_decimal("equivalent amount", equiv_amount)?;
+            .captures(line.value.trim_end())
+            .into_import_err(
+                ImportErrorKind::InvalidSource,
+                "Exchange rate ... line expected",
+            )?;
+        let rate = expect_name(&c, "rate")?;
+        let rate = parse_decimal("rate", rate)?;
+        let date = expect_name(&c, "date")?;
+        let date = parse_euro_date("rate date", date)?;
+        let equiv_currency = expect_name(&c, "scurrency").map(ToOwned::to_owned)?;
+        let equiv_amount = expect_name(&c, "samount")?;
+        let equiv_amount = parse_decimal("equivalent amount", equiv_amount)?;
         Ok(Exchange {
             rate,
             rate_date: date,
@@ -164,38 +158,34 @@ impl<T: BufRead> Parser<T> {
         })
     }
 
-    fn parse_fee(&mut self) -> Result<Option<Fee>, ImportError> {
-        fn is_fee_prefix(val: &str) -> bool {
-            val.starts_with("Processing fee") || val.starts_with("Credit of processing fee")
-        }
+    fn consume_fee(&mut self) -> Result<Option<Fee>, ImportError> {
+        self.reader.peek().annotate("failed to peek fee line")?;
+        match self.reader.peek_buf() {
+            Some(line) if is_fee_line(line) => (),
+            _ => return Ok(None),
+        };
+        let line = self.reader.read_line()?.into_import_err(
+            ImportErrorKind::Internal,
+            "this fee line read must not fail as peek succeeded",
+        )?;
+        self.parse_fee(&line)
+            .annotate(|| format!("failed to parse fee line @ line {}", line.line_count))
+    }
 
-        let next_line_size = self.reader.peek()?;
-        if next_line_size == 0 || !is_fee_prefix(&self.reader.buf) {
-            return Ok(None);
-        }
-        let read_bytes = self.reader.read_line()?;
-        if read_bytes == 0 {
-            return Err(ImportError::new(
-                ImportErrorKind::InvalidSource,
-                self.err_msg("Processing fee line not found"),
-            ));
-        }
-        let c = FEE_LINE
-            .captures(self.reader.buf.trim_end())
-            .into_import_err(ImportErrorKind::InvalidSource, || {
-                self.err_msg("Processing fee ... line expected")
-            })?;
+    fn parse_fee(&self, line: &Line) -> Result<Option<Fee>, ImportError> {
+        let c = FEE_LINE.captures(line.value.trim_end()).into_import_err(
+            ImportErrorKind::InvalidSource,
+            "Processing fee ... line expected",
+        )?;
         let credit_applier = c
             .name("credit")
             .map(|_| Decimal::NEGATIVE_ONE)
             .unwrap_or(Decimal::ONE);
-        let percent = self.expect_name(&c, "percent", "fee percent must appear")?;
-        let percent = self.parse_decimal("fee percent", percent)?;
-        let fee_currency = self
-            .expect_name(&c, "fcurrency", "fee currency must appear")
-            .map(ToOwned::to_owned)?;
-        let fee_amount = self.expect_name(&c, "famount", "fee amount must appear")?;
-        let fee_amount = self.parse_decimal("fee amount", fee_amount)?;
+        let percent = expect_name(&c, "percent")?;
+        let percent = parse_decimal("fee percent", percent)?;
+        let fee_currency = expect_name(&c, "fcurrency").map(ToOwned::to_owned)?;
+        let fee_amount = expect_name(&c, "famount")?;
+        let fee_amount = parse_decimal("fee amount", fee_amount)?;
         Ok(Some(Fee {
             percent,
             amount: OwnedAmount {
@@ -207,107 +197,42 @@ impl<T: BufRead> Parser<T> {
 
     fn skip_air_tags(&mut self) -> Result<(), ImportError> {
         loop {
-            let next_line_size = self.reader.peek()?;
-            if next_line_size == 0 || !AIR_TAG_LINE.is_match_at(&self.reader.buf, 0) {
-                break;
-            }
+            self.reader.peek()?;
+            match self.reader.peek_buf() {
+                None => break,
+                Some(l) if !AIR_TAG_LINE.is_match_at(l, 0) => break,
+                _ => (),
+            };
             self.reader.read_line()?;
         }
         Ok(())
     }
+}
 
-    fn expect_name<'a>(
-        &self,
-        c: &'a regex::Captures,
-        name: &str,
-        msg: &str,
-    ) -> Result<&'a str, ImportError> {
-        c.name(name)
-            .map(|m| m.as_str())
-            .into_import_err(ImportErrorKind::InvalidSource, || {
-                format!("{msg} @ line {}", self.reader.line_count)
-            })
-    }
+fn is_fee_line(line: &str) -> bool {
+    line.starts_with("Processing fee") || line.starts_with("Credit of processing fee")
+}
 
-    fn parse_decimal(&self, name: &str, value: &str) -> Result<Decimal, ImportError> {
-        parse_decimal(value).into_import_err(ImportErrorKind::InvalidSource, || {
-            self.err_msg(format!("failed to parse {name} as decimal from {value}"))
+fn expect_name<'a>(c: &'a regex::Captures, name: &str) -> Result<&'a str, ImportError> {
+    c.name(name)
+        .map(|m| m.as_str())
+        .into_import_err(ImportErrorKind::Internal, || {
+            format!("line regex capture must have group {name}")
         })
-    }
+}
 
-    fn parse_euro_date(&self, name: &str, value: &str) -> Result<NaiveDate, ImportError> {
-        parse_euro_date(value).into_import_err(ImportErrorKind::InvalidSource, || {
-            self.err_msg(format!(
-                "failed to parse the given {name} as date from {value}"
-            ))
+fn parse_decimal(name: &str, value: &str) -> Result<Decimal, ImportError> {
+    Decimal::from_str(value.replace('\'', "").as_str())
+        .into_import_err(ImportErrorKind::InvalidSource, || {
+            format!("failed to parse the given string {value} as a decimal for {name}")
         })
-    }
-
-    fn err_msg<U: std::fmt::Display>(&self, msg: U) -> String {
-        format!("{} @ line {}", msg, self.reader.line_count)
-    }
 }
 
-struct LineReader<T: BufRead> {
-    reader: T,
-    buf: String,
-    // read byte
-    is_peek: Option<usize>,
-    /// Line count, starting from 1.
-    line_count: usize,
-}
-
-impl<T: BufRead> LineReader<T> {
-    fn new(r: T) -> LineReader<T> {
-        LineReader {
-            reader: r,
-            buf: String::new(),
-            is_peek: None,
-            line_count: 0,
-        }
-    }
-
-    /// Peek the next line, and returns the ref if available, None in EOF.
-    /// It'll invalidate the previous buf.
-    fn peek(&mut self) -> Result<usize, ImportError> {
-        if let Some(read_bytes) = self.is_peek {
-            return Ok(read_bytes);
-        }
-        self.buf.clear();
-        let read_bytes = self
-            .reader
-            .read_line(&mut self.buf)
-            .into_import_err(ImportErrorKind::SourceFileReadFailed, || {
-                format!("failed to peek the line @ {}", self.line_count + 1)
-            })?;
-        self.is_peek = Some(read_bytes);
-        Ok(read_bytes)
-    }
-
-    fn read_line(&mut self) -> Result<usize, ImportError> {
-        if let Some(read_bytes) = self.is_peek {
-            self.line_count += 1;
-            self.is_peek = None;
-            return Ok(read_bytes);
-        }
-        self.buf.clear();
-        self.line_count += 1;
-        let read_bytes = self
-            .reader
-            .read_line(&mut self.buf)
-            .into_import_err(ImportErrorKind::SourceFileReadFailed, || {
-                format!("failed to read the line @ {}", self.line_count)
-            })?;
-        Ok(read_bytes)
-    }
-}
-
-fn parse_euro_date(s: &str) -> Result<NaiveDate, chrono::ParseError> {
-    NaiveDate::parse_from_str(s, "%d.%m.%y")
-}
-
-fn parse_decimal(s: &str) -> Result<Decimal, rust_decimal::Error> {
-    Decimal::from_str(s.replace('\'', "").as_str())
+fn parse_euro_date(name: &str, value: &str) -> Result<NaiveDate, ImportError> {
+    NaiveDate::parse_from_str(value, "%d.%m.%y")
+        .into_import_err(ImportErrorKind::InvalidSource, || {
+            format!("failed to parse the given string {value} as a date for {name}")
+        })
 }
 
 #[cfg(test)]
@@ -319,53 +244,112 @@ mod tests {
     use rust_decimal_macros::dec;
 
     #[test]
-    fn line_reader_peek_and_read_line() {
-        let input = indoc! {"
-            First line
-            Second line
-            Third line
-        "};
-        let mut r = LineReader::new(input.as_bytes());
-
-        assert_eq!(11, r.peek().unwrap());
-        assert_eq!("First line\n", &r.buf);
-        assert_eq!(0, r.line_count);
-        assert_eq!(11, r.peek().unwrap());
-        assert_eq!("First line\n", &r.buf);
-        assert_eq!(0, r.line_count);
-        assert_eq!(11, r.read_line().unwrap());
-        assert_eq!("First line\n", &r.buf);
-        assert_eq!(1, r.line_count);
-        assert_eq!(12, r.read_line().unwrap());
-        assert_eq!("Second line\n", &r.buf);
-        assert_eq!(2, r.line_count);
-        assert_eq!(11, r.peek().unwrap());
-        assert_eq!("Third line\n", &r.buf);
-        assert_eq!(2, r.line_count);
-        assert_eq!(11, r.read_line().unwrap());
-        assert_eq!("Third line\n", &r.buf);
-        assert_eq!(3, r.line_count);
-        assert_eq!(0, r.peek().unwrap());
-        assert_eq!(0, r.read_line().unwrap());
-    }
-
-    #[test]
     fn parse_euro_date_valid() {
         assert_eq!(
-            parse_euro_date("22.06.20").unwrap(),
+            parse_euro_date("date", "22.06.20").unwrap(),
             NaiveDate::from_ymd_opt(2020, 6, 22).unwrap()
         );
     }
 
     #[test]
     fn parse_euro_date_invalid() {
-        parse_euro_date("35.06.20").unwrap_err();
+        parse_euro_date("date", "35.06.20").unwrap_err();
     }
 
     #[test]
     fn parse_decimal_valid() {
-        assert_eq!(parse_decimal("1.00").unwrap(), dec!(1.00));
-        assert_eq!(parse_decimal("123'456'789.64").unwrap(), dec!(123456789.64));
+        assert_eq!(parse_decimal("decimal", "1.00").unwrap(), dec!(1.00));
+        assert_eq!(
+            parse_decimal("decimal", "123'456'789.64").unwrap(),
+            dec!(123456789.64)
+        );
+    }
+
+    #[test]
+    fn parse_entry_fails_invalid_transaction() {
+        let input = indoc! {"
+            99.99.20 11.22.33 invalid date transaction 1'234.56
+        "};
+        let mut p = Parser::new(input.as_bytes(), "CHF".to_string());
+
+        let got_err = p.parse_entry().unwrap_err();
+
+        assert_eq!(ImportErrorKind::InvalidSource, got_err.error_kind());
+        assert!(
+            got_err
+                .message()
+                .starts_with("failed to parse transcation line @ line 1"),
+            "actual message: {}",
+            got_err.message()
+        );
+        assert!(
+            got_err.message().ends_with("as a date for date"),
+            "actual message: {}",
+            got_err.message()
+        );
+    }
+
+    #[test]
+    fn parse_entry_fails_missing_exchange() {
+        let input = indoc! {"
+            10.08.20 11.08.20 Super gas EUR 46.88 52.10
+            unknown category
+        "};
+        let mut p = Parser::new(input.as_bytes(), "CHF".to_string());
+
+        let got_err = p.parse_entry().unwrap_err();
+
+        assert_eq!(ImportErrorKind::InvalidSource, got_err.error_kind());
+        assert!(
+            got_err
+                .message()
+                .starts_with("exchange line missing @ line 2"),
+            "actual message: {}",
+            got_err.message()
+        );
+    }
+
+    #[test]
+    fn parse_entry_fails_invalid_exchange() {
+        let input = indoc! {"
+            10.08.20 11.08.20 Super gas EUR 46.88 52.10
+            unknown category
+            Exchange rate invalid
+        "};
+        let mut p = Parser::new(input.as_bytes(), "CHF".to_string());
+
+        let got_err = p.parse_entry().unwrap_err();
+
+        assert_eq!(ImportErrorKind::InvalidSource, got_err.error_kind());
+        assert!(
+            got_err
+                .message()
+                .starts_with("failed to parse exchange line @ line 3"),
+            "actual message: {}",
+            got_err.message()
+        );
+    }
+
+    #[test]
+    fn parse_entry_fails_invalid_processing_fee() {
+        let input = indoc! {"
+            10.08.20 11.08.20 Super gas EUR 46.88 52.10
+            unknown category
+            Exchange rate 1.092432 of 09.08.20 CHF 51.20
+            Processing fee invalid
+        "};
+        let mut p = Parser::new(input.as_bytes(), "CHF".to_string());
+
+        let got_err = p.parse_entry().unwrap_err();
+
+        assert_eq!(ImportErrorKind::InvalidSource, got_err.error_kind());
+        assert!(
+            got_err
+                .message()
+                .starts_with("failed to parse fee line @ line 4: Processing fee"),
+            "actual message: {}",
+            got_err.message()
+        );
     }
 
     #[test]
@@ -558,6 +542,51 @@ mod tests {
             p.parse_entry().unwrap()
         );
         assert_eq!(None, p.parse_entry().unwrap());
+    }
+
+    // TODO: Support this pattern.
+    // https://github.com/xkikeg/okane/issues/340
+    #[test]
+    #[ignore]
+    fn test_parse_entry_without_category() {
+        let input = indoc! {"
+            16.08.23 18.08.23 MY AIR, FRANKFURT AT EUR 942.84 935.05
+            Exchange rate 0.9746651982 of 16.08.23 CHF 918.95
+            Processing fee 1.75% CHF 16.10
+        "};
+
+        let mut p = Parser::new(input.as_bytes(), "CHF".to_string());
+
+        assert_eq!(
+            Some(Entry {
+                line_count: 1,
+                date: NaiveDate::from_ymd_opt(2023, 8, 16).unwrap(),
+                effective_date: NaiveDate::from_ymd_opt(2023, 8, 18).unwrap(),
+                payee: "MY AIR, FRANKFURT AT".to_string(),
+                amount: dec!(935.05),
+                category: "Air carriers, airlines".to_string(),
+                spent: Some(OwnedAmount {
+                    value: dec!(942.84),
+                    commodity: "EUR".to_string(),
+                }),
+                exchange: Some(Exchange {
+                    rate: dec!(0.9746651982),
+                    rate_date: NaiveDate::from_ymd_opt(2023, 8, 16).unwrap(),
+                    equivalent: OwnedAmount {
+                        value: dec!(918.95),
+                        commodity: "CHF".to_string(),
+                    },
+                }),
+                fee: Some(Fee {
+                    percent: dec!(1.75),
+                    amount: OwnedAmount {
+                        commodity: "CHF".to_string(),
+                        value: dec!(16.10),
+                    },
+                },),
+            }),
+            p.parse_entry().unwrap()
+        );
     }
 
     #[test]
