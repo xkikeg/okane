@@ -2,96 +2,57 @@
 
 use std::io::BufRead;
 
-use crate::import::{ImportError, ImportErrorKind, IntoImportError};
-
 /// Peekable reader to read input line by line.
-pub struct LineReader<T> {
-    reader: T,
-    peek_buf: Option<String>,
-    /// Line count, starting from 1.
-    line_count: usize,
+/// Actually this doesn't read file line-by-line,
+/// but rather read everything into `Vec` for simplicity.
+/// Expected input is quite small and it should be ok.
+#[derive(Debug)]
+pub struct LineReader {
+    lines: Vec<String>,
+    current: usize,
 }
 
-/// String with line information.
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
-pub struct Line {
+/// str with line information.
+#[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
+pub struct Line<'a> {
     /// actual line string.
-    pub value: String,
+    pub value: &'a str,
     /// 1-based line count.
     pub line_count: usize,
 }
 
-impl<T> LineReader<T> {
+impl LineReader {
     /// Creates a new instance.
-    pub fn new(r: T) -> LineReader<T> {
-        LineReader {
-            reader: r,
-            peek_buf: None,
-            line_count: 0,
-        }
-    }
-
-    /// Peek the next line. On either EOF or success, returns `Ok(())`.
-    /// Use peek_buf() to check the content.
-    pub fn peek(&mut self) -> Result<(), ImportError>
-    where
-        T: BufRead,
-    {
-        if self.peek_buf.is_some() {
-            return Ok(());
-        }
-        self.peek_buf = self.read_next_line()?;
-        Ok(())
-    }
-
-    /// Returns the peeked buffer.
-    /// Note this could be merged into `peek()` once Polonius borrow checker becomes stable.
-    pub fn peek_buf(&self) -> Option<&str> {
-        self.peek_buf.as_deref()
-    }
-
-    fn take_peek_line(&mut self) -> Option<Line> {
-        let buf = self.peek_buf.take()?;
-        self.line_count += 1;
-        Some(Line {
-            value: buf,
-            line_count: self.line_count,
+    pub fn new<T: BufRead>(r: T) -> std::io::Result<LineReader> {
+        let lines: Result<Vec<String>, _> = r.lines().collect();
+        Ok(LineReader {
+            lines: lines?,
+            current: 0,
         })
     }
 
-    pub fn read_line(&mut self) -> Result<Option<Line>, ImportError>
-    where
-        T: BufRead,
-    {
-        if let Some(line) = self.take_peek_line() {
-            return Ok(Some(line));
-        }
-        let Some(buf) = self.read_next_line()? else {
-            // EOF
-            return Ok(None);
-        };
-        self.line_count += 1;
-        Ok(Some(Line {
-            value: buf,
-            line_count: self.line_count,
-        }))
+    /// Returns last line count, useful for missing line error.
+    pub fn last_line_count(&self) -> usize {
+        self.current
     }
 
-    fn read_next_line(&mut self) -> Result<Option<String>, ImportError>
-    where
-        T: BufRead,
-    {
-        let mut buf = String::new();
-        let read_bytes = self
-            .reader
-            .read_line(&mut buf)
-            .into_import_err(ImportErrorKind::SourceFileReadFailed, || {
-                format!("failed to peek the line @ {}", self.line_count + 1)
-            })?;
-        if read_bytes == 0 {
-            return Ok(None);
-        }
-        Ok(Some(buf))
+    /// Returns the next line without moving the current position.
+    pub fn peek_line(&self) -> Option<Line<'_>> {
+        self.nth(self.current)
+    }
+
+    /// Returns the next line, and moves the current position.
+    pub fn read_line(&mut self) -> Option<Line<'_>> {
+        let i = self.current;
+        self.current += 1;
+        self.nth(i)
+    }
+
+    fn nth(&self, n: usize) -> Option<Line<'_>> {
+        self.lines.get(n).map(|value| Line {
+            value,
+            line_count: n + 1,
+        })
     }
 }
 
@@ -139,72 +100,70 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn line_reader_fails_to_peek_if_bufread_fails() {
+    fn line_reader_fails_to_new() {
         let r = ErrRead::new(
-            b"",
+            b"first line\n",
             io::Error::new(io::ErrorKind::PermissionDenied, "expectde failure to read"),
         );
-        let mut r = LineReader::new(io::BufReader::new(r));
+        let got_err = LineReader::new(io::BufReader::new(r)).unwrap_err();
 
-        let got_err = r.peek().unwrap_err();
-        assert_eq!(ImportErrorKind::SourceFileReadFailed, got_err.error_kind());
+        assert_eq!(io::ErrorKind::PermissionDenied, got_err.kind());
     }
 
     #[test]
-    fn line_reader_fails_to_read_line_if_bufread_fails() {
-        let r = ErrRead::new(
-            b"this is a pen\n",
-            io::Error::new(io::ErrorKind::PermissionDenied, "expectde failure to read"),
-        );
-        let mut r = LineReader::new(io::BufReader::new(r));
-
-        r.peek().unwrap();
-        assert_eq!(Some("this is a pen\n"), r.peek_buf());
-        r.read_line().unwrap();
-        let got_err = r.read_line().unwrap_err();
-        assert_eq!(ImportErrorKind::SourceFileReadFailed, got_err.error_kind());
-    }
-
-    #[test]
-    fn line_reader_peek_and_read_line() {
+    fn line_reader_peek_line_and_read_line() {
         let input = indoc! {"
             First line
             Second line
             Third line
         "};
-        let mut r = LineReader::new(input.as_bytes());
+        let mut r = LineReader::new(input.as_bytes()).unwrap();
 
         // first peek reads the next line.
-        r.peek().unwrap();
-        assert_eq!(Some("First line\n"), r.peek_buf());
-        r.peek().unwrap();
-        // second peek just returns the buffered value.
-        assert_eq!(Some("First line\n"), r.peek_buf());
         assert_eq!(
             Some(Line {
-                value: "First line\n".to_string(),
+                value: "First line",
+                line_count: 1
+            }),
+            r.peek_line()
+        );
+        // second peek just returns the buffered value.
+        assert_eq!(
+            Some(Line {
+                value: "First line",
+                line_count: 1
+            }),
+            r.peek_line()
+        );
+        assert_eq!(
+            Some(Line {
+                value: "First line",
                 line_count: 1,
             }),
-            r.read_line().unwrap()
+            r.read_line()
         );
         assert_eq!(
             Some(Line {
-                value: "Second line\n".to_string(),
+                value: "Second line",
                 line_count: 2,
             }),
-            r.read_line().unwrap()
+            r.read_line()
         );
-        r.peek().unwrap();
-        assert_eq!(Some("Third line\n"), r.peek_buf());
         assert_eq!(
             Some(Line {
-                value: "Third line\n".to_string(),
+                value: "Third line",
+                line_count: 3
+            }),
+            r.peek_line()
+        );
+        assert_eq!(
+            Some(Line {
+                value: "Third line",
                 line_count: 3,
             }),
-            r.read_line().unwrap()
+            r.read_line()
         );
-        r.peek().unwrap();
-        assert_eq!(None, r.peek_buf());
-        assert_eq!(None, r.read_line().unwrap());
+        assert_eq!(None, r.peek_line());
+        assert_eq!(None, r.read_line());
     }
 }

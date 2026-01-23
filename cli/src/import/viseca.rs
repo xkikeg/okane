@@ -14,7 +14,7 @@ pub fn import<R: std::io::Read>(
 ) -> Result<Vec<single_entry::Txn>, ImportError> {
     let extractor = extract::Extractor::from_config(format::VisecaFormat, config)?;
     let mut parser =
-        parser::Parser::new(std::io::BufReader::new(r), config.commodity.primary.clone());
+        parser::Parser::new(std::io::BufReader::new(r), config.commodity.primary.clone())?;
     let mut result = Vec::new();
     while let Some(entry) = parser.parse_entry()? {
         let line_count = entry.line_count;
