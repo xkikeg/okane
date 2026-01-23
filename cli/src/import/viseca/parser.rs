@@ -20,57 +20,54 @@ lazy_static! {
     static ref AIR_TAG_LINE: Regex = Regex::new(r"Air-[[:alnum:]-]+:").unwrap();
 }
 
-pub struct Parser<T: BufRead> {
-    reader: LineReader<T>,
+pub struct Parser {
+    reader: LineReader,
     currency: String,
 }
 
-impl<T: BufRead> Parser<T> {
-    pub fn new(reader: T, currency: String) -> Parser<T> {
-        Parser {
-            reader: LineReader::new(reader),
+impl Parser {
+    pub fn new<T: BufRead>(reader: T, currency: String) -> Result<Parser, ImportError> {
+        Ok(Parser {
+            reader: LineReader::new(reader).into_import_err(
+                ImportErrorKind::SourceFileReadFailed,
+                "failed to read the source file",
+            )?,
             currency,
-        }
+        })
     }
 
     pub fn parse_entry(&mut self) -> Result<Option<Entry>, ImportError> {
-        let line = match self.reader.read_line()? {
+        let line = match self.reader.read_line() {
             Some(l) => l,
             None => return Ok(None),
         };
-        let entry_base = self.parse_transaction_line(&line).annotate(|| {
+        let entry_base = parse_transaction_line(line).annotate(|| {
             format!(
                 "failed to parse transcation line @ line {}",
                 line.line_count
             )
         })?;
-        // if next line is empty (EOF) or [0-9], go to next.
-        self.reader.peek()?;
-        if self
-            .reader
-            .peek_buf()
-            .unwrap_or("0")
-            .starts_with(|c: char| c.is_ascii_digit())
-        {
-            return Ok(Some(entry_base));
-        }
-        let line = self
-            .reader
-            .read_line()
-            .annotate("failed to read cateogry line")?
-            .into_import_err(ImportErrorKind::Internal, "category line should exist")?;
-        let line_count = line.line_count;
-        let category = line.value.trim().to_string();
-        let exchange = match &entry_base.spent {
-            Some(spent) if *spent.commodity != self.currency => {
+        let category = match LineType::from_line(self.reader.peek_line()) {
+            LineType::Eof | LineType::Transaction => return Ok(Some(entry_base)),
+            LineType::Other => {
                 let line = self
                     .reader
                     .read_line()
-                    .annotate("failed to read exchange line")?
+                    .into_import_err(ImportErrorKind::Internal, "category line should exist")?;
+                line.value.to_string()
+            }
+            _ => String::new(),
+        };
+        let exchange = match &entry_base.spent {
+            Some(spent) if *spent.commodity != self.currency => {
+                let last_line_count = self.reader.last_line_count();
+                let line = self
+                    .reader
+                    .read_line()
                     .into_import_err(ImportErrorKind::InvalidSource, || {
-                        format!("exchange line missing @ line {}", line_count)
+                        format!("exchange line missing @ line {}", last_line_count)
                     })?;
-                Some(self.parse_exchange(&line).annotate(|| {
+                Some(parse_exchange(line).annotate(|| {
                     format!("failed to parse exchange line @ line {}", line.line_count)
                 })?)
             }
@@ -91,89 +88,20 @@ impl<T: BufRead> Parser<T> {
         }))
     }
 
-    /// Parses the given line as transaction line.
-    fn parse_transaction_line(&self, line: &Line) -> Result<Entry, ImportError> {
-        let l = line.value.trim_end();
-        let c = TRANSACTION_LINE
-            .captures(l)
-            .into_import_err(ImportErrorKind::InvalidSource, || {
-                format!("unsupported entry line: {:?}", l)
-            })?;
-        let date_str = expect_name(&c, "date")?;
-        let date = parse_euro_date("date", date_str)?;
-        let edate_str = expect_name(&c, "edate")?;
-        let edate = parse_euro_date("effective date", edate_str)?;
-        let payee = expect_name(&c, "payee")?.to_string();
-        let sign = c
-            .name("neg")
-            .map(|_| Decimal::NEGATIVE_ONE)
-            .unwrap_or(Decimal::ONE);
-        let spent = match c.name("currency") {
-            None => None,
-            Some(currency) => {
-                let examount_str = expect_name(&c, "examount")?;
-                let examount = parse_decimal("exchanged amount", examount_str)?;
-                Some(OwnedAmount {
-                    commodity: currency.as_str().to_string(),
-                    value: sign * examount,
-                })
-            }
-        };
-        let amount_str = expect_name(&c, "amount")?;
-        let amount = parse_decimal("amount", amount_str)?;
-        Ok(Entry {
-            line_count: line.line_count,
-            date,
-            effective_date: edate,
-            payee,
-            amount: amount * sign,
-            category: String::new(),
-            spent,
-            exchange: None,
-            fee: None,
-        })
-    }
-
-    fn parse_exchange(&self, line: &Line) -> Result<Exchange, ImportError> {
-        let c = EXCHANGE_RATE_LINE
-            .captures(line.value.trim_end())
-            .into_import_err(
-                ImportErrorKind::InvalidSource,
-                "Exchange rate ... line expected",
-            )?;
-        let rate = expect_name(&c, "rate")?;
-        let rate = parse_decimal("rate", rate)?;
-        let date = expect_name(&c, "date")?;
-        let date = parse_euro_date("rate date", date)?;
-        let equiv_currency = expect_name(&c, "scurrency").map(ToOwned::to_owned)?;
-        let equiv_amount = expect_name(&c, "samount")?;
-        let equiv_amount = parse_decimal("equivalent amount", equiv_amount)?;
-        Ok(Exchange {
-            rate,
-            rate_date: date,
-            equivalent: OwnedAmount {
-                commodity: equiv_currency,
-                value: equiv_amount,
-            },
-        })
-    }
-
     fn consume_fee(&mut self) -> Result<Option<Fee>, ImportError> {
-        self.reader.peek().annotate("failed to peek fee line")?;
-        match self.reader.peek_buf() {
-            Some(line) if is_fee_line(line) => (),
+        let line = match self.reader.peek_line() {
+            Some(line) if LineType::from_str(line.value) == LineType::Fee => line,
             _ => return Ok(None),
         };
-        let line = self.reader.read_line()?.into_import_err(
-            ImportErrorKind::Internal,
-            "this fee line read must not fail as peek succeeded",
-        )?;
-        self.parse_fee(&line)
-            .annotate(|| format!("failed to parse fee line @ line {}", line.line_count))
+        let got = self
+            .parse_fee(line)
+            .annotate(|| format!("failed to parse fee line @ line {}", line.line_count));
+        self.reader.read_line();
+        got
     }
 
-    fn parse_fee(&self, line: &Line) -> Result<Option<Fee>, ImportError> {
-        let c = FEE_LINE.captures(line.value.trim_end()).into_import_err(
+    fn parse_fee(&self, line: Line) -> Result<Option<Fee>, ImportError> {
+        let c = FEE_LINE.captures(line.value).into_import_err(
             ImportErrorKind::InvalidSource,
             "Processing fee ... line expected",
         )?;
@@ -196,21 +124,110 @@ impl<T: BufRead> Parser<T> {
     }
 
     fn skip_air_tags(&mut self) -> Result<(), ImportError> {
-        loop {
-            self.reader.peek()?;
-            match self.reader.peek_buf() {
-                None => break,
-                Some(l) if !AIR_TAG_LINE.is_match_at(l, 0) => break,
-                _ => (),
-            };
-            self.reader.read_line()?;
+        while LineType::from_line(self.reader.peek_line()) == LineType::Air {
+            self.reader.read_line();
         }
         Ok(())
     }
 }
 
-fn is_fee_line(line: &str) -> bool {
-    line.starts_with("Processing fee") || line.starts_with("Credit of processing fee")
+#[derive(Debug, PartialEq, Eq)]
+enum LineType {
+    Eof,
+    Transaction,
+    Exchange,
+    Fee,
+    Air,
+    Other,
+}
+
+impl LineType {
+    fn from_line(line: Option<Line>) -> Self {
+        match line {
+            Some(line) => Self::from_str(line.value),
+            None => Self::Eof,
+        }
+    }
+
+    fn from_str(line: &str) -> Self {
+        if line.starts_with("Processing fee") || line.starts_with("Credit of processing fee") {
+            LineType::Fee
+        } else if line.starts_with(|c: char| c.is_ascii_digit()) {
+            Self::Transaction
+        } else if line.starts_with("Exchange rate ") {
+            Self::Exchange
+        } else if line.starts_with("Air-") {
+            Self::Air
+        } else {
+            Self::Other
+        }
+    }
+}
+
+/// Parses the given line as transaction line.
+fn parse_transaction_line(line: Line) -> Result<Entry, ImportError> {
+    let c = TRANSACTION_LINE
+        .captures(line.value)
+        .into_import_err(ImportErrorKind::InvalidSource, || {
+            format!("unsupported entry line: {:?}", line.value)
+        })?;
+    let date_str = expect_name(&c, "date")?;
+    let date = parse_euro_date("date", date_str)?;
+    let edate_str = expect_name(&c, "edate")?;
+    let edate = parse_euro_date("effective date", edate_str)?;
+    let payee = expect_name(&c, "payee")?.to_string();
+    let sign = c
+        .name("neg")
+        .map(|_| Decimal::NEGATIVE_ONE)
+        .unwrap_or(Decimal::ONE);
+    let spent = match c.name("currency") {
+        None => None,
+        Some(currency) => {
+            let examount_str = expect_name(&c, "examount")?;
+            let examount = parse_decimal("exchanged amount", examount_str)?;
+            Some(OwnedAmount {
+                commodity: currency.as_str().to_string(),
+                value: sign * examount,
+            })
+        }
+    };
+    let amount_str = expect_name(&c, "amount")?;
+    let amount = parse_decimal("amount", amount_str)?;
+    Ok(Entry {
+        line_count: line.line_count,
+        date,
+        effective_date: edate,
+        payee,
+        amount: amount * sign,
+        category: String::new(),
+        spent,
+        exchange: None,
+        fee: None,
+    })
+}
+
+fn parse_exchange(line: Line) -> Result<Exchange, ImportError> {
+    let c = EXCHANGE_RATE_LINE
+        .captures(line.value.trim_end())
+        .into_import_err(
+            ImportErrorKind::InvalidSource,
+            "Exchange rate ... line expected",
+        )?;
+    let rate = expect_name(&c, "rate")?;
+    let rate = parse_decimal("rate", rate)?;
+    let date = expect_name(&c, "date")?;
+    let date = parse_euro_date("rate date", date)?;
+    let equiv_currency = expect_name(&c, "scurrency").map(ToOwned::to_owned)?;
+    let equiv_amount = expect_name(&c, "samount")?;
+    let equiv_amount = parse_decimal("equivalent amount", equiv_amount)?;
+    Ok(Exchange {
+        rate,
+        rate_date: date,
+        equivalent: OwnedAmount {
+            commodity: equiv_currency,
+            value: equiv_amount,
+        },
+    })
 }
 
 fn expect_name<'a>(c: &'a regex::Captures, name: &str) -> Result<&'a str, ImportError> {
@@ -270,7 +287,7 @@ mod tests {
         let input = indoc! {"
             99.99.20 11.22.33 invalid date transaction 1'234.56
         "};
-        let mut p = Parser::new(input.as_bytes(), "CHF".to_string());
+        let mut p = Parser::new(input.as_bytes(), "CHF".to_string()).unwrap();
 
         let got_err = p.parse_entry().unwrap_err();
 
@@ -295,7 +312,7 @@ mod tests {
             10.08.20 11.08.20 Super gas EUR 46.88 52.10
             unknown category
         "};
-        let mut p = Parser::new(input.as_bytes(), "CHF".to_string());
+        let mut p = Parser::new(input.as_bytes(), "CHF".to_string()).unwrap();
 
         let got_err = p.parse_entry().unwrap_err();
 
@@ -316,7 +333,7 @@ mod tests {
             unknown category
             Exchange rate invalid
         "};
-        let mut p = Parser::new(input.as_bytes(), "CHF".to_string());
+        let mut p = Parser::new(input.as_bytes(), "CHF".to_string()).unwrap();
 
         let got_err = p.parse_entry().unwrap_err();
 
@@ -338,7 +355,7 @@ mod tests {
             Exchange rate 1.092432 of 09.08.20 CHF 51.20
             Processing fee invalid
         "};
-        let mut p = Parser::new(input.as_bytes(), "CHF".to_string());
+        let mut p = Parser::new(input.as_bytes(), "CHF".to_string()).unwrap();
 
         let got_err = p.parse_entry().unwrap_err();
 
@@ -368,7 +385,7 @@ mod tests {
             Game, toy, and hobby shops
             Processing fee 1.75% CHF 0.35
         "};
-        let mut p = Parser::new(input.as_bytes(), "CHF".to_string());
+        let mut p = Parser::new(input.as_bytes(), "CHF".to_string()).unwrap();
         assert_eq!(
             Some(Entry {
                 line_count: 1,
@@ -478,7 +495,7 @@ mod tests {
             Taxicabs and limousines
             Exchange rate 1.045704 of 23.08.20 CHF 1.05
         "};
-        let mut p = Parser::new(input.as_bytes(), "CHF".to_string());
+        let mut p = Parser::new(input.as_bytes(), "CHF".to_string()).unwrap();
         assert_eq!(
             Some(Entry {
                 line_count: 1,
@@ -544,10 +561,7 @@ mod tests {
         assert_eq!(None, p.parse_entry().unwrap());
     }
 
-    // TODO: Support this pattern.
-    // https://github.com/xkikeg/okane/issues/340
     #[test]
-    #[ignore]
     fn test_parse_entry_without_category() {
         let input = indoc! {"
             16.08.23 18.08.23 MY AIR, FRANKFURT AT EUR 942.84 935.05
@@ -555,7 +569,7 @@ mod tests {
             Processing fee 1.75% CHF 16.10
         "};
 
-        let mut p = Parser::new(input.as_bytes(), "CHF".to_string());
+        let mut p = Parser::new(input.as_bytes(), "CHF".to_string()).unwrap();
 
         assert_eq!(
             Some(Entry {
@@ -564,7 +578,7 @@ mod tests {
                 effective_date: NaiveDate::from_ymd_opt(2023, 8, 18).unwrap(),
                 payee: "MY AIR, FRANKFURT AT".to_string(),
                 amount: dec!(935.05),
-                category: "Air carriers, airlines".to_string(),
+                category: "".to_string(),
                 spent: Some(OwnedAmount {
                     value: dec!(942.84),
                     commodity: "EUR".to_string(),
@@ -605,7 +619,7 @@ mod tests {
             22.06.20 24.06.20 foo shop 100 1'234.56
             Catering Service
         "};
-        let mut p = Parser::new(input.as_bytes(), "CHF".to_string());
+        let mut p = Parser::new(input.as_bytes(), "CHF".to_string()).unwrap();
         assert_eq!(
             Some(Entry {
                 line_count: 1,
