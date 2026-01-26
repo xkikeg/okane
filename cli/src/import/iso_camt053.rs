@@ -54,21 +54,17 @@ where
         };
         for (ni, entry) in entries.enumerate() {
             if entry.details.transactions.is_empty() {
-                // TODO(kikeg): Fix this code repetition.
                 let amount = entry.amount.to_owned(entry.credit_or_debit.value);
                 let fragment = extractor.extract(CamtEntity(entry, None));
-                if fragment.payee.is_none() {
-                    log::warn!("payee not set @ {:?} {:?}", entry.booking_date, amount);
-                } else if fragment.account.is_none() {
-                    log::warn!(
-                        "account not set @ {:?} {:?} {}",
-                        entry.booking_date,
-                        amount,
-                        fragment.payee.unwrap()
-                    );
-                }
                 let mut txn = fragment.new_txn(entry.guess_value_date(), amount, || {
-                    format!(".//BkToCstmrStmt/Stmt[{}]/Ntry[{}]", si + 1, ni + 1)
+                    format!(
+                        ".//BkToCstmrStmt/Stmt[{}]/Ntry[{}] , date={:?}, amount={:?}/{:?}",
+                        si + 1,
+                        ni + 1,
+                        entry.booking_date,
+                        entry.amount,
+                        entry.credit_or_debit.value
+                    )
                 });
                 txn.effective_date(entry.booking_date.as_naive_date());
                 add_charges(&mut txn, &entry.charges)?;
