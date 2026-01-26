@@ -27,3 +27,8 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           check-args: --all-features --all-targets --workspace
+  cargo-deny:
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v4
+    - uses: EmbarkStudios/cargo-deny-action@v2
