@@ -1,29 +1,23 @@
 //! Provides [PriceRepository], which can compute the commodity (currency) conversion.
 
-use std::{
-    collections::{BinaryHeap, HashMap},
-    path::Path,
-};
+use std::collections::{BinaryHeap, HashMap};
+use std::path::{Path, PathBuf};
 
 use chrono::{NaiveDate, TimeDelta};
 use rust_decimal::Decimal;
 
-use crate::{
-    parse,
-    report::commodity::{CommodityMap, CommodityTag, OwnedCommodity},
-};
+use crate::parse;
+use crate::report::commodity::{CommodityMap, CommodityTag, OwnedCommodity};
 
-use super::{
-    context::ReportContext,
-    eval::{Amount, SingleAmount},
-};
+use super::context::ReportContext;
+use super::eval::{Amount, SingleAmount};
 
 #[derive(Debug, thiserror::Error)]
 pub enum LoadError {
-    #[error("failed to perform IO")]
-    IO(#[from] std::io::Error),
-    #[error("failed to parse price DB entry: {0}")]
-    Parse(#[from] parse::ParseError),
+    #[error("failed to load price DB file {0}")]
+    IO(PathBuf, #[source] std::io::Error),
+    #[error("failed to parse price DB file {0}")]
+    Parse(PathBuf, #[source] parse::ParseError),
 }
 
 /// Source of the price information.
@@ -55,27 +49,21 @@ pub(super) struct PriceEvent<'ctx> {
 
 #[cfg(test)]
 impl<'ctx> PriceEvent<'ctx> {
-    fn sort_key(&self) -> (NaiveDate, usize, usize, &Decimal, &Decimal) {
+    fn sort_key(&self) -> (NaiveDate, usize, usize) {
         let PriceEvent {
             date,
             price_x:
                 SingleAmount {
-                    value: value_x,
+                    value: _,
                     commodity: commodity_x,
                 },
             price_y:
                 SingleAmount {
-                    value: value_y,
+                    value: _,
                     commodity: commodity_y,
                 },
         } = self;
-        (
-            *date,
-            commodity_x.as_index(),
-            commodity_y.as_index(),
-            value_x,
-            value_y,
-        )
+        (*date, commodity_x.as_index(), commodity_y.as_index())
     }
 }
 
@@ -122,9 +110,10 @@ impl<'ctx> PriceRepositoryBuilder<'ctx> {
     ) -> Result<(), LoadError> {
         // Even though price db can be up to a few megabytes,
         // still it's much easier to load everything into memory.
-        let content = std::fs::read_to_string(path)?;
+        let content =
+            std::fs::read_to_string(path).map_err(|e| LoadError::IO(path.to_owned(), e))?;
         for entry in parse::price::parse_price_db(&parse::ParseOptions::default(), &content) {
-            let (_, entry) = entry?;
+            let (_, entry) = entry.map_err(|e| LoadError::Parse(path.to_owned(), e))?;
             // we cannot skip commodities which doesn't appear in Ledger source,
             // as the price might be computed via indirect relationship.
             // For example, if we have only AUD and JPY in Ledger,
@@ -146,21 +135,30 @@ impl<'ctx> PriceRepositoryBuilder<'ctx> {
         Ok(())
     }
 
+    /// Returns iterator of [`PriceEvent`] in unspecified order.
     #[cfg(test)]
-    pub fn into_events(self) -> Vec<PriceEvent<'ctx>> {
-        let mut ret = Vec::new();
-        for (price_with, v) in self.records {
-            for (price_of, Entry(_, v)) in v {
-                for (date, rate) in v {
-                    ret.push(PriceEvent {
-                        price_x: SingleAmount::from_value(price_of, Decimal::ONE),
-                        price_y: SingleAmount::from_value(price_with, rate),
-                        date,
-                    });
-                }
-            }
-        }
-        ret.sort_by(|x, y| x.sort_key().cmp(&y.sort_key()));
+    pub fn iter_events(&self) -> impl Iterator<Item = (PriceSource, PriceEvent<'ctx>)> {
+        self.records.iter().flat_map(|(price_with, v)| {
+            v.iter().flat_map(|(price_of, Entry(source, v))| {
+                v.iter().map(|(date, rate)| {
+                    (
+                        *source,
+                        PriceEvent {
+                            price_x: SingleAmount::from_value(*price_of, Decimal::ONE),
+                            price_y: SingleAmount::from_value(*price_with, *rate),
+                            date: *date,
+                        },
+                    )
+                })
+            })
+        })
+    }
+
+    #[cfg(test)]
+    pub fn to_events(&self) -> Vec<PriceEvent<'ctx>> {
+        let mut ret: Vec<PriceEvent<'ctx>> =
+            self.iter_events().map(|(_source, event)| event).collect();
+        ret.sort_by_key(|x| x.sort_key());
         ret
     }
 
@@ -203,7 +201,6 @@ pub fn convert_amount<'ctx>(
 #[derive(Debug)]
 pub struct PriceRepository<'ctx> {
     inner: NaivePriceRepository<'ctx>,
-    // TODO: add price_with as a key, otherwise it's wrong.
     // BTreeMap could be used if cursor support is ready.
     // Then, we can avoid computing rates over and over if no rate update happens.
     cache: HashMap<(CommodityTag<'ctx>, NaiveDate), CommodityMap<WithDistance<Decimal>>>,
@@ -425,6 +422,7 @@ mod tests {
     use super::*;
 
     use bumpalo::Bump;
+    use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
     #[test]
@@ -528,5 +526,57 @@ mod tests {
             NaiveDate::from_ymd_opt(2024, 10, 3).unwrap(),
         );
         assert_eq!(got, Ok(SingleAmount::from_value(jpy, dec!(156.25))));
+    }
+
+    #[test]
+    fn price_db_load_overrides_ledger_price() {
+        let price_db =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../testdata/report/price_db.txt");
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let chf = ctx.commodities.ensure("CHF");
+        let eur = ctx.commodities.ensure("EUR");
+        let mut builder = PriceRepositoryBuilder::default();
+
+        builder.insert_price(
+            PriceSource::Ledger,
+            PriceEvent {
+                date: NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+                price_x: SingleAmount::from_value(chf, dec!(0.8)),
+                price_y: SingleAmount::from_value(eur, dec!(1)),
+            },
+        );
+
+        builder.load_price_db(&mut ctx, &price_db).unwrap();
+
+        let is_in_scope = |event: &PriceEvent<'_>| {
+            event.date == NaiveDate::from_ymd_opt(2024, 1, 31).unwrap()
+                && ((event.price_x.commodity == chf && event.price_y.commodity == eur)
+                    || (event.price_x.commodity == eur && event.price_y.commodity == chf))
+        };
+        let got: Vec<_> = builder.iter_events().collect();
+        assert_eq!(got.len(), 17 * 2);
+        assert!(got
+            .iter()
+            .all(|(source, _)| *source == PriceSource::PriceDB));
+        let mut filtered: Vec<_> = got
+            .into_iter()
+            .map(|(_, event)| event)
+            .filter(is_in_scope)
+            .collect();
+        filtered.sort_by_key(|x| x.sort_key());
+        let want = vec![
+            PriceEvent {
+                date: NaiveDate::from_ymd_opt(2024, 1, 31).unwrap(),
+                price_x: SingleAmount::from_value(chf, Decimal::ONE),
+                price_y: SingleAmount::from_value(eur, Decimal::ONE / dec!(0.9348)),
+            },
+            PriceEvent {
+                date: NaiveDate::from_ymd_opt(2024, 1, 31).unwrap(),
+                price_x: SingleAmount::from_value(eur, dec!(1)),
+                price_y: SingleAmount::from_value(chf, dec!(0.9348)),
+            },
+        ];
+        assert_eq!(want, filtered);
     }
 }
