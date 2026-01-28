@@ -355,8 +355,7 @@ fn process_posting<'ctx>(
             let current: PostingAmount = balance_constraints
                 .as_undecorated()
                 .eval_mut(ctx)
-                .map_err(|e| map_eval_err(ctx, e, balance_span.clone()))?
-                .try_into()
+                .and_then(|x| x.try_into())
                 .map_err(|e| map_eval_err(ctx, e, balance_span.clone()))?;
             let prev: PostingAmount = bal.set_partial(ctx, account, current).map_err(|e| {
                 BookKeepError::BalanceFailure {
@@ -386,8 +385,7 @@ fn process_posting<'ctx>(
                 let expected: PostingAmount = balance_constraints
                     .as_undecorated()
                     .eval_mut(ctx)
-                    .map_err(|e| map_eval_err(ctx, e, balance_span.clone()))?
-                    .try_into()
+                    .and_then(|x| x.try_into())
                     .map_err(|e| map_eval_err(ctx, e, balance_span.clone()))?;
                 let diff = current.assert_balance(&expected);
                 if !diff.is_absolute_zero() {
@@ -431,8 +429,7 @@ impl<'ctx> ComputedPosting<'ctx> {
             .amount
             .as_undecorated()
             .eval_mut(ctx)
-            .map_err(|e| map_eval_err(ctx, e, amount_span.clone()))?
-            .try_into()
+            .and_then(|x| x.try_into())
             .map_err(|e| map_eval_err(ctx, e, amount_span.clone()))?;
         let cost = posting_cost_exchange(syntax_amount)
             .map(|exchange| Exchange::try_from_syntax(ctx, syntax_amount, &amount, exchange))
@@ -543,16 +540,14 @@ impl<'ctx> Exchange<'ctx> {
             syntax::Exchange::Rate(rate) => {
                 let rate: SingleAmount<'ctx> = rate
                     .eval_mut(ctx)
-                    .map_err(|e| map_eval_err(ctx, e, exchange.span()))?
-                    .try_into()
+                    .and_then(|x| x.try_into())
                     .map_err(|e| map_eval_err(ctx, e, exchange.span()))?;
                 (rate.commodity, Exchange::Rate(rate))
             }
             syntax::Exchange::Total(rate) => {
                 let rate: SingleAmount<'ctx> = rate
                     .eval_mut(ctx)
-                    .map_err(|e| map_eval_err(ctx, e, exchange.span()))?
-                    .try_into()
+                    .and_then(|x| x.try_into())
                     .map_err(|e| map_eval_err(ctx, e, exchange.span()))?;
                 (rate.commodity, Exchange::Total(rate))
             }

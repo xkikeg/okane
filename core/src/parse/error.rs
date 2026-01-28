@@ -15,7 +15,7 @@ use winnow::{
 pub struct ParseError(Box<ParseErrorImpl>);
 
 #[derive(Debug)]
-pub struct ParseErrorImpl {
+struct ParseErrorImpl {
     renderer: Renderer,
     error_span: Range<usize>,
     input: String,
