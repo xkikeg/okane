@@ -1053,7 +1053,7 @@ mod tests {
                 price_y: SingleAmount::from_value(okane, dec!(1) / dec!(100)),
             },
         ];
-        assert_eq!(want_prices, price_repos.into_events());
+        assert_eq!(want_prices, price_repos.to_events());
     }
 
     #[test]
@@ -1154,7 +1154,7 @@ mod tests {
                 price_y: SingleAmount::from_value(okane, dec!(1) / dec!(120)),
             },
         ];
-        assert_eq!(want_prices, price_repos.into_events());
+        assert_eq!(want_prices, price_repos.to_events());
     }
 
     #[test]
@@ -1221,7 +1221,7 @@ mod tests {
                 price_y: SingleAmount::from_value(okane, dec!(1) / dec!(120)),
             },
         ];
-        assert_eq!(want_prices, price_repos.into_events());
+        assert_eq!(want_prices, price_repos.to_events());
     }
 
     #[test]
@@ -1305,6 +1305,6 @@ mod tests {
                 price_y: SingleAmount::from_value(chf, dec!(1.0902)),
             },
         ];
-        assert_eq!(want_prices, price_repos.into_events());
+        assert_eq!(want_prices, price_repos.to_events());
     }
 }
