@@ -52,6 +52,23 @@ impl<'ctx> FromIterator<(Account<'ctx>, Amount<'ctx>)> for Balance<'ctx> {
 }
 
 impl<'ctx> Balance<'ctx> {
+    /// Constructs an instance directly from the map.
+    pub fn from_map(values: HashMap<Account<'ctx>, Amount<'ctx>>) -> Self {
+        Self { accounts: values }
+    }
+
+    /// Converts into the underlying [`HashMap`].
+    pub fn into_map(self) -> HashMap<Account<'ctx>, Amount<'ctx>> {
+        self.accounts
+    }
+
+    /// Constructs sorted vec of account and commodity tuple.
+    pub fn into_vec(self) -> Vec<(Account<'ctx>, Amount<'ctx>)> {
+        let mut ret: Vec<(Account<'ctx>, Amount<'ctx>)> = self.accounts.into_iter().collect();
+        ret.sort_unstable_by_key(|(a, _)| a.as_str());
+        ret
+    }
+
     /// Adds a particular account value, and returns the updated balance.
     pub fn add_amount(&mut self, account: Account<'ctx>, amount: Amount<'ctx>) -> &Amount<'ctx> {
         let curr: &mut Amount = self.accounts.entry(account).or_default();
@@ -120,13 +137,6 @@ impl<'ctx> Balance<'ctx> {
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&Account<'ctx>, &Amount<'ctx>)> {
         self.accounts.iter()
     }
-
-    /// Constructs sorted vec of account and commodity tuple.
-    pub fn into_vec(self) -> Vec<(Account<'ctx>, Amount<'ctx>)> {
-        let mut ret: Vec<(Account<'ctx>, Amount<'ctx>)> = self.accounts.into_iter().collect();
-        ret.sort_unstable_by_key(|(a, _)| a.as_str());
-        ret
-    }
 }
 
 #[cfg(test)]
@@ -134,10 +144,38 @@ mod tests {
     use super::*;
 
     use bumpalo::Bump;
+    use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
     use super::super::context::ReportContext;
+
+    #[test]
+    fn to_from_map() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let expenses = ctx.accounts.ensure("Expenses");
+
+        let m = hashmap! {
+            expenses =>
+                Amount::from_value(ctx.commodities.ensure("JPY"), dec!(10)),
+            ctx.accounts.ensure("Income") =>
+                Amount::from_values([
+                    (ctx.commodities.ensure("CHF"), dec!(15)),
+                    (ctx.commodities.ensure("USD"), dec!(-5)),
+                ]),
+        };
+
+        let b = Balance::from_map(m.clone());
+        assert_eq!(
+            b.get(expenses),
+            Some(&Amount::from_value(ctx.commodities.ensure("JPY"), dec!(10)))
+        );
+
+        let m2 = b.into_map();
+
+        assert_eq!(m, m2);
+    }
 
     #[test]
     fn balance_gives_zero_amount_when_not_initalized() {
