@@ -388,7 +388,7 @@ mod tests {
             ),
             (
                 ctx.account("Assets:Broker").unwrap(),
-                Amount::from_values([(okane, dec!(4900.0000)), (jpy, dec!(12300))]),
+                Amount::from_iter([(okane, dec!(4900.0000)), (jpy, dec!(12300))]),
             ),
             (
                 ctx.account("Assets:J 銀行").unwrap(),
@@ -412,7 +412,7 @@ mod tests {
             ),
             (
                 ctx.account("Equity").unwrap(),
-                Amount::from_values([
+                Amount::from_iter([
                     (jpy, dec!(-1_400_000)),
                     (chf, dec!(-2000.00)),
                     (eur, dec!(300.00)),
@@ -461,7 +461,7 @@ mod tests {
                 // 23 * 120 = 2_760
                 // -100 * 100 = -10_000
                 // -23 * 100 = -2_300
-                Amount::from_values([
+                Amount::from_iter([
                     (jpy, dec!(400_000)),
                     (jpy, dec!(2_760)),
                     (jpy, dec!(-10_000)),
@@ -491,7 +491,7 @@ mod tests {
             ),
             (
                 ctx.account("Equity").unwrap(),
-                Amount::from_values([
+                Amount::from_iter([
                     (jpy, dec!(-1_400_000)),
                     // -2000 * 168.24, historical rate.
                     (jpy, dec!(-336_480)),
@@ -562,7 +562,7 @@ mod tests {
             ),
             (
                 ctx.account("Equity").unwrap(),
-                Amount::from_values([
+                Amount::from_iter([
                     (jpy, dec!(-1_400_000)),
                     // -2000 CHF * 171.50
                     (jpy, dec!(-343_000)),

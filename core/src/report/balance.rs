@@ -40,7 +40,6 @@ pub struct Balance<'ctx> {
 }
 
 impl<'ctx> FromIterator<(Account<'ctx>, Amount<'ctx>)> for Balance<'ctx> {
-    /// Constructs [Balance] instance out of Iterator.
     fn from_iter<T>(iter: T) -> Self
     where
         T: IntoIterator<Item = (Account<'ctx>, Amount<'ctx>)>,
@@ -160,7 +159,7 @@ mod tests {
             expenses =>
                 Amount::from_value(ctx.commodities.ensure("JPY"), dec!(10)),
             ctx.accounts.ensure("Income") =>
-                Amount::from_values([
+                Amount::from_iter([
                     (ctx.commodities.ensure("CHF"), dec!(15)),
                     (ctx.commodities.ensure("USD"), dec!(-5)),
                 ]),
@@ -286,7 +285,7 @@ mod tests {
         assert_eq!(prev, PostingAmount::from_value(chf, dec!(200)));
         assert_eq!(
             balance.get(ctx.accounts.ensure("Expenses")),
-            Some(&Amount::from_values([(jpy, dec!(1000)), (chf, dec!(100)),]))
+            Some(&Amount::from_iter([(jpy, dec!(1000)), (chf, dec!(100)),]))
         );
     }
 
