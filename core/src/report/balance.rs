@@ -105,8 +105,8 @@ impl<'ctx> Balance<'ctx> {
     }
 
     /// Gets the balance of the given account.
-    pub fn get(&self, account: &Account<'ctx>) -> Option<&Amount<'ctx>> {
-        self.accounts.get(account)
+    pub fn get(&self, account: Account<'ctx>) -> Option<&Amount<'ctx>> {
+        self.accounts.get(&account)
     }
 
     /// Rounds the balance following the context.
@@ -145,7 +145,7 @@ mod tests {
         let mut ctx = ReportContext::new(&arena);
 
         let balance = Balance::default();
-        assert_eq!(balance.get(&ctx.accounts.ensure("Expenses")), None);
+        assert_eq!(balance.get(ctx.accounts.ensure("Expenses")), None);
     }
 
     #[test]
@@ -165,10 +165,7 @@ mod tests {
             updated,
             Amount::from_value(ctx.commodities.ensure("JPY"), dec!(1000))
         );
-        assert_eq!(
-            balance.get(&ctx.accounts.ensure("Expenses")),
-            Some(&updated)
-        );
+        assert_eq!(balance.get(ctx.accounts.ensure("Expenses")), Some(&updated));
 
         let updated = balance
             .add_posting_amount(
@@ -178,10 +175,7 @@ mod tests {
             .clone();
 
         assert_eq!(updated, Amount::zero());
-        assert_eq!(
-            balance.get(&ctx.accounts.ensure("Expenses")),
-            Some(&updated)
-        );
+        assert_eq!(balance.get(ctx.accounts.ensure("Expenses")), Some(&updated));
     }
 
     #[test]
@@ -200,7 +194,7 @@ mod tests {
         // as set_partial is called with commodity amount.
         assert_eq!(prev, PostingAmount::from_value(jpy, dec!(0)));
         assert_eq!(
-            balance.get(&expenses),
+            balance.get(expenses),
             Some(&Amount::from_value(jpy, dec!(1000)))
         );
     }
@@ -224,7 +218,7 @@ mod tests {
 
         assert_eq!(prev, PostingAmount::from_value(jpy, dec!(1000)));
         assert_eq!(
-            balance.get(&ctx.accounts.ensure("Expenses")),
+            balance.get(ctx.accounts.ensure("Expenses")),
             Some(&Amount::from_value(jpy, dec!(-1000)))
         );
     }
@@ -253,7 +247,7 @@ mod tests {
 
         assert_eq!(prev, PostingAmount::from_value(chf, dec!(200)));
         assert_eq!(
-            balance.get(&ctx.accounts.ensure("Expenses")),
+            balance.get(ctx.accounts.ensure("Expenses")),
             Some(&Amount::from_values([(jpy, dec!(1000)), (chf, dec!(100)),]))
         );
     }
@@ -272,7 +266,7 @@ mod tests {
 
         assert_eq!(prev, PostingAmount::zero());
         assert_eq!(
-            balance.get(&ctx.accounts.ensure("Expenses")),
+            balance.get(ctx.accounts.ensure("Expenses")),
             Some(&Amount::zero())
         );
     }
@@ -296,7 +290,7 @@ mod tests {
 
         assert_eq!(prev, PostingAmount::from_value(jpy, dec!(1000)));
         assert_eq!(
-            balance.get(&ctx.accounts.ensure("Expenses")),
+            balance.get(ctx.accounts.ensure("Expenses")),
             Some(&Amount::zero())
         );
     }
