@@ -286,7 +286,7 @@ mod tests {
             Evaluated::from(Amount::from_value(jpy, dec!(1000)))
                 .check_add(Evaluated::from(Amount::from_value(usd, dec!(100))))
                 .unwrap(),
-            Evaluated::from(Amount::from_values([(jpy, dec!(1000)), (usd, dec!(100)),]))
+            Evaluated::from(Amount::from_iter([(jpy, dec!(1000)), (usd, dec!(100)),]))
         );
 
         assert_eq!(
@@ -321,7 +321,7 @@ mod tests {
             Evaluated::from(Amount::from_value(jpy, dec!(1000)))
                 .check_sub(Evaluated::from(Amount::from_value(usd, dec!(100))))
                 .unwrap(),
-            Evaluated::from(Amount::from_values([(jpy, dec!(1000)), (usd, dec!(-100)),]))
+            Evaluated::from(Amount::from_iter([(jpy, dec!(1000)), (usd, dec!(-100)),]))
         );
 
         assert_eq!(

@@ -767,19 +767,19 @@ mod tests {
 
         let want_balance: Balance = hashmap! {
             ctx.accounts.ensure("Account 1") =>
-                Amount::from_values([
+                Amount::from_iter([
                     (ctx.commodities.ensure("JPY"), dec!(1200)),
                     (ctx.commodities.ensure("EUR"), dec!(123)),
                 ]),
             ctx.accounts.ensure("Account 2") =>
-                Amount::from_values([
+                Amount::from_iter([
                     (ctx.commodities.ensure("JPY"), dec!(-200)),
                     (ctx.commodities.ensure("EUR"), dec!(1)),
                 ]),
             ctx.accounts.ensure("Account 3") =>
                 Amount::from_value(ctx.commodities.ensure("CHF"), dec!(2)),
             ctx.accounts.ensure("Account 4") =>
-                Amount::from_values([
+                Amount::from_iter([
                     (ctx.commodities.ensure("JPY"), dec!(-300)),
                     (ctx.commodities.ensure("CHF"), dec!(10)),
                 ]),
@@ -945,7 +945,7 @@ mod tests {
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 4"),
-                        amount: Amount::from_values([
+                        amount: Amount::from_iter([
                             (jpy, dec!(-1200)),
                             (eur, dec!(-234)),
                             (chf, dec!(-34.56)),

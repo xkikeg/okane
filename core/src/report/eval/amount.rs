@@ -92,6 +92,19 @@ impl<'ctx> From<SingleAmount<'ctx>> for Amount<'ctx> {
     }
 }
 
+impl<'ctx> FromIterator<(CommodityTag<'ctx>, Decimal)> for Amount<'ctx> {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = (CommodityTag<'ctx>, Decimal)>,
+    {
+        let mut ret = Self::zero();
+        for (commodity, value) in iter.into_iter() {
+            ret += SingleAmount::from_value(commodity, value);
+        }
+        ret
+    }
+}
+
 impl<'ctx> Amount<'ctx> {
     /// Creates an [`Amount`] with zero value.
     #[inline(always)]
@@ -104,16 +117,9 @@ impl<'ctx> Amount<'ctx> {
         Self::zero() + SingleAmount::from_value(commodity, amount)
     }
 
-    /// Creates an [`Amount`] from a set of values.
-    pub fn from_values<T>(values: T) -> Self
-    where
-        T: IntoIterator<Item = (CommodityTag<'ctx>, Decimal)>,
-    {
-        let mut ret = Amount::zero();
-        for (commodity, value) in values.into_iter() {
-            ret += SingleAmount::from_value(commodity, value);
-        }
-        ret
+    /// Creates an [`Amount`] from a set of values in [`BTreeMap`].
+    pub fn from_values(values: BTreeMap<CommodityTag<'ctx>, Decimal>) -> Self {
+        Self { values }
     }
 
     /// Takes out the instance and returns map from commodity to its value.
@@ -434,16 +440,16 @@ mod tests {
         let jpy = ctx.commodities.ensure("JPY");
         let chf = ctx.commodities.ensure("CHF");
 
-        let amount = Amount::from_values([(jpy, dec!(10)), (chf, dec!(1))]);
+        let amount = Amount::from_iter([(jpy, dec!(10)), (chf, dec!(1))]);
         assert_eq!(
             amount.into_values(),
             btreemap! {jpy => dec!(10), chf => dec!(1)},
         );
 
-        let amount = Amount::from_values([(jpy, dec!(10)), (jpy, dec!(1))]);
+        let amount = Amount::from_iter([(jpy, dec!(10)), (jpy, dec!(1))]);
         assert_eq!(amount.into_values(), btreemap! {jpy => dec!(11)});
 
-        let amount = Amount::from_values([(jpy, dec!(10)), (jpy, dec!(-10))]);
+        let amount = Amount::from_iter([(jpy, dec!(10)), (jpy, dec!(-10))]);
         assert_eq!(amount.into_values(), btreemap! {jpy => dec!(0)});
     }
 
@@ -457,7 +463,7 @@ mod tests {
         assert!(Amount::default().is_absolute_zero());
         assert!(!Amount::from_value(jpy, dec!(0)).is_absolute_zero());
 
-        let mut amount = Amount::from_values([(jpy, dec!(0)), (usd, dec!(0))]);
+        let mut amount = Amount::from_iter([(jpy, dec!(0)), (usd, dec!(0))]);
         assert!(
             !amount.is_absolute_zero(),
             "{}",
@@ -481,10 +487,10 @@ mod tests {
 
         assert!(Amount::default().is_zero());
         assert!(Amount::from_value(jpy, dec!(0)).is_zero());
-        assert!(Amount::from_values([(jpy, dec!(0)), (usd, dec!(0))]).is_zero());
+        assert!(Amount::from_iter([(jpy, dec!(0)), (usd, dec!(0))]).is_zero());
 
         assert!(!Amount::from_value(jpy, dec!(1)).is_zero());
-        assert!(!Amount::from_values([(jpy, dec!(0)), (usd, dec!(1))]).is_zero());
+        assert!(!Amount::from_iter([(jpy, dec!(0)), (usd, dec!(1))]).is_zero());
     }
 
     #[test]
@@ -500,8 +506,8 @@ mod tests {
             Amount::from_value(jpy, dec!(-100))
         );
         assert_eq!(
-            -Amount::from_values([(jpy, dec!(100)), (usd, dec!(-20.35))]),
-            Amount::from_values([(jpy, dec!(-100)), (usd, dec!(20.35))]),
+            -Amount::from_iter([(jpy, dec!(100)), (usd, dec!(-20.35))]),
+            Amount::from_iter([(jpy, dec!(-100)), (usd, dec!(20.35))]),
         );
     }
 
@@ -526,7 +532,7 @@ mod tests {
             Amount::from_value(jpy, dec!(1)),
         );
         assert_eq!(
-            Amount::from_values([
+            Amount::from_iter([
                 (jpy, dec!(123.00)),
                 (usd, dec!(456.0)),
                 (eur, dec!(7.89)),
@@ -542,9 +548,9 @@ mod tests {
         );
 
         assert_eq!(
-            Amount::from_values([(jpy, dec!(0)), (usd, dec!(0)), (chf, dec!(0))]),
-            Amount::from_values([(jpy, dec!(1)), (usd, dec!(2)), (chf, dec!(3))])
-                + Amount::from_values([(jpy, dec!(-1)), (usd, dec!(-2)), (chf, dec!(-3))])
+            Amount::from_iter([(jpy, dec!(0)), (usd, dec!(0)), (chf, dec!(0))]),
+            Amount::from_iter([(jpy, dec!(1)), (usd, dec!(2)), (chf, dec!(3))])
+                + Amount::from_iter([(jpy, dec!(-1)), (usd, dec!(-2)), (chf, dec!(-3))])
         );
     }
 
@@ -585,14 +591,14 @@ mod tests {
             Amount::from_value(jpy, dec!(-1)),
         );
         assert_eq!(
-            Amount::from_values([
+            Amount::from_iter([
                 (jpy, dec!(12345)),
                 (eur, dec!(-200)),
                 (chf, dec!(13.3)),
                 (usd, dec!(0))
             ]),
-            Amount::from_values([(jpy, dec!(12345)), (usd, dec!(56.78))])
-                - Amount::from_values([(usd, dec!(56.780)), (eur, dec!(200)), (chf, dec!(-13.3)),]),
+            Amount::from_iter([(jpy, dec!(12345)), (usd, dec!(56.78))])
+                - Amount::from_iter([(usd, dec!(56.780)), (eur, dec!(200)), (chf, dec!(-13.3)),]),
         );
     }
 
@@ -618,9 +624,9 @@ mod tests {
             Amount::from_value(jpy, dec!(369)),
         );
         assert_eq!(
-            Amount::from_values([(jpy, dec!(10081)), (eur, dec!(200)), (chf, dec!(-13.3))])
+            Amount::from_iter([(jpy, dec!(10081)), (eur, dec!(200)), (chf, dec!(-13.3))])
                 * dec!(-0.5),
-            Amount::from_values([(jpy, dec!(-5040.5)), (eur, dec!(-100.0)), (chf, dec!(6.65))]),
+            Amount::from_iter([(jpy, dec!(-5040.5)), (eur, dec!(-100.0)), (chf, dec!(6.65))]),
         );
         assert_eq!(
             Amount::from_value(jpy, eps()) * eps(),
@@ -664,10 +670,10 @@ mod tests {
         );
 
         assert_eq!(
-            Amount::from_values([(jpy, dec!(810)), (eur, dec!(-100.0)), (chf, dec!(6.66))])
+            Amount::from_iter([(jpy, dec!(810)), (eur, dec!(-100.0)), (chf, dec!(6.66))])
                 .check_div(dec!(3))
                 .unwrap(),
-            Amount::from_values([
+            Amount::from_iter([
                 (jpy, dec!(270)),
                 (eur, dec!(-33.333333333333333333333333333)),
                 (chf, dec!(2.22))
@@ -693,14 +699,14 @@ mod tests {
         assert_eq!(Amount::zero(), Amount::zero().round(&ctx));
 
         assert_eq!(
-            Amount::from_values([(jpy, dec!(812)), (eur, dec!(-100.00)), (chf, dec!(6.660))]),
-            Amount::from_values([(jpy, dec!(812)), (eur, dec!(-100.0)), (chf, dec!(6.66))])
+            Amount::from_iter([(jpy, dec!(812)), (eur, dec!(-100.00)), (chf, dec!(6.660))]),
+            Amount::from_iter([(jpy, dec!(812)), (eur, dec!(-100.0)), (chf, dec!(6.66))])
                 .round(&ctx),
         );
 
         assert_eq!(
-            Amount::from_values([(jpy, dec!(812)), (eur, dec!(-100.02)), (chf, dec!(6.666))]),
-            Amount::from_values([
+            Amount::from_iter([(jpy, dec!(812)), (eur, dec!(-100.02)), (chf, dec!(6.666))]),
+            Amount::from_iter([
                 (jpy, dec!(812.5)),
                 (eur, dec!(-100.015)),
                 (chf, dec!(6.6665))
@@ -727,14 +733,14 @@ mod tests {
 
         assert_eq!(
             "(10 JPY + 1 CHF)",
-            Amount::from_values([(jpy, dec!(10)), (chf, dec!(1))])
+            Amount::from_iter([(jpy, dec!(10)), (chf, dec!(1))])
                 .as_inline_display(&ctx)
                 .to_string()
         );
 
         assert_eq!(
             "(-10 JPY - 1 CHF)",
-            Amount::from_values([(jpy, dec!(-10)), (chf, dec!(-1))])
+            Amount::from_iter([(jpy, dec!(-10)), (chf, dec!(-1))])
                 .as_inline_display(&ctx)
                 .to_string()
         );
