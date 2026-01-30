@@ -3,10 +3,11 @@
 use std::borrow::Cow;
 
 use winnow::{
-    ascii::{line_ending, space1},
-    combinator::{seq, trace},
+    ascii::{line_ending, space1, till_line_ending},
+    combinator::{alt, repeat, seq, trace},
     error::{ContextError, FromExternalError, ParserError},
     stream::{AsChar, Stream, StreamIsPartial},
+    token::take_while,
     Parser as _,
 };
 
@@ -14,7 +15,6 @@ use crate::syntax::{self};
 
 use super::{
     adaptor::{ParseOptions, ParsedContext},
-    character,
     error::ParseError,
     expr, primitive,
 };
@@ -26,7 +26,14 @@ pub fn parse_price_db<'i>(
 ) -> impl Iterator<Item = Result<(ParsedContext<'i>, syntax::PriceDBEntry<'i>), ParseError>> + 'i {
     options.parse_repeated(
         price_db_entry::<_, ContextError>,
-        character::newlines,
+        repeat::<_, _, (), _, _>(
+            0..,
+            alt((
+                (';', till_line_ending, line_ending).void(),
+                // not using character::newlines to consume at least 1 token.
+                take_while(1.., b"\r\n").void(),
+            )),
+        ),
         input,
     )
 }
@@ -65,6 +72,7 @@ mod tests {
     use super::*;
 
     use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+    use indoc::indoc;
     use pretty_assertions::assert_eq;
     use pretty_decimal::PrettyDecimal;
     use rust_decimal_macros::dec;
@@ -72,6 +80,55 @@ mod tests {
     use crate::parse::testing::expect_parse_ok;
 
     use syntax::{expr::Amount, PriceDBEntry};
+
+    fn parse_price_db_into(input: &str) -> Vec<PriceDBEntry<'_>> {
+        let got: Result<Vec<_>, _> = parse_price_db(&ParseOptions::default(), input).collect();
+        match got {
+            Ok(xs) => xs.into_iter().map(|(_, entry)| entry).collect(),
+            Err(e) => panic!("failed to parse:\n{e}"),
+        }
+    }
+
+    #[test]
+    fn price_db_parses_with_comment() {
+        let input = indoc! {"
+            ; comment
+
+            P 2023/12/31 JRTOK 3,584 JPY
+            ; another comment
+            P 2026/02/01 CHF 200.07 JPY
+        "};
+
+        let got: Vec<_> = parse_price_db_into(input);
+
+        assert_eq!(
+            got,
+            vec![
+                PriceDBEntry {
+                    datetime: NaiveDateTime::new(
+                        NaiveDate::from_ymd_opt(2023, 12, 31).unwrap(),
+                        NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+                    ),
+                    target: Cow::Borrowed("JRTOK"),
+                    rate: Amount {
+                        value: PrettyDecimal::comma3dot(dec!(3584)),
+                        commodity: Cow::Borrowed("JPY")
+                    },
+                },
+                PriceDBEntry {
+                    datetime: NaiveDateTime::new(
+                        NaiveDate::from_ymd_opt(2026, 2, 1).unwrap(),
+                        NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+                    ),
+                    target: Cow::Borrowed("CHF"),
+                    rate: Amount {
+                        value: PrettyDecimal::unformatted(dec!(200.07)),
+                        commodity: Cow::Borrowed("JPY")
+                    },
+                }
+            ]
+        );
+    }
 
     #[test]
     fn price_db_parses_valid_with_date() {
