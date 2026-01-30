@@ -78,6 +78,44 @@ fn balance_in_jpy_up_to_date(
 }
 
 #[rstest]
+fn balance_in_chf_up_to_date_price_db(
+    #[base_dir = "../testdata/report"]
+    #[files("*.ledger")]
+    input: PathBuf,
+) {
+    let mut golden_path = input.clone();
+    let filename = golden_path.file_name().unwrap().to_owned();
+    assert!(golden_path.pop());
+    golden_path.push("golden");
+    golden_path.push(filename);
+    assert!(
+        golden_path.set_extension("golden.balance.in_chf_up_to_date_price_db.txt"),
+        "failed to set extension .ledger to input {}",
+        input.display()
+    );
+    log::info!("golden_path: {}", golden_path.display());
+    let golden = okane_golden::Golden::new(golden_path).unwrap();
+    let price_db_path = testing::TESTDATA_DIR.join("report/price_db.txt");
+
+    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+        .args([
+            "balance".as_ref(),
+            input.as_os_str(),
+            OsStr::new("-X"),
+            OsStr::new("CHF"),
+            OsStr::new("--price-db"),
+            price_db_path.as_os_str(),
+        ])
+        .assert()
+        .success();
+
+    let output = result.get_output();
+    std::io::stderr().write_all(&output.stderr).unwrap();
+    let stdout = std::str::from_utf8(&output.stdout).unwrap();
+    golden.assert(stdout);
+}
+
+#[rstest]
 fn balance_in_usd_historical(
     #[base_dir = "../testdata/report"]
     #[files("multi_commodity.ledger")]
