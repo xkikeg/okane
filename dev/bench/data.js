@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1769710233677,
+  "lastUpdate": 1769794414914,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Criterion.rs Benchmark": [
@@ -15029,6 +15029,174 @@ window.BENCHMARK_DATA = {
             "name": "query::balance/conversion-historical/middle_more_commodity_10y16a500t",
             "value": 34236531,
             "range": "± 164451",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "06a921d5f3faddbf408ec2ad55ef33fac8e3a639",
+          "message": "Renamed Amount::from_values into from_iter, and from_values to accept BTreeMap.\n\nThis might give further more internal structure of the Amount,\nsimilar to https://github.com/xkikeg/okane/pull/345,\nbut overall this might be good for performance.",
+          "timestamp": "2026-01-30T18:25:25+01:00",
+          "tree_id": "398b26cb993b6f05332d02990bf7e3bd789995dd",
+          "url": "https://github.com/xkikeg/okane/commit/06a921d5f3faddbf408ec2ad55ef33fac8e3a639"
+        },
+        "date": 1769794414398,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse plain",
+            "value": 24,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse comma",
+            "value": 25,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "to_string plain",
+            "value": 85,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "to_string comma",
+            "value": 82,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load/on-file/middle_10y16a500t",
+            "value": 140825716,
+            "range": "± 628222",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load/on-memory/small_5y10a200t",
+            "value": 16713014,
+            "range": "± 271162",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load/on-memory/middle_10y16a500t",
+            "value": 134046266,
+            "range": "± 1664040",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load/on-memory/middle_more_commodity_10y16a500t",
+            "value": 135779313,
+            "range": "± 1953903",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process/small_5y10a200t",
+            "value": 25004781,
+            "range": "± 211559",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process/middle_10y16a500t",
+            "value": 200131395,
+            "range": "± 1074547",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process/middle_more_commodity_10y16a500t",
+            "value": 211945411,
+            "range": "± 994529",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query-posting-one-account",
+            "value": 3087322,
+            "range": "± 10746",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/default/small_5y10a200t",
+            "value": 12,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/default/middle_10y16a500t",
+            "value": 12,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/default/middle_more_commodity_10y16a500t",
+            "value": 12,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/date-range/small_5y10a200t",
+            "value": 12453,
+            "range": "± 50",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/date-range/middle_10y16a500t",
+            "value": 1194278,
+            "range": "± 10633",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/date-range/middle_more_commodity_10y16a500t",
+            "value": 1326772,
+            "range": "± 31443",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/conversion-up-to-date/small_5y10a200t",
+            "value": 4838,
+            "range": "± 22",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/conversion-up-to-date/middle_10y16a500t",
+            "value": 6665,
+            "range": "± 46",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/conversion-up-to-date/middle_more_commodity_10y16a500t",
+            "value": 10875,
+            "range": "± 43",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/conversion-historical/small_5y10a200t",
+            "value": 4088260,
+            "range": "± 22380",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/conversion-historical/middle_10y16a500t",
+            "value": 33328152,
+            "range": "± 281872",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/conversion-historical/middle_more_commodity_10y16a500t",
+            "value": 35872458,
+            "range": "± 307834",
             "unit": "ns/iter"
           }
         ]
