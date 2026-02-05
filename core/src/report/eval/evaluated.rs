@@ -10,6 +10,7 @@ use crate::{
 use super::{error::EvalError, Amount, PostingAmount, SingleAmount};
 
 /// Represents any evaluated value.
+/// Currently this is number without unit, or amount with commodities.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Evaluated<'ctx> {
     Number(Decimal),
@@ -151,6 +152,7 @@ impl<'ctx> Evaluated<'ctx> {
     /// Operation with the following types supported.
     /// * number / number
     /// * commodities / number
+    /// * number / single-commodity (in this case, result is x/y commodity)
     pub fn check_div(self, rhs: Self) -> Result<Self, EvalError<'ctx>> {
         match (self, rhs) {
             (_, rhs) if rhs.is_zero() => Err(EvalError::DivideByZero),
@@ -167,7 +169,7 @@ impl<'ctx> Evaluated<'ctx> {
         }
     }
 
-    /// Returns display impl.
+    /// Returns [`Display`] implementation.
     pub fn as_display<'a>(&'a self, ctx: &'a ReportContext<'ctx>) -> impl Display + 'a
     where
         'a: 'ctx,
