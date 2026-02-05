@@ -1,4 +1,9 @@
-//! Evaluation logics of expr.
+//! Evaluation logics of expressions.
+//!
+//! This module provides several types.
+//! * [`Amount`] to represent general amount, which is commodity associted decimal amount.
+//! * [`SingleAmount`] to represent an amount with only one commodity.
+//! * [`Evaluated`] which is the result of syntax expression eval.
 
 mod amount;
 mod error;
@@ -15,8 +20,10 @@ pub use single_amount::SingleAmount;
 use super::context::ReportContext;
 use crate::syntax::expr;
 
-// Provides evaluation to syntax expressions.
+/// Provides syntax tree evaluation.
 pub(crate) trait Evaluable {
+    /// Visitor for AST.
+    /// Argument `evaluator` is a call operator to evaluate the given syntax amount to [`Evaluated`].
     fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError<'ctx>>>(
         &self,
         evaluator: &mut F,
@@ -30,7 +37,7 @@ pub(crate) trait Evaluable {
         self.eval_visit(&mut |amount| Ok(Evaluated::from_expr_amount_mut(ctx, amount)))
     }
 
-    /// Evaluate the self with immutable `ctx`, which raises error on unknown commoditieis.
+    /// Evaluate the self with immutable `ctx`, which raises error on unknown commodities.
     fn eval<'ctx>(&self, ctx: &ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
         self.eval_visit(&mut |amount| Evaluated::from_expr_amount(ctx, amount))
     }
