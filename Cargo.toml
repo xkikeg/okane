@@ -12,7 +12,7 @@ resolver = "2"
 version = "0.18.0"
 authors = ["kikeg"]
 edition = "2024"
-rust-version = "1.86.0"
+rust-version = "1.88.0"
 license = "MIT"
 repository = "https://github.com/xkikeg/okane"
 
