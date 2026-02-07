@@ -43,14 +43,13 @@ thiserror.workspace = true
 winnow.workspace = true
 
 [dev-dependencies]
-okane-golden = { version = "0.2.0", path = "../golden" }
-
 assert_cmd = "2.1"
 # assert_fs = "1.0"
 assert_matches = "1.5"
 ctor.workspace = true
 indoc.workspace = true
 maplit.workspace = true
+okane-golden.workspace = true
 pretty_assertions.workspace = true
 rstest.workspace = true
 rust_decimal_macros.workspace = true

@@ -55,9 +55,6 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
       - uses: Swatinem/rust-cache@v2
       - run: cargo llvm-cov clean --workspace
-      - name: Collect coverage on okane-golden
-        run: |
-          cargo llvm-cov --no-report --all-features -p okane-golden
       - name: Collect coverage on okane-core
         run: |
           cargo llvm-cov --no-report --all-features -p okane-core
