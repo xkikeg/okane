@@ -19,7 +19,3 @@ component_management:
       name: CLI
       paths:
         - cli/**
-    - component_id: crate_okane_golden
-      name: okane-golden
-      paths:
-        - golden/**
