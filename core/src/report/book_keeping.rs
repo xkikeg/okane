@@ -182,7 +182,9 @@ where
         })
     })?;
     if let Some(price_db_path) = options.price_db_path.as_deref() {
-        accum.price_repos.load_price_db(ctx, price_db_path)?;
+        accum
+            .price_repos
+            .load_price_db(ctx, loader.borrow().filesystem(), price_db_path)?;
     }
     Ok(Ledger {
         transactions: accum.txns,
