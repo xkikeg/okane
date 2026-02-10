@@ -232,6 +232,36 @@ fn query_balance(c: &mut Criterion) {
             },
         );
     }
+
+    for params in InputParams::params_from_env() {
+        let input = FakeFileSink::new_example(Path::new("report_bench"), params).unwrap();
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let opts = report::ProcessOptions {
+            price_db_path: Some(input.pricedbpath().to_owned()),
+            ..report::ProcessOptions::default()
+        };
+        let mut ledger = report::process(&mut ctx, input.new_loader(), &opts)
+            .expect("report::process must succeed");
+        let chf = ctx.commodity("CHF").unwrap();
+
+        let query = report::query::BalanceQuery {
+            date_range: report::query::DateRange::default(),
+            conversion: Some(report::query::Conversion {
+                strategy: report::query::ConversionStrategy::Historical,
+                target: chf,
+            }),
+        };
+        group.bench_with_input(
+            BenchmarkId::new("conversion-historical-pricedb", params),
+            &params,
+            |b, _params| {
+                b.iter_with_large_drop(|| {
+                    black_box(ledger.balance(&ctx, &query).unwrap());
+                })
+            },
+        );
+    }
     group.finish();
 }
 

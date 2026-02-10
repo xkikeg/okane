@@ -10,14 +10,16 @@ use std::{
 
 use okane_core::load;
 
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate, Weekday};
 use pretty_decimal::PrettyDecimal;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 /// Metadata containing the reference to the generated input.
 pub struct ExampleInput<T: FileSink> {
     rootdir: PathBuf,
     rootfile: PathBuf,
+    pricedbfile: PathBuf,
     cleanup: bool,
     sink: T,
     params: InputParams,
@@ -43,7 +45,21 @@ pub enum ExampleInputError {
 }
 
 const CLEANUP_KEY: &str = "OKANE_BENCH_CLEANUP";
+const CREATE_KEY: &str = "OKANE_BENCH_CREATE";
 const BENCH_TARGET_KEY: &str = "OKANE_BENCH_TARGET";
+
+fn bool_from_env(env_key: &str) -> bool {
+    !std::env::var(env_key)
+        .unwrap_or_else(|err| match err {
+            std::env::VarError::NotPresent => "".to_string(),
+            std::env::VarError::NotUnicode(_) => {
+                log::warn!("{env_key} was invalid unicode: {err}",);
+                // invalid unicode = not empty.
+                "1".to_string()
+            }
+        })
+        .is_empty()
+}
 
 const YEAR_BEGIN: i32 = 2015;
 const NUM_THREADS: usize = 2;
@@ -150,22 +166,16 @@ impl<T: FileSink + Send> ExampleInput<T> {
     /// * Always recreate the input.
     /// * Clean up the created input.
     pub fn new(subdir: &Path, params: InputParams) -> Result<Self, ExampleInputError> {
-        let cleanup = !std::env::var(CLEANUP_KEY)
-            .unwrap_or_else(|err| match err {
-                std::env::VarError::NotPresent => "".to_string(),
-                std::env::VarError::NotUnicode(_) => {
-                    log::warn!("CLENAUP_KEY was invalid unicode: {}", err);
-                    // invalid unicode = not empty.
-                    "1".to_string()
-                }
-            })
-            .is_empty();
+        let cleanup = bool_from_env(CLEANUP_KEY);
+        let create = bool_from_env(CREATE_KEY);
         let rootdir = T::rootdir().join(subdir);
         let rootfile = rootdir.join("root.ledger");
-        if !cleanup && T::shortcut(&rootfile) {
+        let pricedbfile = rootdir.join("price.db");
+        if !create && !cleanup && T::shortcut(&rootfile) && T::shortcut(&pricedbfile) {
             return Ok(Self {
                 rootdir,
                 rootfile,
+                pricedbfile,
                 cleanup,
                 sink: T::new(),
                 params,
@@ -205,13 +215,14 @@ impl<T: FileSink + Send> ExampleInput<T> {
             }));
         }
         let mut sink = T::new();
+        prepare_root_file(&mut sink, &rootfile, 0..params.num_sub_files)?;
+        prepare_price_db_file(&mut sink, &pricedbfile, YEAR_BEGIN, params.num_years)?;
         for _ in 0..tasks.len() {
             let another = rx
                 .recv_timeout(std::time::Duration::from_secs(150))
                 .expect("Can't wait 150 seconds deadline on the recv task")?;
             sink.merge(another);
         }
-        prepare_root_file(&mut sink, &rootfile, 0..params.num_sub_files)?;
         for jh in tasks.into_iter() {
             jh.join().expect("thread join must not fail");
         }
@@ -221,6 +232,7 @@ impl<T: FileSink + Send> ExampleInput<T> {
         Ok(ExampleInput {
             rootdir,
             rootfile,
+            pricedbfile,
             cleanup,
             sink,
             params,
@@ -233,6 +245,10 @@ impl<T: FileSink + Send> ExampleInput<T> {
 
     pub fn new_loader(&self) -> load::Loader<T::FileSystem> {
         load::Loader::new(self.rootfile.clone(), self.sink.clone_as_filesystem())
+    }
+
+    pub fn pricedbpath(&self) -> &Path {
+        &self.pricedbfile
     }
 
     pub fn num_transactions(&self) -> u64 {
@@ -386,6 +402,55 @@ impl FileSink for FakeFileSink {
     fn cleanup(&self, _rootdir: &Path) {}
 }
 
+fn prepare_price_db_file<T: FileSink>(
+    sink: &mut T,
+    pricedbfile: &Path,
+    year_begin: i32,
+    num_years: i32,
+) -> Result<(), std::io::Error> {
+    let mut w = sink.writer(pricedbfile)?;
+    let begin = NaiveDate::from_ymd_opt(year_begin, 1, 1).unwrap();
+    let end = NaiveDate::from_ymd_opt(year_begin + num_years, 1, 1).unwrap();
+    for d in begin.iter_days() {
+        if d >= end {
+            break;
+        }
+        if d.weekday() == Weekday::Sat || d.weekday() == Weekday::Sun {
+            continue;
+        }
+        writeln!(
+            w,
+            "P {} {} {} {}",
+            d.format("%Y/%m/%d"),
+            "USD",
+            usdjpy(d),
+            "JPY"
+        )?;
+        writeln!(
+            w,
+            "P {} {} {} {}",
+            d.format("%Y/%m/%d"),
+            "CHF",
+            chfjpy(d),
+            "JPY"
+        )?;
+    }
+    w.flush()?;
+    Ok(())
+}
+
+fn usdjpy(date: NaiveDate) -> Decimal {
+    let rand = (date.year() * 5 + date.month() as i32) % 97
+        + ((date.month() * 7 + date.day() * 13) as i32) % 13;
+    dec!(120) + Decimal::from(rand)
+}
+
+fn chfjpy(date: NaiveDate) -> Decimal {
+    let rand = (date.year() * 5 + date.month() as i32) % 97
+        + ((date.month() * 7 + date.day() * 13) as i32) % 13;
+    dec!(160) + Decimal::from(rand)
+}
+
 fn prepare_root_file<T: FileSink>(
     sink: &mut T,
     rootfile: &Path,
@@ -438,17 +503,19 @@ fn prepare_leaf_file<T: FileSink>(
     year: Year,
     mut total: i64,
 ) -> Result<i64, std::io::Error> {
+    let initial_week = NaiveDate::from_ymd_opt(YEAR_BEGIN, 1, 7).unwrap();
+    let multi_commodity =
+        |date: NaiveDate| date.weekday().number_from_monday() <= 3 || date < initial_week;
     let mut w = sink.writer(target)?;
     for i in 0..params.num_transactions_per_file {
         let ordinal = (i * 365 / params.num_transactions_per_file + 1) as u32;
-        let date = NaiveDate::from_yo_opt(year.0, ordinal)
-            .expect("must be a valid date")
-            .format("%Y/%m/%d");
+        let date = NaiveDate::from_yo_opt(year.0, ordinal).expect("must be a valid date");
+        let date_fmt = date.format("%Y/%m/%d");
         let payee = payee(dir, year, i);
         let pseudo = ((dir as i32) * 31 + year.0 * 17 + (i as i32) * 7) % 13;
         let (other_account, other_amount, amount): (Cow<str>, _, _) = match pseudo {
             0..=10 => {
-                if pseudo >= 9 && params.more_commodity {
+                if pseudo >= 9 && params.more_commodity && date.weekday() == Weekday::Mon {
                     let pseudo2 = ((dir as i32) * 31 + year.0 * 17 + (i as i32) * 7) % 26;
                     let pseudo3 = ((dir as i32) * 31 + year.0 * 17 + (i as i32) * 7) / 26 % 26;
                     let commodity = format!(
@@ -471,7 +538,8 @@ fn prepare_leaf_file<T: FileSink>(
                     )
                 }
             }
-            11 => {
+            // limits the currency conversion events to Mon/Tue/Wed.
+            11 if multi_commodity(date) => {
                 total += 400000;
                 (
                     "Income:Salary".into(),
@@ -482,7 +550,19 @@ fn prepare_leaf_file<T: FileSink>(
                     Amount(PrettyDecimal::comma3dot(dec!(400000)), "JPY".into()),
                 )
             }
-            12 => {
+            11 => {
+                total += 400000;
+                (
+                    "Income:Salary".into(),
+                    Amount(
+                        PrettyDecimal::comma3dot(dec!(-400000)),
+                        Cow::Borrowed("JPY"),
+                    ),
+                    Amount(PrettyDecimal::comma3dot(dec!(400000)), "JPY".into()),
+                )
+            }
+            // limits the currency conversion frequency to Mon/Tue/Wed.
+            12 if multi_commodity(date) => {
                 total -= 14000;
                 (
                     "Assets:Account99".into(),
@@ -490,9 +570,17 @@ fn prepare_leaf_file<T: FileSink>(
                     Amount(PrettyDecimal::comma3dot(dec!(-14000)), "JPY".into()),
                 )
             }
+            12 => {
+                total -= 14000;
+                (
+                    "Assets:Account99".into(),
+                    Amount(PrettyDecimal::comma3dot(dec!(14000)), "JPY".into()),
+                    Amount(PrettyDecimal::comma3dot(dec!(-14000)), "JPY".into()),
+                )
+            }
             _ => unreachable!("this can't happen"),
         };
-        writeln!(w, "{date} {payee}",)?;
+        writeln!(w, "{date_fmt} {payee}",)?;
         writeln!(w, "  Assets:Account{dir:02}     {amount} = {total} JPY",)?;
         writeln!(w, "  {other_account}     {other_amount}",)?;
         writeln!(w)?;
