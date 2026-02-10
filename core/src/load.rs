@@ -67,6 +67,11 @@ impl<F: FileSystem> Loader<F> {
         &self.error_style
     }
 
+    /// Returns a `filesystem` reference.
+    pub(crate) fn filesystem(&self) -> &F {
+        &self.filesystem
+    }
+
     /// Loads [syntax::LedgerEntry] and invoke callback on every entry,
     /// recursively resolving `include` directives.
     pub fn load<T, E, Deco>(&self, mut callback: T) -> Result<(), E>

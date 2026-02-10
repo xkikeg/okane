@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use chrono::{NaiveDate, TimeDelta};
 use rust_decimal::Decimal;
 
+use crate::load;
 use crate::parse;
 use crate::report::commodity::{CommodityMap, CommodityTag, OwnedCommodity};
 
@@ -103,15 +104,17 @@ impl<'ctx> PriceRepositoryBuilder<'ctx> {
     }
 
     /// Loads PriceDB information from the given file.
-    pub fn load_price_db(
+    pub fn load_price_db<F: load::FileSystem>(
         &mut self,
         ctx: &mut ReportContext<'ctx>,
+        filesystem: &F,
         path: &Path,
     ) -> Result<(), LoadError> {
         // Even though price db can be up to a few megabytes,
         // still it's much easier to load everything into memory.
-        let content =
-            std::fs::read_to_string(path).map_err(|e| LoadError::IO(path.to_owned(), e))?;
+        let content = filesystem
+            .file_content_utf8(path)
+            .map_err(|e| LoadError::IO(path.to_owned(), e))?;
         for entry in parse::price::parse_price_db(&parse::ParseOptions::default(), &content) {
             let (_, entry) = entry.map_err(|e| LoadError::Parse(path.to_owned(), e))?;
             // we cannot skip commodities which doesn't appear in Ledger source,
@@ -547,7 +550,9 @@ mod tests {
             },
         );
 
-        builder.load_price_db(&mut ctx, &price_db).unwrap();
+        builder
+            .load_price_db(&mut ctx, &load::ProdFileSystem, &price_db)
+            .unwrap();
 
         let is_in_scope = |event: &PriceEvent<'_>| {
             event.date == NaiveDate::from_ymd_opt(2024, 1, 31).unwrap()
