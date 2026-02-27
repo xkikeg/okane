@@ -1,6 +1,6 @@
 //! Provides [PriceRepository], which can compute the commodity (currency) conversion.
 
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BTreeMap, BinaryHeap, HashMap};
 use std::path::{Path, PathBuf};
 
 use chrono::{NaiveDate, TimeDelta};
@@ -162,8 +162,8 @@ impl<'ctx> PriceRepositoryBuilder<'ctx> {
         ret
     }
 
-    pub fn build(self) -> PriceRepository<'ctx> {
-        PriceRepository::new(self.build_naive())
+    pub fn build(self, ctx: &ReportContext<'ctx>) -> PriceRepository<'ctx> {
+        PriceRepository::new(self.build_naive(), ctx)
     }
 
     fn build_naive(mut self) -> NaivePriceRepository<'ctx> {
@@ -203,14 +203,14 @@ pub struct PriceRepository<'ctx> {
     inner: NaivePriceRepository<'ctx>,
     // BTreeMap could be used if cursor support is ready.
     // Then, we can avoid computing rates over and over if no rate update happens.
-    cache: HashMap<(CommodityTag<'ctx>, NaiveDate), CommodityMap<WithDistance<Decimal>>>,
+    cache: CommodityMap<BTreeMap<NaiveDate, CommodityMap<WithDistance<Decimal>>>>,
 }
 
 impl<'ctx> PriceRepository<'ctx> {
-    fn new(inner: NaivePriceRepository<'ctx>) -> Self {
+    fn new(inner: NaivePriceRepository<'ctx>, ctx: &ReportContext<'ctx>) -> Self {
         Self {
             inner,
-            cache: HashMap::new(),
+            cache: CommodityMap::with_capacity(ctx.commodities.len()),
         }
     }
 
@@ -229,7 +229,9 @@ impl<'ctx> PriceRepository<'ctx> {
         }
         let rate = self
             .cache
-            .entry((commodity_with, date))
+            .get_mut(commodity_with)
+            .get_or_insert_default()
+            .entry(date)
             .or_insert_with(|| self.inner.compute_price_table(ctx, commodity_with, date))
             .get(value.commodity);
         match rate {
