@@ -169,7 +169,7 @@ impl<'a> Fragment<'a> {
             }
         };
         if self.account.is_none() {
-            log::warn!("account not set @ {}", position());
+            log::warn!("account not set for payee {payee} @ {}", position());
         }
         let mut txn = single_entry::Txn::new(date, payee, amount);
         txn.code_option(self.code.map(|x| x.into()))
