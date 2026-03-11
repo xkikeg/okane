@@ -3,8 +3,8 @@
 use winnow::{
     ascii::space0,
     combinator::{
-        alt, delimited, dispatch, opt, peek, permutation, preceded, separated_foldl1, terminated,
-        trace,
+        alt, delimited, dispatch, opt, peek, preceded, separated_foldl1, terminated, trace,
+        unordered_seq,
     },
     error::{FromExternalError, ParserError},
     stream::{AsChar, Stream, StreamIsPartial},
@@ -135,7 +135,7 @@ where
         "expr::unary_amount",
         (
             opt(one_of('-')),
-            permutation((
+            unordered_seq!((
                 terminated(primitive::pretty_decimal, space0),
                 terminated(primitive::commodity, space0),
             )),
