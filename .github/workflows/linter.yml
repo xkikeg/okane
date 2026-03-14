@@ -16,19 +16,19 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
       - name: check-clippy
-        uses: auguwu/clippy-action@1.4.0
+        uses: auguwu/clippy-action@1.5.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           check-args: --all-features --all-targets --workspace
   cargo-deny:
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: EmbarkStudios/cargo-deny-action@v2
