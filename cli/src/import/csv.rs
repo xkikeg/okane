@@ -161,11 +161,10 @@ fn extract_transaction(
         .map(String::from)
         .or(resolver.extract(FieldKey::Code, r)?.map(Cow::into_owned));
     txn.code_option(code);
-    if let Some(note) = resolver.extract(FieldKey::Note, r)? {
-        if !note.trim().is_empty() {
+    if let Some(note) = resolver.extract(FieldKey::Note, r)?
+        && !note.trim().is_empty() {
             txn.add_comment(note.into_owned());
         }
-    }
     if let Some(b) = balance {
         txn.balance(OwnedAmount {
             value: b,

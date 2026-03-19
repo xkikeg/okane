@@ -32,8 +32,8 @@ where
     )?;
     let mut res = Vec::new();
     for (si, stmt) in doc.bank_to_customer.statements.into_iter().enumerate() {
-        if let Some(opening_balance) = find_balance(&stmt, xmlnode::BalanceCode::Opening) {
-            if let Some(first) = stmt.entries.first() {
+        if let Some(opening_balance) = find_balance(&stmt, xmlnode::BalanceCode::Opening)
+            && let Some(first) = stmt.entries.first() {
                 let mut txn = single_entry::Txn::new(
                     first.guess_value_date(),
                     "Initial Balance",
@@ -46,7 +46,6 @@ where
                 txn.balance(opening_balance);
                 res.push(txn);
             }
-        }
         let closing_balance = find_balance(&stmt, xmlnode::BalanceCode::Closing);
         let entries = match &config.format.row_order.unwrap_or_default() {
             config::RowOrder::OldToNew => Either::Left(stmt.entries.iter()),
@@ -117,11 +116,10 @@ where
                 res.push(txn);
             }
         }
-        if let Some(last_txn) = res.last_mut() {
-            if let Some(b) = closing_balance {
+        if let Some(last_txn) = res.last_mut()
+            && let Some(b) = closing_balance {
                 last_txn.balance(b);
             }
-        }
     }
     Ok(res)
 }

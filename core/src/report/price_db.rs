@@ -300,8 +300,8 @@ impl<'ctx> NaivePriceRepository<'ctx> {
         while let Some(curr) = queue.pop() {
             log::debug!("curr: {:?}", curr);
             let WithDistance(curr_dist, (prev, prev_rate)) = curr;
-            if let Some(WithDistance(prev_dist, _)) = distances.get(prev) {
-                if *prev_dist < curr_dist {
+            if let Some(WithDistance(prev_dist, _)) = distances.get(prev)
+                && *prev_dist < curr_dist {
                     log::debug!(
                         "no need to update, prev_dist {:?} is smaller than curr_dist {:?}",
                         prev_dist,
@@ -309,7 +309,6 @@ impl<'ctx> NaivePriceRepository<'ctx> {
                     );
                     continue;
                 }
-            }
             for (j, Entry(source, rates)) in match self.records.get(&prev) {
                 None => continue,
                 Some(x) => x,
