@@ -239,7 +239,6 @@ fn query_balance(c: &mut Criterion) {
         let mut ctx = report::ReportContext::new(&arena);
         let opts = report::ProcessOptions {
             price_db_path: Some(input.pricedbpath().to_owned()),
-            ..report::ProcessOptions::default()
         };
         let mut ledger = report::process(&mut ctx, input.new_loader(), &opts)
             .expect("report::process must succeed");

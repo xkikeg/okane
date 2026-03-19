@@ -420,19 +420,15 @@ fn prepare_price_db_file<T: FileSink>(
         }
         writeln!(
             w,
-            "P {} {} {} {}",
+            "P {} USD {} JPY",
             d.format("%Y/%m/%d"),
-            "USD",
-            usdjpy(d),
-            "JPY"
+            usdjpy(d)
         )?;
         writeln!(
             w,
-            "P {} {} {} {}",
+            "P {} CHF {} JPY",
             d.format("%Y/%m/%d"),
-            "CHF",
-            chfjpy(d),
-            "JPY"
+            chfjpy(d)
         )?;
     }
     w.flush()?;
