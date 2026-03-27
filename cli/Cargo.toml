@@ -18,7 +18,7 @@ okane-core = { version = "0.18.0", path = "../core" }
 # anstream = "0.6"
 bumpalo.workspace = true
 chrono.workspace = true
-clap = { version = "4.5", features = ["derive", "unicode"] }
+clap = { version = "4.6", features = ["derive", "unicode"] }
 csv = "1"
 either = "1"
 encoding_rs = "0.8.35"
@@ -34,7 +34,7 @@ regex.workspace = true
 rstest_reuse = "0.7.0"
 rust_decimal.workspace = true
 serde = { version = "1.0", features = [ "derive" ] }
-serde_with = { version = "3.17", features = [ "chrono" ] }
+serde_with = { version = "3.18", features = [ "chrono" ] }
 serde_yaml = "0.9.34"
 shadow-rs = { version = "1.7.1", default-features = false }
 soft-canonicalize = { version = "0.5.4", features = [ "dunce" ] }

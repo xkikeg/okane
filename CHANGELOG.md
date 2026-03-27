@@ -8,6 +8,14 @@
 
 ### Fixed
 
+## [0.19.0] - 2026-03-28
+
+### Fixed
+
+* CLI: Prints original rate ticker in reverse order (https://github.com/xkikeg/okane/pull/366).
+* CLI: Prints payee on `import` warning log properly (https://github.com/xkikeg/okane/pull/359).
+* Core: Fixed to allow comment in price DB (https://github.com/xkikeg/okane/pull/348).
+
 ## [0.18.0] - 2026-01-30
 
 ### Added
