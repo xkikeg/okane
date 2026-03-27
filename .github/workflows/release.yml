@@ -1,0 +1,73 @@
+name: Release
+
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-release:
+    name: Build for ${{ matrix.target }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - build: linux-x86_64-musl
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - build: linux-aarch64-musl
+            os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+          - build: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - build: macos-x86_64
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - build: macos-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      # Cross-compilation helper for Linux
+      - name: Install packages (Ubuntu)
+      if: startsWith(matrix.os, 'ubuntu')
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends xz-utils liblz4-tool musl-tools
+      - name: Build Binary
+        run: cargo build --release --target ${{ matrix.target }} --verbose
+      - name: Package Artifacts
+        shell: bash
+        run: |
+          staging="okane-${{ github.event.release.tag_name }}-${{ matrix.target }}"
+          outdir="target/${{ matrix.target }}/release"
+          cp README.md README.ja.md LICENSE CHANGELOG.md "$staging/"
+          if [[ "${{ matrix.os }}" =~ windows.* ]]; then
+            cp "$outdir/okane.exe" "$staging/"
+            cd "$staging"
+            7z a "../$staging.zip" .
+            echo "ASSET=$staging.zip" >> $GITHUB_ENV
+          else
+            cp "$outdir/okane" "$staging/"
+            tar czf "$staging.tar.gz" -C "$staging" .
+            echo "ASSET=$staging.tar.gz" >> $GITHUB_ENV
+          fi
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ${{ env.ASSET }}
+          asset_name: ${{ env.ASSET }}
+          asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
