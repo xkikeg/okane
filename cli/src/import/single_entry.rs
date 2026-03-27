@@ -357,8 +357,8 @@ impl Txn {
                 value: syntax::MetadataValue::Text(Cow::Owned(format!(
                     "{} {}/{}",
                     rate.original.value,
-                    opts.commodity(rate.original.commodity),
                     opts.commodity(rate.target),
+                    opts.commodity(rate.original.commodity),
                 ))),
             });
         }
