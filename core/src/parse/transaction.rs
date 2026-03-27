@@ -3,12 +3,12 @@
 use std::borrow::Cow;
 
 use winnow::{
+    ModalResult, Parser,
     ascii::{space0, space1},
     combinator::{cond, cut_err, opt, preceded, repeat, terminated, trace},
     error::StrContext,
     stream::{AsChar, Stream, StreamIsPartial},
     token::{one_of, take_while},
-    ModalResult, Parser,
 };
 
 use crate::{

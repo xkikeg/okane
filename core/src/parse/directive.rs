@@ -5,12 +5,12 @@ use super::{character::line_ending_or_eof, expr, metadata};
 use std::borrow::Cow;
 
 use winnow::{
+    Parser,
     ascii::{space0, space1, till_line_ending},
     combinator::{alt, delimited, opt, preceded, repeat, terminated, trace},
     error::{FromExternalError, ParserError},
     stream::{AsChar, Stream, StreamIsPartial},
     token::{literal, take_while},
-    Parser,
 };
 
 /// Returns true if the given character is comment prefix.

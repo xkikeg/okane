@@ -5,7 +5,7 @@ use std::{
 
 use rust_decimal::Decimal;
 
-use crate::report::{commodity::CommodityTag, ReportContext};
+use crate::report::{ReportContext, commodity::CommodityTag};
 
 use super::error::EvalError;
 

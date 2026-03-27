@@ -20,11 +20,11 @@ pub use adaptor::{ParseOptions, ParsedContext, ParsedSpan};
 pub use error::ParseError;
 
 use winnow::{
+    ModalResult, Parser,
     combinator::{alt, cut_err, dispatch, fail, peek, preceded, trace},
     error::StrContext,
     stream::{Stream, StreamIsPartial},
     token::{any, literal},
-    ModalResult, Parser,
 };
 
 use crate::syntax::{self, decoration::Decoration};

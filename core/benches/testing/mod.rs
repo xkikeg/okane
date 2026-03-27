@@ -418,18 +418,8 @@ fn prepare_price_db_file<T: FileSink>(
         if d.weekday() == Weekday::Sat || d.weekday() == Weekday::Sun {
             continue;
         }
-        writeln!(
-            w,
-            "P {} USD {} JPY",
-            d.format("%Y/%m/%d"),
-            usdjpy(d)
-        )?;
-        writeln!(
-            w,
-            "P {} CHF {} JPY",
-            d.format("%Y/%m/%d"),
-            chfjpy(d)
-        )?;
+        writeln!(w, "P {} USD {} JPY", d.format("%Y/%m/%d"), usdjpy(d))?;
+        writeln!(w, "P {} CHF {} JPY", d.format("%Y/%m/%d"), chfjpy(d))?;
     }
     w.flush()?;
     Ok(())

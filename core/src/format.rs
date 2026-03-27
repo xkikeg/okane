@@ -1,7 +1,7 @@
 //! format functionalities of Ledger format files.
 
 use crate::{
-    parse::{parse_ledger, ParseError, ParseOptions},
+    parse::{ParseError, ParseOptions, parse_ledger},
     syntax::{self, display::DisplayContext},
 };
 

@@ -2,7 +2,7 @@
 
 use std::{fmt::Debug, marker::PhantomData, ops::Range};
 
-use winnow::{error::ContextError, LocatingSlice, Parser};
+use winnow::{LocatingSlice, Parser, error::ContextError};
 
 use crate::syntax;
 

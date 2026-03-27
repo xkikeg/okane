@@ -5,9 +5,9 @@ use std::{
 
 use annotate_snippets::{AnnotationKind, Group, Level, Renderer, Snippet};
 use winnow::{
+    LocatingSlice,
     error::{ContextError, StrContext},
     stream::{Location, Offset, Stream},
-    LocatingSlice,
 };
 
 #[derive(Debug, thiserror::Error)]

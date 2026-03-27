@@ -1,5 +1,5 @@
 use std::{
-    collections::{btree_map, BTreeMap},
+    collections::{BTreeMap, btree_map},
     fmt::Display,
     iter::FusedIterator,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
@@ -12,7 +12,7 @@ use crate::report::{
     context::ReportContext,
 };
 
-use super::{error::EvalError, PostingAmount, SingleAmount};
+use super::{PostingAmount, SingleAmount, error::EvalError};
 
 /// Amount with multiple commodities, or simple zero.
 #[derive(Debug, Default, PartialEq, Eq, Clone)]

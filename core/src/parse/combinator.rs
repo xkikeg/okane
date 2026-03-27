@@ -1,10 +1,10 @@
 //! Defines abstracted utility to work with other parsers.
 
 use winnow::{
+    Parser,
     combinator::{opt, peek},
     error::ParserError,
     stream::Stream,
-    Parser,
 };
 
 /// Calls first parser if the condition is met, otherwise the second parser.
