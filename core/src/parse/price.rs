@@ -3,12 +3,12 @@
 use std::borrow::Cow;
 
 use winnow::{
+    Parser as _,
     ascii::{line_ending, space1, till_line_ending},
     combinator::{alt, repeat, seq, trace},
     error::{ContextError, FromExternalError, ParserError},
     stream::{AsChar, Stream, StreamIsPartial},
     token::take_while,
-    Parser as _,
 };
 
 use crate::syntax::{self};
@@ -79,7 +79,7 @@ mod tests {
 
     use crate::parse::testing::expect_parse_ok;
 
-    use syntax::{expr::Amount, PriceDBEntry};
+    use syntax::{PriceDBEntry, expr::Amount};
 
     fn parse_price_db_into(input: &str) -> Vec<PriceDBEntry<'_>> {
         let got: Result<Vec<_>, _> = parse_price_db(&ParseOptions::default(), input).collect();

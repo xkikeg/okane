@@ -1,6 +1,7 @@
 //! Defines parsers related to value expression.
 
 use winnow::{
+    Parser,
     ascii::space0,
     combinator::{
         alt, delimited, dispatch, opt, peek, preceded, separated_foldl1, terminated, trace,
@@ -9,7 +10,6 @@ use winnow::{
     error::{FromExternalError, ParserError},
     stream::{AsChar, Stream, StreamIsPartial},
     token::{any, one_of},
-    Parser,
 };
 
 use crate::syntax::expr;

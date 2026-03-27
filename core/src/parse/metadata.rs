@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 
 use winnow::{
+    Parser,
     ascii::{line_ending, space0, space1, till_line_ending},
     combinator::{
         alt, delimited, dispatch, opt, peek, preceded, repeat, separated, terminated, trace,
@@ -10,7 +11,6 @@ use winnow::{
     error::ParserError,
     stream::{AsChar, Stream, StreamIsPartial},
     token::{any, literal, one_of, take_till},
-    Parser,
 };
 
 use crate::parse::character;

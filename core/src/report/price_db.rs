@@ -301,14 +301,15 @@ impl<'ctx> NaivePriceRepository<'ctx> {
             log::debug!("curr: {:?}", curr);
             let WithDistance(curr_dist, (prev, prev_rate)) = curr;
             if let Some(WithDistance(prev_dist, _)) = distances.get(prev)
-                && *prev_dist < curr_dist {
-                    log::debug!(
-                        "no need to update, prev_dist {:?} is smaller than curr_dist {:?}",
-                        prev_dist,
-                        curr_dist
-                    );
-                    continue;
-                }
+                && *prev_dist < curr_dist
+            {
+                log::debug!(
+                    "no need to update, prev_dist {:?} is smaller than curr_dist {:?}",
+                    prev_dist,
+                    curr_dist
+                );
+                continue;
+            }
             for (j, Entry(source, rates)) in match self.records.get(&prev) {
                 None => continue,
                 Some(x) => x,
@@ -560,9 +561,10 @@ mod tests {
         };
         let got: Vec<_> = builder.iter_events().collect();
         assert_eq!(got.len(), 17 * 2);
-        assert!(got
-            .iter()
-            .all(|(source, _)| *source == PriceSource::PriceDB));
+        assert!(
+            got.iter()
+                .all(|(source, _)| *source == PriceSource::PriceDB)
+        );
         let mut filtered: Vec<_> = got
             .into_iter()
             .map(|(_, event)| event)

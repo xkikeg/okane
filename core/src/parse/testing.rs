@@ -1,7 +1,7 @@
 //! Utility only meant for the tests.
 
 use winnow::{
-    error::ContextError, stream::Stream, token::take_while, LocatingSlice, ModalParser, Parser,
+    LocatingSlice, ModalParser, Parser, error::ContextError, stream::Stream, token::take_while,
 };
 
 /// Run the given `parser` with the `input`, and returns a tuple of reamining input and output.

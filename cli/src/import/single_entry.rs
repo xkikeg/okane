@@ -350,17 +350,18 @@ impl Txn {
             .map(|x| syntax::Metadata::Comment(Cow::Borrowed(x)))
             .collect();
         if let Some(rate) = &rate
-            && !rate.spread.value.is_zero() {
-                metadata.push(syntax::Metadata::KeyValueTag {
-                    key: Cow::Borrowed("original_rate"),
-                    value: syntax::MetadataValue::Text(Cow::Owned(format!(
-                        "{} {}/{}",
-                        rate.original.value,
-                        opts.commodity(rate.original.commodity),
-                        opts.commodity(rate.target),
-                    ))),
-                });
-            }
+            && !rate.spread.value.is_zero()
+        {
+            metadata.push(syntax::Metadata::KeyValueTag {
+                key: Cow::Borrowed("original_rate"),
+                value: syntax::MetadataValue::Text(Cow::Owned(format!(
+                    "{} {}/{}",
+                    rate.original.value,
+                    opts.commodity(rate.original.commodity),
+                    opts.commodity(rate.target),
+                ))),
+            });
+        }
         Ok(syntax::Transaction {
             effective_date: self.effective_date,
             clear_state: syntax::ClearState::Cleared,

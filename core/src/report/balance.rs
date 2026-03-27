@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use crate::report::eval::EvalError;
 
 use super::{
+    ReportContext,
     context::Account,
     eval::{Amount, OwnedEvalError, PostingAmount},
-    ReportContext,
 };
 
 /// Error related to [Balance] operations.

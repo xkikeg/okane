@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 
 use winnow::{
+    Parser,
     ascii::space0,
     combinator::{
         alt, cond, delimited, eof, fail, opt, peek, preceded, repeat_till, terminated, trace,
@@ -10,7 +11,6 @@ use winnow::{
     error::{AddContext, FromExternalError, ParserError, StrContext},
     stream::{AsChar, Stream, StreamIsPartial},
     token::{literal, one_of, take_till},
-    Parser,
 };
 
 use crate::{
@@ -179,7 +179,7 @@ where
             Some('{') => {
                 return fail
                     .context(StrContext::Label("lot price duplicated"))
-                    .parse_next(input)
+                    .parse_next(input);
             }
             Some('[') if lot.date.is_none() => {
                 let date = delimited(
@@ -193,7 +193,7 @@ where
             Some('[') => {
                 return fail
                     .context(StrContext::Label("lot date duplicated"))
-                    .parse_next(input)
+                    .parse_next(input);
             }
             Some('(') if lot.note.is_none() => {
                 let note = paren(take_till(1.., ['(', ')', '@'])).parse_next(input)?;
@@ -202,7 +202,7 @@ where
             Some('(') => {
                 return fail
                     .context(StrContext::Label("lot note duplicated"))
-                    .parse_next(input)
+                    .parse_next(input);
             }
             Some(c) => unreachable!("unexpected lot opening {}", c),
         }
@@ -277,7 +277,7 @@ mod tests {
     use pretty_decimal::PrettyDecimal;
     use rust_decimal_macros::dec;
     use syntax::plain;
-    use winnow::{error::ContextError, LocatingSlice};
+    use winnow::{LocatingSlice, error::ContextError};
 
     use crate::{
         parse::testing::expect_parse_ok,

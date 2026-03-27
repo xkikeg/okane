@@ -3,12 +3,12 @@
 use chrono::NaiveDate;
 use pretty_decimal::{self, PrettyDecimal};
 use winnow::{
+    Parser,
     ascii::digit1,
     combinator::{alt, trace},
     error::{FromExternalError, ParserError},
     stream::{AsChar, Stream, StreamIsPartial},
     token::{one_of, take_till, take_while},
-    Parser,
 };
 
 /// Parses comma separated decimal.

@@ -5,7 +5,7 @@ use bumpalo::Bump;
 use chrono::NaiveDate;
 use criterion::measurement::Measurement as _;
 use criterion::{
-    criterion_group, criterion_main, measurement::WallTime, BatchSize, BenchmarkId, Criterion,
+    BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main, measurement::WallTime,
 };
 use log::LevelFilter;
 use okane_core::{

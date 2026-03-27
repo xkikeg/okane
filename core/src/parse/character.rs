@@ -1,12 +1,12 @@
 //! Defines parser functions related to character input.
 
 use winnow::{
+    Parser,
     ascii::line_ending,
     combinator::{alt, delimited, eof, trace},
     error::ParserError,
     stream::{AsChar, Compare, Stream, StreamIsPartial},
     token::{one_of, take_till, take_while},
-    Parser,
 };
 
 /// Semicolon or line ending.
