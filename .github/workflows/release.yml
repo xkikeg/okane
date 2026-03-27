@@ -50,6 +50,7 @@ jobs:
         run: |
           staging="okane-${{ github.event.release.tag_name }}-${{ matrix.target }}"
           outdir="target/${{ matrix.target }}/release"
+          mkdir "$staging"
           cp README.md README.ja.md LICENSE CHANGELOG.md "$staging/"
           if [[ "${{ matrix.os }}" =~ windows.* ]]; then
             cp "$outdir/okane.exe" "$staging/"
