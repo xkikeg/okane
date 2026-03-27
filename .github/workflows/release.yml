@@ -1,8 +1,9 @@
 name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*.*.*"
 
 jobs:
   build-release:
@@ -16,9 +17,10 @@ jobs:
           - build: linux-x86_64-musl
             os: ubuntu-latest
             target: x86_64-unknown-linux-musl
-          - build: linux-aarch64-musl
-            os: ubuntu-latest
-            target: aarch64-unknown-linux-musl
+          # Find time to fix cross-build
+          # - build: linux-aarch64-musl
+          #   os: ubuntu-latest
+          #   target: aarch64-unknown-linux-musl
           - build: windows-x86_64
             os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -64,9 +66,7 @@ jobs:
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ${{ env.ASSET }}
-          asset_name: ${{ env.ASSET }}
-          asset_content_type: application/octet-stream
+          files: |
+            ${{ env.ASSET }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
