@@ -1,6 +1,5 @@
 name: Release
 
-
 on:
   release:
     types: [published]
@@ -40,10 +39,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # Cross-compilation helper for Linux
       - name: Install packages (Ubuntu)
-      if: startsWith(matrix.os, 'ubuntu')
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y --no-install-recommends xz-utils liblz4-tool musl-tools
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xz-utils liblz4-tool musl-tools
       - name: Build Binary
         run: cargo build --release --target ${{ matrix.target }} --verbose
       - name: Package Artifacts
