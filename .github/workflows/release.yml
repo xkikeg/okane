@@ -50,7 +50,7 @@ jobs:
       - name: Package Artifacts
         shell: bash
         run: |
-          staging="okane-${{ github.event.release.tag_name }}-${{ matrix.target }}"
+          staging="okane-${{ github.ref_name }}-${{ matrix.target }}"
           outdir="target/${{ matrix.target }}/release"
           mkdir "$staging"
           cp README.md README.ja.md LICENSE CHANGELOG.md "$staging/"
