@@ -23,7 +23,13 @@ Follows [syntax](doc/syntax.md) page for the supported syntax.
 
 ### Install
 
-Up until now no binary release is provided, so you need to run `cargo install` to install the tool.
+You can use `cargo binstall` to install the latest binary (later than v0.19.0).
+
+```shell
+$ cargo binstall okane
+```
+
+Of course, you can build your own binary if you want.
 
 ```shell
 $ cargo install okane
