@@ -1,0 +1,106 @@
+# Builds the release archives, one per target, and uploads them as workflow
+# artifacts. Called both by the Release workflow, which turns the artifacts
+# into release assets, and by the Binary workflow, which only checks that the
+# build still works on every target before a tag is pushed.
+name: Build binary
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: >
+          Version part of the archive name, i.e. okane-<version>-<target>.
+          The release passes the tag, CI passes the commit SHA.
+        required: true
+        type: string
+      fail-fast:
+        description: >
+          Whether the first failing target cancels the remaining ones. CI does
+          not need every failure of the same breakage, a release does.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build for ${{ matrix.target }}
+    strategy:
+      fail-fast: ${{ inputs.fail-fast }}
+      matrix:
+        include:
+          - build: linux-x86_64-musl
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - build: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - build: macos-x86_64
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - build: macos-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1.94.1
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Install cargo-about
+        uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
+        with:
+          tool: cargo-about
+      - name: Install packages (Ubuntu)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xz-utils liblz4-tool musl-tools
+      - name: Build Binary
+        run: cargo build --release --target ${{ matrix.target }} --verbose
+      - name: Collect dependency licenses
+        shell: bash
+        # The binary statically links its dependencies, so the archive has to
+        # carry their license texts. --target keeps the notice to the crates
+        # actually linked into this archive's binary.
+        run: |
+          cargo about generate --fail --locked \
+            --manifest-path cli/Cargo.toml \
+            --target ${{ matrix.target }} \
+            --output-file THIRD-PARTY-LICENSES.html \
+            about.hbs
+      - name: Package Artifacts
+        shell: bash
+        # The version reaches the script through the environment, so that a
+        # crafted tag name cannot inject shell code here.
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          staging="okane-${VERSION}-${{ matrix.target }}"
+          outdir="target/${{ matrix.target }}/release"
+          mkdir "$staging"
+          cp README.md README.ja.md LICENSE CHANGELOG.md THIRD-PARTY-LICENSES.html "$staging/"
+          if [[ "${{ matrix.os }}" =~ windows.* ]]; then
+            cp "$outdir/okane.exe" "$staging/"
+            cd "$staging"
+            7z a "../$staging.zip" .
+            echo "ASSET=$staging.zip" >> $GITHUB_ENV
+          else
+            cp "$outdir/okane" "$staging/"
+            tar czf "$staging.tar.gz" -C "$staging" .
+            echo "ASSET=$staging.tar.gz" >> $GITHUB_ENV
+          fi
+      - name: Upload archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: binary-${{ matrix.build }}
+          path: ${{ env.ASSET }}
+          if-no-files-found: error
+          # The release assets live on the release page, and the CI ones are
+          # only there to look at when a build misbehaves.
+          retention-days: 7
