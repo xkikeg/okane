@@ -10,7 +10,7 @@ readme = "README.md"
 repository.workspace = true
 
 [dependencies]
-annotate-snippets = "0.12.13"
+annotate-snippets = "0.12.15"
 bounded-static = { version = "0.8", default-features = false, features = ["derive", "alloc", "chrono"] }
 bumpalo.workspace = true
 bumpalo-intern = "0.1.1"
@@ -28,7 +28,7 @@ unicode-width = "0.2"
 winnow.workspace = true
 
 [dev-dependencies]
-annotate-snippets = { version = "0.12.13", features = ["testing-colors"] }
+annotate-snippets = { version = "0.12.15", features = ["testing-colors"] }
 criterion = {version = "0.8.2", features = ["html_reports"]}
 ctor.workspace = true
 env_logger.workspace = true
