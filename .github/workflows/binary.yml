@@ -1,0 +1,23 @@
+# Runs the release build on every PR, so that a change breaking one of the
+# target builds or the license collection shows up before the tag is pushed,
+# not after.
+name: Binary
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-binary:
+    uses: ./.github/workflows/build-binary.yml
+    with:
+      version: ${{ github.sha }}
+      # One broken target is enough to fix; no need to burn the other runners.
+      fail-fast: true
