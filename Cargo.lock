@@ -1882,9 +1882,9 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "soft-canonicalize"
-version = "0.5.4"
+version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "486e7a0425c05839bcaf98e562d676ea0861629f65b96c875f06fcd27f77dbfa"
+checksum = "eaf99d1bbb279dfc59a8642f42fa4b6137935e506c97d1e2e57d282f417f163d"
 dependencies = [
  "dunce",
  "proc-canonicalize",
