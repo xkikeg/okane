@@ -197,7 +197,7 @@ where
     Ok(Ledger {
         transactions: accum.txns,
         raw_balance: accum.balance,
-        price_repos: accum.price_repos.build(),
+        price_repos: accum.price_repos.build(ctx),
     })
 }
 
