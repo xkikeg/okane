@@ -5,7 +5,7 @@ use bumpalo::Bump;
 use chrono::NaiveDate;
 use criterion::measurement::Measurement as _;
 use criterion::{
-    BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main, measurement::WallTime,
+    criterion_group, criterion_main, measurement::WallTime, BatchSize, BenchmarkId, Criterion,
 };
 use log::LevelFilter;
 use okane_core::{
@@ -275,7 +275,7 @@ fn basic_asserts<T: FileSink>(input: &ExampleInput<T>) {
     assert_eq!(input.num_transactions(), num_txns as u64);
 }
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn init() {
     // print INFO level logs by default, unless overridden by env.
     let mut builder = env_logger::builder();
