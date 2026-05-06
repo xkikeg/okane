@@ -34,7 +34,7 @@ regex.workspace = true
 rstest_reuse = "0.7.0"
 rust_decimal.workspace = true
 serde = { version = "1.0", features = [ "derive" ] }
-serde_with = { version = "3.18", features = [ "chrono" ] }
+serde_with = { version = "3.19", features = [ "chrono" ] }
 serde_yaml = "0.9.34"
 shadow-rs = { version = "2.0.0", default-features = false }
 soft-canonicalize = { version = "0.5.6", features = [ "dunce" ] }
