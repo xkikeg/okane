@@ -37,3 +37,12 @@ fn main() {
         std::process::exit(1);
     }
 }
+
+#[cfg(test)]
+#[ctor::ctor(unsafe)]
+fn init() {
+    let _ = env_logger::builder()
+        .is_test(true)
+        .filter_level(log::LevelFilter::max())
+        .try_init();
+}

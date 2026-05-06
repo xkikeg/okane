@@ -11,7 +11,7 @@ pub(crate) mod testing;
 pub mod utility;
 
 #[cfg(test)]
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn unit_test_logger() {
     let _ = env_logger::builder()
         .is_test(true)

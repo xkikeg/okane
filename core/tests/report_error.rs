@@ -12,7 +12,7 @@ use okane_core::{
     report,
 };
 
-#[ctor::ctor]
+#[ctor::ctor(unsafe)]
 fn init() {
     env_logger::builder()
         .filter_level(log::LevelFilter::max())
