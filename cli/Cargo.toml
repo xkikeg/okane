@@ -29,7 +29,7 @@ log.workspace = true
 one-based = { version = "1.0.0", features = ["serde"] }
 path-slash = "0.2.1"
 pretty_decimal.workspace = true
-quick-xml = { version = "0.39", features = [ "serialize" ] }
+quick-xml = { version = "0.40", features = [ "serialize" ] }
 regex.workspace = true
 rstest_reuse = "0.7.0"
 rust_decimal.workspace = true
