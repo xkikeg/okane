@@ -22,7 +22,7 @@ chrono = "0.4.44"
 log = "0.4"
 pretty_decimal = { version = "0.2.1", features = ["bounded-static"] }
 regex = "1.12"
-rust_decimal = "1.41"
+rust_decimal = "1.42"
 strum = { version = "0.28", features = ["derive"] }
 thiserror = "2.0"
 winnow = "1.0"
