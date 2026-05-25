@@ -19,6 +19,7 @@ repository = "https://github.com/xkikeg/okane"
 # dependencies
 bumpalo = {version = "3.20", features = ["collections", "boxed"]}
 chrono = "0.4.44"
+lender = "0.6"
 log = "0.4"
 pretty_decimal = { version = "0.2.1", features = ["bounded-static"] }
 regex = "1.12"
@@ -32,6 +33,7 @@ env_logger = "0.11"
 lazy_static = "1.5"
 
 # dev-dependencies
+assert_matches = "1.5"
 ctor = "1.0.6"
 indoc = "2.0"
 maplit = "1.0"

@@ -19,6 +19,7 @@ pub use context::{Account, ReportContext};
 pub use error::ReportError;
 pub use eval::{Amount, SingleAmount};
 pub use price_db::LoadError;
+pub use query::{RegisterEntries, RegisterEntry, RegisterQuery};
 pub use transaction::{Posting, Transaction};
 
 use crate::{load, syntax::plain::LedgerEntry};

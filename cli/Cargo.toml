@@ -25,6 +25,7 @@ encoding_rs = "0.8.35"
 encoding_rs_io = "0.1.7"
 env_logger.workspace = true
 lazy_static.workspace = true
+lender.workspace = true
 log.workspace = true
 one-based = { version = "1.0.0", features = ["serde"] }
 path-slash = "0.2.1"
@@ -45,7 +46,7 @@ winnow.workspace = true
 [dev-dependencies]
 assert_cmd = "2.2"
 # assert_fs = "1.0"
-assert_matches = "1.5"
+assert_matches.workspace = true
 ctor.workspace = true
 indoc.workspace = true
 maplit.workspace = true

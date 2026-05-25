@@ -277,10 +277,13 @@ fn add_transaction<'ctx>(
     let mut postings = bcc::Vec::with_capacity_in(txn.posts.len(), ctx.arena);
     let mut unfilled: Option<Tracked<usize>> = None;
     let mut balance = Amount::default();
+    let txn_payee: &'ctx str = ctx.arena.alloc_str(&txn.payee);
     for (i, posting) in txn.posts.iter().enumerate() {
         let posting = posting.as_undecorated();
         let account_span = posting.account.span();
         let account = ctx.accounts.ensure(posting.account.as_undecorated());
+        // Per-posting `; Payee: ...` metadata overrides the transaction payee.
+        let payee: &'ctx str = posting_payee_override(ctx, posting).unwrap_or(txn_payee);
         let (evaluated, price_event) = match process_posting(ctx, bal, txn.date, account, posting)?
         {
             (Some(x), y) => (x, y),
@@ -310,6 +313,7 @@ fn add_transaction<'ctx>(
         balance += evaluated.balance_delta;
         postings.push(Posting {
             account,
+            payee,
             amount: evaluated.amount.into(),
             converted_amount: evaluated.converted_amount,
         });
@@ -662,6 +666,21 @@ fn posting_lot_exchange<'a, 'ctx>(
     posting_amount.lot.price.as_ref()
 }
 
+/// Returns the per-posting payee override (`; Payee: <name>` metadata), if any,
+/// interned into the report arena.
+fn posting_payee_override<'ctx>(
+    ctx: &ReportContext<'ctx>,
+    posting: &syntax::tracked::Posting,
+) -> Option<&'ctx str> {
+    posting.metadata.iter().find_map(|m| match m {
+        syntax::Metadata::KeyValueTag {
+            key,
+            value: syntax::MetadataValue::Text(t),
+        } if key.as_ref() == "Payee" => Some(ctx.arena.alloc_str(t.as_ref()) as &'ctx str),
+        _ => None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -801,9 +820,9 @@ mod tests {
         let mut bal = Balance::default();
         let input = indoc! {"
             2024/08/01 Sample
-              Account 1      200 JPY = 200 JPY
-              Account 2     -100 JPY = -100 JPY
-              Account 2     -100 JPY = -200 JPY
+              Account 1      200 JPY = 200 JPY  ; Payee: Posting 1
+              Account 2     -100 JPY = -100 JPY  ; Payee: Posting 2
+              Account 2     -100 JPY = -200 JPY  ; Payee: Posting 3
         "};
         let txn = parse_transaction(input);
         let mut price_repos = PriceRepositoryBuilder::default();
@@ -817,16 +836,19 @@ mod tests {
                 [
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
+                        payee: "Posting 1",
                         amount: Amount::from_value(ctx.commodities.ensure("JPY"), dec!(200)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
+                        payee: "Posting 2",
                         amount: Amount::from_value(ctx.commodities.ensure("JPY"), dec!(-100)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
+                        payee: "Posting 3",
                         amount: Amount::from_value(ctx.commodities.ensure("JPY"), dec!(-100)),
                         converted_amount: None,
                     },
@@ -867,10 +889,10 @@ mod tests {
         );
         let input = indoc! {"
             2024/08/01 Sample
-              Account 1              = 1200 JPY
-              Account 2              = 0 JPY
-              Account 3              = 0
-              Account 4
+              Account 1              = 1200 JPY  ; Payee: Posting 1
+              Account 2              = 0 JPY  ; Payee: Posting 2
+              Account 3              = 0  ; Payee: Posting 3
+              Account 4  ; Payee: Posting 4
         "};
         let txn = parse_transaction(input);
         let mut price_repos = PriceRepositoryBuilder::default();
@@ -884,21 +906,25 @@ mod tests {
                 [
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
+                        payee: "Posting 1",
                         amount: Amount::from_value(jpy, dec!(200)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
+                        payee: "Posting 2",
                         amount: Amount::from_value(jpy, dec!(100)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 3"),
+                        payee: "Posting 3",
                         amount: Amount::from_value(jpy, dec!(150)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 4"),
+                        payee: "Posting 4",
                         amount: Amount::from_value(jpy, dec!(-450)),
                         converted_amount: None,
                     },
@@ -920,10 +946,10 @@ mod tests {
         let eur = ctx.commodities.ensure("EUR");
         let input = indoc! {"
             2024/08/01 Sample
-              Account 1         1200 JPY
-              Account 2         234 EUR
-              Account 3         34.56 CHF
-              Account 4
+              Account 1         1200 JPY  ; Payee: Posting 1
+              Account 2         234 EUR  ; Payee: Posting 2
+              Account 3         34.56 CHF  ; Payee: Posting 3
+              Account 4  ; Payee: Posting 4
         "};
         let txn = parse_transaction(input);
         let mut price_repos = PriceRepositoryBuilder::default();
@@ -935,21 +961,25 @@ mod tests {
                 [
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
+                        payee: "Posting 1",
                         amount: Amount::from_value(jpy, dec!(1200)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
+                        payee: "Posting 2",
                         amount: Amount::from_value(eur, dec!(234)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 3"),
+                        payee: "Posting 3",
                         amount: Amount::from_value(chf, dec!(34.56)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 4"),
+                        payee: "Posting 4",
                         amount: Amount::from_iter([
                             (jpy, dec!(-1200)),
                             (eur, dec!(-234)),
@@ -1018,8 +1048,8 @@ mod tests {
         let mut bal = Balance::default();
         let input = indoc! {"
             2024/08/01 Sample
-              Account 1             12 OKANE {100 JPY}
-              Account 2         -1,200 JPY
+              Account 1             12 OKANE {100 JPY}  ; Payee: Posting 1
+              Account 2         -1,200 JPY  ; Payee: Posting 2
         "};
         let date = NaiveDate::from_ymd_opt(2024, 8, 1).unwrap();
         let txn = parse_transaction(input);
@@ -1036,11 +1066,13 @@ mod tests {
                 [
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
+                        payee: "Posting 1",
                         amount: Amount::from_value(okane, dec!(12)),
                         converted_amount: Some(SingleAmount::from_value(jpy, dec!(1200))),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
+                        payee: "Posting 2",
                         amount: Amount::from_value(jpy, dec!(-1200)),
                         converted_amount: None,
                     },
@@ -1073,8 +1105,8 @@ mod tests {
         let mut bal = Balance::default();
         let input = indoc! {"
             2024/08/01 Sample
-              Account 1             12 OKANE @@ (12 * 100 JPY)
-              Account 2         -1,200 JPY
+              Account 1             12 OKANE @@ (12 * 100 JPY)  ; Payee: Posting 1
+              Account 2         -1,200 JPY  ; Payee: Posting 2
         "};
         let txn = parse_transaction(input);
         let mut price_repos = PriceRepositoryBuilder::default();
@@ -1090,11 +1122,13 @@ mod tests {
                 [
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
+                        payee: "Posting 1",
                         amount: Amount::from_value(okane, dec!(12)),
                         converted_amount: Some(SingleAmount::from_value(jpy, dec!(1200))),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
+                        payee: "Posting 2",
                         amount: Amount::from_value(jpy, dec!(-1200)),
                         converted_amount: None,
                     },
@@ -1113,9 +1147,9 @@ mod tests {
         let mut bal = Balance::default();
         let input = indoc! {"
             2024/08/01 Sample
-              Account 1            -12 OKANE {100 JPY} @ 120 JPY
-              Account 2          1,440 JPY
-              Income              -240 JPY
+              Account 1            -12 OKANE {100 JPY} @ 120 JPY  ; Payee: Posting 1
+              Account 2          1,440 JPY  ; Payee: Posting 2
+              Income              -240 JPY  ; Payee: Posting 3
         "};
         let date = NaiveDate::from_ymd_opt(2024, 8, 1).unwrap();
         let txn = parse_transaction(input);
@@ -1132,16 +1166,19 @@ mod tests {
                 [
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
+                        payee: "Posting 1",
                         amount: Amount::from_value(okane, dec!(-12)),
                         converted_amount: Some(SingleAmount::from_value(jpy, dec!(-1440))),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
+                        payee: "Posting 2",
                         amount: Amount::from_value(jpy, dec!(1440)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Income"),
+                        payee: "Posting 3",
                         amount: Amount::from_value(jpy, dec!(-240)),
                         converted_amount: None,
                     },
@@ -1174,9 +1211,9 @@ mod tests {
         let mut bal = Balance::default();
         let input = indoc! {"
             2024/08/01 Sample
-              Account 1            -12 OKANE
-              Account 2          1,000 JPY
-              Account 3            440 JPY
+              Account 1            -12 OKANE  ; Payee: Posting 1
+              Account 2          1,000 JPY  ; Payee: Posting 2
+              Account 3            440 JPY  ; Payee: Posting 3
         "};
         let date = NaiveDate::from_ymd_opt(2024, 8, 1).unwrap();
         let txn = parse_transaction(input);
@@ -1193,11 +1230,13 @@ mod tests {
                 [
                     Posting {
                         account: ctx.accounts.ensure("Account 1"),
+                        payee: "Posting 1",
                         amount: Amount::from_value(okane, dec!(-12)),
                         converted_amount: Some(SingleAmount::from_value(jpy, dec!(-1440))),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 2"),
+                        payee: "Posting 2",
                         amount: Amount::from_value(jpy, dec!(1000)),
                         converted_amount: Some(SingleAmount::from_value(
                             okane,
@@ -1206,6 +1245,7 @@ mod tests {
                     },
                     Posting {
                         account: ctx.accounts.ensure("Account 3"),
+                        payee: "Posting 3",
                         amount: Amount::from_value(jpy, dec!(440)),
                         converted_amount: Some(SingleAmount::from_value(
                             okane,
@@ -1263,26 +1303,31 @@ mod tests {
                 [
                     Posting {
                         account: ctx.accounts.ensure("Expenses:Travel:Petrol"),
+                        payee: "Petrol Station",
                         amount: Amount::from_value(eur, dec!(30.33)),
                         converted_amount: Some(SingleAmount::from_value(chf, dec!(33.065766))),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Expenses:Commissions"),
+                        payee: "Bank",
                         amount: Amount::from_value(chf, dec!(1.50)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Expenses:Commissions"),
+                        payee: "Bank",
                         amount: Amount::from_value(eur, dec!(0.06)),
                         converted_amount: Some(SingleAmount::from_value(chf, dec!(0.065412))),
                     },
                     Posting {
                         account: ctx.accounts.ensure("Expenses:Commissions"),
+                        payee: "Bank",
                         amount: Amount::from_value(chf, dec!(0.07)),
                         converted_amount: None,
                     },
                     Posting {
                         account: ctx.accounts.ensure("Assets:Banks"),
+                        payee: "Petrol Station",
                         amount: Amount::from_value(chf, dec!(-34.70)),
                         converted_amount: None,
                     },
