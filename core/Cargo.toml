@@ -19,6 +19,7 @@ derive-where = "1.6"
 dunce = "1.0.5"
 glob = "0.3.3"
 itoa = "1"
+lender.workspace = true
 log.workspace = true
 pretty_decimal.workspace = true
 rust_decimal.workspace = true
@@ -29,6 +30,7 @@ winnow.workspace = true
 
 [dev-dependencies]
 annotate-snippets = { version = "0.12.16", features = ["testing-colors"] }
+assert_matches.workspace = true
 criterion = {version = "0.8.2", features = ["html_reports"]}
 ctor.workspace = true
 env_logger.workspace = true

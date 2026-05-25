@@ -1,12 +1,4 @@
-Assets:Banks:あおによし 100000 JPY 100000 JPY
-Liabilities:Cards:Card X -1000 JPY 99000 JPY
-Equity:Initial -99000 JPY 0 JPY
-Expenses:Cash 10000 JPY 10000 JPY
-Assets:Banks:あおによし -10000 JPY 0 JPY
-Expenses:Cash 3000 JPY 3000 JPY
-Assets:Banks:あおによし -3000 JPY 0 JPY
-Liabilities:Cards:Card X 1000 JPY 1000 JPY
-Assets:Banks:Foo -1000 JPY 0 JPY
-Assets:Banks:あおによし 230000 JPY 230000 JPY
-Income:Salary -300000 JPY -70000 JPY
-Expenses:Tax:Income 70000 JPY 0 JPY
+2024-02-03 explicit posting Expenses:Cash 10000 JPY 10000 JPY
+2024-02-03 explicit posting Assets:Banks:あおによし -10000 JPY 0 JPY
+2024-02-15 deduce from amount Expenses:Cash 3000 JPY 3000 JPY
+2024-02-15 deduce from amount Assets:Banks:あおによし -3000 JPY 0 JPY

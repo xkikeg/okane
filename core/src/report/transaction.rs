@@ -25,6 +25,10 @@ pub struct Posting<'ctx> {
     /// Account of the posting.
     pub account: Account<'ctx>,
 
+    /// Payee of the posting. By default this is the enclosing transaction's
+    /// payee; per-posting payee overrides via metadata are not implemented yet.
+    pub payee: &'ctx str,
+
     /// Amount of the posting described in the Ledger.
     // Note this is not PostingAmount,
     // as deduced posting may have non-single commodity amount.

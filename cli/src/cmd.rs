@@ -6,6 +6,7 @@ use bumpalo::Bump;
 use chrono::NaiveDate;
 use clap::{Args, Subcommand};
 
+use lender::FallibleLender;
 use okane_core::report::query;
 use okane_core::syntax::display::DisplayContext;
 use okane_core::syntax::plain::LedgerEntry;
@@ -319,26 +320,26 @@ impl RegisterCmd {
     {
         let arena = Bump::new();
         let mut ctx = report::ReportContext::new(&arena);
-        let ledger = report::process(
+        let mut ledger = report::process(
             &mut ctx,
             load::new_loader(self.source),
             &self.eval_options.to_process_options(),
         )?;
-        let postings = ledger.postings(
-            &ctx,
-            &query::PostingQuery {
-                account: self.account.clone(),
-            },
-        );
-        let mut balance = report::Amount::default();
-        for posting in postings {
-            balance += posting.amount.clone();
+        let query = query::RegisterQuery {
+            account: self.account.clone(),
+            date_range: self.eval_options.to_date_range()?,
+            conversion: self.eval_options.to_conversion(&ctx)?,
+        };
+        let mut entries = ledger.register_entries(&ctx, &query)?;
+        while let Some(entry) = entries.next()? {
             writeln!(
                 w,
-                "{} {} {}",
-                posting.account.as_str(),
-                posting.amount.as_inline_display(&ctx),
-                balance.as_inline_display(&ctx)
+                "{} {} {} {} {}",
+                entry.date,
+                entry.payee,
+                entry.account.as_str(),
+                entry.amount.as_inline_display(&ctx),
+                entry.total.as_inline_display(&ctx),
             )?;
         }
         Ok(())

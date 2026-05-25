@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use crate::report::eval::EvalError;
 
 use super::{
-    ReportContext,
     context::Account,
     eval::{Amount, OwnedEvalError, PostingAmount},
+    ReportContext,
 };
 
 /// Error related to [Balance] operations.
@@ -136,6 +136,11 @@ impl<'ctx> Balance<'ctx> {
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&Account<'ctx>, &Amount<'ctx>)> {
         self.accounts.iter()
     }
+
+    /// Returns `true` when no account has any amount recorded.
+    pub fn is_empty(&self) -> bool {
+        self.accounts.is_empty()
+    }
 }
 
 #[cfg(test)]
@@ -145,6 +150,7 @@ mod tests {
     use bumpalo::Bump;
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
+    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
     use super::super::context::ReportContext;
@@ -174,6 +180,24 @@ mod tests {
         let m2 = b.into_map();
 
         assert_eq!(m, m2);
+    }
+
+    #[test]
+    fn balance_is_empty_returns_true_for_empty() {
+        let balance = Balance::default();
+        assert!(balance.is_empty());
+    }
+
+    #[test]
+    fn balance_is_empty_returns_false_for_non_empty() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+
+        let balance = Balance::from_map(hashmap! {
+            ctx.accounts.ensure("Expenses") =>
+                Amount::from_value(ctx.commodities.ensure("JPY"), Decimal::ZERO),
+        });
+        assert!(!balance.is_empty());
     }
 
     #[test]

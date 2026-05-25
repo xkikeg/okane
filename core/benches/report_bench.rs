@@ -7,6 +7,7 @@ use criterion::measurement::Measurement as _;
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BatchSize, BenchmarkId, Criterion,
 };
+use lender::FallibleLender;
 use log::LevelFilter;
 use okane_core::{
     load::LoadError,
@@ -264,6 +265,183 @@ fn query_balance(c: &mut Criterion) {
     group.finish();
 }
 
+fn query_register_entries(c: &mut Criterion) {
+    let mut group = c.benchmark_group("query::register");
+
+    // default — full drain, no filters, no conversion
+    for params in InputParams::params_from_env() {
+        let input = FakeFileSink::new_example(Path::new("report_bench"), params).unwrap();
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let opts = report::ProcessOptions::default();
+        let mut ledger = report::process(&mut ctx, input.new_loader(), &opts)
+            .expect("report::process must succeed");
+
+        group.bench_with_input(
+            BenchmarkId::new("default", params),
+            &params,
+            |b, _params| {
+                b.iter_with_large_drop(|| {
+                    let mut entries = ledger
+                        .register_entries(&ctx, &report::query::RegisterQuery::default())
+                        .unwrap();
+                    let mut count = 0u64;
+                    loop {
+                        match entries.next().unwrap() {
+                            None => break,
+                            Some(_) => count += 1,
+                        }
+                    }
+                    black_box(count)
+                })
+            },
+        );
+    }
+
+    // account-filter — single account, no date range, no conversion
+    for params in InputParams::params_from_env() {
+        let input = FakeFileSink::new_example(Path::new("report_bench"), params).unwrap();
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let opts = report::ProcessOptions::default();
+        let mut ledger = report::process(&mut ctx, input.new_loader(), &opts)
+            .expect("report::process must succeed");
+
+        let query = report::query::RegisterQuery {
+            account: Some("Assets:Account02".to_string()),
+            ..Default::default()
+        };
+        group.bench_with_input(
+            BenchmarkId::new("account-filter", params),
+            &params,
+            |b, _params| {
+                b.iter_with_large_drop(|| {
+                    let mut entries = ledger.register_entries(&ctx, &query).unwrap();
+                    let mut count = 0u64;
+                    loop {
+                        match entries.next().unwrap() {
+                            None => break,
+                            Some(_) => count += 1,
+                        }
+                    }
+                    black_box(count)
+                })
+            },
+        );
+    }
+
+    // date-range — one-year window, no account filter, no conversion
+    for params in InputParams::params_from_env() {
+        let input = FakeFileSink::new_example(Path::new("report_bench"), params).unwrap();
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let opts = report::ProcessOptions::default();
+        let mut ledger = report::process(&mut ctx, input.new_loader(), &opts)
+            .expect("report::process must succeed");
+
+        let query = report::query::RegisterQuery {
+            date_range: report::query::DateRange {
+                start: Some(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+                end: Some(NaiveDate::from_ymd_opt(2025, 1, 1).unwrap()),
+            },
+            ..Default::default()
+        };
+        group.bench_with_input(
+            BenchmarkId::new("date-range", params),
+            &params,
+            |b, _params| {
+                b.iter_with_large_drop(|| {
+                    let mut entries = ledger.register_entries(&ctx, &query).unwrap();
+                    let mut count = 0u64;
+                    loop {
+                        match entries.next().unwrap() {
+                            None => break,
+                            Some(_) => count += 1,
+                        }
+                    }
+                    black_box(count)
+                })
+            },
+        );
+    }
+
+    // conversion-historical — no pricedb, historical conversion to CHF
+    for params in InputParams::params_from_env() {
+        let input = FakeFileSink::new_example(Path::new("report_bench"), params).unwrap();
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let opts = report::ProcessOptions::default();
+        let mut ledger = report::process(&mut ctx, input.new_loader(), &opts)
+            .expect("report::process must succeed");
+
+        let chf = ctx.commodity("CHF").unwrap();
+        let query = report::query::RegisterQuery {
+            conversion: Some(report::query::Conversion {
+                strategy: report::query::ConversionStrategy::Historical,
+                target: chf,
+            }),
+            ..Default::default()
+        };
+        group.bench_with_input(
+            BenchmarkId::new("conversion-historical", params),
+            &params,
+            |b, _params| {
+                b.iter_with_large_drop(|| {
+                    let mut entries = ledger.register_entries(&ctx, &query).unwrap();
+                    let mut count = 0u64;
+                    loop {
+                        match entries.next().unwrap() {
+                            None => break,
+                            Some(_) => count += 1,
+                        }
+                    }
+                    black_box(count)
+                })
+            },
+        );
+    }
+
+    // conversion-historical-pricedb — with pricedb, historical conversion to CHF
+    for params in InputParams::params_from_env() {
+        let input = FakeFileSink::new_example(Path::new("report_bench"), params).unwrap();
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let opts = report::ProcessOptions {
+            price_db_path: Some(input.pricedbpath().to_owned()),
+        };
+        let mut ledger = report::process(&mut ctx, input.new_loader(), &opts)
+            .expect("report::process must succeed");
+
+        let chf = ctx.commodity("CHF").unwrap();
+        let query = report::query::RegisterQuery {
+            conversion: Some(report::query::Conversion {
+                strategy: report::query::ConversionStrategy::Historical,
+                target: chf,
+            }),
+            ..Default::default()
+        };
+        group.bench_with_input(
+            BenchmarkId::new("conversion-historical-pricedb", params),
+            &params,
+            |b, _params| {
+                b.iter_with_large_drop(|| {
+                    let mut entries = ledger.register_entries(&ctx, &query).unwrap();
+                    let mut count = 0u64;
+                    loop {
+                        match entries.next().unwrap() {
+                            None => break,
+                            Some(_) => count += 1,
+                        }
+                    }
+                    black_box(count)
+                })
+            },
+        );
+    }
+
+    group.finish();
+}
+
 fn basic_asserts<T: FileSink>(input: &ExampleInput<T>) {
     let arena = Bump::new();
     let mut ctx = report::ReportContext::new(&arena);
@@ -291,6 +469,7 @@ criterion_group!(
     load_benchmark,
     report_process_benchmark,
     query_postings,
-    query_balance
+    query_balance,
+    query_register_entries
 );
 criterion_main!(benches);

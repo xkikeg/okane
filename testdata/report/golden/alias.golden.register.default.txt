@@ -1,2 +1,2 @@
-Expenses:Grocery 100 JPY 100 JPY
-Equity:Initial -100 JPY 0 JPY
+2024-01-29 Transaction Expenses:Grocery 100 JPY 100 JPY
+2024-01-29 Transaction Equity:Initial -100 JPY 0 JPY
