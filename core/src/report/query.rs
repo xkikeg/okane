@@ -434,7 +434,7 @@ impl<'a, 'ctx> FallibleLender for RegisterEntries<'a, 'ctx> {
                 )
             }
         };
-        self.total += self.current_amount.as_ref().clone();
+        self.total += self.current_amount.as_ref();
         Ok(Some(RegisterEntry {
             date: self.current_date,
             payee: posting.payee,
@@ -1051,7 +1051,7 @@ mod tests {
         let final_total = rows.last().map(|r| r.4.clone()).unwrap();
         let mut summed = Amount::default();
         for r in &rows {
-            summed += r.3.clone();
+            summed += &r.3;
         }
         assert_eq!(summed, final_total);
     }

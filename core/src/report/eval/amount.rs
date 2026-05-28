@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, btree_map},
+    collections::{btree_map, BTreeMap},
     fmt::Display,
     iter::FusedIterator,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
@@ -12,7 +12,7 @@ use crate::report::{
     context::ReportContext,
 };
 
-use super::{PostingAmount, SingleAmount, error::EvalError};
+use super::{error::EvalError, PostingAmount, SingleAmount};
 
 /// Amount with multiple commodities, or simple zero.
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
@@ -324,23 +324,36 @@ impl Neg for Amount<'_> {
     }
 }
 
-impl Add for Amount<'_> {
+impl<'ctx> Add<&'_ Amount<'ctx>> for Amount<'ctx> {
     type Output = Self;
 
-    fn add(mut self, rhs: Self) -> Self::Output {
+    fn add(mut self, rhs: &Self) -> Self::Output {
         self += rhs;
         self
     }
 }
 
-impl AddAssign for Amount<'_> {
-    fn add_assign(&mut self, rhs: Self) {
-        for (c, v2) in rhs.values {
-            let mut v1 = self.values.entry(c).or_insert(Decimal::ZERO);
-            v1 += v2;
+impl Add for Amount<'_> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        self + &rhs
+    }
+}
+
+impl<'ctx> AddAssign<&'_ Amount<'ctx>> for Amount<'ctx> {
+    fn add_assign(&mut self, rhs: &Amount<'ctx>) {
+        for (&c, &v2) in &rhs.values {
+            *self.values.entry(c).or_insert(Decimal::ZERO) += v2;
             // we should retain the value even if zero,
             // as (0 USD + 0 EUR) are different from 0 or (0 USD + 0 USD).
         }
+    }
+}
+
+impl AddAssign for Amount<'_> {
+    fn add_assign(&mut self, rhs: Self) {
+        *self += &rhs;
     }
 }
 
@@ -369,21 +382,34 @@ impl<'ctx> AddAssign<PostingAmount<'ctx>> for Amount<'ctx> {
     }
 }
 
-impl Sub for Amount<'_> {
+impl<'ctx> Sub<&'_ Amount<'ctx>> for Amount<'ctx> {
     type Output = Self;
 
-    fn sub(mut self, rhs: Self) -> Self::Output {
+    fn sub(mut self, rhs: &Self) -> Self::Output {
         self -= rhs;
         self
     }
 }
 
+impl Sub for Amount<'_> {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self - &rhs
+    }
+}
+
+impl<'ctx> SubAssign<&'_ Amount<'ctx>> for Amount<'ctx> {
+    fn sub_assign(&mut self, rhs: &Amount<'ctx>) {
+        for (&c, &v2) in &rhs.values {
+            *self.values.entry(c).or_insert(Decimal::ZERO) -= v2;
+        }
+    }
+}
+
 impl SubAssign for Amount<'_> {
     fn sub_assign(&mut self, rhs: Self) {
-        for (c, v2) in rhs.values {
-            let mut v1 = self.values.entry(c).or_insert(Decimal::ZERO);
-            v1 -= v2;
-        }
+        *self -= &rhs;
     }
 }
 
@@ -600,6 +626,14 @@ mod tests {
             Amount::from_iter([(jpy, dec!(12345)), (usd, dec!(56.78))])
                 - Amount::from_iter([(usd, dec!(56.780)), (eur, dec!(200)), (chf, dec!(-13.3)),]),
         );
+
+        let mut val = Amount::zero();
+
+        val -= Amount::from_value(jpy, dec!(1));
+        assert_eq!(val, Amount::from_value(jpy, dec!(-1)));
+
+        val -= &Amount::from_value(jpy, dec!(1));
+        assert_eq!(val, Amount::from_value(jpy, dec!(-2)));
     }
 
     fn eps() -> Decimal {
