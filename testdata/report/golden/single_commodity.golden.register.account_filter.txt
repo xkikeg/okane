@@ -1,0 +1,4 @@
+Assets:Banks:あおによし 100000 JPY 100000 JPY
+Assets:Banks:あおによし -10000 JPY 90000 JPY
+Assets:Banks:あおによし -3000 JPY 87000 JPY
+Assets:Banks:あおによし 230000 JPY 317000 JPY

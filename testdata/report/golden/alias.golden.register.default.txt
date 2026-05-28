@@ -1,0 +1,2 @@
+Expenses:Grocery 100 JPY 100 JPY
+Equity:Initial -100 JPY 0 JPY
