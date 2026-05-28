@@ -26,6 +26,7 @@ regex = "1.12"
 rust_decimal = "1.42"
 strum = { version = "0.28", features = ["derive"] }
 thiserror = "2.0"
+unicode-width = "0.2"
 winnow = "1.0"
 
 # middle

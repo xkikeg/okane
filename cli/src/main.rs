@@ -11,6 +11,7 @@ mod format;
 mod import;
 #[cfg(test)]
 mod one_based_macro;
+mod ui;
 
 use shadow_rs::shadow;
 
