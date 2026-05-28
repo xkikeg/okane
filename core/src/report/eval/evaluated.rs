@@ -3,11 +3,11 @@ use std::fmt::Display;
 use rust_decimal::Decimal;
 
 use crate::{
-    report::{ReportContext, commodity::OwnedCommodity},
+    report::{commodity::OwnedCommodity, ReportContext},
     syntax::expr,
 };
 
-use super::{Amount, PostingAmount, SingleAmount, error::EvalError};
+use super::{error::EvalError, Amount, PostingAmount, SingleAmount};
 
 /// Represents any evaluated value.
 /// Currently this is number without unit, or amount with commodities.
