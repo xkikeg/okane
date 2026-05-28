@@ -242,7 +242,7 @@ impl<'ctx> Ledger<'ctx> {
             conversion,
             price_repos: &mut self.price_repos,
             current_date: NaiveDate::MIN,
-            current_amount: Amount::default(),
+            current_amount: Cow::Owned(Amount::default()),
             total: Amount::default(),
         })
     }
@@ -380,7 +380,7 @@ pub struct RegisterEntries<'a, 'ctx> {
     /// Buffer holding the amount lent in the most recent yield. Storing this
     /// inside the lender keeps `RegisterEntry::amount` a `&Amount` even when
     /// conversion produces a fresh value.
-    current_amount: Amount<'ctx>,
+    current_amount: Cow<'a, Amount<'ctx>>,
     total: Amount<'ctx>,
 }
 
@@ -417,22 +417,24 @@ impl<'a, 'ctx> FallibleLender for RegisterEntries<'a, 'ctx> {
             return Ok(None);
         };
         self.current_amount = match self.conversion {
-            None => posting.amount.clone(),
+            None => Cow::Borrowed(&posting.amount),
             Some(conv) => {
                 // ConversionStrategy::UpToDate is rejected up-front by
                 // register_entries(); only Historical reaches this point.
                 debug_assert!(matches!(conv.strategy, ConversionStrategy::Historical));
-                price_db::convert_amount(
-                    self.ctx,
-                    self.price_repos,
-                    &posting.amount,
-                    conv.target,
-                    self.current_date,
+                Cow::Owned(
+                    price_db::convert_amount(
+                        self.ctx,
+                        self.price_repos,
+                        &posting.amount,
+                        conv.target,
+                        self.current_date,
+                    )
+                    .map_err(QueryError::CommodityConversionFailure)?,
                 )
-                .map_err(QueryError::CommodityConversionFailure)?
             }
         };
-        self.total += self.current_amount.clone();
+        self.total += self.current_amount.as_ref().clone();
         Ok(Some(RegisterEntry {
             date: self.current_date,
             payee: posting.payee,
