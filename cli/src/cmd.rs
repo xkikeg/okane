@@ -15,6 +15,7 @@ use okane_core::{load, report};
 use crate::build::CLAP_LONG_VERSION;
 use crate::format;
 use crate::import;
+use crate::ui;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -30,6 +31,8 @@ pub enum Error {
     Report(#[from] report::ReportError),
     #[error("failed to query")]
     Query(#[from] query::QueryError),
+    #[error("failed to run TUI")]
+    Tui(#[source] std::io::Error),
     #[error("{0}")]
     Other(String),
 }
@@ -71,6 +74,8 @@ pub enum Command {
     Balance(BalanceCmd),
     /// Gives register report.
     Register(RegisterCmd),
+    /// Open an interactive terminal UI showing the balance report.
+    Ui(UiCmd),
     /// Primitive is a set of commands which are primitive and suitable for debugging.
     Primitive(Primitives),
 }
@@ -79,6 +84,7 @@ impl Command {
     fn validate(&self) -> Result<(), InvalidFlagError> {
         match self {
             Command::Balance(cmd) => cmd.validate(),
+            Command::Ui(cmd) => cmd.validate(),
             _ => Ok(()),
         }
     }
@@ -93,6 +99,7 @@ impl Command {
             Command::Accounts(cmd) => cmd.run(w),
             Command::Balance(cmd) => cmd.run(w),
             Command::Register(cmd) => cmd.run(w),
+            Command::Ui(cmd) => cmd.run(),
             Command::Primitive(cmd) => cmd.run(w),
         }
     }
@@ -297,6 +304,49 @@ impl BalanceCmd {
                 amount.as_inline_display(&ctx)
             )?;
         }
+        Ok(())
+    }
+}
+
+#[derive(Args, Debug)]
+pub struct UiCmd {
+    #[command(flatten)]
+    eval_options: EvalOptions,
+
+    /// Path to the Ledger file.
+    source: std::path::PathBuf,
+}
+
+impl UiCmd {
+    fn validate(&self) -> Result<(), InvalidFlagError> {
+        self.eval_options.validate()?;
+        Ok(())
+    }
+
+    pub fn run(self) -> Result<(), Error> {
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let mut ledger = report::process(
+            &mut ctx,
+            load::new_loader(self.source.clone()),
+            &self.eval_options.to_process_options(),
+        )?;
+        let query = query::BalanceQuery {
+            conversion: self.eval_options.to_conversion(&ctx)?,
+            date_range: self.eval_options.to_date_range()?,
+        };
+        let balance = ledger.balance(&ctx, &query)?.into_owned();
+        let rows: Vec<ui::BalanceRow> = balance
+            .into_vec()
+            .into_iter()
+            .map(|(account, amount)| ui::BalanceRow { account, amount })
+            .collect();
+        // `ledger` is intentionally kept alive for the full UI session so
+        // future iterations (register drill-down, recomputation under
+        // different conversions, etc.) can reuse it without re-parsing.
+        let app = ui::App::new(self.source.display().to_string(), rows);
+        ui::run_ui(app, &ctx).map_err(Error::Tui)?;
+        drop(ledger);
         Ok(())
     }
 }

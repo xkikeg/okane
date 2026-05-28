@@ -22,7 +22,7 @@ use std::convert::{TryFrom, TryInto};
 use std::path::{Path, PathBuf};
 
 use path_slash::PathBufExt;
-use serde::{de, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de};
 use soft_canonicalize::soft_canonicalize;
 
 use super::error::{ImportError, ImportErrorKind, IntoImportError};
@@ -491,26 +491,34 @@ mod tests {
         let tryinto = TryInto::<Config>::try_into;
         tryinto(f.clone()).expect("create_config_fragment() should return solo valid fragment");
         let err = |x| tryinto(x).unwrap_err().to_string();
-        assert!(err(ConfigFragment {
-            account: None,
-            ..f.clone()
-        })
-        .contains("account"));
-        assert!(err(ConfigFragment {
-            encoding: None,
-            ..f.clone()
-        })
-        .contains("encoding"));
-        assert!(err(ConfigFragment {
-            account_type: None,
-            ..f.clone()
-        })
-        .contains("account_type"));
-        assert!(err(ConfigFragment {
-            commodity: None,
-            ..f
-        })
-        .contains("commodity"));
+        assert!(
+            err(ConfigFragment {
+                account: None,
+                ..f.clone()
+            })
+            .contains("account")
+        );
+        assert!(
+            err(ConfigFragment {
+                encoding: None,
+                ..f.clone()
+            })
+            .contains("encoding")
+        );
+        assert!(
+            err(ConfigFragment {
+                account_type: None,
+                ..f.clone()
+            })
+            .contains("account_type")
+        );
+        assert!(
+            err(ConfigFragment {
+                commodity: None,
+                ..f
+            })
+            .contains("commodity")
+        );
     }
 
     #[test]
