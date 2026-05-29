@@ -2,7 +2,6 @@
 
 use std::{borrow::Cow, collections::HashSet};
 
-use bumpalo::collections as bcc;
 use chrono::NaiveDate;
 use lender::{check_covariance_fallible, FallibleLender, FallibleLending};
 
@@ -24,18 +23,14 @@ use super::{
 /// Contains processed transactions, so that users can query information.
 #[derive(Debug)]
 pub struct Ledger<'ctx> {
-    /// Arena from the report context — needed to allocate new `Posting`
-    /// slice boxes when building the date-sorted clone cache.
-    pub(super) arena: &'ctx bumpalo::Bump,
     pub(super) transactions: Vec<Transaction<'ctx>>,
-    /// Lazily-computed clone of `transactions` sorted by date. `None` until
-    /// the first query that needs date ordering.
+    /// Lazily-computed permutation of `transactions` that yields a stable
+    /// date-sorted view. `None` means the cache has not been built yet — it is
+    /// populated on first call to a query that needs date ordering.
     ///
-    /// We store actual `Transaction` clones (not indices into `transactions`)
-    /// so the date-ordered iteration is sequential — sequential reads are
-    /// L1-cache-friendly, whereas the previous index-based design did a
-    /// random-access lookup into `transactions[i]` per yielded row.
-    pub(super) date_sorted_txns: Option<Vec<Transaction<'ctx>>>,
+    /// We cache indices instead of `&Transaction` references to keep `Ledger`
+    /// non-self-referential.
+    pub(super) date_sorted_idx: Option<Vec<u32>>,
     pub(super) raw_balance: Balance<'ctx>,
     pub(super) price_repos: PriceRepository<'ctx>,
 }
@@ -190,33 +185,22 @@ impl<'ctx> Ledger<'ctx> {
         self.transactions.iter()
     }
 
-    /// Builds the date-sorted transaction clone cache on first call; a
-    /// no-op on every subsequent call. Clones each `Transaction` (postings
-    /// re-allocated in the same arena) into a new `Vec`, then stable-sorts
-    /// the copy by date. The result is a sequentially-iterable view that
-    /// preserves the original `transactions` Vec in file order.
-    fn ensure_date_sorted_txns(&mut self) {
-        if self.date_sorted_txns.is_some() {
+    /// Builds the date-sorted permutation cache on first call; a no-op on
+    /// every subsequent call. Separated from [`Self::sorted_idx`] so callers
+    /// can hold a shared borrow on `self` while reading the slice.
+    fn ensure_date_sorted_idx(&mut self) {
+        if self.date_sorted_idx.is_some() {
             return;
         }
-        let arena = self.arena;
-        let mut sorted: Vec<Transaction<'ctx>> = self
-            .transactions
-            .iter()
-            .map(|txn| {
-                let mut postings =
-                    bcc::Vec::with_capacity_in(txn.postings.len(), arena);
-                for p in txn.postings.iter() {
-                    postings.push(p.clone());
-                }
-                Transaction {
-                    date: txn.date,
-                    postings: postings.into_boxed_slice(),
-                }
-            })
-            .collect();
-        sorted.sort_by_key(|t| t.date);
-        self.date_sorted_txns = Some(sorted);
+        let n = self.transactions.len();
+        // u32 is enough — Ledger files large enough to overflow u32 are well
+        // past every other limit (parser, memory) we hit first. This halves
+        // the cache footprint vs. usize on 64-bit targets.
+        assert!(n <= u32::MAX as usize, "too many transactions to sort");
+        let mut idx: Vec<u32> = (0..n as u32).collect();
+        let txns = &self.transactions;
+        idx.sort_by_key(|&i| txns[i as usize].date);
+        self.date_sorted_idx = Some(idx);
     }
 
     /// Returns a [`FallibleLender`] over [`RegisterEntry`] rows matching the
@@ -249,27 +233,25 @@ impl<'ctx> Ledger<'ctx> {
             },
         };
         let account_filter = query.account.clone();
+        let txns: TxnIter<'a, 'ctx> =  match (account_filter.is_exhaustive_empty(), query.sort) {
         // When the account filter can never match, return an iterator that is
-        // already exhausted instead of scanning everything.
-        let txns: TxnIter<'a, 'ctx> = if account_filter.is_exhaustive_empty() {
-            TxnIter::linear(&[])
-        } else {
-            match query.sort {
-                Sort::Original => TxnIter::linear(&self.transactions),
-                // Build (or reuse) the date-sorted clone cache. Bounds are
-                // applied via `date_range_iter` (binary-search lo, incremental
-                // `end` check), so the inner `date_range.contains` check below
-                // is a no-op on every txn yielded here — it's kept for the
-                // `Linear` arms above.
-                Sort::Date => {
-                    self.ensure_date_sorted_txns();
-                    date_range_iter(
-                        self.date_sorted_txns
-                            .as_deref()
-                            .expect("just built by ensure_date_sorted_txns"),
-                        query.date_range,
-                    )
-                }
+            // already exhausted instead of scanning everything.
+            (true, _) =>TxnIter::Linear([].iter()),
+            (false,Sort::Original) => TxnIter::Linear(self.transactions.iter()),
+            // Build (or reuse) the date-sorted permutation. Bounds are
+            // applied via `date_range_iter` (binary-search lo, incremental
+            // `end` check), so the inner `date_range.contains` check below
+            // is a no-op on every txn yielded here — it's kept for the
+            // `Linear` arms above.
+            (false, Sort::Date) => {
+                self.ensure_date_sorted_idx();
+                date_range_iter(
+                    &self.transactions,
+                    self.date_sorted_idx
+                        .as_deref()
+                        .expect("just built by ensure_date_sorted_idx"),
+                    query.date_range,
+                )
             }
         };
         Ok(RegisterEntries {
@@ -303,13 +285,14 @@ impl<'ctx> Ledger<'ctx> {
             // incremental upper bound); otherwise we walk every transaction
             // in source order.
             let txns = if query.date_range.is_bypass() {
-                TxnIter::linear(&self.transactions)
+                TxnIter::Linear(self.transactions.iter())
             } else {
-                self.ensure_date_sorted_txns();
+                self.ensure_date_sorted_idx();
                 date_range_iter(
-                    self.date_sorted_txns
+                    &self.transactions,
+                    self.date_sorted_idx
                         .as_deref()
-                        .expect("just built by ensure_date_sorted_txns"),
+                        .expect("just built by ensure_date_sorted_idx"),
                     query.date_range,
                 )
             };
@@ -383,53 +366,49 @@ impl<'ctx> Ledger<'ctx> {
     }
 }
 
+
 /// Iterator over transactions used internally by [`RegisterEntries`] and
 /// [`Ledger::balance`].
 ///
-/// Both the linear (file-order) and sorted (date-order) paths walk a
-/// `slice::Iter<Transaction>` — the only difference is whether to
-/// short-circuit on an upper-bound date. So we collapse them into a single
-/// struct rather than an enum: no tag dispatch, no payload-size waste from
-/// the larger variant, and the `end == None` case compiles to a single
-/// well-predicted branch on the hot path.
-pub(super) struct TxnIter<'a, 'ctx> {
-    it: std::slice::Iter<'a, Transaction<'ctx>>,
-    /// Upper bound for sorted iteration: once a yielded transaction's date
-    /// is `>= end`, iteration stops. `None` for the linear / unbounded case.
-    end: Option<NaiveDate>,
-}
-
-impl<'a, 'ctx> TxnIter<'a, 'ctx> {
-    /// Walk `slice` in source order. No early-exit.
-    fn linear(slice: &'a [Transaction<'ctx>]) -> Self {
-        Self {
-            it: slice.iter(),
-            end: None,
-        }
-    }
-
-    /// Walk `slice` (assumed to be in ascending date order) and stop as
-    /// soon as a transaction's date is `>= end`. Pass `end = None` to
-    /// disable the upper-bound check.
-    fn sorted(slice: &'a [Transaction<'ctx>], end: Option<NaiveDate>) -> Self {
-        Self {
-            it: slice.iter(),
-            end,
-        }
-    }
+/// `Linear` walks the underlying `Vec` directly. `Sorted` follows a
+/// permutation produced by the date-sort cache on `Ledger` and additionally
+/// short-circuits as soon as it sees a date at or beyond the optional
+/// `end`, because sorted order guarantees no later transaction could match.
+/// Yields `&Transaction` regardless of variant so consumers stay uniform.
+pub(super) enum TxnIter<'a, 'ctx> {
+    Linear(std::slice::Iter<'a, Transaction<'ctx>>),
+    Sorted {
+        all: &'a [Transaction<'ctx>],
+        order: std::slice::Iter<'a, u32>,
+        /// Inclusive lower bound for "out of range": as soon as a yielded
+        /// transaction's date is `>= end`, iteration stops. `None` disables
+        /// the early-exit (no upper bound).
+        end: Option<NaiveDate>,
+    },
 }
 
 impl<'a, 'ctx> Iterator for TxnIter<'a, 'ctx> {
     type Item = &'a Transaction<'ctx>;
+    // Called once per transaction in the inner loop of
+    // `advance_to_next_posting`. `#[inline]` lets the compiler hoist the
+    // tag dispatch out of tight loops.
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let txn = self.it.next()?;
-        if let Some(end) = self.end
-            && txn.date >= end
-        {
-            return None;
+        match self {
+            Self::Linear(it) => it.next(),
+            // Indices come from `date_sorted_idx`, which was built from
+            // `0..transactions.len()`, so they're in-range for `all`.
+            Self::Sorted { all, order, end } => {
+                let i = *order.next()?;
+                let txn = &all[i as usize];
+                if let Some(end) = end
+                    && txn.date >= *end
+                {
+                    return None;
+                }
+                Some(txn)
+            }
         }
-        Some(txn)
     }
 }
 
@@ -516,22 +495,27 @@ impl<'a, 'ctx> FallibleLender for RegisterEntries<'a, 'ctx> {
     }
 }
 
-/// Builds a sorted [`TxnIter`] over the transactions matching `date_range`,
+/// Builds a [`TxnIter::Sorted`] over the transactions matching `date_range`,
 /// in ascending date order. The lower bound is found by binary search; the
 /// upper bound is enforced incrementally by [`TxnIter::next`].
 ///
-/// Free function (rather than a `&self` method on `Ledger`) so its borrow
-/// of the cache is disjoint from `&mut self.price_repos` at the call site —
-/// through a method we'd hold a shared borrow on all of `self`.
+/// Free function (rather than a `&self` method on `Ledger`) so its borrows
+/// are disjoint from `&mut self.price_repos` at the call site — through a
+/// method we'd hold a shared borrow on all of `self`.
 fn date_range_iter<'a, 'ctx>(
-    sorted_txns: &'a [Transaction<'ctx>],
+    transactions: &'a [Transaction<'ctx>],
+    sorted_idx: &'a [u32],
     date_range: DateRange,
 ) -> TxnIter<'a, 'ctx> {
     let lo = match date_range.start {
         None => 0,
-        Some(start) => sorted_txns.partition_point(|t| t.date < start),
+        Some(start) => sorted_idx.partition_point(|&i| transactions[i as usize].date < start),
     };
-    TxnIter::sorted(&sorted_txns[lo..], date_range.end)
+    TxnIter::Sorted {
+        all: transactions,
+        order: sorted_idx[lo..].iter(),
+        end: date_range.end,
+    }
 }
 
 /// Accumulates the balance for every posting yielded by `txns`, applying
@@ -575,8 +559,8 @@ fn compute_balance<'a, 'ctx>(
 pub enum AccountFilter<'ctx> {
     /// Match every account.
     #[default]
-    Any,
-    /// Match exactly one account (O(1) equality check).
+    All,
+     /// Match exactly one account (O(1) equality check).
     Exact(Account<'ctx>),
     /// Match any account in the set (intended for future multi-pattern / regex support).
     Set(HashSet<Account<'ctx>>),
@@ -606,7 +590,7 @@ impl<'ctx> AccountFilter<'ctx> {
 
     fn is_match(&self, account: &Account<'ctx>) -> bool {
         match self {
-            AccountFilter::Any => true,
+            AccountFilter::All => true,
             AccountFilter::Exact(target) => account == target,
             AccountFilter::Set(targets) => targets.contains(account),
         }
@@ -1034,7 +1018,7 @@ mod tests {
                 .register_entries(
                     &ctx,
                     &RegisterQuery {
-                        account: AccountFilter::Any,
+                        account: AccountFilter::All,
                         date_range: DateRange {
                             start: Some(NaiveDate::from_ymd_opt(2024, 1, 5).unwrap()),
                             end: Some(NaiveDate::from_ymd_opt(2024, 1, 9).unwrap()),
@@ -1107,7 +1091,7 @@ mod tests {
                 .register_entries(
                     &ctx,
                     &RegisterQuery {
-                        account: AccountFilter::Any,
+                        account: AccountFilter::All,
                         date_range: DateRange {
                             start: Some(NaiveDate::from_ymd_opt(2024, 1, 5).unwrap()),
                             end: Some(NaiveDate::from_ymd_opt(2024, 1, 6).unwrap()),
@@ -1153,7 +1137,7 @@ mod tests {
             .register_entries(
                 &ctx,
                 &RegisterQuery {
-                    account: AccountFilter::Any,
+                    account: AccountFilter::All,
                     date_range: DateRange::default(),
                     conversion: Some(Conversion {
                         strategy: ConversionStrategy::UpToDate {

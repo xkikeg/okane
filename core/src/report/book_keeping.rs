@@ -4,8 +4,8 @@
 use std::{borrow::Borrow, path::PathBuf};
 
 use annotate_snippets::{Annotation, AnnotationKind};
-use bumpalo::Bump;
 use bumpalo::collections as bcc;
+use bumpalo::Bump;
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
 
@@ -77,11 +77,9 @@ impl BookKeepError {
         text: &str,
     ) -> Vec<Annotation<'arena>> {
         match self {
-            BookKeepError::EvalFailure(err, pos) => vec![
-                AnnotationKind::Primary
-                    .span(parsed_span.resolve(pos))
-                    .label(bumpalo::format!(in &bump, "{}", err).into_bump_str()),
-            ],
+            BookKeepError::EvalFailure(err, pos) => vec![AnnotationKind::Primary
+                .span(parsed_span.resolve(pos))
+                .label(bumpalo::format!(in &bump, "{}", err).into_bump_str())],
             BookKeepError::BalanceFailure {
                 source: err,
                 account,
@@ -121,16 +119,12 @@ impl BookKeepError {
                         .label(msg.into_bump_str()),
                 ]
             }
-            BookKeepError::ZeroAmountWithExchange(exchange) => vec![
-                AnnotationKind::Primary
-                    .span(parsed_span.resolve(exchange))
-                    .label("absolute zero posting should not have exchange"),
-            ],
-            BookKeepError::ZeroExchangeRate(exchange) => vec![
-                AnnotationKind::Primary
-                    .span(parsed_span.resolve(exchange))
-                    .label("exchange with zero amount"),
-            ],
+            BookKeepError::ZeroAmountWithExchange(exchange) => vec![AnnotationKind::Primary
+                .span(parsed_span.resolve(exchange))
+                .label("absolute zero posting should not have exchange")],
+            BookKeepError::ZeroExchangeRate(exchange) => vec![AnnotationKind::Primary
+                .span(parsed_span.resolve(exchange))
+                .label("exchange with zero amount")],
             BookKeepError::ExchangeWithAmountCommodity {
                 posting_amount,
                 exchange,
@@ -146,11 +140,9 @@ impl BookKeepError {
                 // TODO: Add more detailed error into this.
                 // Also, put these logic into BookKeepError.
                 // https://github.com/xkikeg/okane/issues/189
-                vec![
-                    AnnotationKind::Primary
-                        .span(0..text.len())
-                        .label("error occured"),
-                ]
+                vec![AnnotationKind::Primary
+                    .span(0..text.len())
+                    .label("error occured")]
             }
         }
     }
@@ -195,9 +187,8 @@ where
             .load_price_db(ctx, loader.borrow().filesystem(), price_db_path)?;
     }
     Ok(Ledger {
-        arena: ctx.arena,
         transactions: accum.txns,
-        date_sorted_txns: None,
+        date_sorted_idx: None,
         raw_balance: accum.balance,
         price_repos: accum.price_repos.build(),
     })
