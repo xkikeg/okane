@@ -1686,6 +1686,7 @@ dependencies = [
 name = "okane"
 version = "0.19.0"
 dependencies = [
+ "anyhow",
  "assert_cmd",
  "assert_matches",
  "bumpalo",

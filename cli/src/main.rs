@@ -17,8 +17,6 @@ use shadow_rs::shadow;
 
 shadow!(build);
 
-use std::error::Error;
-
 use clap::Parser as _;
 
 fn main() {
@@ -30,10 +28,8 @@ fn main() {
     }
     if let Err(err) = cli.run(&mut std::io::stdout().lock()) {
         eprintln!("{}", err);
-        let mut cur: &dyn Error = &err;
-        while let Some(src) = cur.source() {
-            eprintln!("Caused by {}", src);
-            cur = src;
+        for cause in err.chain().skip(1) {
+            eprintln!("Caused by {}", cause);
         }
         std::process::exit(1);
     }
