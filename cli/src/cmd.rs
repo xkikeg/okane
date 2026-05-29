@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 
+use anyhow::Context as _;
 use bumpalo::Bump;
 use chrono::NaiveDate;
 use clap::{Args, Subcommand};
@@ -16,26 +17,6 @@ use crate::build::CLAP_LONG_VERSION;
 use crate::format;
 use crate::import;
 use crate::ui;
-
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("failed to perform IO")]
-    IO(#[from] std::io::Error),
-    #[error("failed to import")]
-    Import(#[from] import::ImportError),
-    #[error("failed to format")]
-    Format(#[from] format::FormatError),
-    #[error("failed to load")]
-    Load(#[from] load::LoadError),
-    #[error("failed to report")]
-    Report(#[from] report::ReportError),
-    #[error("failed to query")]
-    Query(#[from] query::QueryError),
-    #[error("failed to run TUI")]
-    Tui(#[source] std::io::Error),
-    #[error("{0}")]
-    Other(String),
-}
 
 #[derive(thiserror::Error, Debug)]
 #[error("invalid flag: {0}")]
@@ -54,7 +35,7 @@ impl Cli {
         self.command.validate()
     }
 
-    pub fn run<W>(self, w: &mut W) -> Result<(), Error>
+    pub fn run<W>(self, w: &mut W) -> anyhow::Result<()>
     where
         W: std::io::Write,
     {
@@ -89,7 +70,7 @@ impl Command {
         }
     }
 
-    pub fn run<W>(self, w: &mut W) -> Result<(), Error>
+    pub fn run<W>(self, w: &mut W) -> anyhow::Result<()>
     where
         W: std::io::Write,
     {
@@ -113,7 +94,7 @@ pub struct ImportCmd {
 }
 
 impl ImportCmd {
-    pub fn run<W>(&self, w: &mut W) -> Result<(), Error>
+    pub fn run<W>(&self, w: &mut W) -> anyhow::Result<()>
     where
         W: std::io::Write,
     {
@@ -129,11 +110,14 @@ pub struct FormatCmd {
 }
 
 impl FormatCmd {
-    pub fn run<W>(&self, w: &mut W) -> Result<(), Error>
+    pub fn run<W>(&self, w: &mut W) -> anyhow::Result<()>
     where
         W: std::io::Write,
     {
-        let mut r = BufReader::new(File::open(&self.source)?);
+        let mut r = BufReader::new(
+            File::open(&self.source)
+                .with_context(|| format!("failed to open {}", self.source.display()))?,
+        );
         format::format(&mut r, w)?;
         Ok(())
     }
@@ -146,7 +130,7 @@ pub struct Primitives {
 }
 
 impl Primitives {
-    fn run<W>(self, w: &mut W) -> Result<(), Error>
+    fn run<W>(self, w: &mut W) -> anyhow::Result<()>
     where
         W: std::io::Write,
     {
@@ -165,7 +149,7 @@ enum PrimitiveCmd {
 }
 
 impl PrimitiveCmd {
-    fn run<W>(self, w: &mut W) -> Result<(), Error>
+    fn run<W>(self, w: &mut W) -> anyhow::Result<()>
     where
         W: std::io::Write,
     {
@@ -183,14 +167,25 @@ struct FlattenCmd {
 }
 
 impl FlattenCmd {
-    pub fn run<W>(self, w: &mut W) -> Result<(), Error>
+    pub fn run<W>(self, w: &mut W) -> anyhow::Result<()>
     where
         W: std::io::Write,
     {
+        // `Loader::load` constrains the callback's error to `E: From<LoadError>`,
+        // so neither `io::Error` nor `anyhow::Error` fits — we use a tiny local
+        // wrapper just to bridge the two.
+        #[derive(thiserror::Error, Debug)]
+        enum FlattenError {
+            #[error(transparent)]
+            Load(#[from] load::LoadError),
+            #[error("failed to write flattened entry")]
+            Write(#[from] std::io::Error),
+        }
+
         // TODO: Pick DisplayContext from load results.
         let ctx = DisplayContext::default();
         load::new_loader(self.source).load(
-            |_path, _ctx, entry: &LedgerEntry| -> Result<(), Error> {
+            |_path, _ctx, entry: &LedgerEntry| -> Result<(), FlattenError> {
                 writeln!(w, "{}", ctx.as_display(entry))?;
                 Ok(())
             },
@@ -217,7 +212,7 @@ struct EvalCmd {
 }
 
 impl EvalCmd {
-    pub fn run<W>(self, w: &mut W) -> Result<(), Error>
+    pub fn run<W>(self, w: &mut W) -> anyhow::Result<()>
     where
         W: std::io::Write,
     {
@@ -253,7 +248,7 @@ pub struct AccountsCmd {
 }
 
 impl AccountsCmd {
-    pub fn run<W>(self, w: &mut W) -> Result<(), Error>
+    pub fn run<W>(self, w: &mut W) -> anyhow::Result<()>
     where
         W: std::io::Write,
     {
@@ -281,7 +276,7 @@ impl BalanceCmd {
         self.eval_options.validate()?;
         Ok(())
     }
-    pub fn run<W>(self, w: &mut W) -> Result<(), Error>
+    pub fn run<W>(self, w: &mut W) -> anyhow::Result<()>
     where
         W: std::io::Write,
     {
@@ -323,7 +318,7 @@ impl UiCmd {
         Ok(())
     }
 
-    pub fn run(self) -> Result<(), Error> {
+    pub fn run(self) -> anyhow::Result<()> {
         let arena = Bump::new();
         let mut ctx = report::ReportContext::new(&arena);
         let mut ledger = report::process(
@@ -345,7 +340,7 @@ impl UiCmd {
         // future iterations (register drill-down, recomputation under
         // different conversions, etc.) can reuse it without re-parsing.
         let app = ui::App::new(self.source.display().to_string(), rows);
-        ui::run_ui(app, &ctx).map_err(Error::Tui)?;
+        ui::run_ui(app, &ctx).context("failed to run TUI")?;
         drop(ledger);
         Ok(())
     }
@@ -364,7 +359,7 @@ pub struct RegisterCmd {
 }
 
 impl RegisterCmd {
-    pub fn run<W>(self, w: &mut W) -> Result<(), Error>
+    pub fn run<W>(self, w: &mut W) -> anyhow::Result<()>
     where
         W: std::io::Write,
     {
@@ -459,12 +454,10 @@ impl EvalOptions {
         }
     }
 
-    // TODO: Use anyhow::Error.
-    // https://github.com/xkikeg/okane/issues/310
-    fn to_date_range(&self) -> Result<query::DateRange, Error> {
+    fn to_date_range(&self) -> anyhow::Result<query::DateRange> {
         let end = if self.current {
             let tomorrow = self.today.succ_opt().ok_or_else(|| {
-                Error::Other(format!("cannot compute one day after today {}", self.today))
+                anyhow::anyhow!("cannot compute one day after today {}", self.today)
             })?;
             Some(tomorrow)
         } else {

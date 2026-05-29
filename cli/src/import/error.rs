@@ -52,7 +52,9 @@ impl Display for ImportErrorKind {
 pub struct ImportError {
     kind: ImportErrorKind,
     message: String,
-    source: Option<Box<dyn Error>>,
+    // `Send + Sync` so this error can be wrapped in `anyhow::Error` at the CLI
+    // boundary.
+    source: Option<Box<dyn Error + Send + Sync>>,
 }
 
 impl ImportError {
@@ -66,7 +68,7 @@ impl ImportError {
     }
 
     /// Creates a new [`ImportError`] with source.
-    pub fn with_source<E: Error + 'static>(
+    pub fn with_source<E: Error + Send + Sync + 'static>(
         kind: ImportErrorKind,
         message: String,
         source: E,
@@ -97,7 +99,7 @@ impl Display for ImportError {
 
 impl Error for ImportError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        self.source.as_ref().map(Box::as_ref)
+        self.source.as_deref().map(|s| s as &(dyn Error + 'static))
     }
 }
 
@@ -135,7 +137,7 @@ impl<T, E> private::IntoImportErrSeal for Result<T, E> {}
 
 impl<T, E> IntoImportError<T> for Result<T, E>
 where
-    E: Error + 'static,
+    E: Error + Send + Sync + 'static,
 {
     fn into_import_err<M: LazyMessage>(
         self,

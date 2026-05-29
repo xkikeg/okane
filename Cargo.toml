@@ -17,6 +17,7 @@ repository = "https://github.com/xkikeg/okane"
 
 [workspace.dependencies]
 # dependencies
+anyhow = "1.0"
 bumpalo = {version = "3.20", features = ["collections", "boxed"]}
 chrono = "0.4.44"
 lender = "0.6"

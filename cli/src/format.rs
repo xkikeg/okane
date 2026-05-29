@@ -1,4 +1,3 @@
-pub(crate) use format::FormatError;
 use okane_core::format;
 
 use std::io::{Read, Write};
