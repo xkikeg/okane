@@ -326,22 +326,25 @@ impl UiCmd {
             load::new_loader(self.source.clone()),
             &self.eval_options.to_process_options(),
         )?;
-        let query = query::BalanceQuery {
-            conversion: self.eval_options.to_conversion(&ctx)?,
-            date_range: self.eval_options.to_date_range()?,
+        let conversion = self.eval_options.to_conversion(&ctx)?;
+        let date_range = self.eval_options.to_date_range()?;
+        let balance_query = query::BalanceQuery {
+            conversion,
+            date_range,
         };
-        let balance = ledger.balance(&ctx, &query)?.into_owned();
+        let balance = ledger.balance(&ctx, &balance_query)?.into_owned();
         let rows: Vec<ui::BalanceRow> = balance
             .into_vec()
             .into_iter()
             .map(|(account, amount)| ui::BalanceRow { account, amount })
             .collect();
-        // `ledger` is intentionally kept alive for the full UI session so
-        // future iterations (register drill-down, recomputation under
-        // different conversions, etc.) can reuse it without re-parsing.
-        let app = ui::App::new(self.source.display().to_string(), rows);
-        ui::run_ui(app, &ctx).context("failed to run TUI")?;
-        drop(ledger);
+        // Reused for every register drill-down during the session.
+        let register_template = ui::RegisterQueryTemplate {
+            conversion,
+            date_range,
+        };
+        let app = ui::App::new(self.source.display().to_string(), rows, register_template);
+        ui::run_ui(app, &mut ledger, &ctx).context("failed to run TUI")?;
         Ok(())
     }
 }

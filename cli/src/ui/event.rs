@@ -1,13 +1,25 @@
 //! Event loop and keyboard handling for the TUI.
+//!
+//! Architecture follows The Elm Architecture (see
+//! <https://ratatui.rs/concepts/application-patterns/the-elm-architecture/>):
+//! key events are translated into [`Message`]s by [`key_to_message`] (a pure
+//! function that consults the current screen/overlay), [`App::update`] applies
+//! them, and any returned [`Command`] is fulfilled here — the single place
+//! that owns the mutable resources (the `Ledger`) the pure state machine
+//! cannot touch.
 
-use std::io;
 use std::time::Duration;
 
+use anyhow::Context;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use lender::FallibleLender;
 use okane_core::report::ReportContext;
+use okane_core::report::query::{Ledger, RegisterQuery};
 use ratatui::DefaultTerminal;
 
-use super::app::{App, TableNav};
+use super::app::{
+    App, Command, Message, Overlay, RegisterQueryTemplate, RegisterRow, Screen,
+};
 use super::render;
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(250);
@@ -16,60 +28,125 @@ const POLL_TIMEOUT: Duration = Duration::from_millis(250);
 pub fn run<'ctx>(
     terminal: &mut DefaultTerminal,
     app: &mut App<'ctx>,
+    ledger: &mut Ledger<'ctx>,
     ctx: &ReportContext<'ctx>,
-) -> io::Result<()> {
-    while !app.nav.should_quit {
+) -> anyhow::Result<()> {
+    while !app.should_quit {
         terminal.draw(|frame| render::draw(frame, app, ctx))?;
         if event::poll(POLL_TIMEOUT)?
             && let Event::Key(key) = event::read()?
+            && let Some(msg) = key_to_message(app, key)
+            && let Some(cmd) = app.update(msg)
         {
-            handle_key_event(&mut app.nav, key);
+            fulfill(app, ledger, ctx, cmd)?;
         }
     }
     Ok(())
 }
 
-/// Applies a key event to the navigation state.
-///
-/// Pure: only mutates `nav`, no IO. Used by the event loop and by unit tests
-/// to drive synthetic input without a real terminal or a `'ctx`-bound `App`.
-pub fn handle_key_event(nav: &mut TableNav, key: KeyEvent) {
-    // crossterm on Windows emits both Press and Release events; act on Press
+/// Pure: translate a raw `KeyEvent` into a [`Message`] given the current
+/// screen and overlay. Returns `None` when the key is unmapped.
+pub fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
+    // crossterm on Windows emits both Press and Release; act on Press
     // (and `Repeat`, treated like Press) to avoid double handling.
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
-        return;
+        return None;
     }
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-    match key.code {
-        KeyCode::Char('q') | KeyCode::Esc => nav.quit(),
-        KeyCode::Char('c') if ctrl => nav.quit(),
-        KeyCode::Up | KeyCode::Char('k') => nav.move_selection(-1),
-        KeyCode::Down | KeyCode::Char('j') => nav.move_selection(1),
-        KeyCode::PageUp => {
-            let delta = -(nav.page_size() as isize);
-            nav.move_selection(delta);
-        }
-        KeyCode::Char('b') if ctrl => {
-            let delta = -(nav.page_size() as isize);
-            nav.move_selection(delta);
-        }
-        KeyCode::PageDown => {
-            let delta = nav.page_size() as isize;
-            nav.move_selection(delta);
-        }
-        KeyCode::Char('f') if ctrl => {
-            let delta = nav.page_size() as isize;
-            nav.move_selection(delta);
-        }
-        KeyCode::Home | KeyCode::Char('g') => nav.select_first(),
-        KeyCode::End | KeyCode::Char('G') => nav.select_last(),
-        _ => {}
+
+    // Ctrl-C always quits — even through an open overlay.
+    if ctrl && matches!(key.code, KeyCode::Char('c')) {
+        return Some(Message::QuitImmediate);
     }
+
+    if app.overlay == Some(Overlay::QuitConfirm) {
+        return match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                Some(Message::ConfirmQuit)
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc | KeyCode::Char('q') => {
+                Some(Message::DismissOverlay)
+            }
+            _ => None,
+        };
+    }
+
+    // Common navigation keys, regardless of screen.
+    let nav = match key.code {
+        KeyCode::Up | KeyCode::Char('k') => Some(Message::MoveUp),
+        KeyCode::Down | KeyCode::Char('j') => Some(Message::MoveDown),
+        KeyCode::PageUp => Some(Message::PageUp),
+        KeyCode::Char('b') if ctrl => Some(Message::PageUp),
+        KeyCode::PageDown => Some(Message::PageDown),
+        KeyCode::Char('f') if ctrl => Some(Message::PageDown),
+        KeyCode::Home | KeyCode::Char('g') => Some(Message::SelectFirst),
+        KeyCode::End | KeyCode::Char('G') => Some(Message::SelectLast),
+        _ => None,
+    };
+    if nav.is_some() {
+        return nav;
+    }
+
+    // Screen-specific keys.
+    match (&app.screen, key.code) {
+        (Screen::Balance, KeyCode::Enter) => Some(Message::OpenRegister),
+        (Screen::Balance, KeyCode::Char('q') | KeyCode::Esc) => Some(Message::RequestQuit),
+        (Screen::Register(_), KeyCode::Char('q') | KeyCode::Esc) => {
+            Some(Message::LeaveRegister)
+        }
+        _ => None,
+    }
+}
+
+/// Executes a [`Command`] returned from [`App::update`]. The only impure
+/// step in the loop — it owns the `&mut Ledger` the pure state machine
+/// cannot touch.
+fn fulfill<'ctx>(
+    app: &mut App<'ctx>,
+    ledger: &mut Ledger<'ctx>,
+    ctx: &ReportContext<'ctx>,
+    cmd: Command,
+) -> anyhow::Result<()> {
+    match cmd {
+        Command::LoadRegister { account } => {
+            let rows = load_register(ledger, ctx, &app.register_template, &account)
+                .with_context(|| format!("failed to load register for {account}"))?;
+            app.show_register(account, rows);
+            Ok(())
+        }
+    }
+}
+
+/// Collects the register rows for `account` into owned [`RegisterRow`]s so
+/// they can be displayed without keeping the `FallibleLender` alive.
+fn load_register<'ctx>(
+    ledger: &mut Ledger<'ctx>,
+    ctx: &ReportContext<'ctx>,
+    template: &RegisterQueryTemplate<'ctx>,
+    account: &str,
+) -> anyhow::Result<Vec<RegisterRow<'ctx>>> {
+    let query = RegisterQuery {
+        account: Some(account.to_owned()),
+        date_range: template.date_range,
+        conversion: template.conversion,
+    };
+    let mut entries = ledger.register_entries(ctx, &query)?;
+    let mut rows = Vec::new();
+    while let Some(entry) = entries.next()? {
+        rows.push(RegisterRow {
+            date: entry.date,
+            payee: entry.payee.to_owned(),
+            amount: entry.amount.clone(),
+            total: entry.total.clone(),
+        });
+    }
+    Ok(rows)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::app::{RegisterView, TableNav};
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
@@ -79,79 +156,140 @@ mod tests {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
     }
 
-    #[test]
-    fn arrow_keys_move_selection() {
-        let mut nav = TableNav::new(5);
-        handle_key_event(&mut nav, key(KeyCode::Down));
-        assert_eq!(nav.table_state.selected(), Some(1));
-        handle_key_event(&mut nav, key(KeyCode::Down));
-        assert_eq!(nav.table_state.selected(), Some(2));
-        handle_key_event(&mut nav, key(KeyCode::Up));
-        assert_eq!(nav.table_state.selected(), Some(1));
+    fn app<'ctx>() -> App<'ctx> {
+        App::new(
+            "test".to_owned(),
+            Vec::new(),
+            RegisterQueryTemplate {
+                conversion: None,
+                date_range: Default::default(),
+            },
+        )
     }
 
     #[test]
-    fn vim_keys_move_selection() {
-        let mut nav = TableNav::new(5);
-        handle_key_event(&mut nav, key(KeyCode::Char('j')));
-        assert_eq!(nav.table_state.selected(), Some(1));
-        handle_key_event(&mut nav, key(KeyCode::Char('k')));
-        assert_eq!(nav.table_state.selected(), Some(0));
+    fn balance_arrow_keys_map_to_nav() {
+        let app = app();
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Down)),
+            Some(Message::MoveDown)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('k'))),
+            Some(Message::MoveUp)
+        );
     }
 
     #[test]
-    fn page_keys_use_viewport_height() {
-        let mut nav = TableNav::new(50);
-        nav.viewport_height = 10;
-        handle_key_event(&mut nav, key(KeyCode::PageDown));
-        assert_eq!(nav.table_state.selected(), Some(10));
-        handle_key_event(&mut nav, ctrl_key('f'));
-        assert_eq!(nav.table_state.selected(), Some(20));
-        handle_key_event(&mut nav, key(KeyCode::PageUp));
-        assert_eq!(nav.table_state.selected(), Some(10));
-        handle_key_event(&mut nav, ctrl_key('b'));
-        assert_eq!(nav.table_state.selected(), Some(0));
+    fn balance_enter_opens_register() {
+        let app = app();
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Enter)),
+            Some(Message::OpenRegister)
+        );
     }
 
     #[test]
-    fn home_and_end_jump_to_bounds() {
-        let mut nav = TableNav::new(10);
-        handle_key_event(&mut nav, key(KeyCode::Char('G')));
-        assert_eq!(nav.table_state.selected(), Some(9));
-        handle_key_event(&mut nav, key(KeyCode::Char('g')));
-        assert_eq!(nav.table_state.selected(), Some(0));
-        handle_key_event(&mut nav, key(KeyCode::End));
-        assert_eq!(nav.table_state.selected(), Some(9));
-        handle_key_event(&mut nav, key(KeyCode::Home));
-        assert_eq!(nav.table_state.selected(), Some(0));
+    fn balance_q_requests_quit_confirmation() {
+        let app = app();
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('q'))),
+            Some(Message::RequestQuit)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Esc)),
+            Some(Message::RequestQuit)
+        );
     }
 
     #[test]
-    fn quit_keys_set_should_quit() {
-        for code in [KeyCode::Char('q'), KeyCode::Esc] {
-            let mut nav = TableNav::new(3);
-            handle_key_event(&mut nav, key(code));
-            assert!(nav.should_quit, "quit key {code:?} did not quit");
-        }
-        let mut nav = TableNav::new(3);
-        handle_key_event(&mut nav, ctrl_key('c'));
-        assert!(nav.should_quit, "Ctrl-C did not quit");
+    fn register_q_leaves_register() {
+        let mut app = app();
+        app.screen = Screen::Register(RegisterView {
+            account: "A".into(),
+            rows: Vec::new(),
+            nav: TableNav::new(0),
+        });
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('q'))),
+            Some(Message::LeaveRegister)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Esc)),
+            Some(Message::LeaveRegister)
+        );
     }
 
     #[test]
-    fn unmapped_key_is_noop() {
-        let mut nav = TableNav::new(3);
-        handle_key_event(&mut nav, key(KeyCode::Char('x')));
-        assert_eq!(nav.table_state.selected(), Some(0));
-        assert!(!nav.should_quit);
+    fn register_enter_is_unmapped() {
+        let mut app = app();
+        app.screen = Screen::Register(RegisterView {
+            account: "A".into(),
+            rows: Vec::new(),
+            nav: TableNav::new(0),
+        });
+        assert_eq!(key_to_message(&app, key(KeyCode::Enter)), None);
+    }
+
+    #[test]
+    fn ctrl_c_always_quits() {
+        let mut app = app();
+        assert_eq!(
+            key_to_message(&app, ctrl_key('c')),
+            Some(Message::QuitImmediate)
+        );
+        app.overlay = Some(Overlay::QuitConfirm);
+        assert_eq!(
+            key_to_message(&app, ctrl_key('c')),
+            Some(Message::QuitImmediate)
+        );
+        app.overlay = None;
+        app.screen = Screen::Register(RegisterView {
+            account: "A".into(),
+            rows: Vec::new(),
+            nav: TableNav::new(0),
+        });
+        assert_eq!(
+            key_to_message(&app, ctrl_key('c')),
+            Some(Message::QuitImmediate)
+        );
+    }
+
+    #[test]
+    fn overlay_y_confirms_n_dismisses() {
+        let mut app = app();
+        app.overlay = Some(Overlay::QuitConfirm);
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('y'))),
+            Some(Message::ConfirmQuit)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('Y'))),
+            Some(Message::ConfirmQuit)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Enter)),
+            Some(Message::ConfirmQuit)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('n'))),
+            Some(Message::DismissOverlay)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Esc)),
+            Some(Message::DismissOverlay)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('q'))),
+            Some(Message::DismissOverlay)
+        );
     }
 
     #[test]
     fn key_release_is_ignored() {
-        let mut nav = TableNav::new(5);
+        let app = app();
         let release =
             KeyEvent::new_with_kind(KeyCode::Down, KeyModifiers::NONE, KeyEventKind::Release);
-        handle_key_event(&mut nav, release);
-        assert_eq!(nav.table_state.selected(), Some(0));
+        assert_eq!(key_to_message(&app, release), None);
     }
 }

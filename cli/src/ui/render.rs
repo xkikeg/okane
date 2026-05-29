@@ -1,48 +1,83 @@
 //! Pure rendering functions for the TUI.
+//!
+//! The popup pattern follows
+//! <https://ratatui.rs/recipes/layout/center-a-widget/>:
+//! render a `Clear` widget over a centered rect, then render the popup
+//! contents on top.
 
-use okane_core::report::ReportContext;
+use okane_core::report::{Amount, ReportContext};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Text};
-use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
+use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table};
 use unicode_width::UnicodeWidthStr;
 
-use super::app::{App, BalanceRow};
+use super::app::{App, BalanceRow, Overlay, RegisterRow, RegisterView, Screen};
 
-const FOOTER_HINT: &str = " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · q quit ";
+const FOOTER_HINT_BALANCE: &str =
+    " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · Enter register · q quit ";
+const FOOTER_HINT_REGISTER: &str =
+    " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · q/Esc back ";
 
 /// Renders a frame for the given app state.
 pub fn draw<'ctx>(frame: &mut Frame, app: &mut App<'ctx>, ctx: &ReportContext<'ctx>) {
     let area = frame.area();
     let layout = Layout::vertical([
         Constraint::Length(1), // title bar
-        Constraint::Min(1),    // table body
+        Constraint::Min(1),    // body
         Constraint::Length(1), // footer hint
     ])
     .split(area);
 
     draw_title(frame, layout[0], app);
-    draw_body(frame, layout[1], app, ctx);
-    draw_footer(frame, layout[2]);
+    match &mut app.screen {
+        Screen::Balance => {
+            draw_balance_body(
+                frame,
+                layout[1],
+                &app.balance_rows,
+                &mut app.balance_nav,
+                ctx,
+            );
+            draw_footer(frame, layout[2], FOOTER_HINT_BALANCE);
+        }
+        Screen::Register(view) => {
+            draw_register_body(frame, layout[1], view, ctx);
+            draw_footer(frame, layout[2], FOOTER_HINT_REGISTER);
+        }
+    }
+
+    if app.overlay == Some(Overlay::QuitConfirm) {
+        draw_quit_confirm(frame, area);
+    }
 }
 
 fn draw_title(frame: &mut Frame, area: Rect, app: &App<'_>) {
-    let title = format!(" okane ui — {} ", app.source_display);
+    let title = match &app.screen {
+        Screen::Balance => format!(" okane ui — {} ", app.source_display),
+        Screen::Register(view) => format!(
+            " okane ui — {} — register: {} ",
+            app.source_display, view.account
+        ),
+    };
     let paragraph =
         Paragraph::new(Line::from(title)).style(Style::default().add_modifier(Modifier::BOLD));
     frame.render_widget(paragraph, area);
 }
 
-fn draw_body<'ctx>(frame: &mut Frame, area: Rect, app: &mut App<'ctx>, ctx: &ReportContext<'ctx>) {
-    // Account column gets the remaining width; amount column is fixed.
-    // The inner area excludes the surrounding border.
+fn draw_balance_body<'ctx>(
+    frame: &mut Frame,
+    area: Rect,
+    rows: &[BalanceRow<'ctx>],
+    nav: &mut super::app::TableNav,
+    ctx: &ReportContext<'ctx>,
+) {
     let block = Block::default().borders(Borders::ALL);
     let inner = block.inner(area);
-    // Update viewport height (rows visible in the body, minus the header row).
-    app.nav.viewport_height = inner.height.saturating_sub(1);
+    nav.viewport_height = inner.height.saturating_sub(1);
 
-    if app.nav.is_empty() {
+    if rows.is_empty() {
         let msg = Paragraph::new("No balances to display")
             .alignment(Alignment::Center)
             .block(block);
@@ -53,42 +88,130 @@ fn draw_body<'ctx>(frame: &mut Frame, area: Rect, app: &mut App<'ctx>, ctx: &Rep
     let header = Row::new(vec![Cell::from("Account"), Cell::from("Amount")])
         .style(Style::default().add_modifier(Modifier::BOLD));
 
-    // Format each row's amount lines once; reused for width and row construction.
-    let formatted: Vec<Vec<String>> = app
-        .rows
+    let formatted: Vec<Vec<String>> = rows
         .iter()
         .map(|row| format_amount_lines(&row.amount, ctx))
         .collect();
     let amount_width = compute_amount_width(&formatted);
-    let rows: Vec<Row> = app
-        .rows
+    let table_rows: Vec<Row> = rows
         .iter()
         .zip(formatted.iter())
-        .map(|(row, lines)| make_row(row, lines))
+        .map(|(row, lines)| make_balance_row(row, lines))
         .collect();
 
     let table = Table::new(
-        rows,
+        table_rows,
         [Constraint::Min(10), Constraint::Length(amount_width)],
     )
     .header(header)
     .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED))
     .block(block);
 
-    frame.render_stateful_widget(table, area, &mut app.nav.table_state);
+    frame.render_stateful_widget(table, area, &mut nav.table_state);
 }
 
-fn draw_footer(frame: &mut Frame, area: Rect) {
-    let footer = Paragraph::new(FOOTER_HINT).style(Style::default().add_modifier(Modifier::DIM));
+fn draw_register_body<'ctx>(
+    frame: &mut Frame,
+    area: Rect,
+    view: &mut RegisterView<'ctx>,
+    ctx: &ReportContext<'ctx>,
+) {
+    let block = Block::default().borders(Borders::ALL);
+    let inner = block.inner(area);
+    view.nav.viewport_height = inner.height.saturating_sub(1);
+
+    if view.rows.is_empty() {
+        let msg = Paragraph::new("No register entries to display")
+            .alignment(Alignment::Center)
+            .block(block);
+        frame.render_widget(msg, area);
+        return;
+    }
+
+    let header = Row::new(vec![
+        Cell::from("Date"),
+        Cell::from("Payee"),
+        Cell::from("Amount"),
+        Cell::from("Total"),
+    ])
+    .style(Style::default().add_modifier(Modifier::BOLD));
+
+    let amount_lines: Vec<Vec<String>> = view
+        .rows
+        .iter()
+        .map(|row| format_amount_lines(&row.amount, ctx))
+        .collect();
+    let total_lines: Vec<Vec<String>> = view
+        .rows
+        .iter()
+        .map(|row| format_amount_lines(&row.total, ctx))
+        .collect();
+    let amount_width = compute_amount_width(&amount_lines);
+    let total_width = compute_amount_width(&total_lines);
+
+    let table_rows: Vec<Row> = view
+        .rows
+        .iter()
+        .zip(amount_lines.iter())
+        .zip(total_lines.iter())
+        .map(|((row, amt), tot)| make_register_row(row, amt, tot))
+        .collect();
+
+    let table = Table::new(
+        table_rows,
+        [
+            Constraint::Length(10), // YYYY-MM-DD
+            Constraint::Min(10),    // payee, takes remaining
+            Constraint::Length(amount_width),
+            Constraint::Length(total_width),
+        ],
+    )
+    .header(header)
+    .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED))
+    .block(block);
+
+    frame.render_stateful_widget(table, area, &mut view.nav.table_state);
+}
+
+fn draw_footer(frame: &mut Frame, area: Rect, hint: &str) {
+    let footer = Paragraph::new(hint).style(Style::default().add_modifier(Modifier::DIM));
     frame.render_widget(footer, area);
 }
 
-/// Formats the amount lines for one balance — one line per commodity, or a
-/// single `"0"` line when the balance is empty.
-fn format_amount_lines<'ctx>(
-    amount: &okane_core::report::Amount<'ctx>,
-    ctx: &ReportContext<'ctx>,
-) -> Vec<String> {
+/// Centered modal asking the user to confirm quitting.
+fn draw_quit_confirm(frame: &mut Frame, area: Rect) {
+    let popup = centered_rect(area, 40, 5);
+    // Clear first so the popup paints over the table cleanly.
+    frame.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Quit? ")
+        .style(Style::default().add_modifier(Modifier::BOLD));
+    let body = Paragraph::new(vec![
+        Line::from(""),
+        Line::from("Quit okane ui? (y/n)").alignment(Alignment::Center),
+    ])
+    .block(block);
+    frame.render_widget(body, popup);
+}
+
+/// Returns a sub-rect of `area` of the given size, centered.
+fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
+    let width = width.min(area.width);
+    let height = height.min(area.height);
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    Rect {
+        x,
+        y,
+        width,
+        height,
+    }
+}
+
+/// Formats the amount lines for one balance/register cell — one line per
+/// commodity, or a single `"0"` line when the balance is empty.
+fn format_amount_lines<'ctx>(amount: &Amount<'ctx>, ctx: &ReportContext<'ctx>) -> Vec<String> {
     let mut lines: Vec<String> = amount
         .iter()
         .map(|single| single.as_display(ctx).to_string())
@@ -99,21 +222,35 @@ fn format_amount_lines<'ctx>(
     lines
 }
 
-/// Builds a multi-line table row for one balance entry. The account label
-/// appears only on the first line; remaining lines belong to additional
-/// commodities of the same account.
-fn make_row<'r>(row: &'r BalanceRow<'_>, lines: &'r [String]) -> Row<'r> {
+fn make_balance_row<'r>(row: &'r BalanceRow<'_>, lines: &'r [String]) -> Row<'r> {
     let height = row.line_count();
     let account_cell = Cell::from(row.account.as_str());
-    let amount_lines: Vec<Line> = lines
-        .iter()
-        .map(|s| Line::from(s.as_str()).alignment(Alignment::Right))
-        .collect();
-    let amount_cell = Cell::from(Text::from(amount_lines));
+    let amount_cell = Cell::from(amount_text(lines));
     Row::new(vec![account_cell, amount_cell]).height(height)
 }
 
-/// Returns the display width (in columns) needed for the amount column.
+fn make_register_row<'r>(
+    row: &'r RegisterRow<'_>,
+    amount_lines: &'r [String],
+    total_lines: &'r [String],
+) -> Row<'r> {
+    let height = row.line_count();
+    let date_cell = Cell::from(row.date.to_string());
+    let payee_cell = Cell::from(row.payee.as_str());
+    let amount_cell = Cell::from(amount_text(amount_lines));
+    let total_cell = Cell::from(amount_text(total_lines));
+    Row::new(vec![date_cell, payee_cell, amount_cell, total_cell]).height(height)
+}
+
+fn amount_text<'a>(lines: &'a [String]) -> Text<'a> {
+    let lines: Vec<Line<'a>> = lines
+        .iter()
+        .map(|s| Line::from(s.as_str()).alignment(Alignment::Right))
+        .collect();
+    Text::from(lines)
+}
+
+/// Returns the display width (in columns) needed for an amount column.
 fn compute_amount_width(formatted: &[Vec<String>]) -> u16 {
     let max = formatted
         .iter()
@@ -175,8 +312,35 @@ mod tests {
         let amount = Amount::from_value(usd, dec!(100)) + Amount::from_value(eur, dec!(200));
         let lines = format_amount_lines(&amount, &ctx);
         assert_eq!(lines.len(), 2);
-        // BTreeMap iteration → ordered by CommodityTag (insertion order via interner).
         assert!(lines.iter().any(|s| s == "100 USD"));
         assert!(lines.iter().any(|s| s == "200 EUR"));
+    }
+
+    #[test]
+    fn centered_rect_sits_in_the_middle() {
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 30,
+        };
+        let r = centered_rect(area, 40, 6);
+        assert_eq!(r.width, 40);
+        assert_eq!(r.height, 6);
+        assert_eq!(r.x, 30);
+        assert_eq!(r.y, 12);
+    }
+
+    #[test]
+    fn centered_rect_clamps_to_area() {
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 10,
+            height: 4,
+        };
+        let r = centered_rect(area, 40, 6);
+        assert_eq!(r.width, 10);
+        assert_eq!(r.height, 4);
     }
 }

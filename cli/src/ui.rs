@@ -1,17 +1,24 @@
 //! Terminal UI for okane — entry point and shared types.
 //!
-//! See [`run_ui`] for the public entry point. The first iteration renders the
-//! same content as `okane balance` as a single scrollable table.
+//! Architecture (Elm-style; see
+//! <https://ratatui.rs/concepts/application-patterns/the-elm-architecture/>):
+//! - [`App`] holds all state and exposes [`App::update`] for transitions.
+//! - [`event`] translates `KeyEvent`s to [`app::Message`]s and runs the loop.
+//! - [`render`] is a pure view over `App`.
+//!
+//! See [`run_ui`] for the public entry point. The session presents a balance
+//! table; pressing Enter drills into a register view for the selected
+//! account, and q/Esc returns. A quit confirmation popup guards exits from
+//! the balance screen; Ctrl-C bypasses it.
 
 mod app;
 mod event;
 mod render;
 
-pub use app::{App, BalanceRow};
-
-use std::io;
+pub use app::{App, BalanceRow, RegisterQueryTemplate};
 
 use okane_core::report::ReportContext;
+use okane_core::report::query::Ledger;
 
 /// Runs the TUI session with the prepared [`App`].
 ///
@@ -19,11 +26,17 @@ use okane_core::report::ReportContext;
 /// that restores the terminal before propagating, runs the event loop, and
 /// tears down the terminal on exit (normal or error).
 ///
-/// `ctx` is borrowed for the lifetime of the session so amount values can be
-/// formatted lazily under the same `ReportContext` that produced them.
-pub fn run_ui<'ctx>(mut app: App<'ctx>, ctx: &ReportContext<'ctx>) -> io::Result<()> {
+/// `ledger` is borrowed mutably so the register view can be computed on
+/// demand. `ctx` is borrowed for the lifetime of the session so amount
+/// values can be formatted lazily under the same `ReportContext` that
+/// produced them.
+pub fn run_ui<'ctx>(
+    mut app: App<'ctx>,
+    ledger: &mut Ledger<'ctx>,
+    ctx: &ReportContext<'ctx>,
+) -> anyhow::Result<()> {
     let mut terminal = ratatui::init();
-    let result = event::run(&mut terminal, &mut app, ctx);
+    let result = event::run(&mut terminal, &mut app, ledger, ctx);
     ratatui::restore();
     result
 }
