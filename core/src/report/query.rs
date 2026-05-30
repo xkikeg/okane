@@ -2,6 +2,7 @@
 
 use std::{borrow::Cow, collections::HashSet};
 
+use bumpalo::collections as bcc;
 use chrono::NaiveDate;
 use lender::{check_covariance_fallible, FallibleLender, FallibleLending};
 
@@ -23,7 +24,18 @@ use super::{
 /// Contains processed transactions, so that users can query information.
 #[derive(Debug)]
 pub struct Ledger<'ctx> {
+    /// Arena from the report context — needed to allocate new `Posting`
+    /// slice boxes when building the date-sorted clone cache.
+    pub(super) arena: &'ctx bumpalo::Bump,
     pub(super) transactions: Vec<Transaction<'ctx>>,
+    /// Lazily-computed clone of `transactions` sorted by date. `None` until
+    /// the first query that needs date ordering.
+    ///
+    /// We store actual `Transaction` clones (not indices into `transactions`)
+    /// so the date-ordered iteration is sequential — sequential reads are
+    /// L1-cache-friendly, whereas the previous index-based design did a
+    /// random-access lookup into `transactions[i]` per yielded row.
+    pub(super) date_sorted_txns: Option<Vec<Transaction<'ctx>>>,
     pub(super) raw_balance: Balance<'ctx>,
     pub(super) price_repos: PriceRepository<'ctx>,
 }
@@ -54,6 +66,16 @@ pub struct PostingQuery {
     pub account: Option<String>,
 }
 
+/// Specifies the iteration order of `register` rows.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum Sort {
+    /// Preserve the order of appearance in the source file(s).
+    #[default]
+    Original,
+    /// Stable sort by transaction date, ascending.
+    Date,
+}
+
 /// Query to drive [`Ledger::register_entries`].
 #[derive(Debug, Default)]
 // TODO: non_exhaustive
@@ -67,6 +89,8 @@ pub struct RegisterQuery<'ctx> {
     /// running total. Only [`ConversionStrategy::Historical`] is supported.
     /// See https://github.com/xkikeg/okane/issues/313.
     pub conversion: Option<Conversion<'ctx>>,
+    /// Order in which the matching postings are yielded.
+    pub sort: Sort,
 }
 
 /// A row of the register report.
@@ -175,6 +199,36 @@ impl<'ctx> Ledger<'ctx> {
         self.transactions.iter()
     }
 
+    /// Builds the date-sorted transaction clone cache on first call; a
+    /// no-op on every subsequent call. Clones each `Transaction` (postings
+    /// re-allocated in the same arena) into a new `Vec`, then stable-sorts
+    /// the copy by date. The result is a sequentially-iterable view that
+    /// preserves the original `transactions` Vec in file order.
+    fn ensure_date_sorted_txns(&mut self) {
+        if self.date_sorted_txns.is_some() {
+            return;
+        }
+        let arena = self.arena;
+        let mut sorted: Vec<Transaction<'ctx>> = self
+            .transactions
+            .iter()
+            .map(|txn| {
+                let mut postings =
+                    bcc::Vec::with_capacity_in(txn.postings.len(), arena);
+                for p in txn.postings.iter() {
+                    postings.push(p.clone());
+                }
+                Transaction {
+                    date: txn.date,
+                    postings: postings.into_boxed_slice(),
+                }
+            })
+            .collect();
+        sorted.sort_by_key(|t| t.date);
+        self.date_sorted_txns = Some(sorted);
+    }
+
+
     /// Returns all postings following the queries.
     // TODO: Support date range query.
     // https://github.com/xkikeg/okane/issues/208
@@ -229,9 +283,23 @@ impl<'ctx> Ledger<'ctx> {
         // When the account filter excludes every known account, return an
         // iterator that is already exhausted instead of scanning everything.
         let account_filter = AccountFilter::new(ctx, query.account.as_deref());
-        let txns: std::slice::Iter<'a, Transaction<'ctx>> = match account_filter {
-            None => [].iter(),
-            Some(_) => self.transactions.iter(),
+        let txns: TxnIter<'a, 'ctx> = match (account_filter.as_ref(), query.sort) {
+            (None, _) => TxnIter::linear(&[]),
+            (Some(_), Sort::Original) => TxnIter::linear(&self.transactions),
+            // Build (or reuse) the date-sorted clone cache. Bounds are
+            // applied via `date_range_iter` (binary-search lo, incremental
+            // `end` check), so the inner `date_range.contains` check below
+            // is a no-op on every txn yielded here — it's kept for the
+            // `Linear` arms above.
+            (Some(_), Sort::Date) => {
+                self.ensure_date_sorted_txns();
+                date_range_iter(
+                    self.date_sorted_txns
+                        .as_deref()
+                        .expect("just built by ensure_date_sorted_txns"),
+                    query.date_range,
+                )
+            }
         };
         Ok(RegisterEntries {
             ctx,
@@ -258,41 +326,23 @@ impl<'ctx> Ledger<'ctx> {
         let balance = if !query.require_recompute() {
             Cow::Borrowed(&self.raw_balance)
         } else {
-            let mut bal = Balance::default();
-            for (txn, posting) in self.transactions.iter().flat_map(|txn| {
-                txn.postings.iter().filter_map(move |posting| {
-                    if !query.date_range.contains(txn.date) {
-                        return None;
-                    }
-                    Some((txn, posting))
-                })
-            }) {
-                let delta = match query.conversion {
-                    Some(Conversion {
-                        strategy: ConversionStrategy::Historical,
-                        target,
-                    }) => Cow::Owned(
-                        price_db::convert_amount(
-                            ctx,
-                            &mut self.price_repos,
-                            &posting.amount,
-                            target,
-                            txn.date,
-                        )
-                        // TODO: do we need this round, or just at the end?
-                        // .map(|amount| amount.round(ctx))
-                        .map_err(QueryError::CommodityConversionFailure)?,
-                    ),
-                    None
-                    | Some(Conversion {
-                        strategy: ConversionStrategy::UpToDate { .. },
-                        ..
-                    }) => Cow::Borrowed(&posting.amount),
-                };
-                bal.add_amount(posting.account, delta.into_owned());
-            }
-            bal.round(ctx);
-            Cow::Owned(bal)
+            // Accumulating into Balance is commutative, so we are free to
+            // pick the iteration order. When the date range is bounded we
+            // use the date-sorted permutation (binary-search lower bound,
+            // incremental upper bound); otherwise we walk every transaction
+            // in source order.
+            let txns = if query.date_range.is_bypass() {
+                TxnIter::linear(&self.transactions)
+            } else {
+                self.ensure_date_sorted_txns();
+                date_range_iter(
+                    self.date_sorted_txns
+                        .as_deref()
+                        .expect("just built by ensure_date_sorted_txns"),
+                    query.date_range,
+                )
+            };
+            Cow::Owned(compute_balance(ctx, &mut self.price_repos, txns, query.conversion)?)
         };
         match query.conversion {
             None
@@ -362,6 +412,56 @@ impl<'ctx> Ledger<'ctx> {
     }
 }
 
+/// Iterator over transactions used internally by [`RegisterEntries`] and
+/// [`Ledger::balance`].
+///
+/// Both the linear (file-order) and sorted (date-order) paths walk a
+/// `slice::Iter<Transaction>` — the only difference is whether to
+/// short-circuit on an upper-bound date. So we collapse them into a single
+/// struct rather than an enum: no tag dispatch, no payload-size waste from
+/// the larger variant, and the `end == None` case compiles to a single
+/// well-predicted branch on the hot path.
+pub(super) struct TxnIter<'a, 'ctx> {
+    it: std::slice::Iter<'a, Transaction<'ctx>>,
+    /// Upper bound for sorted iteration: once a yielded transaction's date
+    /// is `>= end`, iteration stops. `None` for the linear / unbounded case.
+    end: Option<NaiveDate>,
+}
+
+impl<'a, 'ctx> TxnIter<'a, 'ctx> {
+    /// Walk `slice` in source order. No early-exit.
+    fn linear(slice: &'a [Transaction<'ctx>]) -> Self {
+        Self {
+            it: slice.iter(),
+            end: None,
+        }
+    }
+
+    /// Walk `slice` (assumed to be in ascending date order) and stop as
+    /// soon as a transaction's date is `>= end`. Pass `end = None` to
+    /// disable the upper-bound check.
+    fn sorted(slice: &'a [Transaction<'ctx>], end: Option<NaiveDate>) -> Self {
+        Self {
+            it: slice.iter(),
+            end,
+        }
+    }
+}
+
+impl<'a, 'ctx> Iterator for TxnIter<'a, 'ctx> {
+    type Item = &'a Transaction<'ctx>;
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let txn = self.it.next()?;
+        if let Some(end) = self.end
+            && txn.date >= end
+        {
+            return None;
+        }
+        Some(txn)
+    }
+}
+
 /// [`FallibleLender`] returned by [`Ledger::register_entries`].
 ///
 /// Holds the running cumulative [`Amount`] and a borrow into the underlying
@@ -370,7 +470,7 @@ impl<'ctx> Ledger<'ctx> {
 /// from currency conversion are surfaced as [`QueryError`].
 pub struct RegisterEntries<'a, 'ctx> {
     ctx: &'a ReportContext<'ctx>,
-    txns: std::slice::Iter<'a, Transaction<'ctx>>,
+    txns: TxnIter<'a, 'ctx>,
     current: std::slice::Iter<'a, Posting<'ctx>>,
     account_filter: AccountFilter<'ctx>,
     date_range: DateRange,
@@ -443,6 +543,60 @@ impl<'a, 'ctx> FallibleLender for RegisterEntries<'a, 'ctx> {
             total: &self.total,
         }))
     }
+}
+
+/// Builds a sorted [`TxnIter`] over the transactions matching `date_range`,
+/// in ascending date order. The lower bound is found by binary search; the
+/// upper bound is enforced incrementally by [`TxnIter::next`].
+///
+/// Free function (rather than a `&self` method on `Ledger`) so its borrow
+/// of the cache is disjoint from `&mut self.price_repos` at the call site —
+/// through a method we'd hold a shared borrow on all of `self`.
+fn date_range_iter<'a, 'ctx>(
+    sorted_txns: &'a [Transaction<'ctx>],
+    date_range: DateRange,
+) -> TxnIter<'a, 'ctx> {
+    let lo = match date_range.start {
+        None => 0,
+        Some(start) => sorted_txns.partition_point(|t| t.date < start),
+    };
+    TxnIter::sorted(&sorted_txns[lo..], date_range.end)
+}
+
+/// Accumulates the balance for every posting yielded by `txns`, applying
+/// `conversion` if requested.
+///
+/// Free function so the caller can split borrows: `price_repos` and the
+/// iterator borrow disjoint fields of `Ledger`, but the borrow checker
+/// only sees that split through a free function signature.
+fn compute_balance<'a, 'ctx>(
+    ctx: &ReportContext<'ctx>,
+    price_repos: &mut PriceRepository<'ctx>,
+    txns: TxnIter<'a, 'ctx>,
+    conversion: Option<Conversion<'ctx>>,
+) -> Result<Balance<'ctx>, QueryError> {
+    let mut bal = Balance::default();
+    for txn in txns {
+        for posting in txn.postings.iter() {
+            let delta = match conversion {
+                Some(Conversion {
+                    strategy: ConversionStrategy::Historical,
+                    target,
+                }) => Cow::Owned(
+                    price_db::convert_amount(ctx, price_repos, &posting.amount, target, txn.date)
+                        .map_err(QueryError::CommodityConversionFailure)?,
+                ),
+                None
+                | Some(Conversion {
+                    strategy: ConversionStrategy::UpToDate { .. },
+                    ..
+                }) => Cow::Borrowed(&posting.amount),
+            };
+            bal.add_amount(posting.account, delta.into_owned());
+        }
+    }
+    bal.round(ctx);
+    Ok(bal)
 }
 
 enum AccountFilter<'ctx> {
@@ -849,6 +1003,7 @@ mod tests {
                         account: Some("Assets:J 銀行".to_string()),
                         date_range: DateRange::default(),
                         conversion: None,
+                        sort: Sort::Original,
                     },
                 )
                 .unwrap(),
@@ -901,6 +1056,7 @@ mod tests {
                             end: Some(NaiveDate::from_ymd_opt(2024, 1, 9).unwrap()),
                         },
                         conversion: None,
+                        sort: Sort::Original,
                     },
                 )
                 .unwrap(),
@@ -942,6 +1098,7 @@ mod tests {
                         account: Some("Does:Not:Exist".to_string()),
                         date_range: DateRange::default(),
                         conversion: None,
+                        sort: Sort::Original,
                     },
                 )
                 .unwrap(),
@@ -975,6 +1132,7 @@ mod tests {
                             strategy: ConversionStrategy::Historical,
                             target: jpy,
                         }),
+                        sort: Sort::Original,
                     },
                 )
                 .unwrap(),
@@ -1019,6 +1177,7 @@ mod tests {
                         },
                         target: jpy,
                     }),
+                    sort: Sort::Original,
                 },
             )
             .err()
@@ -1054,5 +1213,128 @@ mod tests {
             summed += &r.3;
         }
         assert_eq!(summed, final_total);
+    }
+
+    /// Ledger fixture whose transactions are intentionally out of date order
+    /// so we can tell `Sort::Original` apart from `Sort::Date`.
+    fn unordered_loader() -> load::Loader<load::FakeFileSystem> {
+        // Dates: 2024/03/01, 2024/01/01, 2024/02/01 — i.e. neither
+        // ascending nor descending.
+        let content = indoc! {"
+            2024/03/01 Third by file
+                Assets:Bank      300 JPY
+                Equity
+
+            2024/01/01 First by date
+                Assets:Bank      100 JPY
+                Equity
+
+            2024/02/01 Middle by date
+                Assets:Bank      200 JPY
+                Equity
+        "};
+        let fake = hashmap! {
+            PathBuf::from("path/to/file.ledger") => content.as_bytes().to_vec(),
+        };
+        load::Loader::new(PathBuf::from("path/to/file.ledger"), fake.into())
+    }
+
+    #[test]
+    fn register_entries_sort_original_preserves_file_order() {
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let mut ledger =
+            report::process(&mut ctx, unordered_loader(), &report::ProcessOptions::default())
+                .unwrap();
+        let bank = ctx.account("Assets:Bank").unwrap();
+        let rows = collect_register(
+            ledger
+                .register_entries(
+                    &ctx,
+                    &RegisterQuery {
+                        account: Some("Assets:Bank".to_string()),
+                        sort: Sort::Original,
+                        ..Default::default()
+                    },
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        let dates: Vec<NaiveDate> = rows.iter().map(|r| r.0).collect();
+        assert_eq!(
+            dates,
+            vec![
+                NaiveDate::from_ymd_opt(2024, 3, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 2, 1).unwrap(),
+            ]
+        );
+        // Every row is on the same account, so the filter is exercised.
+        assert!(rows.iter().all(|r| r.2 == bank));
+    }
+
+    #[test]
+    fn register_entries_sort_date_yields_ascending_order() {
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let mut ledger =
+            report::process(&mut ctx, unordered_loader(), &report::ProcessOptions::default())
+                .unwrap();
+        let rows = collect_register(
+            ledger
+                .register_entries(
+                    &ctx,
+                    &RegisterQuery {
+                        account: Some("Assets:Bank".to_string()),
+                        sort: Sort::Date,
+                        ..Default::default()
+                    },
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        let dates: Vec<NaiveDate> = rows.iter().map(|r| r.0).collect();
+        assert_eq!(
+            dates,
+            vec![
+                NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 2, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2024, 3, 1).unwrap(),
+            ]
+        );
+    }
+
+    #[test]
+    fn register_entries_sort_date_running_total_matches_chronology() {
+        // Running total must follow the visit order: 100 → 300 → 600.
+        // (cf. Sort::Original would visit 300 → 400 → 600.)
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let mut ledger =
+            report::process(&mut ctx, unordered_loader(), &report::ProcessOptions::default())
+                .unwrap();
+        let jpy = ctx.commodities.resolve("JPY").unwrap();
+        let rows = collect_register(
+            ledger
+                .register_entries(
+                    &ctx,
+                    &RegisterQuery {
+                        account: Some("Assets:Bank".to_string()),
+                        sort: Sort::Date,
+                        ..Default::default()
+                    },
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        let totals: Vec<Amount> = rows.into_iter().map(|r| r.4).collect();
+        assert_eq!(
+            totals,
+            vec![
+                Amount::from_value(jpy, dec!(100)),
+                Amount::from_value(jpy, dec!(300)),
+                Amount::from_value(jpy, dec!(600)),
+            ]
+        );
     }
 }

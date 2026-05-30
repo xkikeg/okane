@@ -346,10 +346,39 @@ impl UiCmd {
     }
 }
 
+/// `--sort` flag for `register`. `Original` keeps the file order; `Date`
+/// sorts ascending by transaction date (stable, so ties preserve file order).
+#[derive(clap::ValueEnum, Clone, Copy, Debug, Default)]
+pub enum SortKey {
+    /// Preserve the order of appearance in the source file (current default).
+    #[default]
+    #[value(alias = "o")]
+    Original,
+    /// Stable sort by transaction date, ascending.
+    #[value(alias = "d")]
+    Date,
+}
+
+impl From<SortKey> for query::Sort {
+    fn from(value: SortKey) -> Self {
+        match value {
+            SortKey::Original => query::Sort::Original,
+            SortKey::Date => query::Sort::Date,
+        }
+    }
+}
+
 #[derive(Args, Debug)]
 pub struct RegisterCmd {
     #[command(flatten)]
     eval_options: EvalOptions,
+
+    /// Sort order for the register rows.
+    ///
+    /// `original` (default) preserves the order of appearance in the source
+    /// file; `date` (alias `d`) sorts ascending by transaction date.
+    #[arg(long, value_enum, default_value_t = SortKey::Original)]
+    sort: SortKey,
 
     /// Path to the Ledger file.
     source: std::path::PathBuf,
@@ -374,6 +403,7 @@ impl RegisterCmd {
             account: self.account.clone(),
             date_range: self.eval_options.to_date_range()?,
             conversion: self.eval_options.to_conversion(&ctx)?,
+            sort: self.sort.into(),
         };
         let mut entries = ledger.register_entries(&ctx, &query)?;
         while let Some(entry) = entries.next()? {
