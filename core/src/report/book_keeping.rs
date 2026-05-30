@@ -195,7 +195,9 @@ where
             .load_price_db(ctx, loader.borrow().filesystem(), price_db_path)?;
     }
     Ok(Ledger {
+        arena: ctx.arena,
         transactions: accum.txns,
+        date_sorted_txns: None,
         raw_balance: accum.balance,
         price_repos: accum.price_repos.build(),
     })

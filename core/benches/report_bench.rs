@@ -444,8 +444,87 @@ fn query_register_entries(c: &mut Criterion) {
         );
     }
 
+    // sort-date-cold — every iter rebuilds the Ledger so each measured call
+    // is the *first* `Sort::Date` call on a fresh state — i.e. it includes
+    // the O(N log N) sort. This is the cost a single CLI invocation pays.
+    //
+    // We use `iter_custom` to keep the per-iter Ledger setup out of the timed
+    // window; only the register_entries call itself is measured.
+    for params in InputParams::params_from_env() {
+        let input = FakeFileSink::new_example(Path::new("report_bench"), params).unwrap();
+        let query = report::query::RegisterQuery {
+            sort: report::query::Sort::Date,
+            ..Default::default()
+        };
+        group.bench_with_input(
+            BenchmarkId::new("sort-date-cold", params),
+            &params,
+            |b, _params| {
+                b.iter_custom(|iters| {
+                    let walltime = WallTime;
+                    let mut total = walltime.zero();
+                    for _ in 0..iters {
+                        let arena = Bump::new();
+                        let mut ctx = report::ReportContext::new(&arena);
+                        let opts = report::ProcessOptions::default();
+                        let mut ledger = report::process(&mut ctx, input.new_loader(), &opts)
+                            .expect("report::process must succeed");
+                        let start = walltime.start();
+                        let mut entries =
+                            ledger.register_entries(&ctx, &query).unwrap();
+                        let mut count = 0u64;
+                        loop {
+                            match entries.next().unwrap() {
+                                None => break,
+                                Some(_) => count += 1,
+                            }
+                        }
+                        black_box(count);
+                        total = walltime.add(&total, &walltime.end(start));
+                    }
+                    total
+                })
+            },
+        );
+    }
+
+    // sort-date-warm — Ledger is reused across iters, so the date-sort cache
+    // is built on the first iter and every subsequent iter is a cache hit.
+    // This measures the marginal cost of the cached path vs `sort-original`.
+    for params in InputParams::params_from_env() {
+        let input = FakeFileSink::new_example(Path::new("report_bench"), params).unwrap();
+        let arena = Bump::new();
+        let mut ctx = report::ReportContext::new(&arena);
+        let opts = report::ProcessOptions::default();
+        let mut ledger = report::process(&mut ctx, input.new_loader(), &opts)
+            .expect("report::process must succeed");
+
+        let query = report::query::RegisterQuery {
+            sort: report::query::Sort::Date,
+            ..Default::default()
+        };
+        group.bench_with_input(
+            BenchmarkId::new("sort-date-warm", params),
+            &params,
+            |b, _params| {
+                b.iter_with_large_drop(|| {
+                    let mut entries = ledger.register_entries(&ctx, &query).unwrap();
+                    let mut count = 0u64;
+                    loop {
+                        match entries.next().unwrap() {
+                            None => break,
+                            Some(_) => count += 1,
+                        }
+                    }
+                    black_box(count)
+                })
+            },
+        );
+    }
+
     group.finish();
 }
+
 
 fn basic_asserts<T: FileSink>(input: &ExampleInput<T>) {
     let arena = Bump::new();
