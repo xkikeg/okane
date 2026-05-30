@@ -159,22 +159,24 @@ fn query_balance(c: &mut Criterion) {
         let mut ledger = report::process(&mut ctx, input.new_loader(), &opts)
             .expect("report::process must succeed");
 
-        let query = report::query::BalanceQuery {
-            date_range: report::query::DateRange {
-                start: Some(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
-                end: Some(NaiveDate::from_ymd_opt(2025, 1, 1).unwrap()),
-            },
-            conversion: None,
-        };
-        group.bench_with_input(
-            BenchmarkId::new("date-range", params),
-            &params,
-            |b, _params| {
+        for (label, (start, end)) in [
+            ("date-range-first10", params.date_range_first()),
+            ("date-range-middle20", params.date_range_middle()),
+            ("date-range-last30", params.date_range_last()),
+        ] {
+            let query = report::query::BalanceQuery {
+                date_range: report::query::DateRange {
+                    start: Some(start),
+                    end: Some(end),
+                },
+                conversion: None,
+            };
+            group.bench_with_input(BenchmarkId::new(label, params), &params, |b, _params| {
                 b.iter_with_large_drop(|| {
                     black_box(ledger.balance(&ctx, &query).unwrap());
                 })
-            },
-        );
+            });
+        }
     }
 
     for params in InputParams::params_from_env() {
@@ -330,7 +332,8 @@ fn query_register_entries(c: &mut Criterion) {
         );
     }
 
-    // date-range — one-year window, no account filter, no conversion
+    // date-range — three windows (first 10%, middle 20%, last 30% of the
+    // dataset's date span), no account filter, no conversion
     for params in InputParams::params_from_env() {
         let input = FakeFileSink::new_example(Path::new("report_bench"), params).unwrap();
         let arena = Bump::new();
@@ -339,17 +342,19 @@ fn query_register_entries(c: &mut Criterion) {
         let mut ledger = report::process(&mut ctx, input.new_loader(), &opts)
             .expect("report::process must succeed");
 
-        let query = report::query::RegisterQuery {
-            date_range: report::query::DateRange {
-                start: Some(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
-                end: Some(NaiveDate::from_ymd_opt(2025, 1, 1).unwrap()),
-            },
-            ..Default::default()
-        };
-        group.bench_with_input(
-            BenchmarkId::new("date-range", params),
-            &params,
-            |b, _params| {
+        for (label, (start, end)) in [
+            ("date-range-first10", params.date_range_first()),
+            ("date-range-middle20", params.date_range_middle()),
+            ("date-range-last30", params.date_range_last()),
+        ] {
+            let query = report::query::RegisterQuery {
+                date_range: report::query::DateRange {
+                    start: Some(start),
+                    end: Some(end),
+                },
+                ..Default::default()
+            };
+            group.bench_with_input(BenchmarkId::new(label, params), &params, |b, _params| {
                 b.iter_with_large_drop(|| {
                     let mut entries = ledger.register_entries(&ctx, &query).unwrap();
                     let mut count = 0u64;
@@ -361,8 +366,8 @@ fn query_register_entries(c: &mut Criterion) {
                     }
                     black_box(count)
                 })
-            },
-        );
+            });
+        }
     }
 
     // conversion-historical — no pricedb, historical conversion to CHF

@@ -10,7 +10,7 @@ use std::{
 
 use okane_core::load;
 
-use chrono::{Datelike, NaiveDate, Weekday};
+use chrono::{Datelike, Days, NaiveDate, Weekday};
 use pretty_decimal::PrettyDecimal;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -156,6 +156,36 @@ impl InputParams {
 
     fn years(&self) -> impl Iterator<Item = Year> {
         (YEAR_BEGIN..YEAR_BEGIN + self.num_years).map(Year)
+    }
+
+    /// Returns a `[start, end)` date window covering `length_pct` percent of
+    /// the dataset's date span, starting `start_pct` percent in from the
+    /// beginning. The dataset spans `[YEAR_BEGIN-01-01, (YEAR_BEGIN+num_years)-01-01)`.
+    fn date_window(&self, start_pct: u32, length_pct: u32) -> (NaiveDate, NaiveDate) {
+        debug_assert!(start_pct + length_pct <= 100);
+        let begin = NaiveDate::from_ymd_opt(YEAR_BEGIN, 1, 1).unwrap();
+        let end = NaiveDate::from_ymd_opt(YEAR_BEGIN + self.num_years, 1, 1).unwrap();
+        let total_days = (end - begin).num_days() as u64;
+        let start_offset = total_days * start_pct as u64 / 100;
+        let end_offset = total_days * (start_pct + length_pct) as u64 / 100;
+        let start = begin.checked_add_days(Days::new(start_offset)).unwrap();
+        let stop = begin.checked_add_days(Days::new(end_offset)).unwrap();
+        (start, stop)
+    }
+
+    /// First 10% of the dataset's date span.
+    pub fn date_range_first(&self) -> (NaiveDate, NaiveDate) {
+        self.date_window(0, 10)
+    }
+
+    /// Middle 20% of the dataset's date span (40%..60%).
+    pub fn date_range_middle(&self) -> (NaiveDate, NaiveDate) {
+        self.date_window(40, 20)
+    }
+
+    /// Last 30% of the dataset's date span.
+    pub fn date_range_last(&self) -> (NaiveDate, NaiveDate) {
+        self.date_window(70, 30)
     }
 }
 
