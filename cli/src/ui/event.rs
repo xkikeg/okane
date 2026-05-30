@@ -14,7 +14,7 @@ use anyhow::Context;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use lender::FallibleLender;
 use okane_core::report::ReportContext;
-use okane_core::report::query::{Ledger, RegisterQuery};
+use okane_core::report::query::{Ledger, RegisterQuery, Sort};
 use ratatui::DefaultTerminal;
 
 use super::app::{
@@ -129,6 +129,7 @@ fn load_register<'ctx>(
         account: Some(account.to_owned()),
         date_range: template.date_range,
         conversion: template.conversion,
+        sort: Sort::Date,
     };
     let mut entries = ledger.register_entries(ctx, &query)?;
     let mut rows = Vec::new();
