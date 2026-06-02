@@ -4,7 +4,7 @@ use std::{borrow::Cow, collections::HashSet};
 
 use bumpalo::collections as bcc;
 use chrono::NaiveDate;
-use lender::{check_covariance_fallible, FallibleLender, FallibleLending};
+use lender::{FallibleLender, FallibleLending, check_covariance_fallible};
 
 use crate::{
     parse,
@@ -158,6 +158,9 @@ impl DateRange {
 #[derive(Debug, Default)]
 // TODO: non_exhaustive
 pub struct BalanceQuery<'ctx> {
+    /// Select which accounts to include. Defaults to [`AccountFilter::All`]
+    /// (every account).
+    pub account: AccountFilter<'ctx>,
     pub conversion: Option<Conversion<'ctx>>,
     pub date_range: DateRange,
 }
@@ -204,8 +207,7 @@ impl<'ctx> Ledger<'ctx> {
             .transactions
             .iter()
             .map(|txn| {
-                let mut postings =
-                    bcc::Vec::with_capacity_in(txn.postings.len(), arena);
+                let mut postings = bcc::Vec::with_capacity_in(txn.postings.len(), arena);
                 for p in txn.postings.iter() {
                     postings.push(p.clone());
                 }
@@ -313,14 +315,19 @@ impl<'ctx> Ledger<'ctx> {
                     query.date_range,
                 )
             };
-            Cow::Owned(compute_balance(ctx, &mut self.price_repos, txns, query.conversion)?)
+            Cow::Owned(compute_balance(
+                ctx,
+                &mut self.price_repos,
+                txns,
+                query.conversion,
+            )?)
         };
-        match query.conversion {
+        let balance = match query.conversion {
             None
             | Some(Conversion {
                 strategy: ConversionStrategy::Historical,
                 ..
-            }) => Ok(balance),
+            }) => balance,
             Some(Conversion {
                 strategy: ConversionStrategy::UpToDate { today },
                 target,
@@ -340,7 +347,22 @@ impl<'ctx> Ledger<'ctx> {
                     );
                 }
                 converted.round(ctx);
-                Ok(Cow::Owned(converted))
+                Cow::Owned(converted)
+            }
+        };
+        // Restrict to the requested accounts. `Any` short-circuits so the
+        // common unfiltered query keeps returning the borrowed/cached balance
+        // without an extra copy.
+        match &query.account {
+            AccountFilter::All => Ok(balance),
+            filter => {
+                let mut filtered = Balance::default();
+                for (account, amount) in balance.iter() {
+                    if filter.is_match(account) {
+                        filtered.add_amount(*account, amount.clone());
+                    }
+                }
+                Ok(Cow::Owned(filtered))
             }
         }
     }
@@ -573,30 +595,67 @@ fn compute_balance<'a, 'ctx>(
 /// Describes which accounts to include in a query.
 #[derive(Debug, Clone, Default)]
 pub enum AccountFilter<'ctx> {
-    /// Match every account.
+    /// Matches every account.
     #[default]
-    Any,
-    /// Match exactly one account (O(1) equality check).
+    All,
+    /// Matches exactly one account (O(1) equality check).
     Exact(Account<'ctx>),
-    /// Match any account in the set (intended for future multi-pattern / regex support).
+    /// Matches any account in the set.
     Set(HashSet<Account<'ctx>>),
 }
 
 impl<'ctx> AccountFilter<'ctx> {
     /// Returns a filter matching exactly one already-resolved account.
     pub fn single(account: Account<'ctx>) -> Self {
-        AccountFilter::Exact(account)
+        Self::Exact(account)
     }
 
-    /// Resolves a string pattern against the context's known accounts.
+    /// Constructs a filter matching any of the given set of accounts.
     ///
-    /// Returns `AccountFilter::Exact` on a match, or an empty
-    /// `AccountFilter::Set` (matches nothing) when the pattern is unknown.
-    pub fn from_pattern(ctx: &ReportContext<'ctx>, pattern: &str) -> Self {
-        match ctx.account(pattern) {
-            Some(account) => AccountFilter::Exact(account),
-            None => AccountFilter::Set(HashSet::new()),
+    /// Note this may return the `Exact` variant for optimization.
+    fn from_set(accounts: HashSet<Account<'ctx>>) -> Self {
+        if accounts.len() == 1 {
+            Self::Exact(accounts.into_iter().next().unwrap())
+        } else {
+            Self::Set(accounts)
         }
+    }
+
+    /// Constructs a filter matching any of the given account names verbatim.
+    ///
+    /// Names that don't resolve to a known account simply contribute nothing;
+    /// if none of them resolve, the returned filter matches no account.
+    pub fn from_exact_accounts(ctx: &ReportContext<'ctx>, accounts: &[impl AsRef<str>]) -> Self {
+        let mut matched = HashSet::new();
+        for name in accounts {
+            if let Some(account) = ctx.account(name.as_ref()) {
+                matched.insert(account);
+            }
+        }
+        Self::from_set(matched)
+    }
+
+    /// Builds a filter matching every known account that matches any of the
+    /// given regex `patterns`.
+    ///
+    /// Each entry of `patterns` is a regular expression matched (unanchored,
+    /// like `ledger`) against every known account name. With an empty
+    /// `patterns`, the returned filter matches no account (callers that want
+    /// "match every account" should use [`AccountFilter::All`] directly).
+    ///
+    /// Returns [`regex::Error`] if any pattern fails to compile.
+    pub fn from_regex_patterns(
+        ctx: &ReportContext<'ctx>,
+        patterns: &[impl AsRef<str>],
+    ) -> Result<Self, regex::Error> {
+        let mut matched: HashSet<Account<'ctx>> = HashSet::new();
+        let set = regex::RegexSet::new(patterns.iter().map(AsRef::as_ref))?;
+        for account in ctx.all_accounts_unsorted() {
+            if set.is_match(account.as_str()) {
+                matched.insert(account);
+            }
+        }
+        Ok(Self::from_set(matched))
     }
 
     /// Returns `true` when the filter can never match any account.
@@ -606,7 +665,7 @@ impl<'ctx> AccountFilter<'ctx> {
 
     fn is_match(&self, account: &Account<'ctx>) -> bool {
         match self {
-            AccountFilter::Any => true,
+            AccountFilter::All => true,
             AccountFilter::Exact(target) => account == target,
             AccountFilter::Set(targets) => targets.contains(account),
         }
@@ -622,7 +681,7 @@ mod tests {
     use assert_matches::assert_matches;
     use bumpalo::Bump;
     use indoc::indoc;
-    use maplit::hashmap;
+    use maplit::{hashmap, hashset};
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
@@ -753,6 +812,7 @@ mod tests {
             .balance(
                 &ctx,
                 &BalanceQuery {
+                    account: AccountFilter::All,
                     conversion: Some(Conversion {
                         strategy: ConversionStrategy::Historical,
                         target: jpy,
@@ -830,6 +890,7 @@ mod tests {
             .balance(
                 &ctx,
                 &BalanceQuery {
+                    account: AccountFilter::All,
                     conversion: Some(Conversion {
                         strategy: ConversionStrategy::UpToDate {
                             today: NaiveDate::from_ymd_opt(2024, 1, 16).unwrap(),
@@ -903,6 +964,7 @@ mod tests {
             .balance(
                 &ctx,
                 &BalanceQuery {
+                    account: AccountFilter::All,
                     conversion: None,
                     date_range: DateRange {
                         start: Some(NaiveDate::from_ymd_opt(2024, 1, 5).unwrap()),
@@ -1034,7 +1096,7 @@ mod tests {
                 .register_entries(
                     &ctx,
                     &RegisterQuery {
-                        account: AccountFilter::Any,
+                        account: AccountFilter::All,
                         date_range: DateRange {
                             start: Some(NaiveDate::from_ymd_opt(2024, 1, 5).unwrap()),
                             end: Some(NaiveDate::from_ymd_opt(2024, 1, 9).unwrap()),
@@ -1079,7 +1141,7 @@ mod tests {
                 .register_entries(
                     &ctx,
                     &RegisterQuery {
-                        account: AccountFilter::from_pattern(&ctx, "Does:Not:Exist"),
+                        account: AccountFilter::from_exact_accounts(&ctx, &["Does:Not:Exist"]),
                         date_range: DateRange::default(),
                         conversion: None,
                         sort: Sort::Original,
@@ -1107,7 +1169,7 @@ mod tests {
                 .register_entries(
                     &ctx,
                     &RegisterQuery {
-                        account: AccountFilter::Any,
+                        account: AccountFilter::All,
                         date_range: DateRange {
                             start: Some(NaiveDate::from_ymd_opt(2024, 1, 5).unwrap()),
                             end: Some(NaiveDate::from_ymd_opt(2024, 1, 6).unwrap()),
@@ -1153,7 +1215,7 @@ mod tests {
             .register_entries(
                 &ctx,
                 &RegisterQuery {
-                    account: AccountFilter::Any,
+                    account: AccountFilter::All,
                     date_range: DateRange::default(),
                     conversion: Some(Conversion {
                         strategy: ConversionStrategy::UpToDate {
@@ -1227,9 +1289,12 @@ mod tests {
     fn register_entries_sort_original_preserves_file_order() {
         let arena = Bump::new();
         let mut ctx = report::ReportContext::new(&arena);
-        let mut ledger =
-            report::process(&mut ctx, unordered_loader(), &report::ProcessOptions::default())
-                .unwrap();
+        let mut ledger = report::process(
+            &mut ctx,
+            unordered_loader(),
+            &report::ProcessOptions::default(),
+        )
+        .unwrap();
         let bank = ctx.account("Assets:Bank").unwrap();
         let rows = collect_register(
             ledger
@@ -1261,9 +1326,12 @@ mod tests {
     fn register_entries_sort_date_yields_ascending_order() {
         let arena = Bump::new();
         let mut ctx = report::ReportContext::new(&arena);
-        let mut ledger =
-            report::process(&mut ctx, unordered_loader(), &report::ProcessOptions::default())
-                .unwrap();
+        let mut ledger = report::process(
+            &mut ctx,
+            unordered_loader(),
+            &report::ProcessOptions::default(),
+        )
+        .unwrap();
         let bank = ctx.account("Assets:Bank").unwrap();
         let rows = collect_register(
             ledger
@@ -1295,9 +1363,12 @@ mod tests {
         // (cf. Sort::Original would visit 300 → 400 → 600.)
         let arena = Bump::new();
         let mut ctx = report::ReportContext::new(&arena);
-        let mut ledger =
-            report::process(&mut ctx, unordered_loader(), &report::ProcessOptions::default())
-                .unwrap();
+        let mut ledger = report::process(
+            &mut ctx,
+            unordered_loader(),
+            &report::ProcessOptions::default(),
+        )
+        .unwrap();
         let jpy = ctx.commodities.resolve("JPY").unwrap();
         let bank = ctx.account("Assets:Bank").unwrap();
         let rows = collect_register(
@@ -1322,5 +1393,127 @@ mod tests {
                 Amount::from_value(jpy, dec!(600)),
             ]
         );
+    }
+
+    #[test]
+    fn account_filter_from_regex_patterns_empty_matches_nothing() {
+        let arena = Bump::new();
+        let (ctx, _ledger) = create_ledger(&arena);
+
+        let filter = AccountFilter::from_regex_patterns(&ctx, &[] as &[&str]).unwrap();
+        assert_matches!(filter, AccountFilter::Set(s) if s.is_empty());
+    }
+
+    #[test]
+    fn account_filter_from_regex_patterns_matches_substring() {
+        let arena = Bump::new();
+        let (ctx, _ledger) = create_ledger(&arena);
+
+        // Unanchored regex: "Assets" matches every account starting with it.
+        let filter = AccountFilter::from_regex_patterns(&ctx, &["Assets"]).unwrap();
+        let matched = assert_matches!(filter, AccountFilter::Set(s) => s);
+        assert_eq!(
+            matched,
+            HashSet::from([
+                ctx.account("Assets:CH Bank").unwrap(),
+                ctx.account("Assets:Broker").unwrap(),
+                ctx.account("Assets:J 銀行").unwrap()
+            ]),
+        );
+    }
+
+    #[test]
+    fn account_filter_from_regex_patterns_multiple_patterns_are_unioned() {
+        let arena = Bump::new();
+        let (ctx, _ledger) = create_ledger(&arena);
+
+        let filter = AccountFilter::from_regex_patterns(&ctx, &["^Income", "Card$"]).unwrap();
+        assert_matches!(filter, AccountFilter::Set(s) => {
+            assert_eq!(s, hashset![
+                ctx.account("Income:Capital Gain").unwrap(),
+                ctx.account("Liabilities:EUR Card").unwrap(),
+                ]);
+        });
+    }
+
+    #[test]
+    fn account_filter_from_regex_patterns_single_match_collapses_to_exact() {
+        let arena = Bump::new();
+        let (ctx, _ledger) = create_ledger(&arena);
+
+        let filter = AccountFilter::from_regex_patterns(&ctx, &["Grocery"]).unwrap();
+        let expected = ctx.account("Expenses:Grocery").unwrap();
+        assert_matches!(filter, AccountFilter::Exact(a) if a == expected);
+    }
+
+    #[test]
+    fn account_filter_from_exact_accounts_matches_names_verbatim() {
+        let arena = Bump::new();
+        let (ctx, _ledger) = create_ledger(&arena);
+
+        // "." would match everything if treated as regex; as an exact name it
+        // resolves to nothing. The known exact account is added; the unknown
+        // ones contribute nothing.
+        let filter =
+            AccountFilter::from_exact_accounts(&ctx, &["Assets:Broker", ".", "Does:Not:Exist"]);
+        let expected = ctx.account("Assets:Broker").unwrap();
+        assert_matches!(filter, AccountFilter::Exact(a) if a == expected);
+    }
+
+    #[test]
+    fn account_filter_from_exact_accounts_no_matches_is_empty_set() {
+        let arena = Bump::new();
+        let (ctx, _ledger) = create_ledger(&arena);
+
+        let filter = AccountFilter::from_exact_accounts(&ctx, &["Does:Not:Exist"]);
+        assert_matches!(filter, AccountFilter::Set(s) if s.is_empty());
+    }
+
+    #[test]
+    fn account_filter_from_regex_patterns_invalid_regex_errors() {
+        let arena = Bump::new();
+        let (ctx, _ledger) = create_ledger(&arena);
+
+        let err = AccountFilter::from_regex_patterns(&ctx, &["("]);
+        assert!(err.is_err(), "expected regex compile error, got {err:?}");
+    }
+
+    #[test]
+    fn balance_with_account_filter() {
+        let arena = Bump::new();
+        let (ctx, mut ledger) = create_ledger(&arena);
+        let chf = ctx.commodities.resolve("CHF").unwrap();
+        let jpy = ctx.commodities.resolve("JPY").unwrap();
+        let okane = ctx.commodities.resolve("OKANE").unwrap();
+
+        let got = ledger
+            .balance(
+                &ctx,
+                &BalanceQuery {
+                    account: AccountFilter::from_regex_patterns(&ctx, &["^Assets"]).unwrap(),
+                    conversion: None,
+                    date_range: DateRange::default(),
+                },
+            )
+            .unwrap()
+            .into_owned();
+
+        let want: Balance = [
+            (
+                ctx.account("Assets:CH Bank").unwrap(),
+                Amount::from_value(chf, dec!(1858.04)),
+            ),
+            (
+                ctx.account("Assets:Broker").unwrap(),
+                Amount::from_iter([(okane, dec!(4900.0000)), (jpy, dec!(12300))]),
+            ),
+            (
+                ctx.account("Assets:J 銀行").unwrap(),
+                Amount::from_value(jpy, dec!(980090)),
+            ),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(want, got);
     }
 }

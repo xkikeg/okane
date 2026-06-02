@@ -1,0 +1,7 @@
+2024-01-29 Initial with deduced amount Assets:Banks:あおによし 100000 JPY 100000 JPY
+2024-02-03 explicit posting Expenses:Cash 10000 JPY 110000 JPY
+2024-02-03 explicit posting Assets:Banks:あおによし -10000 JPY 100000 JPY
+2024-02-15 deduce from amount Expenses:Cash 3000 JPY 103000 JPY
+2024-02-15 deduce from amount Assets:Banks:あおによし -3000 JPY 100000 JPY
+2024-02-25 salary Assets:Banks:あおによし 230000 JPY 330000 JPY
+2024-02-26 saving Assets:Banks:あおによし -10000 JPY 320000 JPY

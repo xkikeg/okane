@@ -1754,6 +1754,7 @@ dependencies = [
  "okane-golden",
  "pretty_assertions",
  "pretty_decimal",
+ "regex",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",

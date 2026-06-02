@@ -147,6 +147,7 @@ fn query_balance(c: &mut Criterion) {
             ("date-range-last30", params.date_range_last()),
         ] {
             let query = report::query::BalanceQuery {
+                account: report::query::AccountFilter::All,
                 date_range: report::query::DateRange {
                     start: Some(start),
                     end: Some(end),
@@ -172,6 +173,7 @@ fn query_balance(c: &mut Criterion) {
         let usd = ctx.commodity("USD").unwrap();
 
         let query = report::query::BalanceQuery {
+            account: report::query::AccountFilter::All,
             date_range: report::query::DateRange::default(),
             conversion: Some(report::query::Conversion {
                 strategy: report::query::ConversionStrategy::UpToDate {
@@ -201,6 +203,7 @@ fn query_balance(c: &mut Criterion) {
         let chf = ctx.commodity("CHF").unwrap();
 
         let query = report::query::BalanceQuery {
+            account: report::query::AccountFilter::All,
             date_range: report::query::DateRange::default(),
             conversion: Some(report::query::Conversion {
                 strategy: report::query::ConversionStrategy::Historical,
@@ -230,6 +233,7 @@ fn query_balance(c: &mut Criterion) {
         let chf = ctx.commodity("CHF").unwrap();
 
         let query = report::query::BalanceQuery {
+            account: report::query::AccountFilter::All,
             date_range: report::query::DateRange::default(),
             conversion: Some(report::query::Conversion {
                 strategy: report::query::ConversionStrategy::Historical,

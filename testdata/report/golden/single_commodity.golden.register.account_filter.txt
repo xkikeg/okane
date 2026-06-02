@@ -1,4 +1,0 @@
-2024-01-29 Initial with deduced amount Assets:Banks:あおによし 100000 JPY 100000 JPY
-2024-02-03 explicit posting Assets:Banks:あおによし -10000 JPY 90000 JPY
-2024-02-15 deduce from amount Assets:Banks:あおによし -3000 JPY 87000 JPY
-2024-02-25 salary Assets:Banks:あおによし 230000 JPY 317000 JPY

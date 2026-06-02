@@ -10,3 +10,5 @@
 2024-02-25 salary Assets:Banks:あおによし 230000 JPY 230000 JPY
 2024-02-25 salary Income:Salary -300000 JPY -70000 JPY
 2024-02-25 salary Expenses:Tax:Income 70000 JPY 0 JPY
+2024-02-26 saving Expenses:T Assets:Banks:あおによし 10000 JPY 10000 JPY
+2024-02-26 saving Assets:Banks:あおによし -10000 JPY 0 JPY

@@ -269,6 +269,16 @@ pub struct BalanceCmd {
 
     /// Path to the Ledger file.
     source: std::path::PathBuf,
+
+    /// [Optional] Accounts to report the balance.
+    ///
+    /// By default, each pattern is an unanchored regex matched against the account name.
+    /// Use `--account-filter` to change the matching logic.
+    ///
+    /// If none are set, show all accounts.
+    ///
+    /// If any of them are non-existing accounts, those are simply skipped.
+    account: Vec<String>,
 }
 
 impl BalanceCmd {
@@ -287,7 +297,12 @@ impl BalanceCmd {
             load::new_loader(self.source),
             &self.eval_options.to_process_options(),
         )?;
+        let account = self
+            .eval_options
+            .create_account_filter(&ctx, self.account.as_slice())
+            .context("failed to create regex for account filter")?;
         let query = query::BalanceQuery {
+            account,
             conversion: self.eval_options.to_conversion(&ctx)?,
             date_range: self.eval_options.to_date_range()?,
         };
@@ -329,6 +344,7 @@ impl UiCmd {
         let conversion = self.eval_options.to_conversion(&ctx)?;
         let date_range = self.eval_options.to_date_range()?;
         let balance_query = query::BalanceQuery {
+            account: query::AccountFilter::All,
             conversion,
             date_range,
         };
@@ -377,17 +393,22 @@ pub struct RegisterCmd {
     eval_options: EvalOptions,
 
     /// Sort order for the register rows.
-    ///
-    /// `original` (default) preserves the order of appearance in the source
-    /// file; `date` (alias `d`) sorts ascending by transaction date.
-    #[arg(long, value_enum, default_value_t = SortKey::Original)]
+    #[arg(long, value_enum, default_value_t)]
     sort: SortKey,
 
     /// Path to the Ledger file.
     source: std::path::PathBuf,
 
-    /// [Optional] Account to track the register.
-    account: Option<String>,
+    /// [Optional] Accounts to get register.
+    ///
+    /// By default, each pattern is an unanchored regex matched against the
+    /// account name. an account is shown when it matches any pattern.
+    /// Use `--account-filter` to change the matching logic.
+    ///
+    /// If none are set, show all accounts.
+    ///
+    /// If any of them are non-existing accounts, those are simply skipped.
+    account: Vec<String>,
 }
 
 impl RegisterCmd {
@@ -404,11 +425,9 @@ impl RegisterCmd {
         )?;
         let query = query::RegisterQuery {
             account: self
-                .account
-                .as_deref()
-                .map_or(query::AccountFilter::Any, |s| {
-                    query::AccountFilter::from_pattern(&ctx, s)
-                }),
+                .eval_options
+                .create_account_filter(&ctx, self.account.as_slice())
+                .context("failed to create regex for account filter")?,
             date_range: self.eval_options.to_date_range()?,
             conversion: self.eval_options.to_conversion(&ctx)?,
             sort: self.sort.into(),
@@ -474,6 +493,24 @@ pub struct EvalOptions {
     /// If this is specified with `--end`, it causes an error.
     #[arg(long, default_value_t)]
     current: bool,
+
+    /// Controls the account filter mode.
+    ///
+    /// By default, `regex` mode is used.
+    #[arg(long, value_enum, default_value_t)]
+    account_filter: AccountFilterMode,
+}
+
+/// Mode of the account filter.
+#[derive(Debug, Default, Clone, Copy, clap::ValueEnum)]
+enum AccountFilterMode {
+    /// Use given account matcher as an unanchored regex.
+    /// For example, `Bank` matches any accounts with `.*Bank.*`.
+    #[default]
+    Regex,
+    /// Use given account matcher as the exact account name.
+    /// For example, `Foo` matches only `Foo`.
+    Exact,
 }
 
 impl EvalOptions {
@@ -526,6 +563,22 @@ impl EvalOptions {
             query::ConversionStrategy::UpToDate { today: self.today }
         };
         Ok(Some(query::Conversion { strategy, target }))
+    }
+
+    fn create_account_filter<'ctx>(
+        &self,
+        ctx: &report::ReportContext<'ctx>,
+        accounts: &[String],
+    ) -> Result<query::AccountFilter<'ctx>, regex::Error> {
+        if accounts.is_empty() {
+            return Ok(query::AccountFilter::All);
+        }
+        match self.account_filter {
+            AccountFilterMode::Regex => query::AccountFilter::from_regex_patterns(ctx, accounts),
+            AccountFilterMode::Exact => {
+                Ok(query::AccountFilter::from_exact_accounts(ctx, accounts))
+            }
+        }
     }
 }
 
