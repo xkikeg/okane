@@ -119,7 +119,10 @@ fn query_postings(c: &mut Criterion) {
     c.bench_function("query-posting-one-account", |b| {
         b.iter_with_large_drop(|| {
             let query = report::query::PostingQuery {
-                account: Some("Assets:Account02".to_string()),
+                account: report::query::AccountFilter::single(
+                    ctx.account("Assets:Account02")
+                        .expect("Assets:Account02 must exist in bench fixture"),
+                ),
             };
             black_box(ledger.postings(&ctx, &query));
         })
@@ -310,7 +313,10 @@ fn query_register_entries(c: &mut Criterion) {
             .expect("report::process must succeed");
 
         let query = report::query::RegisterQuery {
-            account: Some("Assets:Account02".to_string()),
+            account: report::query::AccountFilter::single(
+                ctx.account("Assets:Account02")
+                    .expect("Assets:Account02 must exist in bench fixture"),
+            ),
             ..Default::default()
         };
         group.bench_with_input(

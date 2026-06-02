@@ -58,7 +58,8 @@ fn draw_title(frame: &mut Frame, area: Rect, app: &App<'_>) {
         Screen::Balance => format!(" okane ui — {} ", app.source_display),
         Screen::Register(view) => format!(
             " okane ui — {} — register: {} ",
-            app.source_display, view.account
+            app.source_display,
+            view.account.as_str()
         ),
     };
     let paragraph =

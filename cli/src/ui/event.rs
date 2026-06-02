@@ -13,8 +13,8 @@ use std::time::Duration;
 use anyhow::Context;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use lender::FallibleLender;
-use okane_core::report::ReportContext;
-use okane_core::report::query::{Ledger, RegisterQuery, Sort};
+use okane_core::report::{Account, ReportContext};
+use okane_core::report::query::{AccountFilter, Ledger, RegisterQuery, Sort};
 use ratatui::DefaultTerminal;
 
 use super::app::{
@@ -105,12 +105,12 @@ fn fulfill<'ctx>(
     app: &mut App<'ctx>,
     ledger: &mut Ledger<'ctx>,
     ctx: &ReportContext<'ctx>,
-    cmd: Command,
+    cmd: Command<'ctx>,
 ) -> anyhow::Result<()> {
     match cmd {
         Command::LoadRegister { account } => {
-            let rows = load_register(ledger, ctx, &app.register_template, &account)
-                .with_context(|| format!("failed to load register for {account}"))?;
+            let rows = load_register(ledger, ctx, &app.register_template, account)
+                .with_context(|| format!("failed to load register for {}", account.as_str()))?;
             app.show_register(account, rows);
             Ok(())
         }
@@ -123,10 +123,10 @@ fn load_register<'ctx>(
     ledger: &mut Ledger<'ctx>,
     ctx: &ReportContext<'ctx>,
     template: &RegisterQueryTemplate<'ctx>,
-    account: &str,
+    account: Account<'ctx>,
 ) -> anyhow::Result<Vec<RegisterRow<'ctx>>> {
     let query = RegisterQuery {
-        account: Some(account.to_owned()),
+        account: AccountFilter::single(account),
         date_range: template.date_range,
         conversion: template.conversion,
         sort: Sort::Date,
@@ -146,6 +146,12 @@ fn load_register<'ctx>(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    use bumpalo::Bump;
+    use okane_core::{load, report};
+
     use super::*;
     use crate::ui::app::{RegisterView, TableNav};
 
@@ -166,6 +172,25 @@ mod tests {
                 date_range: Default::default(),
             },
         )
+    }
+
+    /// Process a trivial ledger and return a resolved account.
+    fn make_account<'ctx>(
+        arena: &'ctx Bump,
+        account_name: &str,
+    ) -> (report::ReportContext<'ctx>, Account<'ctx>) {
+        let content = format!("2024/01/01 Init\n    {account_name}    1 USD\n    Equity\n");
+        let mut map = HashMap::new();
+        map.insert(PathBuf::from("test.ledger"), content.into_bytes());
+        let loader = load::Loader::new(
+            PathBuf::from("test.ledger"),
+            load::FakeFileSystem::from(map),
+        );
+        let mut ctx = report::ReportContext::new(arena);
+        let _ =
+            report::process(&mut ctx, loader, &report::ProcessOptions::default()).unwrap();
+        let account = ctx.account(account_name).unwrap();
+        (ctx, account)
     }
 
     #[test]
@@ -205,9 +230,11 @@ mod tests {
 
     #[test]
     fn register_q_leaves_register() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
         let mut app = app();
         app.screen = Screen::Register(RegisterView {
-            account: "A".into(),
+            account,
             rows: Vec::new(),
             nav: TableNav::new(0),
         });
@@ -223,9 +250,11 @@ mod tests {
 
     #[test]
     fn register_enter_is_unmapped() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
         let mut app = app();
         app.screen = Screen::Register(RegisterView {
-            account: "A".into(),
+            account,
             rows: Vec::new(),
             nav: TableNav::new(0),
         });
@@ -234,6 +263,8 @@ mod tests {
 
     #[test]
     fn ctrl_c_always_quits() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
         let mut app = app();
         assert_eq!(
             key_to_message(&app, ctrl_key('c')),
@@ -246,7 +277,7 @@ mod tests {
         );
         app.overlay = None;
         app.screen = Screen::Register(RegisterView {
-            account: "A".into(),
+            account,
             rows: Vec::new(),
             nav: TableNav::new(0),
         });

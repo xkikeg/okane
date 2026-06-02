@@ -403,7 +403,12 @@ impl RegisterCmd {
             &self.eval_options.to_process_options(),
         )?;
         let query = query::RegisterQuery {
-            account: self.account.clone(),
+            account: self
+                .account
+                .as_deref()
+                .map_or(query::AccountFilter::Any, |s| {
+                    query::AccountFilter::from_pattern(&ctx, s)
+                }),
             date_range: self.eval_options.to_date_range()?,
             conversion: self.eval_options.to_conversion(&ctx)?,
             sort: self.sort.into(),
