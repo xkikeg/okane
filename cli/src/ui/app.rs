@@ -129,13 +129,13 @@ pub struct RegisterQueryTemplate<'ctx> {
 /// State for the register drill-down screen.
 #[derive(Debug)]
 pub struct RegisterView<'ctx> {
-    pub account: String,
+    pub account: Account<'ctx>,
     pub rows: Vec<RegisterRow<'ctx>>,
     pub nav: TableNav,
 }
 
 impl<'ctx> RegisterView<'ctx> {
-    pub fn new(account: String, rows: Vec<RegisterRow<'ctx>>) -> Self {
+    pub fn new(account: Account<'ctx>, rows: Vec<RegisterRow<'ctx>>) -> Self {
         let mut nav = TableNav::new(rows.len());
         // Most recent entry is the most useful starting point.
         nav.select_last();
@@ -182,9 +182,9 @@ pub enum Message {
 
 /// Effect requested by [`App::update`] that requires resources the pure
 /// state machine does not own (here: `&mut Ledger` to compute a register).
-#[derive(Debug, Clone)]
-pub enum Command {
-    LoadRegister { account: String },
+#[derive(Debug, Clone, Copy)]
+pub enum Command<'ctx> {
+    LoadRegister { account: Account<'ctx> },
 }
 
 /// Application state for the TUI session.
@@ -218,9 +218,9 @@ impl<'ctx> App<'ctx> {
     }
 
     /// The currently-selected balance account, if any.
-    pub fn selected_balance_account(&self) -> Option<&str> {
+    pub fn selected_balance_account(&self) -> Option<Account<'ctx>> {
         let idx = self.balance_nav.table_state.selected()?;
-        self.balance_rows.get(idx).map(|r| r.account.as_str())
+        self.balance_rows.get(idx).map(|r| r.account)
     }
 
     /// Mutable handle to whichever nav drives the currently visible table.
@@ -233,7 +233,7 @@ impl<'ctx> App<'ctx> {
 
     /// Applies a message; optionally returns a [`Command`] for the event
     /// loop to execute (the only impure step in this flow).
-    pub fn update(&mut self, msg: Message) -> Option<Command> {
+    pub fn update(&mut self, msg: Message) -> Option<Command<'ctx>> {
         // QuitImmediate is honored regardless of overlay/screen.
         if matches!(msg, Message::QuitImmediate) {
             self.should_quit = true;
@@ -269,9 +269,7 @@ impl<'ctx> App<'ctx> {
                 if matches!(self.screen, Screen::Balance)
                     && let Some(account) = self.selected_balance_account()
                 {
-                    return Some(Command::LoadRegister {
-                        account: account.to_owned(),
-                    });
+                    return Some(Command::LoadRegister { account });
                 }
             }
             Message::LeaveRegister => {
@@ -292,14 +290,18 @@ impl<'ctx> App<'ctx> {
 
     /// Called by the event loop once a [`Command::LoadRegister`] has been
     /// fulfilled.
-    pub fn show_register(&mut self, account: String, rows: Vec<RegisterRow<'ctx>>) {
+    pub fn show_register(&mut self, account: Account<'ctx>, rows: Vec<RegisterRow<'ctx>>) {
         self.screen = Screen::Register(RegisterView::new(account, rows));
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
     use bumpalo::Bump;
+    use okane_core::{load, report};
     use okane_core::report::ReportContext;
     use rust_decimal_macros::dec;
 
@@ -322,6 +324,29 @@ mod tests {
     /// `okane_core`, so we side-step it.)
     fn app_no_rows<'ctx>() -> App<'ctx> {
         App::new("test".to_owned(), Vec::new(), template())
+    }
+
+    /// Process a trivial ledger and return the context + a resolved account.
+    fn make_account<'ctx>(
+        arena: &'ctx Bump,
+        account_name: &str,
+    ) -> (ReportContext<'ctx>, Account<'ctx>) {
+        let content = format!(
+            "2024/01/01 Init\n    {account_name}    100 USD\n    Equity\n"
+        );
+        let mut map = HashMap::new();
+        map.insert(
+            PathBuf::from("test.ledger"),
+            content.into_bytes(),
+        );
+        let loader = load::Loader::new(
+            PathBuf::from("test.ledger"),
+            load::FakeFileSystem::from(map),
+        );
+        let mut ctx = ReportContext::new(arena);
+        let _ = report::process(&mut ctx, loader, &report::ProcessOptions::default()).unwrap();
+        let account = ctx.account(account_name).unwrap();
+        (ctx, account)
     }
 
     #[test]
@@ -451,11 +476,13 @@ mod tests {
 
     #[test]
     fn leave_register_returns_to_balance() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:Cash");
         let mut app = app_no_rows();
         // Bypass show_register's RegisterView::new — it just needs *some*
         // register screen state to flip the enum variant.
         app.screen = Screen::Register(RegisterView {
-            account: "Assets:Cash".to_owned(),
+            account,
             rows: Vec::new(),
             nav: TableNav::new(0),
         });
@@ -465,9 +492,11 @@ mod tests {
 
     #[test]
     fn request_quit_from_register_does_not_open_overlay() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:Cash");
         let mut app = app_no_rows();
         app.screen = Screen::Register(RegisterView {
-            account: "Assets:Cash".to_owned(),
+            account,
             rows: Vec::new(),
             nav: TableNav::new(0),
         });

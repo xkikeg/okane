@@ -59,11 +59,11 @@ pub enum QueryError {
 
 /// Query to list postings matching the criteria.
 // TODO: non_exhaustive
-#[derive(Debug)]
-pub struct PostingQuery {
+#[derive(Debug, Default)]
+pub struct PostingQuery<'ctx> {
     /// Select the specified account if specified.
     /// Note this will be changed to list of regex eventually.
-    pub account: Option<String>,
+    pub account: AccountFilter<'ctx>,
 }
 
 /// Specifies the iteration order of `register` rows.
@@ -82,7 +82,7 @@ pub enum Sort {
 pub struct RegisterQuery<'ctx> {
     /// Select the specified account if specified.
     /// Note this will be changed to a list of regex eventually.
-    pub account: Option<String>,
+    pub account: AccountFilter<'ctx>,
     /// Half-open date range to restrict transactions.
     pub date_range: DateRange,
     /// Optional currency conversion applied to every yielded amount and to the
@@ -236,18 +236,15 @@ impl<'ctx> Ledger<'ctx> {
     // https://github.com/xkikeg/okane/issues/313
     pub fn postings<'a>(
         &'a self,
-        ctx: &ReportContext<'ctx>,
-        query: &PostingQuery,
+        _ctx: &ReportContext<'ctx>,
+        query: &PostingQuery<'ctx>,
     ) -> Vec<&'a Posting<'ctx>> {
-        // compile them into compiled query.
-        let af = AccountFilter::new(ctx, query.account.as_deref());
-        let af = match af {
-            None => return Vec::new(),
-            Some(af) => af,
-        };
+        if query.account.is_exhaustive_empty() {
+            return Vec::new();
+        }
         self.transactions()
             .flat_map(|txn| &*txn.postings)
-            .filter(|x| af.is_match(&x.account))
+            .filter(|x| query.account.is_match(&x.account))
             .collect()
     }
 
@@ -280,32 +277,35 @@ impl<'ctx> Ledger<'ctx> {
                 }
             },
         };
-        // When the account filter excludes every known account, return an
-        // iterator that is already exhausted instead of scanning everything.
-        let account_filter = AccountFilter::new(ctx, query.account.as_deref());
-        let txns: TxnIter<'a, 'ctx> = match (account_filter.as_ref(), query.sort) {
-            (None, _) => TxnIter::linear(&[]),
-            (Some(_), Sort::Original) => TxnIter::linear(&self.transactions),
-            // Build (or reuse) the date-sorted clone cache. Bounds are
-            // applied via `date_range_iter` (binary-search lo, incremental
-            // `end` check), so the inner `date_range.contains` check below
-            // is a no-op on every txn yielded here — it's kept for the
-            // `Linear` arms above.
-            (Some(_), Sort::Date) => {
-                self.ensure_date_sorted_txns();
-                date_range_iter(
-                    self.date_sorted_txns
-                        .as_deref()
-                        .expect("just built by ensure_date_sorted_txns"),
-                    query.date_range,
-                )
+        let account_filter = query.account.clone();
+        // When the account filter can never match, return an iterator that is
+        // already exhausted instead of scanning everything.
+        let txns: TxnIter<'a, 'ctx> = if account_filter.is_exhaustive_empty() {
+            TxnIter::linear(&[])
+        } else {
+            match query.sort {
+                Sort::Original => TxnIter::linear(&self.transactions),
+                // Build (or reuse) the date-sorted clone cache. Bounds are
+                // applied via `date_range_iter` (binary-search lo, incremental
+                // `end` check), so the inner `date_range.contains` check below
+                // is a no-op on every txn yielded here — it's kept for the
+                // `Linear` arms above.
+                Sort::Date => {
+                    self.ensure_date_sorted_txns();
+                    date_range_iter(
+                        self.date_sorted_txns
+                            .as_deref()
+                            .expect("just built by ensure_date_sorted_txns"),
+                        query.date_range,
+                    )
+                }
             }
         };
         Ok(RegisterEntries {
             ctx,
             txns,
             current: [].iter(),
-            account_filter: account_filter.unwrap_or(AccountFilter::Any),
+            account_filter,
             date_range: query.date_range,
             conversion,
             price_repos: &mut self.price_repos,
@@ -599,31 +599,44 @@ fn compute_balance<'a, 'ctx>(
     Ok(bal)
 }
 
-enum AccountFilter<'ctx> {
+/// Describes which accounts to include in a query.
+#[derive(Debug, Clone, Default)]
+pub enum AccountFilter<'ctx> {
+    /// Match every account.
+    #[default]
     Any,
+    /// Match exactly one account (O(1) equality check).
+    Exact(Account<'ctx>),
+    /// Match any account in the set (intended for future multi-pattern / regex support).
     Set(HashSet<Account<'ctx>>),
 }
 
 impl<'ctx> AccountFilter<'ctx> {
-    /// Creates a new instance, unless there's no matching account.
-    fn new(ctx: &ReportContext<'ctx>, filter: Option<&str>) -> Option<Self> {
-        let filter = match filter {
-            None => return Some(AccountFilter::Any),
-            Some(filter) => filter,
-        };
-        let targets: HashSet<_> = ctx
-            .all_accounts_unsorted()
-            .filter(|x| x.as_str() == filter)
-            .collect();
-        if targets.is_empty() {
-            return None;
+    /// Returns a filter matching exactly one already-resolved account.
+    pub fn single(account: Account<'ctx>) -> Self {
+        AccountFilter::Exact(account)
+    }
+
+    /// Resolves a string pattern against the context's known accounts.
+    ///
+    /// Returns `AccountFilter::Exact` on a match, or an empty
+    /// `AccountFilter::Set` (matches nothing) when the pattern is unknown.
+    pub fn from_pattern(ctx: &ReportContext<'ctx>, pattern: &str) -> Self {
+        match ctx.account(pattern) {
+            Some(account) => AccountFilter::Exact(account),
+            None => AccountFilter::Set(HashSet::new()),
         }
-        Some(AccountFilter::Set(targets))
+    }
+
+    /// Returns `true` when the filter can never match any account.
+    fn is_exhaustive_empty(&self) -> bool {
+        matches!(self, AccountFilter::Set(s) if s.is_empty())
     }
 
     fn is_match(&self, account: &Account<'ctx>) -> bool {
         match self {
             AccountFilter::Any => true,
+            AccountFilter::Exact(target) => account == target,
             AccountFilter::Set(targets) => targets.contains(account),
         }
     }
@@ -1000,7 +1013,7 @@ mod tests {
                 .register_entries(
                     &ctx,
                     &RegisterQuery {
-                        account: Some("Assets:J 銀行".to_string()),
+                        account: AccountFilter::single(bank),
                         date_range: DateRange::default(),
                         conversion: None,
                         sort: Sort::Original,
@@ -1050,7 +1063,7 @@ mod tests {
                 .register_entries(
                     &ctx,
                     &RegisterQuery {
-                        account: None,
+                        account: AccountFilter::Any,
                         date_range: DateRange {
                             start: Some(NaiveDate::from_ymd_opt(2024, 1, 5).unwrap()),
                             end: Some(NaiveDate::from_ymd_opt(2024, 1, 9).unwrap()),
@@ -1095,7 +1108,7 @@ mod tests {
                 .register_entries(
                     &ctx,
                     &RegisterQuery {
-                        account: Some("Does:Not:Exist".to_string()),
+                        account: AccountFilter::from_pattern(&ctx, "Does:Not:Exist"),
                         date_range: DateRange::default(),
                         conversion: None,
                         sort: Sort::Original,
@@ -1123,7 +1136,7 @@ mod tests {
                 .register_entries(
                     &ctx,
                     &RegisterQuery {
-                        account: None,
+                        account: AccountFilter::Any,
                         date_range: DateRange {
                             start: Some(NaiveDate::from_ymd_opt(2024, 1, 5).unwrap()),
                             end: Some(NaiveDate::from_ymd_opt(2024, 1, 6).unwrap()),
@@ -1169,7 +1182,7 @@ mod tests {
             .register_entries(
                 &ctx,
                 &RegisterQuery {
-                    account: None,
+                    account: AccountFilter::Any,
                     date_range: DateRange::default(),
                     conversion: Some(Conversion {
                         strategy: ConversionStrategy::UpToDate {
@@ -1252,7 +1265,7 @@ mod tests {
                 .register_entries(
                     &ctx,
                     &RegisterQuery {
-                        account: Some("Assets:Bank".to_string()),
+                        account: AccountFilter::single(bank),
                         sort: Sort::Original,
                         ..Default::default()
                     },
@@ -1280,12 +1293,13 @@ mod tests {
         let mut ledger =
             report::process(&mut ctx, unordered_loader(), &report::ProcessOptions::default())
                 .unwrap();
+        let bank = ctx.account("Assets:Bank").unwrap();
         let rows = collect_register(
             ledger
                 .register_entries(
                     &ctx,
                     &RegisterQuery {
-                        account: Some("Assets:Bank".to_string()),
+                        account: AccountFilter::single(bank),
                         sort: Sort::Date,
                         ..Default::default()
                     },
@@ -1314,12 +1328,13 @@ mod tests {
             report::process(&mut ctx, unordered_loader(), &report::ProcessOptions::default())
                 .unwrap();
         let jpy = ctx.commodities.resolve("JPY").unwrap();
+        let bank = ctx.account("Assets:Bank").unwrap();
         let rows = collect_register(
             ledger
                 .register_entries(
                     &ctx,
                     &RegisterQuery {
-                        account: Some("Assets:Bank".to_string()),
+                        account: AccountFilter::single(bank),
                         sort: Sort::Date,
                         ..Default::default()
                     },
