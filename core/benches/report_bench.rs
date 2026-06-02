@@ -107,27 +107,6 @@ fn report_process_benchmark(c: &mut Criterion) {
     group.finish();
 }
 
-fn query_postings(c: &mut Criterion) {
-    let input =
-        FakeFileSink::new_example(Path::new("report_bench"), InputParams::middle()).unwrap();
-    let arena = Bump::new();
-    let mut ctx = report::ReportContext::new(&arena);
-    let opts = report::ProcessOptions::default();
-    let ledger =
-        report::process(&mut ctx, input.new_loader(), &opts).expect("report::process must succeed");
-
-    c.bench_function("query-posting-one-account", |b| {
-        b.iter_with_large_drop(|| {
-            let query = report::query::PostingQuery {
-                account: report::query::AccountFilter::single(
-                    ctx.account("Assets:Account02")
-                        .expect("Assets:Account02 must exist in bench fixture"),
-                ),
-            };
-            black_box(ledger.postings(&ctx, &query));
-        })
-    });
-}
 fn query_balance(c: &mut Criterion) {
     let mut group = c.benchmark_group("query::balance");
 
@@ -476,8 +455,7 @@ fn query_register_entries(c: &mut Criterion) {
                         let mut ledger = report::process(&mut ctx, input.new_loader(), &opts)
                             .expect("report::process must succeed");
                         let start = walltime.start();
-                        let mut entries =
-                            ledger.register_entries(&ctx, &query).unwrap();
+                        let mut entries = ledger.register_entries(&ctx, &query).unwrap();
                         let mut count = 0u64;
                         loop {
                             match entries.next().unwrap() {
@@ -531,7 +509,6 @@ fn query_register_entries(c: &mut Criterion) {
     group.finish();
 }
 
-
 fn basic_asserts<T: FileSink>(input: &ExampleInput<T>) {
     let arena = Bump::new();
     let mut ctx = report::ReportContext::new(&arena);
@@ -558,7 +535,6 @@ criterion_group!(
     benches,
     load_benchmark,
     report_process_benchmark,
-    query_postings,
     query_balance,
     query_register_entries
 );
