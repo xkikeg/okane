@@ -57,15 +57,6 @@ pub enum QueryError {
     UnsupportedConversionStrategy,
 }
 
-/// Query to list postings matching the criteria.
-// TODO: non_exhaustive
-#[derive(Debug, Default)]
-pub struct PostingQuery<'ctx> {
-    /// Select the specified account if specified.
-    /// Note this will be changed to list of regex eventually.
-    pub account: AccountFilter<'ctx>,
-}
-
 /// Specifies the iteration order of `register` rows.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum Sort {
@@ -226,26 +217,6 @@ impl<'ctx> Ledger<'ctx> {
             .collect();
         sorted.sort_by_key(|t| t.date);
         self.date_sorted_txns = Some(sorted);
-    }
-
-
-    /// Returns all postings following the queries.
-    // TODO: Support date range query.
-    // https://github.com/xkikeg/okane/issues/208
-    // TODO: Support currency conversion.
-    // https://github.com/xkikeg/okane/issues/313
-    pub fn postings<'a>(
-        &'a self,
-        _ctx: &ReportContext<'ctx>,
-        query: &PostingQuery<'ctx>,
-    ) -> Vec<&'a Posting<'ctx>> {
-        if query.account.is_exhaustive_empty() {
-            return Vec::new();
-        }
-        self.transactions()
-            .flat_map(|txn| &*txn.postings)
-            .filter(|x| query.account.is_match(&x.account))
-            .collect()
     }
 
     /// Returns a [`FallibleLender`] over [`RegisterEntry`] rows matching the
