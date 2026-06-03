@@ -406,7 +406,7 @@ impl RegisterCmd {
             account: self
                 .account
                 .as_deref()
-                .map_or(query::AccountFilter::Any, |s| {
+                .map_or(query::AccountFilter::All, |s| {
                     query::AccountFilter::from_pattern(&ctx, s)
                 }),
             date_range: self.eval_options.to_date_range()?,
