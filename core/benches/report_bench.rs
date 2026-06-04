@@ -449,7 +449,10 @@ fn query_register_entries(c: &mut Criterion) {
                     let walltime = WallTime;
                     let mut total = walltime.zero();
                     for _ in 0..iters {
-                        let arena = Bump::new();
+                        // given the test is very sensitive to memory allocation,
+                        // I'll go with pre-allocating 32 MiB.
+                        let arena = Bump::with_capacity(1 << 25);
+
                         let mut ctx = report::ReportContext::new(&arena);
                         let opts = report::ProcessOptions::default();
                         let mut ledger = report::process(&mut ctx, input.new_loader(), &opts)
