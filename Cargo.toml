@@ -39,7 +39,7 @@ lazy_static = "1.5"
 
 # dev-dependencies
 assert_matches = "1.5"
-ctor = "1.0.6"
+ctor = "1.0.7"
 indoc = "2.0"
 maplit = "1.0"
 okane-golden = "0.2.1"
