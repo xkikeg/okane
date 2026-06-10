@@ -22,7 +22,7 @@ repository = "https://github.com/xkikeg/okane"
 # dependencies
 anyhow = "1.0"
 bumpalo = {version = "3.20", features = ["collections", "boxed"]}
-chrono = "0.4.44"
+chrono = "0.4.45"
 lender = "0.7"
 log = "0.4"
 pretty_decimal = { version = "0.2.1", features = ["bounded-static"] }
