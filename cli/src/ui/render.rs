@@ -8,17 +8,18 @@
 use okane_core::report::{Amount, ReportContext};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Text};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table};
 use unicode_width::UnicodeWidthStr;
 
-use super::app::{App, BalanceRow, Overlay, RegisterRow, RegisterView, Screen};
+use super::app::{
+    App, BalanceRow, Overlay, RegisterRow, RegisterView, Screen, Search, SearchDirection,
+    SearchMatch, SearchMode, SearchPhase,
+};
 
-const FOOTER_HINT_BALANCE: &str =
-    " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · Enter register · q quit ";
-const FOOTER_HINT_REGISTER: &str =
-    " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · q/Esc back ";
+const FOOTER_HINT_BALANCE: &str = " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · Enter register · / search · C-s isearch · q quit ";
+const FOOTER_HINT_REGISTER: &str = " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · q/Esc back ";
 
 /// Renders a frame for the given app state.
 pub fn draw<'ctx>(frame: &mut Frame, app: &mut App<'ctx>, ctx: &ReportContext<'ctx>) {
@@ -33,14 +34,23 @@ pub fn draw<'ctx>(frame: &mut Frame, app: &mut App<'ctx>, ctx: &ReportContext<'c
     draw_title(frame, layout[0], app);
     match &mut app.screen {
         Screen::Balance => {
+            let matches = app
+                .search
+                .as_ref()
+                .and_then(|s| s.matches.as_ref())
+                .and_then(|r| r.as_ref().ok());
             draw_balance_body(
                 frame,
                 layout[1],
                 &app.balance_rows,
                 &mut app.balance_nav,
+                matches,
                 ctx,
             );
-            draw_footer(frame, layout[2], FOOTER_HINT_BALANCE);
+            match &app.search {
+                Some(search) => draw_search_bar(frame, layout[2], search),
+                None => draw_footer(frame, layout[2], FOOTER_HINT_BALANCE),
+            }
         }
         Screen::Register(view) => {
             draw_register_body(frame, layout[1], view, ctx);
@@ -72,6 +82,7 @@ fn draw_balance_body<'ctx>(
     area: Rect,
     rows: &[BalanceRow<'ctx>],
     nav: &mut super::app::TableNav,
+    matches: Option<&SearchMatch>,
     ctx: &ReportContext<'ctx>,
 ) {
     let block = Block::default().borders(Borders::ALL);
@@ -97,7 +108,10 @@ fn draw_balance_body<'ctx>(
     let table_rows: Vec<Row> = rows
         .iter()
         .zip(formatted.iter())
-        .map(|(row, lines)| make_balance_row(row, lines))
+        .enumerate()
+        .map(|(i, (row, lines))| {
+            make_balance_row(row, lines, matches.is_some_and(|m| m.contains_row(i)))
+        })
         .collect();
 
     let table = Table::new(
@@ -179,6 +193,65 @@ fn draw_footer(frame: &mut Frame, area: Rect, hint: &str) {
     frame.render_widget(footer, area);
 }
 
+/// Renders the balance search bar in the footer slot: a prompt + the typed
+/// pattern (red on an invalid regex) plus a dim hint suffix. While editing it
+/// also places the terminal cursor at the end of the pattern.
+fn draw_search_bar(frame: &mut Frame, area: Rect, search: &Search) {
+    let count = search.matched_rows().len();
+    let (prompt, hint_and_match, show_cursor): (&str, String, bool) = match search.intent.mode {
+        SearchMode::Modal(SearchPhase::Incremental) => ("/", format!("  [{count} matches]"), true),
+        SearchMode::Modal(SearchPhase::Fixed) => (
+            "/",
+            format!("  [{count} matches · n/N next/prev · Esc exit]"),
+            false,
+        ),
+        SearchMode::Interactive => {
+            let prompt = match search.intent.dir {
+                SearchDirection::Forward => "I-search: ",
+                SearchDirection::Backward => "I-search backward: ",
+            };
+            (
+                prompt,
+                format!("  [{count} matches · C-s/C-r next/prev · RET exit · C-g cancel]"),
+                true,
+            )
+        }
+    };
+    let alert = match (search.err(), search.intent.no_previous) {
+        (Some(_), _) => Span::styled(
+            "  [invalid regex]".to_string(),
+            Style::default().fg(Color::Red),
+        ),
+        (None, true) => Span::styled(
+            "  [no previous search text]".to_owned(),
+            Style::default().fg(Color::Yellow),
+        ),
+        (None, false) => Span::default(),
+    };
+    let text = format!("{prompt}{}", search.intent.input);
+    let text_style = if search.err().is_some() {
+        Style::default().fg(Color::Red)
+    } else {
+        Style::default()
+    };
+    let line = Line::from(vec![
+        Span::styled(&text, text_style),
+        alert,
+        Span::styled(hint_and_match, Style::default().add_modifier(Modifier::DIM)),
+    ]);
+    frame.render_widget(Paragraph::new(line), area);
+
+    if show_cursor {
+        // Cursor sits just past the last typed character (after the prompt),
+        // clamped so it never leaves the footer row.
+        let cursor_x = area
+            .x
+            .saturating_add(display_width(&text) as u16)
+            .min(area.x + area.width.saturating_sub(1));
+        frame.set_cursor_position((cursor_x, area.y));
+    }
+}
+
 /// Centered modal asking the user to confirm quitting.
 fn draw_quit_confirm(frame: &mut Frame, area: Rect) {
     let popup = centered_rect(area, 40, 5);
@@ -223,9 +296,16 @@ fn format_amount_lines<'ctx>(amount: &Amount<'ctx>, ctx: &ReportContext<'ctx>) -
     lines
 }
 
-fn make_balance_row<'r>(row: &'r BalanceRow<'_>, lines: &'r [String]) -> Row<'r> {
+fn make_balance_row<'r>(row: &'r BalanceRow<'_>, lines: &'r [String], is_match: bool) -> Row<'r> {
     let height = row.line_count();
-    let account_cell = Cell::from(row.account.as_str());
+    let mut account_cell = Cell::from(row.account.as_str());
+    if is_match {
+        account_cell = account_cell.style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
+    }
     let amount_cell = Cell::from(amount_text(lines));
     Row::new(vec![account_cell, amount_cell]).height(height)
 }
