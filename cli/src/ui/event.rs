@@ -18,7 +18,8 @@ use okane_core::report::query::{AccountFilter, Ledger, RegisterQuery, Sort};
 use ratatui::DefaultTerminal;
 
 use super::app::{
-    App, Command, Message, Overlay, RegisterQueryTemplate, RegisterRow, Screen,
+    App, Command, Message, Overlay, RegisterQueryTemplate, RegisterRow, Screen, SearchDirection,
+    SearchMode, SearchPhase,
 };
 use super::render;
 
@@ -71,6 +72,48 @@ pub fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
         };
     }
 
+    // Balance account-search capture. The editing phases (modal incremental,
+    // interactive i-search) own every key; the modal fixed phase intercepts
+    // only its own controls and lets the rest fall through so full navigation
+    // (and Enter-to-register) keep working.
+    if let Some(search) = &app.search {
+        match search.mode {
+            SearchMode::Modal(SearchPhase::Incremental) => {
+                return match key.code {
+                    KeyCode::Esc => Some(Message::SearchCancel),
+                    KeyCode::Enter => Some(Message::SearchSubmit),
+                    KeyCode::Backspace => Some(Message::SearchPop),
+                    KeyCode::Char(c) => Some(Message::SearchPush(c)),
+                    _ => None,
+                };
+            }
+            SearchMode::Modal(SearchPhase::Fixed) => match key.code {
+                KeyCode::Esc => return Some(Message::SearchClose),
+                KeyCode::Char('n') => return Some(Message::SearchNext),
+                KeyCode::Char('N') => return Some(Message::SearchPrev),
+                _ => {}
+            },
+            SearchMode::Interactive(_) => {
+                // Canonical i-search: editing is always live; C-s/C-r repeat
+                // and C-g/Esc aborts to the origin. RET drills into the
+                // register and C-n/C-p move the selection — these three end
+                // the search (keeping the cursor), behaving like normal view.
+                return match key.code {
+                    KeyCode::Char('s') if ctrl => Some(Message::SearchNext),
+                    KeyCode::Char('r') if ctrl => Some(Message::SearchPrev),
+                    KeyCode::Char('g') if ctrl => Some(Message::SearchCancel),
+                    KeyCode::Char('n') if ctrl => Some(Message::MoveDown),
+                    KeyCode::Char('p') if ctrl => Some(Message::MoveUp),
+                    KeyCode::Esc => Some(Message::SearchCancel),
+                    KeyCode::Enter => Some(Message::OpenRegister),
+                    KeyCode::Backspace => Some(Message::SearchPop),
+                    KeyCode::Char(c) if !ctrl => Some(Message::SearchPush(c)),
+                    _ => None,
+                };
+            }
+        }
+    }
+
     // Common navigation keys, regardless of screen.
     let nav = match key.code {
         KeyCode::Up | KeyCode::Char('k') => Some(Message::MoveUp),
@@ -91,6 +134,13 @@ pub fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
 
     // Screen-specific keys.
     match (&app.screen, key.code) {
+        (Screen::Balance, KeyCode::Char('/')) => Some(Message::StartSearch),
+        (Screen::Balance, KeyCode::Char('s')) if ctrl => {
+            Some(Message::StartISearch(SearchDirection::Forward))
+        }
+        (Screen::Balance, KeyCode::Char('r')) if ctrl => {
+            Some(Message::StartISearch(SearchDirection::Backward))
+        }
         (Screen::Balance, KeyCode::Enter) => Some(Message::OpenRegister),
         (Screen::Balance, KeyCode::Char('q') | KeyCode::Esc) => Some(Message::RequestQuit),
         (Screen::Register(_), KeyCode::Char('q') | KeyCode::Esc) => {
@@ -155,7 +205,7 @@ mod tests {
     use okane_core::{load, report};
 
     use super::*;
-    use crate::ui::app::{RegisterView, TableNav};
+    use crate::ui::app::{RegisterView, Search, TableNav};
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
@@ -206,13 +256,6 @@ mod tests {
             key_to_message(&app, key(KeyCode::Char('k'))),
             Some(Message::MoveUp)
         );
-    }
-
-    #[test]
-    fn ctrl_n_and_p_navigate_like_j_k() {
-        let app = app();
-        assert_eq!(key_to_message(&app, ctrl_key('n')), Some(Message::MoveDown));
-        assert_eq!(key_to_message(&app, ctrl_key('p')), Some(Message::MoveUp));
     }
 
     #[test]
@@ -324,6 +367,142 @@ mod tests {
             key_to_message(&app, key(KeyCode::Char('q'))),
             Some(Message::DismissOverlay)
         );
+    }
+
+    fn fixed_search() -> Search {
+        Search {
+            mode: SearchMode::Modal(SearchPhase::Fixed),
+            input: "a".to_owned(),
+            regex: None,
+            error: false,
+            no_previous: false,
+            matches: vec![0],
+            origin: 0,
+        }
+    }
+
+    fn interactive_search() -> Search {
+        Search {
+            mode: SearchMode::Interactive(SearchDirection::Forward),
+            input: "a".to_owned(),
+            regex: None,
+            error: false,
+            no_previous: false,
+            matches: vec![0],
+            origin: 0,
+        }
+    }
+
+    #[test]
+    fn balance_slash_starts_search() {
+        let app = app();
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('/'))),
+            Some(Message::StartSearch)
+        );
+    }
+
+    #[test]
+    fn incremental_search_captures_editing_keys() {
+        let mut app = app();
+        app.update(Message::StartSearch);
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('j'))),
+            Some(Message::SearchPush('j'))
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Backspace)),
+            Some(Message::SearchPop)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Enter)),
+            Some(Message::SearchSubmit)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Esc)),
+            Some(Message::SearchCancel)
+        );
+    }
+
+    #[test]
+    fn fixed_search_intercepts_only_its_controls() {
+        let mut app = app();
+        app.search = Some(fixed_search());
+        // Own controls.
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('n'))),
+            Some(Message::SearchNext)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('N'))),
+            Some(Message::SearchPrev)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Esc)),
+            Some(Message::SearchClose)
+        );
+        // Everything else falls through to normal navigation / drill-in.
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('j'))),
+            Some(Message::MoveDown)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Enter)),
+            Some(Message::OpenRegister)
+        );
+    }
+
+    #[test]
+    fn balance_ctrl_s_and_r_start_isearch() {
+        let app = app();
+        assert_eq!(
+            key_to_message(&app, ctrl_key('s')),
+            Some(Message::StartISearch(SearchDirection::Forward))
+        );
+        assert_eq!(
+            key_to_message(&app, ctrl_key('r')),
+            Some(Message::StartISearch(SearchDirection::Backward))
+        );
+    }
+
+    #[test]
+    fn interactive_search_captures_keys() {
+        let mut app = app();
+        app.search = Some(interactive_search());
+        // Plain characters refine the pattern.
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('j'))),
+            Some(Message::SearchPush('j'))
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Backspace)),
+            Some(Message::SearchPop)
+        );
+        // C-s / C-r repeat; C-g and Esc abort.
+        assert_eq!(key_to_message(&app, ctrl_key('s')), Some(Message::SearchNext));
+        assert_eq!(key_to_message(&app, ctrl_key('r')), Some(Message::SearchPrev));
+        assert_eq!(
+            key_to_message(&app, ctrl_key('g')),
+            Some(Message::SearchCancel)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Esc)),
+            Some(Message::SearchCancel)
+        );
+        // RET drills into the register; C-n/C-p move — all end the search.
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Enter)),
+            Some(Message::OpenRegister)
+        );
+        assert_eq!(key_to_message(&app, ctrl_key('n')), Some(Message::MoveDown));
+        assert_eq!(key_to_message(&app, ctrl_key('p')), Some(Message::MoveUp));
+    }
+
+    #[test]
+    fn ctrl_n_and_p_navigate_like_j_k() {
+        let app = app();
+        assert_eq!(key_to_message(&app, ctrl_key('n')), Some(Message::MoveDown));
+        assert_eq!(key_to_message(&app, ctrl_key('p')), Some(Message::MoveUp));
     }
 
     #[test]
