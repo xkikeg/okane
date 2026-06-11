@@ -74,7 +74,9 @@ pub fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
     // Common navigation keys, regardless of screen.
     let nav = match key.code {
         KeyCode::Up | KeyCode::Char('k') => Some(Message::MoveUp),
+        KeyCode::Char('p') if ctrl => Some(Message::MoveUp),
         KeyCode::Down | KeyCode::Char('j') => Some(Message::MoveDown),
+        KeyCode::Char('n') if ctrl => Some(Message::MoveDown),
         KeyCode::PageUp => Some(Message::PageUp),
         KeyCode::Char('b') if ctrl => Some(Message::PageUp),
         KeyCode::PageDown => Some(Message::PageDown),
@@ -204,6 +206,13 @@ mod tests {
             key_to_message(&app, key(KeyCode::Char('k'))),
             Some(Message::MoveUp)
         );
+    }
+
+    #[test]
+    fn ctrl_n_and_p_navigate_like_j_k() {
+        let app = app();
+        assert_eq!(key_to_message(&app, ctrl_key('n')), Some(Message::MoveDown));
+        assert_eq!(key_to_message(&app, ctrl_key('p')), Some(Message::MoveUp));
     }
 
     #[test]
