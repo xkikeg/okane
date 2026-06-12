@@ -64,6 +64,7 @@ pub enum Command {
 impl Command {
     fn validate(&self) -> Result<(), InvalidFlagError> {
         match self {
+            Command::Import(cmd) => cmd.validate(),
             Command::Balance(cmd) => cmd.validate(),
             Command::Ui(cmd) => cmd.validate(),
             _ => Ok(()),
@@ -90,17 +91,144 @@ impl Command {
 pub struct ImportCmd {
     #[arg(short, long, value_name = "FILE")]
     pub config: std::path::PathBuf,
+
+    /// Review the imported transactions in an interactive TUI before writing.
+    #[arg(long)]
+    pub interactive: bool,
+
+    /// Ledger file whose accounts feed the autocomplete (interactive only).
+    #[arg(long, value_name = "FILE", requires = "interactive")]
+    pub ledger: Option<std::path::PathBuf>,
+
+    /// Ledger file the reviewed transactions are appended to (interactive only).
+    #[arg(short = 'o', long, value_name = "FILE", requires = "interactive")]
+    pub output: Option<std::path::PathBuf>,
+
     pub source: std::path::PathBuf,
 }
 
 impl ImportCmd {
+    fn validate(&self) -> Result<(), InvalidFlagError> {
+        if self.interactive && (self.ledger.is_none() || self.output.is_none()) {
+            return Err(InvalidFlagError(
+                "--interactive requires both --ledger and --output".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
     pub fn run<W>(&self, w: &mut W) -> anyhow::Result<()>
     where
         W: std::io::Write,
     {
+        if self.interactive {
+            return self.run_interactive();
+        }
         let importer = import::Importer::new(&self.config)?;
         importer.import(&self.source, w)?;
         Ok(())
+    }
+
+    fn run_interactive(&self) -> anyhow::Result<()> {
+        let ledger_path = self.ledger.as_ref().expect("checked by validate()");
+        let output_path = self.output.as_ref().expect("checked by validate()");
+        let importer = import::Importer::new(&self.config)?;
+        let mut loaded = importer.load(&self.source)?;
+        if loaded.txns.is_empty() {
+            eprintln!("no transactions found in {}", self.source.display());
+            return Ok(());
+        }
+        let mut accounts: Vec<String> = {
+            let arena = Bump::new();
+            let mut ctx = report::ReportContext::new(&arena);
+            report::accounts(&mut ctx, load::new_loader(ledger_path.clone()))
+                .with_context(|| format!("failed to load ledger {}", ledger_path.display()))?
+                .iter()
+                .map(|account| account.as_str().to_owned())
+                .collect()
+        };
+        accounts.sort_unstable();
+        // Render every transaction up front: review items need the previews,
+        // and any conversion error surfaces here, before entering raw mode.
+        let items: Vec<ui::ReviewItem> = (0..loaded.txns.len())
+            .map(|i| {
+                let preview = loaded.render_transaction(i)?;
+                let txn = &loaded.txns[i];
+                let (value, commodity) = txn.amount();
+                Ok(ui::ReviewItem::new(
+                    txn.review_kind(),
+                    preview,
+                    txn.date(),
+                    txn.payee().to_owned(),
+                    format!("{} {}", value, commodity),
+                ))
+            })
+            .collect::<Result<_, import::ImportError>>()?;
+        let mut app = ui::ReviewApp::new(
+            self.source.display().to_string(),
+            output_path.display().to_string(),
+            items,
+            accounts,
+        );
+        let outcome = ui::run_review(&mut app, &mut loaded).context("failed to run review TUI")?;
+        match outcome {
+            ui::SessionOutcome::Abort => {
+                eprintln!("import aborted; nothing written");
+            }
+            ui::SessionOutcome::Write => {
+                let rendered: Vec<String> = (0..loaded.txns.len())
+                    .map(|i| loaded.render_transaction(i))
+                    .collect::<Result<_, _>>()?;
+                append_transactions(output_path, &rendered).with_context(|| {
+                    format!("failed to append to {}", output_path.display())
+                })?;
+                eprintln!(
+                    "appended {} transaction(s) to {}",
+                    rendered.len(),
+                    output_path.display()
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Appends the rendered transactions to `path` in one write, creating the
+/// file when missing. A blank line separates the existing content from the
+/// new entries and each entry, matching the batch `import` output.
+fn append_transactions(path: &std::path::Path, rendered: &[String]) -> anyhow::Result<()> {
+    use std::io::Write as _;
+
+    let existing = match std::fs::read(path) {
+        Ok(content) => content,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(err) => return Err(err.into()),
+    };
+    let mut block = String::new();
+    block.push_str(entry_separator(&existing));
+    for txn in rendered {
+        // Each rendered entry already ends with '\n'; one more gives the
+        // blank-line separation `import` emits between entries.
+        block.push_str(txn);
+        block.push('\n');
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    file.write_all(block.as_bytes())?;
+    Ok(())
+}
+
+/// Separator ensuring a blank line between existing content and appended
+/// entries.
+fn entry_separator(existing: &[u8]) -> &'static str {
+    if existing.is_empty() || existing.ends_with(b"\n\n") {
+        ""
+    } else if existing.ends_with(b"\n") {
+        "\n"
+    } else {
+        "\n\n"
     }
 }
 
@@ -586,9 +714,116 @@ impl EvalOptions {
 mod tests {
     use super::*;
 
+    use pretty_assertions::assert_eq;
+
     #[test]
     fn verify_command() {
         use clap::CommandFactory;
         Cli::command().debug_assert();
+    }
+
+    fn import_cmd(interactive: bool, ledger: bool, output: bool) -> ImportCmd {
+        ImportCmd {
+            config: PathBuf::from("config.yml"),
+            interactive,
+            ledger: ledger.then(|| PathBuf::from("root.ledger")),
+            output: output.then(|| PathBuf::from("out.ledger")),
+            source: PathBuf::from("source.csv"),
+        }
+    }
+
+    #[test]
+    fn import_validate_accepts_batch_mode() {
+        assert!(import_cmd(false, false, false).validate().is_ok());
+    }
+
+    #[test]
+    fn import_validate_accepts_interactive_with_all_flags() {
+        assert!(import_cmd(true, true, true).validate().is_ok());
+    }
+
+    #[test]
+    fn import_validate_rejects_interactive_without_ledger_or_output() {
+        assert!(import_cmd(true, false, true).validate().is_err());
+        assert!(import_cmd(true, true, false).validate().is_err());
+        assert!(import_cmd(true, false, false).validate().is_err());
+    }
+
+    #[test]
+    fn entry_separator_cases() {
+        assert_eq!(entry_separator(b""), "");
+        assert_eq!(entry_separator(b"txn\n\n"), "");
+        assert_eq!(entry_separator(b"txn\n"), "\n");
+        assert_eq!(entry_separator(b"txn"), "\n\n");
+    }
+
+    fn rendered() -> Vec<String> {
+        vec!["2024/01/02 * A\n    X    1 USD\n".to_string()]
+    }
+
+    #[test]
+    fn append_transactions_creates_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.ledger");
+
+        append_transactions(&path, &rendered()).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "2024/01/02 * A\n    X    1 USD\n\n"
+        );
+    }
+
+    #[test]
+    fn append_transactions_separates_with_blank_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.ledger");
+        std::fs::write(&path, "2023/12/31 * Old\n    Y    2 USD\n").unwrap();
+
+        append_transactions(&path, &rendered()).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "2023/12/31 * Old\n    Y    2 USD\n\n2024/01/02 * A\n    X    1 USD\n\n"
+        );
+    }
+
+    #[test]
+    fn append_transactions_completes_missing_final_newline() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.ledger");
+        std::fs::write(&path, "; note without newline").unwrap();
+
+        append_transactions(&path, &rendered()).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "; note without newline\n\n2024/01/02 * A\n    X    1 USD\n\n"
+        );
+    }
+
+    #[test]
+    fn append_transactions_keeps_existing_blank_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.ledger");
+        std::fs::write(&path, "2023/12/31 * Old\n    Y    2 USD\n\n").unwrap();
+
+        append_transactions(&path, &rendered()).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "2023/12/31 * Old\n    Y    2 USD\n\n2024/01/02 * A\n    X    1 USD\n\n"
+        );
+    }
+
+    #[test]
+    fn append_transactions_multiple_entries_blank_line_separated() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.ledger");
+        let txns = vec!["a\n".to_string(), "b\n".to_string()];
+
+        append_transactions(&path, &txns).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "a\n\nb\n\n");
     }
 }

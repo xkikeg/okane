@@ -14,8 +14,10 @@
 mod app;
 mod event;
 mod render;
+mod review;
 
 pub use app::{App, BalanceRow, RegisterQueryTemplate};
+pub use review::{ReviewApp, ReviewItem, SessionOutcome, run_review};
 
 use okane_core::report::ReportContext;
 use okane_core::report::query::Ledger;

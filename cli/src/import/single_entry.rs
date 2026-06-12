@@ -57,6 +57,17 @@ pub struct Txn {
     charges: Vec<OwnedAmount>,
 }
 
+/// Classification of a [`Txn`] for interactive review.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReviewKind {
+    /// Matched a rewrite rule; needs no user attention.
+    Auto,
+    /// Matched a rewrite rule marked `pending: true`; needs confirmation.
+    Pending,
+    /// No rewrite rule matched; the destination account is unknown.
+    Unknown,
+}
+
 /// Optional object to control the output (such as commodity renaming).
 #[derive(Debug, Default)]
 pub struct Options {
@@ -143,6 +154,32 @@ impl Txn {
     pub fn add_comment(&mut self, comment: String) -> &mut Txn {
         self.comments.push(comment);
         self
+    }
+
+    /// Date when the transaction happened.
+    pub fn date(&self) -> NaiveDate {
+        self.date
+    }
+
+    /// Payee (or payer) of the transaction.
+    pub fn payee(&self) -> &str {
+        &self.payee
+    }
+
+    /// Amount applied to the associated account, as `(value, commodity)`.
+    pub fn amount(&self) -> (Decimal, &str) {
+        (self.amount.value, &self.amount.commodity)
+    }
+
+    /// Classifies the transaction for interactive review.
+    pub fn review_kind(&self) -> ReviewKind {
+        if self.dest_account.is_none() {
+            ReviewKind::Unknown
+        } else if self.clear_state == Some(syntax::ClearState::Pending) {
+            ReviewKind::Pending
+        } else {
+            ReviewKind::Auto
+        }
     }
 
     pub fn dest_account_option<'a>(&'a mut self, dest_account: Option<&str>) -> &'a mut Txn {
@@ -714,6 +751,44 @@ mod tests {
             txn.effective_date,
             Some(NaiveDate::from_ymd_opt(2021, 10, 2).unwrap())
         );
+    }
+
+    #[test]
+    fn review_kind_unknown_without_dest_account() {
+        let txn = Txn::new(
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            "foo",
+            owned_amount(dec!(10), "JPY"),
+        );
+
+        assert_eq!(ReviewKind::Unknown, txn.review_kind());
+    }
+
+    #[test]
+    fn review_kind_pending_on_pending_rule_match() {
+        let mut txn = Txn::new(
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            "foo",
+            owned_amount(dec!(10), "JPY"),
+        );
+        txn.dest_account("Expenses:Grocery")
+            .clear_state(syntax::ClearState::Pending);
+
+        assert_eq!(ReviewKind::Pending, txn.review_kind());
+    }
+
+    #[test]
+    fn review_kind_auto_on_regular_rule_match() {
+        let mut txn = Txn::new(
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            "foo",
+            owned_amount(dec!(10), "JPY"),
+        );
+        txn.dest_account("Expenses:Grocery");
+        assert_eq!(ReviewKind::Auto, txn.review_kind());
+
+        txn.clear_state(syntax::ClearState::Uncleared);
+        assert_eq!(ReviewKind::Auto, txn.review_kind());
     }
 
     fn borrowed_amount(value: Decimal, commodity: &'_ str) -> BorrowedAmount<'_> {

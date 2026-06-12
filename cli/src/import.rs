@@ -41,7 +41,8 @@ impl Importer {
         Ok(Self { config_set })
     }
 
-    pub fn import<W: Write>(&self, source_path: &Path, w: &mut W) -> Result<(), ImportError> {
+    /// Parses the source file into transactions without printing them.
+    pub fn load(&self, source_path: &Path) -> Result<LoadedImport, ImportError> {
         let config = self
             .config_set
             .select(source_path)?
@@ -62,25 +63,61 @@ impl Importer {
             Format::IsoCamt053 => iso_camt053::import(decoded, &config),
             Format::Viseca => viseca::import(decoded, &config),
         }?;
-        let ctx = DisplayContext {
+        let display_context = DisplayContext {
             commodity: config.output.commodity.into(),
         };
-        let opts = single_entry::Options {
+        let options = single_entry::Options {
             operator: config.operator.clone(),
             commodity_rename: config.commodity.rename.clone(),
-            commodity_format: ctx.commodity.clone(),
+            commodity_format: display_context.commodity.clone(),
         };
+        Ok(LoadedImport {
+            txns,
+            src_account: config.account,
+            options,
+            display_context,
+        })
+    }
+
+    pub fn import<W: Write>(&self, source_path: &Path, w: &mut W) -> Result<(), ImportError> {
+        let loaded = self.load(source_path)?;
         let arena = Bump::new();
         let mut rctx = report::ReportContext::new(&arena);
-        for (i, txn) in txns.iter().enumerate() {
+        for (i, txn) in loaded.txns.iter().enumerate() {
             let txn: syntax::plain::Transaction =
-                txn.to_double_entry(&config.account, &opts, &mut rctx)?;
-            writeln!(w, "{}", ctx.as_display(&txn))
+                txn.to_double_entry(&loaded.src_account, &loaded.options, &mut rctx)?;
+            writeln!(w, "{}", loaded.display_context.as_display(&txn))
                 .into_import_err(ImportErrorKind::OutputFailed, || {
                     format!("output failed at transaction {}", i + 1)
                 })?;
         }
         Ok(())
+    }
+}
+
+/// Transactions parsed from one source file, with everything needed to
+/// render them as Ledger entries. Fully owned, so the interactive review
+/// can mutate [`single_entry::Txn`]s freely between renders.
+#[derive(Debug)]
+pub struct LoadedImport {
+    pub txns: Vec<single_entry::Txn>,
+    /// Ledger account associated with the source file (`config.account`).
+    pub src_account: String,
+    pub options: single_entry::Options,
+    pub display_context: DisplayContext,
+}
+
+impl LoadedImport {
+    /// Renders the transaction at `index` as Ledger format text.
+    ///
+    /// The result ends with a newline but carries no blank-line separator.
+    /// Conversion happens under a transient arena so the borrow of the
+    /// transaction ends when this returns, keeping `txns` mutable.
+    pub fn render_transaction(&self, index: usize) -> Result<String, ImportError> {
+        let arena = Bump::new();
+        let mut rctx = report::ReportContext::new(&arena);
+        let txn = self.txns[index].to_double_entry(&self.src_account, &self.options, &mut rctx)?;
+        Ok(self.display_context.as_display(&txn).to_string())
     }
 }
 
@@ -229,6 +266,39 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(ImportErrorKind::SourceFileReadFailed, got_err.error_kind());
+    }
+
+    #[test]
+    fn load_classifies_transactions_for_review() {
+        let testdata_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../testdata/import/");
+        let importer = Importer::new(&testdata_dir.join("test_config.yml")).unwrap();
+
+        let loaded = importer.load(&testdata_dir.join("index_amount.csv")).unwrap();
+
+        use single_entry::ReviewKind;
+        let kinds: Vec<ReviewKind> = loaded.txns.iter().map(|t| t.review_kind()).collect();
+        assert_eq!(
+            vec![ReviewKind::Pending, ReviewKind::Auto, ReviewKind::Unknown],
+            kinds
+        );
+    }
+
+    #[test]
+    fn render_transaction_matches_batch_output() {
+        let testdata_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../testdata/import/");
+        let importer = Importer::new(&testdata_dir.join("test_config.yml")).unwrap();
+        let target = testdata_dir.join("index_amount.csv");
+
+        let mut batch: Vec<u8> = Vec::new();
+        importer.import(&target, &mut batch).unwrap();
+        let batch = String::from_utf8(batch).unwrap();
+
+        let loaded = importer.load(&target).unwrap();
+        let rendered: String = (0..loaded.txns.len())
+            .map(|i| loaded.render_transaction(i).unwrap() + "\n")
+            .collect();
+
+        assert_eq!(batch, rendered);
     }
 
     #[test]
