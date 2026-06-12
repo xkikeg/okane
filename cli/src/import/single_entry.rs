@@ -57,6 +57,17 @@ pub struct Txn {
     charges: Vec<OwnedAmount>,
 }
 
+/// Clarity of a [`Txn`] following the rewrite rules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReviewKind {
+    /// Matched rewrite rules; needs no user attention.
+    Auto,
+    /// Matched rewrite rules marked `pending: true`; needs confirmation.
+    Pending,
+    /// No rewrite rule matched; the destination account is unknown.
+    Unknown,
+}
+
 /// Optional object to control the output (such as commodity renaming).
 #[derive(Debug, Default)]
 pub struct Options {
@@ -143,6 +154,32 @@ impl Txn {
     pub fn add_comment(&mut self, comment: String) -> &mut Txn {
         self.comments.push(comment);
         self
+    }
+
+    /// Date when the transaction happened.
+    pub fn date(&self) -> NaiveDate {
+        self.date
+    }
+
+    /// Payee (or payer) of the transaction.
+    pub fn payee(&self) -> &str {
+        &self.payee
+    }
+
+    /// Amount applied to the associated account, as `(value, commodity)`.
+    pub fn amount(&self) -> BorrowedAmount<'_> {
+        self.amount.to_borrowed()
+    }
+
+    /// Classifies the transaction for interactive review.
+    pub fn review_kind(&self) -> ReviewKind {
+        if self.dest_account.is_none() {
+            ReviewKind::Unknown
+        } else if self.clear_state == Some(syntax::ClearState::Pending) {
+            ReviewKind::Pending
+        } else {
+            ReviewKind::Auto
+        }
     }
 
     pub fn dest_account_option<'a>(&'a mut self, dest_account: Option<&str>) -> &'a mut Txn {
@@ -449,11 +486,11 @@ struct PostingAmount<'a> {
 /// Balances the given posting.
 /// Similar to logic in core/src/report/book_keeping.rs,
 /// But we simplifies a lot because of simpler condition.
-fn posting_excess<'a>(
-    ctx: &mut ReportContext<'a>,
-    postings: &[Posting<'a>],
+fn posting_excess<'ctx>(
+    ctx: &mut ReportContext<'ctx>,
+    postings: &[Posting<'_>],
     opts: &Options,
-) -> Result<Option<PostingAmount<'a>>, ImportError> {
+) -> Result<Option<PostingAmount<'ctx>>, ImportError> {
     let mut total = report::Amount::zero();
     for posting in postings {
         total += posting.amount.contributing_amount(ctx);
@@ -466,7 +503,7 @@ fn posting_excess<'a>(
     let v = total.into_values();
     if v.len() > 1 {
         return Err(ImportError::new(
-            ImportErrorKind::Unimplemented,
+            ImportErrorKind::Internal,
             format!(
                 "impossible to balance posting excess {} due to too many commodities without rate",
                 report::Amount::from_values(v).as_inline_display(ctx)
@@ -716,6 +753,44 @@ mod tests {
         );
     }
 
+    #[test]
+    fn review_kind_unknown_without_dest_account() {
+        let txn = Txn::new(
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            "foo",
+            owned_amount(dec!(10), "JPY"),
+        );
+
+        assert_eq!(ReviewKind::Unknown, txn.review_kind());
+    }
+
+    #[test]
+    fn review_kind_pending_on_pending_rule_match() {
+        let mut txn = Txn::new(
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            "foo",
+            owned_amount(dec!(10), "JPY"),
+        );
+        txn.dest_account("Expenses:Grocery")
+            .clear_state(syntax::ClearState::Pending);
+
+        assert_eq!(ReviewKind::Pending, txn.review_kind());
+    }
+
+    #[test]
+    fn review_kind_auto_on_regular_rule_match() {
+        let mut txn = Txn::new(
+            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            "foo",
+            owned_amount(dec!(10), "JPY"),
+        );
+        txn.dest_account("Expenses:Grocery");
+        assert_eq!(ReviewKind::Auto, txn.review_kind());
+
+        txn.clear_state(syntax::ClearState::Uncleared);
+        assert_eq!(ReviewKind::Auto, txn.review_kind());
+    }
+
     fn borrowed_amount(value: Decimal, commodity: &'_ str) -> BorrowedAmount<'_> {
         BorrowedAmount { value, commodity }
     }
@@ -915,7 +990,7 @@ mod tests {
                 .to_double_entry("Assets:Bank", &opts, &mut ctx)
                 .unwrap_err();
             assert_eq!(
-                ImportErrorKind::Unimplemented,
+                ImportErrorKind::Internal,
                 got_err.error_kind(),
                 "error={got_err:?}"
             );

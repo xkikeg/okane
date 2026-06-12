@@ -1,0 +1,24 @@
+ okane import — import.csv → out.ledger — reviewed 1/3                          
+┌ Transactions ────────────────────────────────────────────────────────────────┐
+│  Date       Payee                                          Amount     Kind   │
+│✓ 2024-01-02 Coffee Shop                                     10.00 CHF auto   │
+│  2024-01-02 Supermarket                                     52.30 CHF pending│
+│  2024-01-02 Mystery Store                                   99.00 CHF unknown│
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ Preview ─────────────────────────────────────────────────────────────────────┐
+│2024-01-02 Mystery Store                                                      │
+│    Expenses:Food    99.00 CHF                                                │
+│    Assets:Bank                                                               │
+│                                                                              │
+│                                                                              │
+┌ Accounts ──────────┐                                                         │
+│Expenses:Food       │                                                         │
+│Expenses:Groceries  │                                                         │
+└────────────────────┘─────────────────────────────────────────────────────────┘
+ Account> exp                        Tab complete · Enter submit · Esc cancel   

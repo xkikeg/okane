@@ -60,6 +60,7 @@ rstest.workspace = true
 rust_decimal_macros.workspace = true
 serde_test = "1.0"
 shlex = "2.0"
+tempfile = "3.27.0"
 
 [build-dependencies]
 shadow-rs = "2.0.0"
