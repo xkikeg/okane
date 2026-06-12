@@ -1,5 +1,6 @@
 //! eval module contains functions for Ledger file evaluation.
 
+mod account_tree;
 mod balance;
 mod book_keeping;
 mod commodity;
@@ -12,6 +13,7 @@ mod transaction;
 
 use std::borrow::Borrow;
 
+pub use account_tree::{AccountNode, AccountTree};
 pub use balance::Balance;
 pub use book_keeping::{ProcessOptions, process};
 pub use commodity::{Commodity, CommodityStore, CommodityTag, OwnedCommodity};

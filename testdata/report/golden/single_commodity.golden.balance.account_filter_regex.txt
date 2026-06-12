@@ -1,4 +1,7 @@
-Assets:Banks:Foo: -1000 JPY
-Assets:Banks:あおによし: 307000 JPY
-Expenses:T Assets:Banks:あおによし: 10000 JPY
-Liabilities:Cards:Card X: 0
+          306000 JPY  Assets:Banks
+           -1000 JPY    Foo
+          307000 JPY    あおによし
+           10000 JPY  Expenses:T Assets:Banks:あおによし
+                   0  Liabilities:Cards:Card X
+--------------------
+          316000 JPY

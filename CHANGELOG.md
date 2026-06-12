@@ -4,7 +4,11 @@
 
 ### Added
 
+* Core: Added `report::AccountTree` to view a `Balance` as an account hierarchy with rolled-up amounts (https://github.com/xkikeg/okane/issues/434).
+
 ### Changed
+
+* CLI: `balance` now renders a hierarchical tree with per-level subtotals and a grand total by default, like ledger-cli. Pass `--flat` for the previous flat list (https://github.com/xkikeg/okane/issues/434).
 
 ### Fixed
 
