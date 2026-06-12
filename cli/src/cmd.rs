@@ -64,6 +64,7 @@ pub enum Command {
 impl Command {
     fn validate(&self) -> Result<(), InvalidFlagError> {
         match self {
+            Command::Import(cmd) => cmd.validate(),
             Command::Balance(cmd) => cmd.validate(),
             Command::Ui(cmd) => cmd.validate(),
             _ => Ok(()),
@@ -90,16 +91,104 @@ impl Command {
 pub struct ImportCmd {
     #[arg(short, long, value_name = "FILE")]
     pub config: std::path::PathBuf,
+
+    /// Review the imported transactions in an interactive TUI before writing.
+    #[arg(long)]
+    pub interactive: bool,
+
+    /// Ledger file whose accounts feed the autocomplete (interactive only).
+    #[arg(long, value_name = "FILE", requires = "interactive")]
+    pub ledger: Option<std::path::PathBuf>,
+
+    /// Ledger file the reviewed transactions are appended to (interactive only).
+    #[arg(short = 'o', long, value_name = "FILE", requires = "interactive")]
+    pub output: Option<std::path::PathBuf>,
+
     pub source: std::path::PathBuf,
 }
 
 impl ImportCmd {
+    fn validate(&self) -> Result<(), InvalidFlagError> {
+        if self.interactive && (self.ledger.is_none() || self.output.is_none()) {
+            return Err(InvalidFlagError(
+                "--interactive requires both --ledger and --output".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
     pub fn run<W>(&self, w: &mut W) -> anyhow::Result<()>
     where
         W: std::io::Write,
     {
+        if self.interactive {
+            return self.run_interactive();
+        }
         let importer = import::Importer::new(&self.config)?;
-        importer.import(&self.source, w)?;
+        importer.import_and_write(&self.source, w)?;
+        Ok(())
+    }
+
+    fn run_interactive(&self) -> anyhow::Result<()> {
+        let ledger_path = self.ledger.as_ref().expect("checked by validate()");
+        let output_path = self.output.as_ref().expect("checked by validate()");
+        let importer = import::Importer::new(&self.config)?;
+        let (header, mut txns) = importer.import(&self.source)?;
+        if txns.is_empty() {
+            eprintln!("no transactions found in {}", self.source.display());
+            return Ok(());
+        }
+        let accounts: Vec<String> = {
+            let arena = Bump::new();
+            let mut ctx = report::ReportContext::new(&arena);
+            report::accounts(&mut ctx, load::new_loader(ledger_path.clone()))
+                .with_context(|| format!("failed to load ledger {}", ledger_path.display()))?
+                .iter()
+                .map(|account| account.as_str().to_owned())
+                .collect()
+        };
+        // accounts are already sorted.
+        // Render every transaction up front: review items need the previews,
+        // and any conversion error surfaces here, before entering raw mode.
+        let items: Vec<ui::ReviewItem> = txns
+            .iter()
+            .map(|txn| {
+                let preview = header.render_transaction(txn)?;
+                Ok(ui::ReviewItem::new(
+                    txn.review_kind(),
+                    preview,
+                    txn.date(),
+                    txn.payee().to_owned(),
+                    format!("{} {}", txn.amount().value, txn.amount().commodity),
+                ))
+            })
+            .collect::<Result<_, import::ImportError>>()?;
+        let mut app = ui::ReviewApp::new(
+            self.source.display().to_string(),
+            output_path.display().to_string(),
+            items,
+            accounts,
+        );
+        let outcome =
+            ui::run_review(&mut app, &header, &mut txns).context("failed to run review TUI")?;
+        match outcome {
+            ui::SessionOutcome::Abort => {
+                eprintln!("import aborted; nothing written");
+            }
+            ui::SessionOutcome::Write => {
+                let rendered: Vec<String> = txns
+                    .iter()
+                    .map(|txn| header.render_transaction(txn))
+                    .collect::<Result<_, _>>()?;
+                import::append_transactions(output_path, &rendered)
+                    .with_context(|| format!("failed to append to {}", output_path.display()))?;
+                eprintln!(
+                    "appended {} transaction(s) to {}",
+                    rendered.len(),
+                    output_path.display()
+                );
+            }
+        }
         Ok(())
     }
 }
@@ -590,5 +679,32 @@ mod tests {
     fn verify_command() {
         use clap::CommandFactory;
         Cli::command().debug_assert();
+    }
+
+    fn import_cmd(interactive: bool, ledger: bool, output: bool) -> ImportCmd {
+        ImportCmd {
+            config: PathBuf::from("config.yml"),
+            interactive,
+            ledger: ledger.then(|| PathBuf::from("root.ledger")),
+            output: output.then(|| PathBuf::from("out.ledger")),
+            source: PathBuf::from("source.csv"),
+        }
+    }
+
+    #[test]
+    fn import_validate_accepts_batch_mode() {
+        assert!(import_cmd(false, false, false).validate().is_ok());
+    }
+
+    #[test]
+    fn import_validate_accepts_interactive_with_all_flags() {
+        assert!(import_cmd(true, true, true).validate().is_ok());
+    }
+
+    #[test]
+    fn import_validate_rejects_interactive_without_ledger_or_output() {
+        assert!(import_cmd(true, false, true).validate().is_err());
+        assert!(import_cmd(true, true, false).validate().is_err());
+        assert!(import_cmd(true, false, false).validate().is_err());
     }
 }
