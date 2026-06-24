@@ -8,6 +8,26 @@
 
 ### Fixed
 
+## [0.20.0] - 2026-06-24
+
+### Added
+
+* Core: Added native register API (https://github.com/xkikeg/okane/pull/410).
+    * This allowed querying register with cumulative balance, instead of postings.
+    * Note `postings()` API is removed (https://github.com/xkikeg/okane/pull/436).
+* CLI: Adedd report TUI mode (https://github.com/xkikeg/okane/pull/421, https://github.com/xkikeg/okane/pull/423, https://github.com/xkikeg/okane/pull/453, https://github.com/xkikeg/okane/pull/454).
+* CLI: Added interactive import (https://github.com/xkikeg/okane/pull/455).
+
+### Changed
+
+* Core: Exposed `AccountFilter` as API (https://github.com/xkikeg/okane/pull/435).
+* CLI: register / balance accepts regex account filter by default (https://github.com/xkikeg/okane/pull/437).
+
+### Fixed
+
+* Core: Improved performance on [`Amount`] Add/Sub implementation (https://github.com/xkikeg/okane/pull/419).
+* Core/CLI: accounts API and command returns accounts considering aliases (https://github.com/xkikeg/okane/pull/459).
+
 ## [0.19.0] - 2026-03-28
 
 ### Fixed
