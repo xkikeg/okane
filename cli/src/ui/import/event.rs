@@ -9,11 +9,12 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use okane_core::syntax::ClearState;
 use ratatui::DefaultTerminal;
 
 use crate::import::{ImportHeader, single_entry};
+use crate::ui::keys::is_ctrl;
 
 use super::app::{Command, Message, ReviewApp, SessionOutcome};
 use super::render;
@@ -50,7 +51,7 @@ pub fn key_to_message(app: &ReviewApp, key: KeyEvent) -> Option<Message> {
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
         return None;
     }
-    let ctrl = (key.modifiers & !KeyModifiers::SHIFT) == KeyModifiers::CONTROL;
+    let ctrl = is_ctrl(key.modifiers);
 
     // Ctrl-C always aborts — even through an open overlay or prompt.
     if ctrl && matches!(key.code, KeyCode::Char('c')) {
@@ -149,6 +150,7 @@ mod tests {
     use super::*;
 
     use chrono::NaiveDate;
+    use crossterm::event::KeyModifiers;
     use pretty_assertions::assert_eq;
 
     use crate::import::single_entry::ReviewKind;

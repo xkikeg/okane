@@ -9,7 +9,7 @@
 use chrono::NaiveDate;
 
 use crate::import::single_entry::ReviewKind;
-use crate::ui::app::TableNav;
+use crate::ui::table::TableNav;
 
 /// Decision state of one reviewed transaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
