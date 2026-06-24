@@ -11,11 +11,13 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use lender::FallibleLender;
 use okane_core::report::query::{AccountFilter, Ledger, RegisterQuery, Sort};
 use okane_core::report::{Account, ReportContext};
 use ratatui::DefaultTerminal;
+
+use crate::ui::keys::is_ctrl;
 
 use super::app::{
     App, Command, Message, Overlay, RegisterQueryTemplate, RegisterRow, Screen, SearchDirection,
@@ -53,7 +55,7 @@ fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
         return None;
     }
-    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    let ctrl = is_ctrl(key.modifiers);
 
     // Ctrl-C always quits — even through an open overlay.
     if ctrl && matches!(key.code, KeyCode::Char('c')) {
@@ -194,14 +196,18 @@ fn load_register<'ctx>(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::collections::HashMap;
     use std::path::PathBuf;
 
-    use crate::ui::app::{RegisterView, Search, SearchIntent, SearchMatch, TableNav};
     use bumpalo::Bump;
+    use crossterm::event::KeyModifiers;
     use okane_core::{load, report};
 
-    use super::*;
+    use crate::ui::table::TableNav;
+
+    use super::super::app::{RegisterView, Search, SearchIntent, SearchMatch};
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)

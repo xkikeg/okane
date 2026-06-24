@@ -150,11 +150,11 @@ impl ImportCmd {
         // accounts are already sorted.
         // Render every transaction up front: review items need the previews,
         // and any conversion error surfaces here, before entering raw mode.
-        let items: Vec<ui::ReviewItem> = txns
+        let items: Vec<ui::import::ReviewItem> = txns
             .iter()
             .map(|txn| {
                 let preview = header.render_transaction(txn)?;
-                Ok(ui::ReviewItem::new(
+                Ok(ui::import::ReviewItem::new(
                     txn.review_kind(),
                     preview,
                     txn.date(),
@@ -163,19 +163,19 @@ impl ImportCmd {
                 ))
             })
             .collect::<Result<_, import::ImportError>>()?;
-        let mut app = ui::ReviewApp::new(
+        let mut app = ui::import::ReviewApp::new(
             self.source.display().to_string(),
             output_path.display().to_string(),
             items,
             accounts,
         );
         let outcome =
-            ui::run_review(&mut app, &header, &mut txns).context("failed to run review TUI")?;
+            ui::import::run_review(&mut app, &header, &mut txns).context("failed to run review TUI")?;
         match outcome {
-            ui::SessionOutcome::Abort => {
+            ui::import::SessionOutcome::Abort => {
                 eprintln!("import aborted; nothing written");
             }
-            ui::SessionOutcome::Write => {
+            ui::import::SessionOutcome::Write => {
                 let rendered: Vec<String> = txns
                     .iter()
                     .map(|txn| header.render_transaction(txn))
@@ -438,18 +438,18 @@ impl UiCmd {
             date_range,
         };
         let balance = ledger.balance(&ctx, &balance_query)?.into_owned();
-        let rows: Vec<ui::BalanceRow> = balance
+        let rows: Vec<ui::report::BalanceRow> = balance
             .into_vec()
             .into_iter()
-            .map(|(account, amount)| ui::BalanceRow { account, amount })
+            .map(|(account, amount)| ui::report::BalanceRow { account, amount })
             .collect();
         // Reused for every register drill-down during the session.
-        let register_template = ui::RegisterQueryTemplate {
+        let register_template = ui::report::RegisterQueryTemplate {
             conversion,
             date_range,
         };
-        let app = ui::App::new(self.source.display().to_string(), rows, register_template);
-        ui::run_ui(app, &mut ledger, &ctx).context("failed to run TUI")?;
+        let app = ui::report::App::new(self.source.display().to_string(), rows, register_template);
+        ui::report::run_ui(app, &mut ledger, &ctx).context("failed to run TUI")?;
         Ok(())
     }
 }

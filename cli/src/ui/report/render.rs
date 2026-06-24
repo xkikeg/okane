@@ -17,6 +17,7 @@ use super::app::{
     App, BalanceRow, Overlay, RegisterRow, RegisterView, Screen, Search, SearchDirection,
     SearchMatch, SearchMode, SearchPhase,
 };
+use crate::ui::table::TableNav;
 
 const FOOTER_HINT_BALANCE: &str = " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · Enter register · / search · C-s isearch · q quit ";
 const FOOTER_HINT_REGISTER: &str = " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · q/Esc back ";
@@ -81,7 +82,7 @@ fn draw_balance_body<'ctx>(
     frame: &mut Frame,
     area: Rect,
     rows: &[BalanceRow<'ctx>],
-    nav: &mut super::app::TableNav,
+    nav: &mut TableNav,
     matches: Option<&SearchMatch>,
     ctx: &ReportContext<'ctx>,
 ) {
