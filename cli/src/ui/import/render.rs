@@ -66,7 +66,9 @@ fn draw_title(frame: &mut Frame, area: Rect, app: &ReviewApp) {
 }
 
 fn draw_queue(frame: &mut Frame, area: Rect, app: &mut ReviewApp) {
-    let block = Block::default().borders(Borders::ALL).title(" Transactions ");
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Transactions ");
     let inner = block.inner(area);
     app.nav.viewport_height = inner.height.saturating_sub(1);
 

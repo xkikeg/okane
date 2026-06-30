@@ -1,4 +1,5 @@
-//! eval module contains functions for Ledger file evaluation.
+//! report module contains functions to evaluate and
+//! report various metrics out of the given Ledger file.
 
 mod balance;
 mod book_keeping;
@@ -19,12 +20,13 @@ pub use context::{Account, ReportContext};
 pub use error::ReportError;
 pub use eval::{Amount, SingleAmount};
 pub use price_db::LoadError;
-pub use process::{process, ProcessOptions};
+pub use process::{ProcessOptions, process};
 pub use transaction::{Posting, Transaction};
 
 use crate::{load, syntax::plain::LedgerEntry};
 
 /// Returns all accounts for the given LedgerEntry.
+/// Returned accounts should be sorted as `str`.
 /// WARNING: interface are subject to change.
 pub fn accounts<'ctx, L, F>(
     ctx: &'_ mut context::ReportContext<'ctx>,

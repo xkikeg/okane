@@ -169,8 +169,8 @@ impl ImportCmd {
             items,
             accounts,
         );
-        let outcome =
-            ui::import::run_review(&mut app, &header, &mut txns).context("failed to run review TUI")?;
+        let outcome = ui::import::run_review(&mut app, &header, &mut txns)
+            .context("failed to run review TUI")?;
         match outcome {
             ui::import::SessionOutcome::Abort => {
                 eprintln!("import aborted; nothing written");
