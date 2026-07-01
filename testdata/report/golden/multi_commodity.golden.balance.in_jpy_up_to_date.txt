@@ -1,13 +1,20 @@
-Assets:Banks:Swiss Bank: 7585703 JPY
-Assets:Banks:あおによし: 100000 JPY
-Assets:Brokers:US Broker: 7449124 JPY
-Assets:Wire:US Broker: 0
-Equity:Initial: -11472376 JPY
-Expenses:Cash: 81782 JPY
-Expenses:Comissions: 1729 JPY
-Expenses:Commissions: 1200 JPY
-Expenses:Tax:Income: 344660 JPY
-Income:Capital Gain: -62532 JPY
-Income:Salary: -1464805 JPY
-Liabilities:My Card: 0
-Liabilities:Study Loan: -1000000 JPY
+        15134827 JPY  Assets
+         7685703 JPY    Banks
+         7585703 JPY      Swiss Bank
+          100000 JPY      あおによし
+         7449124 JPY    Brokers:US Broker
+                   0    Wire:US Broker
+       -11472376 JPY  Equity:Initial
+          429371 JPY  Expenses
+           81782 JPY    Cash
+            1729 JPY    Comissions
+            1200 JPY    Commissions
+          344660 JPY    Tax:Income
+        -1527337 JPY  Income
+          -62532 JPY    Capital Gain
+        -1464805 JPY    Salary
+        -1000000 JPY  Liabilities
+                   0    My Card
+        -1000000 JPY    Study Loan
+--------------------
+         1564485 JPY

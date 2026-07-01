@@ -1,6 +1,7 @@
 //! report module contains functions to evaluate and
 //! report various metrics out of the given Ledger file.
 
+mod account_tree;
 mod balance;
 mod book_keeping;
 mod commodity;
@@ -14,6 +15,7 @@ mod transaction;
 
 use std::borrow::Borrow;
 
+pub use account_tree::{AccountNode, AccountTree};
 pub use balance::Balance;
 pub use commodity::{Commodity, CommodityStore, CommodityTag, OwnedCommodity};
 pub use context::{Account, ReportContext};

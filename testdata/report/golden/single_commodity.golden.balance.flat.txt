@@ -1,0 +1,8 @@
+Assets:Banks:Foo: -1000 JPY
+Assets:Banks:あおによし: 307000 JPY
+Equity:Initial: -99000 JPY
+Expenses:Cash: 13000 JPY
+Expenses:T Assets:Banks:あおによし: 10000 JPY
+Expenses:Tax:Income: 70000 JPY
+Income:Salary: -300000 JPY
+Liabilities:Cards:Card X: 0
