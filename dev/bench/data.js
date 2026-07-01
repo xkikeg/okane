@@ -27092,24 +27092,6 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query::register/date-range/small_5y10a200t",
-            "value": 9375,
-            "range": "± 24",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query::register/date-range/middle_10y16a500t",
-            "value": 1141618,
-            "range": "± 27925",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query::register/date-range/middle_more_commodity_10y16a500t",
-            "value": 1181279,
-            "range": "± 33527",
-            "unit": "ns/iter"
-          },
-          {
             "name": "query::register/conversion-historical/small_5y10a200t",
             "value": 3269863,
             "range": "± 23287",
@@ -27365,24 +27347,6 @@ window.BENCHMARK_DATA = {
             "name": "query::register/account-filter/middle_more_commodity_10y16a500t",
             "value": 3378332,
             "range": "± 158256",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query::register/date-range/small_5y10a200t",
-            "value": 7087,
-            "range": "± 40",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query::register/date-range/middle_10y16a500t",
-            "value": 821361,
-            "range": "± 2243",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query::register/date-range/middle_more_commodity_10y16a500t",
-            "value": 839012,
-            "range": "± 3695",
             "unit": "ns/iter"
           },
           {
@@ -27644,24 +27608,6 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query::register/date-range/small_5y10a200t",
-            "value": 7089,
-            "range": "± 54",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query::register/date-range/middle_10y16a500t",
-            "value": 333187,
-            "range": "± 1683",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query::register/date-range/middle_more_commodity_10y16a500t",
-            "value": 371048,
-            "range": "± 2739",
-            "unit": "ns/iter"
-          },
-          {
             "name": "query::register/conversion-historical/small_5y10a200t",
             "value": 3332549,
             "range": "± 241847",
@@ -27920,24 +27866,6 @@ window.BENCHMARK_DATA = {
             "unit": "ns/iter"
           },
           {
-            "name": "query::register/date-range/small_5y10a200t",
-            "value": 7090,
-            "range": "± 76",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query::register/date-range/middle_10y16a500t",
-            "value": 339983,
-            "range": "± 2114",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query::register/date-range/middle_more_commodity_10y16a500t",
-            "value": 371524,
-            "range": "± 6857",
-            "unit": "ns/iter"
-          },
-          {
             "name": "query::register/conversion-historical/small_5y10a200t",
             "value": 3144078,
             "range": "± 16141",
@@ -28193,24 +28121,6 @@ window.BENCHMARK_DATA = {
             "name": "query::register/account-filter/middle_more_commodity_10y16a500t",
             "value": 3085628,
             "range": "± 18553",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query::register/date-range/small_5y10a200t",
-            "value": 7829,
-            "range": "± 131",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query::register/date-range/middle_10y16a500t",
-            "value": 361249,
-            "range": "± 1439",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query::register/date-range/middle_more_commodity_10y16a500t",
-            "value": 394515,
-            "range": "± 2144",
             "unit": "ns/iter"
           },
           {
