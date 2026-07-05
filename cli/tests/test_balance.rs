@@ -43,6 +43,37 @@ fn balance_default(
 }
 
 #[rstest]
+fn balance_flat(
+    #[base_dir = "../testdata/report"]
+    #[files("*.ledger")]
+    input: PathBuf,
+) {
+    println!("test input file path: {}", input.display());
+    let mut golden_path = input.clone();
+    let filename = golden_path.file_name().unwrap().to_owned();
+    assert!(golden_path.pop());
+    golden_path.push("golden");
+    golden_path.push(filename);
+    assert!(
+        golden_path.set_extension("golden.balance.flat.txt"),
+        "failed to set extension .ledger to input {}",
+        input.display()
+    );
+    log::info!("golden_path: {}", golden_path.display());
+    let golden = okane_golden::Golden::new(golden_path).unwrap();
+
+    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+        .args(["balance".as_ref(), input.as_os_str(), "--flat".as_ref()])
+        .assert()
+        .success();
+
+    let output = result.get_output();
+    std::io::stderr().write_all(&output.stderr).unwrap();
+    let stdout = std::str::from_utf8(&output.stdout).unwrap();
+    golden.assert(stdout);
+}
+
+#[rstest]
 fn balance_filter_exact(
     #[base_dir = "../testdata/report"]
     #[files("single_commodity.ledger")]

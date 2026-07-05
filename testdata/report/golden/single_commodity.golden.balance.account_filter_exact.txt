@@ -1,2 +1,4 @@
-Assets:Banks:あおによし: 307000 JPY
-Liabilities:Cards:Card X: 0
+          307000 JPY  Assets:Banks:あおによし
+                   0  Liabilities:Cards:Card X
+--------------------
+          307000 JPY

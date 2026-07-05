@@ -368,6 +368,10 @@ pub struct BalanceCmd {
     ///
     /// If any of them are non-existing accounts, those are simply skipped.
     account: Vec<String>,
+
+    /// Show a flat list of accounts instead of the hierarchical tree.
+    #[arg(long, default_value_t)]
+    flat: bool,
 }
 
 impl BalanceCmd {
@@ -395,16 +399,100 @@ impl BalanceCmd {
             conversion: self.eval_options.to_conversion(&ctx)?,
             date_range: self.eval_options.to_date_range()?,
         };
-        for (account, amount) in ledger.balance(&ctx, &query)?.into_owned().into_vec() {
-            writeln!(
-                w,
-                "{}: {}",
-                account.as_str(),
-                amount.as_inline_display(&ctx)
-            )?;
+        let balance = ledger.balance(&ctx, &query)?.into_owned();
+        if self.flat {
+            for (account, amount) in balance.into_vec() {
+                writeln!(
+                    w,
+                    "{}: {}",
+                    account.as_str(),
+                    amount.as_inline_display(&ctx)
+                )?;
+            }
+        } else {
+            print_balance_tree(w, &ctx, &report::AccountTree::from_balance(&balance))?;
         }
         Ok(())
     }
+}
+
+/// Minimum width of the amount column in the tree-style balance report,
+/// matching ledger-cli's default.
+const BALANCE_AMOUNT_WIDTH: usize = 20;
+
+/// Renders the balance as an indented tree in ledger-cli style:
+/// rolled-up amounts on every level, single-child chains collapsed into
+/// `Parent:Child`, and a grand total after a dashed rule.
+fn print_balance_tree<'ctx, W>(
+    w: &mut W,
+    ctx: &'ctx report::ReportContext<'ctx>,
+    tree: &'ctx report::AccountTree<'ctx>,
+) -> anyhow::Result<()>
+where
+    W: std::io::Write,
+{
+    struct Row {
+        depth: usize,
+        name: String,
+        amount: String,
+    }
+
+    fn collect_rows<'ctx>(
+        ctx: &'ctx report::ReportContext<'ctx>,
+        node: report::AccountNode<'ctx, 'ctx>,
+        depth: usize,
+        rows: &mut Vec<Row>,
+    ) {
+        let mut name = node.segment().to_string();
+        let mut node = node;
+        // Collapse pure intermediate levels (no own postings, one child)
+        // into a single `Parent:Child` row, as ledger-cli does.
+        while node.own_amount().is_none() {
+            let mut children = node.children();
+            let (Some(child), None) = (children.next(), children.next()) else {
+                break;
+            };
+            name.push(':');
+            name.push_str(child.segment());
+            node = child;
+        }
+        rows.push(Row {
+            depth,
+            name,
+            amount: node.total().as_inline_display(ctx).to_string(),
+        });
+        for child in node.children() {
+            collect_rows(ctx, child, depth + 1, rows);
+        }
+    }
+
+    let mut rows = Vec::new();
+    for root in tree.roots() {
+        collect_rows(ctx, root, 0, &mut rows);
+    }
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let total = tree.total().as_inline_display(ctx).to_string();
+    let width = rows
+        .iter()
+        .map(|row| row.amount.chars().count())
+        .chain([total.chars().count(), BALANCE_AMOUNT_WIDTH])
+        .max()
+        .expect("rows is non-empty");
+    for row in &rows {
+        writeln!(
+            w,
+            "{:>width$}  {:indent$}{}",
+            row.amount,
+            "",
+            row.name,
+            indent = row.depth * 2
+        )?;
+    }
+    writeln!(w, "{}", "-".repeat(width))?;
+    writeln!(w, "{total:>width$}")?;
+    Ok(())
 }
 
 #[derive(Args, Debug)]
