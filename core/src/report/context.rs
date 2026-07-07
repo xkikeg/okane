@@ -1,15 +1,15 @@
 use bumpalo::Bump;
-use bumpalo_intern::direct::StoredValue;
 
-use crate::report::commodity::CommodityTag;
+use crate::report::AccountAggregate;
 
-use super::account::{Account, AccountStore};
-use super::commodity::CommodityStore;
+use super::account::{Account, AccountStore, AccountTree};
+use super::commodity::{CommodityStore, CommodityTag};
 
 /// Context object extensively used across Ledger file evaluation.
 pub struct ReportContext<'ctx> {
     pub(super) arena: &'ctx Bump,
     pub(super) accounts: AccountStore<'ctx>,
+    pub(super) account_tree: AccountTree<'ctx>,
     pub(super) commodities: CommodityStore<'ctx>,
 }
 
@@ -17,20 +17,19 @@ impl<'ctx> ReportContext<'ctx> {
     /// Create a new instance of `ReportContext`.
     pub fn new(arena: &'ctx Bump) -> Self {
         let accounts = AccountStore::new(arena);
+        let account_tree = AccountTree::new(arena);
         let commodities = CommodityStore::new(arena);
         Self {
             arena,
             accounts,
+            account_tree,
             commodities,
         }
     }
 
     /// Returns all accounts, sorted as string order.
     pub(super) fn all_accounts_unsorted(&self) -> impl Iterator<Item = Account<'ctx>> + '_ {
-        self.accounts.iter().filter_map(|x| match x {
-            StoredValue::Canonical(x) => Some(x),
-            StoredValue::Alias { .. } => None,
-        })
+        self.accounts.iter()
     }
     /// Returns all accounts, sorted as string order.
     pub(super) fn all_accounts(&self) -> Vec<Account<'ctx>> {
@@ -40,20 +39,36 @@ impl<'ctx> ReportContext<'ctx> {
     }
 
     /// Returns the given account, or `None` if not found.
+    #[inline]
     pub fn account(&self, value: &str) -> Option<Account<'ctx>> {
         self.accounts.resolve(value)
     }
 
+    /// Returns the account aggregate, or `None` if not found.
+    #[inline]
+    pub fn account_aggregate(&self, value: &str) -> Option<AccountAggregate<'ctx>> {
+        match self.account(value) {
+            Some(v) => Some(AccountAggregate::Account(v)),
+            None => self
+                .account_tree
+                .resolve_ancestor(value)
+                .map(AccountAggregate::Ancestor),
+        }
+    }
+
     /// Returns the given commmodity, or `None` if not found.
+    #[inline]
     pub fn commodity(&self, value: &str) -> Option<CommodityTag<'ctx>> {
         self.commodities.resolve(value)
     }
 
     /// Returns [`CommodityStore`].
+    #[inline]
     pub fn commodity_store(&self) -> &CommodityStore<'ctx> {
         &self.commodities
     }
     /// Returns mut [`CommodityStore`].
+    #[inline]
     pub fn commodity_store_mut(&mut self) -> &mut CommodityStore<'ctx> {
         &mut self.commodities
     }
