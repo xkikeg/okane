@@ -1,15 +1,13 @@
 use bumpalo::Bump;
-use bumpalo_intern::direct::StoredValue;
 
-use crate::report::commodity::CommodityTag;
-
-use super::account::{Account, AccountStore};
-use super::commodity::CommodityStore;
+use super::account::{Account, AccountStore, AccountTree};
+use super::commodity::{CommodityStore, CommodityTag};
 
 /// Context object extensively used across Ledger file evaluation.
 pub struct ReportContext<'ctx> {
     pub(super) arena: &'ctx Bump,
     pub(super) accounts: AccountStore<'ctx>,
+    pub(super) account_tree: AccountTree<'ctx>,
     pub(super) commodities: CommodityStore<'ctx>,
 }
 
@@ -17,20 +15,19 @@ impl<'ctx> ReportContext<'ctx> {
     /// Create a new instance of `ReportContext`.
     pub fn new(arena: &'ctx Bump) -> Self {
         let accounts = AccountStore::new(arena);
+        let account_tree = AccountTree::new(arena);
         let commodities = CommodityStore::new(arena);
         Self {
             arena,
             accounts,
+            account_tree,
             commodities,
         }
     }
 
     /// Returns all accounts, sorted as string order.
     pub(super) fn all_accounts_unsorted(&self) -> impl Iterator<Item = Account<'ctx>> + '_ {
-        self.accounts.iter().filter_map(|x| match x {
-            StoredValue::Canonical(x) => Some(x),
-            StoredValue::Alias { .. } => None,
-        })
+        self.accounts.iter()
     }
     /// Returns all accounts, sorted as string order.
     pub(super) fn all_accounts(&self) -> Vec<Account<'ctx>> {

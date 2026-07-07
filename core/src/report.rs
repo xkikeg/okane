@@ -3,6 +3,7 @@
 
 mod account;
 mod balance;
+mod balance_tree;
 mod book_keeping;
 mod commodity;
 mod context;
@@ -15,8 +16,9 @@ mod transaction;
 
 use std::borrow::Borrow;
 
-pub use account::Account;
+pub use account::{Account, AccountAggregate, AccountTree, AccountTreeKey};
 pub use balance::Balance;
+pub use balance_tree::{BalanceTree, BalanceTreeNode};
 pub use commodity::{Commodity, CommodityStore, CommodityTag, OwnedCommodity};
 pub use context::ReportContext;
 pub use error::ReportError;
