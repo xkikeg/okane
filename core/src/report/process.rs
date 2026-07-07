@@ -44,6 +44,7 @@ where
             )
         })
     })?;
+    ctx.account_tree.construct(&ctx.accounts);
     if let Some(price_db_path) = options.price_db_path.as_deref() {
         accum
             .price_repos
@@ -129,4 +130,43 @@ fn process_commodity<'ctx>(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    use std::path::Path;
+
+    use assert_matches::assert_matches;
+    use bumpalo::Bump;
+
+    use super::super::account::{AccountAggregate,AccountTreeKey};
+
+    #[test]
+    fn process_constructs_account_tree() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let input =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../testdata/report/multi_commodity.ledger");
+
+        let _ = process(
+            &mut ctx,
+            load::new_loader(input),
+            &ProcessOptions::default(),
+        )
+        .unwrap();
+
+        let parent = ctx.account_aggregate("Assets:Banks").unwrap();
+        let child1 = ctx.account_aggregate("Assets:Banks:Swiss Bank").unwrap();
+        let child2 = ctx.account_aggregate("Assets:Banks:あおによし").unwrap();
+        assert_matches!(parent, AccountAggregate::Ancestor(_));
+        assert_matches!(child1, AccountAggregate::Account(_));
+        assert_matches!(child2, AccountAggregate::Account(_));
+        let children: &[_] = &[child1, child2];
+
+        assert_eq!(Some(children), ctx.account_tree.children(parent));
+        assert_eq!(Some(AccountTreeKey::Descendant(parent)), ctx.account_tree.parent(child1));
+    }
 }
