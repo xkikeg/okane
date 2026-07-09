@@ -222,7 +222,7 @@ impl<'ctx> Amount<'ctx> {
 
     /// Creates negated instance.
     pub fn negate(mut self) -> Self {
-        for (_, v) in self.values.iter_mut() {
+        for v in self.values.values_mut() {
             v.set_sign_positive(!v.is_sign_positive())
         }
         self
@@ -233,7 +233,7 @@ impl<'ctx> Amount<'ctx> {
         if rhs.is_zero() {
             return Err(EvalError::DivideByZero);
         }
-        for (_, v) in self.values.iter_mut() {
+        for v in self.values.values_mut() {
             *v = v.checked_div(rhs).ok_or(EvalError::NumberOverflow)?;
         }
         Ok(self)
@@ -424,7 +424,7 @@ impl Mul<Decimal> for Amount<'_> {
 
 impl MulAssign<Decimal> for Amount<'_> {
     fn mul_assign(&mut self, rhs: Decimal) {
-        for (_, mut v) in self.values.iter_mut() {
+        for mut v in self.values.values_mut() {
             v *= rhs;
         }
     }
