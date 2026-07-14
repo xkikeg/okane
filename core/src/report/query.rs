@@ -13,9 +13,10 @@ use crate::{
 };
 
 use super::{
+    account::Account,
     balance::Balance,
     commodity::OwnedCommodity,
-    context::{Account, ReportContext},
+    context::ReportContext,
     eval::{Amount, EvalError, Evaluable},
     price_db::{self, ConversionError, PriceRepository},
     transaction::{Posting, Transaction},

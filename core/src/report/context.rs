@@ -1,33 +1,10 @@
 use bumpalo::Bump;
-use bumpalo_intern::direct::{DirectInternStore, FromInterned, InternedStr, StoredValue};
+use bumpalo_intern::direct::StoredValue;
 
 use crate::report::commodity::CommodityTag;
 
+use super::account::{Account, AccountStore};
 use super::commodity::CommodityStore;
-
-/// `&str` for accounts, interned within the `'arena` bounded allocator lifetime.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-pub struct Account<'arena>(InternedStr<'arena>);
-
-impl<'arena> FromInterned<'arena> for Account<'arena> {
-    fn from_interned(v: InternedStr<'arena>) -> Self {
-        Self(v)
-    }
-
-    fn as_interned(&self) -> InternedStr<'arena> {
-        self.0
-    }
-}
-
-impl<'arena> Account<'arena> {
-    /// Returns the `&str`.
-    pub fn as_str(&self) -> &'arena str {
-        self.0.as_str()
-    }
-}
-
-/// `Interner` for `Account`.
-pub(super) type AccountStore<'arena> = DirectInternStore<'arena, Account<'arena>>;
 
 /// Context object extensively used across Ledger file evaluation.
 pub struct ReportContext<'ctx> {

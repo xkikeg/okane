@@ -7,7 +7,7 @@ use bumpalo::Bump;
 use bumpalo_intern::dense::{DenseInternStore, InternTag, Interned, Keyed, OccupiedError};
 use pretty_decimal::PrettyDecimal;
 
-/// `&str` for commodities, interned within the `'arena` bounded allocator lifetime.
+/// Interned `&str` for commodities within the `'arena` bounded allocator lifetime.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct Commodity<'arena>(&'arena str);
 
@@ -111,7 +111,7 @@ impl<'ctx> CommodityTag<'ctx> {
     }
 }
 
-/// Interner for [`Commodity`].
+/// Manages [`Commodity`] instances.
 pub struct CommodityStore<'arena> {
     intern: DenseInternStore<'arena, Commodity<'arena>>,
     formatting: CommodityMap<PrettyDecimal>,

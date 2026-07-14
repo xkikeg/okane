@@ -4,7 +4,7 @@ use crate::report::eval::EvalError;
 
 use super::{
     ReportContext,
-    context::Account,
+    account::Account,
     eval::{Amount, OwnedEvalError, PostingAmount},
 };
 
