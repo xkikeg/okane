@@ -49,14 +49,14 @@ impl<'arena> AccountStore<'arena> {
         self.intern.resolve(value)
     }
 
-    /// Inserts given `value` as always alias of `canonical`.
+    /// Registers given `value` as always alias of `canonical`.
     /// Returns error if given `value` is already registered as canonical.
-    pub fn insert_alias(
+    pub fn register_alias(
         &mut self,
         value: &str,
         canonical: Account<'arena>,
     ) -> Result<(), OccupiedError<'arena, Account<'arena>>> {
-        self.intern.insert_alias(value, canonical)
+        self.intern.register_alias(value, canonical)
     }
 
     /// Returns the Iterator for all elements.
