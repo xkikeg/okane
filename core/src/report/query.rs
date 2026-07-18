@@ -189,6 +189,19 @@ pub struct EvalContext {
 }
 
 impl<'ctx> Ledger<'ctx> {
+    /// Returns a `Ledger` with no transactions at all. Useful as a
+    /// placeholder when processing failed but a `Ledger` instance is still
+    /// required (e.g. an error state in an interactive UI).
+    pub fn empty(ctx: &ReportContext<'ctx>) -> Self {
+        Self {
+            arena: ctx.arena,
+            transactions: Vec::new(),
+            date_sorted_txns: None,
+            raw_balance: Balance::default(),
+            price_repos: price_db::PriceRepositoryBuilder::default().build(),
+        }
+    }
+
     /// Returns iterator for all transactions.
     pub fn transactions(&self) -> impl Iterator<Item = &Transaction<'ctx>> {
         self.transactions.iter()

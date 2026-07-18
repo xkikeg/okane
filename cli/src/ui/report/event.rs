@@ -20,20 +20,34 @@ use ratatui::DefaultTerminal;
 use crate::ui::keys::is_ctrl;
 
 use super::app::{
-    App, Command, Message, Overlay, RegisterQueryTemplate, RegisterRow, Screen, SearchDirection,
-    SearchMode, SearchPhase,
+    App, Command, Message, Overlay, RegisterQueryTemplate, RegisterRow, Screen, ScrollDelta,
+    SearchDirection, SearchMode, SearchPhase,
 };
 use super::render;
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(250);
 
-/// Runs the event loop until the user quits.
-pub fn run<'ctx>(
+fn scroll(delta: ScrollDelta) -> Option<Message> {
+    Some(Message::OverlayScroll(delta))
+}
+
+/// Why the event loop returned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum RunOutcome {
+    /// The user quit.
+    Quit,
+    /// The user asked for a reload; the session loop in [`super::run_ui`]
+    /// fulfills it by tearing this session down and rebuilding from scratch.
+    Reload,
+}
+
+/// Runs the event loop until the user quits or asks for a reload.
+pub(super) fn run<'ctx>(
     terminal: &mut DefaultTerminal,
     app: &mut App<'ctx>,
     ledger: &mut Ledger<'ctx>,
     ctx: &ReportContext<'ctx>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<RunOutcome> {
     while !app.should_quit {
         terminal.draw(|frame| render::draw(frame, app, ctx))?;
         if event::poll(POLL_TIMEOUT)?
@@ -41,10 +55,19 @@ pub fn run<'ctx>(
             && let Some(msg) = key_to_message(app, key)
             && let Some(cmd) = app.update(msg)
         {
-            fulfill(app, ledger, ctx, cmd)?;
+            match cmd {
+                Command::Reload => return Ok(RunOutcome::Reload),
+                Command::LoadRegister { account } => {
+                    let rows = load_register(ledger, ctx, &app.register_template, account)
+                        .with_context(|| {
+                            format!("failed to load register for {}", account.as_str())
+                        })?;
+                    app.show_register(account, rows);
+                }
+            }
         }
     }
-    Ok(())
+    Ok(RunOutcome::Quit)
 }
 
 /// Pure: translate a raw `KeyEvent` into a [`Message`] given the current
@@ -62,14 +85,40 @@ fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
         return Some(Message::QuitImmediate);
     }
 
-    if app.overlay == Some(Overlay::QuitConfirm) {
-        return match key.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => Some(Message::ConfirmQuit),
-            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc | KeyCode::Char('q') => {
-                Some(Message::DismissOverlay)
-            }
-            _ => None,
-        };
+    match &app.overlay {
+        Some(Overlay::QuitConfirm) => {
+            return match key.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                    Some(Message::ConfirmQuit)
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc | KeyCode::Char('q') => {
+                    Some(Message::DismissOverlay)
+                }
+                _ => None,
+            };
+        }
+        // Scrolling mirrors the common navigation block below so the modal
+        // needs no new muscle memory. `r`/`F5` retry the load without a
+        // dismiss step; `q` goes straight to the quit prompt.
+        Some(Overlay::Error(_)) => {
+            return match key.code {
+                KeyCode::Esc | KeyCode::Enter => Some(Message::DismissOverlay),
+                KeyCode::Char('q') => Some(Message::RequestQuit),
+                KeyCode::Up | KeyCode::Char('k') => scroll(ScrollDelta::Lines(-1)),
+                KeyCode::Char('p') if ctrl => scroll(ScrollDelta::Lines(-1)),
+                KeyCode::Down | KeyCode::Char('j') => scroll(ScrollDelta::Lines(1)),
+                KeyCode::Char('n') if ctrl => scroll(ScrollDelta::Lines(1)),
+                KeyCode::PageUp => scroll(ScrollDelta::Pages(-1)),
+                KeyCode::Char('b') if ctrl => scroll(ScrollDelta::Pages(-1)),
+                KeyCode::PageDown => scroll(ScrollDelta::Pages(1)),
+                KeyCode::Char('f') if ctrl => scroll(ScrollDelta::Pages(1)),
+                KeyCode::Home | KeyCode::Char('g') => scroll(ScrollDelta::Top),
+                KeyCode::End | KeyCode::Char('G') => scroll(ScrollDelta::Bottom),
+                KeyCode::Char('r') | KeyCode::F(5) => Some(Message::Reload),
+                _ => None,
+            };
+        }
+        None => {}
     }
 
     // Balance account-search capture. The editing phases (modal incremental,
@@ -126,6 +175,7 @@ fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
         KeyCode::Char('f') if ctrl => Some(Message::PageDown),
         KeyCode::Home | KeyCode::Char('g') => Some(Message::SelectFirst),
         KeyCode::End | KeyCode::Char('G') => Some(Message::SelectLast),
+        KeyCode::F(5) => Some(Message::Reload),
         _ => None,
     };
     if nav.is_some() {
@@ -143,33 +193,15 @@ fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
         }
         (Screen::Balance, KeyCode::Enter) => Some(Message::OpenRegister),
         (Screen::Balance, KeyCode::Char('q') | KeyCode::Esc) => Some(Message::RequestQuit),
+        (Screen::Balance | Screen::Register(_), KeyCode::Char('r')) => Some(Message::Reload),
         (Screen::Register(_), KeyCode::Char('q') | KeyCode::Esc) => Some(Message::LeaveRegister),
         _ => None,
     }
 }
 
-/// Executes a [`Command`] returned from [`App::update`]. The only impure
-/// step in the loop — it owns the `&mut Ledger` the pure state machine
-/// cannot touch.
-fn fulfill<'ctx>(
-    app: &mut App<'ctx>,
-    ledger: &mut Ledger<'ctx>,
-    ctx: &ReportContext<'ctx>,
-    cmd: Command<'ctx>,
-) -> anyhow::Result<()> {
-    match cmd {
-        Command::LoadRegister { account } => {
-            let rows = load_register(ledger, ctx, &app.register_template, account)
-                .with_context(|| format!("failed to load register for {}", account.as_str()))?;
-            app.show_register(account, rows);
-            Ok(())
-        }
-    }
-}
-
 /// Collects the register rows for `account` into owned [`RegisterRow`]s so
 /// they can be displayed without keeping the `FallibleLender` alive.
-fn load_register<'ctx>(
+pub fn load_register<'ctx>(
     ledger: &mut Ledger<'ctx>,
     ctx: &ReportContext<'ctx>,
     template: &RegisterQueryTemplate<'ctx>,
@@ -207,7 +239,7 @@ mod tests {
 
     use crate::ui::table::TableNav;
 
-    use super::super::app::{RegisterView, Search, SearchIntent, SearchMatch};
+    use super::super::app::{ErrorPopup, RegisterView, Search, SearchIntent, SearchMatch};
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
@@ -370,6 +402,93 @@ mod tests {
         );
     }
 
+    fn app_with_error_modal<'ctx>() -> App<'ctx> {
+        let mut app = app();
+        app.overlay = Some(Overlay::Error(ErrorPopup::new(
+            "failed to load test.ledger".to_owned(),
+            vec!["boom".to_owned()],
+        )));
+        app
+    }
+
+    #[test]
+    fn error_overlay_scroll_keys() {
+        let app = app_with_error_modal();
+        for (k, delta) in [
+            (key(KeyCode::Char('j')), ScrollDelta::Lines(1)),
+            (key(KeyCode::Down), ScrollDelta::Lines(1)),
+            (ctrl_key('n'), ScrollDelta::Lines(1)),
+            (key(KeyCode::Char('k')), ScrollDelta::Lines(-1)),
+            (key(KeyCode::Up), ScrollDelta::Lines(-1)),
+            (ctrl_key('p'), ScrollDelta::Lines(-1)),
+            (key(KeyCode::PageDown), ScrollDelta::Pages(1)),
+            (ctrl_key('f'), ScrollDelta::Pages(1)),
+            (key(KeyCode::PageUp), ScrollDelta::Pages(-1)),
+            (ctrl_key('b'), ScrollDelta::Pages(-1)),
+            (key(KeyCode::Char('g')), ScrollDelta::Top),
+            (key(KeyCode::Home), ScrollDelta::Top),
+            (key(KeyCode::Char('G')), ScrollDelta::Bottom),
+            (key(KeyCode::End), ScrollDelta::Bottom),
+        ] {
+            assert_eq!(
+                key_to_message(&app, k),
+                Some(Message::OverlayScroll(delta)),
+                "{k:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn error_overlay_dismiss_and_quit_keys() {
+        let app = app_with_error_modal();
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Esc)),
+            Some(Message::DismissOverlay)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Enter)),
+            Some(Message::DismissOverlay)
+        );
+        // Unlike the quit prompt, `q` here means quit, matching the normal
+        // balance screen.
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('q'))),
+            Some(Message::RequestQuit)
+        );
+    }
+
+    /// Retrying straight from the modal — contrast with
+    /// [`r_during_quit_overlay_is_unmapped`].
+    #[test]
+    fn error_overlay_r_and_f5_reload() {
+        let app = app_with_error_modal();
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('r'))),
+            Some(Message::Reload)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::F(5))),
+            Some(Message::Reload)
+        );
+    }
+
+    #[test]
+    fn error_overlay_swallows_other_keys() {
+        let app = app_with_error_modal();
+        assert_eq!(key_to_message(&app, key(KeyCode::Char('/'))), None);
+        assert_eq!(key_to_message(&app, key(KeyCode::Char('y'))), None);
+        assert_eq!(key_to_message(&app, ctrl_key('s')), None);
+    }
+
+    #[test]
+    fn ctrl_c_quits_through_the_error_modal() {
+        let app = app_with_error_modal();
+        assert_eq!(
+            key_to_message(&app, ctrl_key('c')),
+            Some(Message::QuitImmediate)
+        );
+    }
+
     fn fixed_search() -> Search {
         Search {
             intent: SearchIntent {
@@ -520,5 +639,69 @@ mod tests {
         let release =
             KeyEvent::new_with_kind(KeyCode::Down, KeyModifiers::NONE, KeyEventKind::Release);
         assert_eq!(key_to_message(&app, release), None);
+    }
+
+    #[test]
+    fn plain_r_and_f5_reload_on_both_screens() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
+        let mut app = app();
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('r'))),
+            Some(Message::Reload)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::F(5))),
+            Some(Message::Reload)
+        );
+        app.screen = Screen::Register(RegisterView {
+            account,
+            rows: Vec::new(),
+            nav: TableNav::new(0),
+        });
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('r'))),
+            Some(Message::Reload)
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::F(5))),
+            Some(Message::Reload)
+        );
+    }
+
+    #[test]
+    fn r_during_search_editing_is_captured_as_input() {
+        // Modal incremental: every character belongs to the pattern.
+        let mut modal_app = app();
+        modal_app.update(Message::StartModalSearch);
+        assert_eq!(
+            key_to_message(&modal_app, key(KeyCode::Char('r'))),
+            Some(Message::SearchPush('r'))
+        );
+        // Interactive i-search: same.
+        let mut isearch_app = app();
+        isearch_app.search = Some(interactive_search());
+        assert_eq!(
+            key_to_message(&isearch_app, key(KeyCode::Char('r'))),
+            Some(Message::SearchPush('r'))
+        );
+    }
+
+    #[test]
+    fn r_during_fixed_search_reloads() {
+        let mut app = app();
+        app.search = Some(fixed_search());
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('r'))),
+            Some(Message::Reload)
+        );
+    }
+
+    #[test]
+    fn r_during_quit_overlay_is_unmapped() {
+        let mut app = app();
+        app.overlay = Some(Overlay::QuitConfirm);
+        assert_eq!(key_to_message(&app, key(KeyCode::Char('r'))), None);
+        assert_eq!(key_to_message(&app, key(KeyCode::F(5))), None);
     }
 }

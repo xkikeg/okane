@@ -5,6 +5,8 @@
 //! [`super::event`] translates raw `KeyEvent`s into messages based on the
 //! currently active screen and overlay.
 
+use std::cmp::{max, min};
+
 use chrono::NaiveDate;
 use okane_core::report::query::{Conversion, DateRange};
 use okane_core::report::{Account, Amount};
@@ -47,14 +49,17 @@ pub struct RegisterRow<'ctx> {
 impl RegisterRow<'_> {
     /// Number of rendered lines this row occupies (>= 1).
     pub fn line_count(&self) -> u16 {
-        amount_line_count(&self.amount).max(amount_line_count(&self.total))
+        max(
+            amount_line_count(&self.amount),
+            amount_line_count(&self.total),
+        )
     }
 }
 
 /// Number of lines an [`Amount`] would render as in a table.
 fn amount_line_count(amount: &Amount<'_>) -> u16 {
     let n = amount.iter().count();
-    n.max(1).min(u16::MAX as usize) as u16
+    n.clamp(1, u16::MAX as usize) as u16
 }
 
 /// Query parameters reused for every register lookup during the session
@@ -89,11 +94,78 @@ pub enum Screen<'ctx> {
     Register(RegisterView<'ctx>),
 }
 
-/// Modal overlay drawn on top of the current screen.
+/// A scroll request against a scrollable overlay body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollDelta {
+    Lines(i16),
+    Pages(i16),
+    Top,
+    Bottom,
+}
+
+/// Body of the error modal: a full error report the user scrolls through.
+///
+/// The message is pre-split into display lines, and the renderer does not
+/// re-wrap them (annotate-snippets output is column-aligned — soft wrapping
+/// would move the carets away from what they point at). That keeps
+/// `lines.len()` the exact rendered line count, so the scroll bound is
+/// computable — and testable — without a terminal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ErrorPopup {
+    /// Modal title, e.g. `failed to load main.ledger`.
+    pub title: String,
+    /// The error report, one entry per display line.
+    pub lines: Vec<String>,
+    /// Index of the first visible line.
+    pub scroll: u16,
+    /// Last known height of the body. Updated each frame, the same way
+    /// [`crate::ui::table::TableNav::viewport_height`] is.
+    pub viewport_height: u16,
+}
+
+impl ErrorPopup {
+    pub fn new(title: String, lines: Vec<String>) -> Self {
+        Self {
+            title,
+            lines,
+            scroll: 0,
+            viewport_height: 0,
+        }
+    }
+
+    /// Rows the body can scroll before its last line reaches the bottom of the
+    /// viewport. Zero when everything already fits.
+    fn max_scroll(&self) -> u16 {
+        let lines = u16::try_from(self.lines.len()).unwrap_or(u16::MAX);
+        lines.saturating_sub(max(self.viewport_height, 1))
+    }
+
+    /// Applies a scroll request, clamped to the scrollable range.
+    pub fn scroll(&mut self, delta: ScrollDelta) {
+        let page = i32::from(max(self.viewport_height, 1));
+        let current = i32::from(self.scroll);
+        let target = match delta {
+            ScrollDelta::Lines(n) => current + i32::from(n),
+            ScrollDelta::Pages(n) => current + i32::from(n) * page,
+            ScrollDelta::Top => 0,
+            ScrollDelta::Bottom => i32::from(self.max_scroll()),
+        };
+        self.scroll = target.clamp(0, i32::from(self.max_scroll())) as u16;
+    }
+
+    /// Re-clamps the offset after the viewport height changes (terminal resize).
+    pub fn clamp(&mut self) {
+        self.scroll = min(self.scroll, self.max_scroll());
+    }
+}
+
+/// Modal overlay drawn on top of the current screen.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Overlay {
     /// "Quit? y/n" prompt shown when leaving the balance screen.
     QuitConfirm,
+    /// A failure the user must acknowledge, shown in full.
+    Error(ErrorPopup),
 }
 
 /// Phase of the modal (`/`) account search.
@@ -263,6 +335,8 @@ pub enum Message {
     ConfirmQuit,
     /// Dismiss the current overlay.
     DismissOverlay,
+    /// Scroll the body of a scrollable overlay.
+    OverlayScroll(ScrollDelta),
     /// Unconditional quit (Ctrl-C).
     QuitImmediate,
     /// Open the modal (`/`) balance search bar (incremental phase).
@@ -285,13 +359,46 @@ pub enum Message {
     /// Previous match (modal `N`); or, for interactive search, repeat backward
     /// / recall the previous pattern when empty (`C-r`).
     SearchPrev,
+    /// Re-read the ledger data from disk (`r` / `F5`), keeping the UI state.
+    Reload,
 }
 
 /// Effect requested by [`App::update`] that requires resources the pure
 /// state machine does not own (here: `&mut Ledger` to compute a register).
 #[derive(Debug, Clone, Copy)]
 pub enum Command<'ctx> {
-    LoadRegister { account: Account<'ctx> },
+    LoadRegister {
+        account: Account<'ctx>,
+    },
+    /// Re-run the whole load/process pipeline and swap the data in.
+    Reload,
+}
+
+/// Snapshot of register view that surives a reload, as part of [`UiSnapshot`].
+#[derive(Debug, Clone)]
+pub struct RegisterSnapshot {
+    /// account filter for the registry.
+    account: String,
+    /// Selected cursor index.
+    cursor: usize,
+}
+
+/// UI state that survives a reload, captured by [`App::snapshot`] and
+/// re-applied by [`App::restore`]. Everything is plain owned data — arena
+/// references would dangle across the reload's arena reset, so accounts
+/// are kept by name and re-resolved against the rebuilt session.
+#[derive(Debug, Clone)]
+pub struct UiSnapshot {
+    /// Carried over so page-up/down keeps working before the first frame.
+    viewport_height: u16,
+    /// Selected account on the balance screen, by name.
+    selected_account: Option<String>,
+    /// Snapshot of the register if it's register view.
+    /// Extend this once [`Screen`] is more than 2 states.
+    register: Option<RegisterSnapshot>,
+    /// Active search intent; the matches are recomputed on restore.
+    search: Option<SearchIntent>,
+    last_search: String,
 }
 
 /// Application state for the TUI session.
@@ -302,6 +409,10 @@ pub struct App<'ctx> {
     pub balance_nav: TableNav,
     pub screen: Screen<'ctx>,
     pub overlay: Option<Overlay>,
+    /// Transient one-line notice shown in the footer. Cleared on the next key
+    /// press. Failures worth reading in full go to [`Overlay::Error`] instead,
+    /// which is dismissed explicitly.
+    pub error_toast: Option<String>,
     /// Active account search on the balance screen, if any.
     pub search: Option<Search>,
     /// Most recently used search pattern, recalled by an empty interactive
@@ -325,6 +436,7 @@ impl<'ctx> App<'ctx> {
             balance_nav,
             screen: Screen::Balance,
             overlay: None,
+            error_toast: None,
             search: None,
             last_search: String::new(),
             register_template,
@@ -349,6 +461,9 @@ impl<'ctx> App<'ctx> {
     /// Applies a message; optionally returns a [`Command`] for the event
     /// loop to execute (the only impure step in this flow).
     pub fn update(&mut self, msg: Message) -> Option<Command<'ctx>> {
+        // Any key press dismisses a transient error notice.
+        self.error_toast = None;
+
         // QuitImmediate is honored regardless of overlay/screen.
         if matches!(msg, Message::QuitImmediate) {
             self.should_quit = true;
@@ -359,6 +474,21 @@ impl<'ctx> App<'ctx> {
             match msg {
                 Message::ConfirmQuit => self.should_quit = true,
                 Message::DismissOverlay => self.overlay = None,
+                Message::OverlayScroll(delta) => {
+                    if let Some(Overlay::Error(popup)) = self.overlay.as_mut() {
+                        popup.scroll(delta);
+                    }
+                }
+                // Quitting from the error modal skips the dismiss step: fall
+                // through so the quit prompt replaces it.
+                Message::RequestQuit if matches!(self.overlay, Some(Overlay::Error(_))) => {
+                    self.overlay = Some(Overlay::QuitConfirm);
+                }
+                // Retrying from the error modal: the reload rebuilds the whole
+                // session (and this overlay with it).
+                Message::Reload if matches!(self.overlay, Some(Overlay::Error(_))) => {
+                    return Some(Command::Reload);
+                }
                 // Ignore other input while a modal is up.
                 _ => {}
             }
@@ -449,8 +579,12 @@ impl<'ctx> App<'ctx> {
             }
             Message::SearchNext => self.search_or_recall(SearchDirection::Forward),
             Message::SearchPrev => self.search_or_recall(SearchDirection::Backward),
-            // Already handled above.
-            Message::QuitImmediate | Message::ConfirmQuit | Message::DismissOverlay => {}
+            Message::Reload => return Some(Command::Reload),
+            // Already handled above, or only meaningful while an overlay is up.
+            Message::QuitImmediate
+            | Message::ConfirmQuit
+            | Message::DismissOverlay
+            | Message::OverlayScroll(_) => {}
         }
         None
     }
@@ -459,6 +593,84 @@ impl<'ctx> App<'ctx> {
     /// fulfilled.
     pub fn show_register(&mut self, account: Account<'ctx>, rows: Vec<RegisterRow<'ctx>>) {
         self.screen = Screen::Register(RegisterView::new(account, rows));
+    }
+
+    /// Like [`Self::show_register`], but restores a previous cursor position
+    /// (clamped to the new row count) instead of jumping to the last entry.
+    /// Used when re-entering the register after a reload.
+    pub fn show_register_at(
+        &mut self,
+        account: Account<'ctx>,
+        rows: Vec<RegisterRow<'ctx>>,
+        index: usize,
+    ) {
+        let mut view = RegisterView::new(account, rows);
+        if let Some(last) = view.nav.row_count.checked_sub(1) {
+            view.nav.select(min(index, last));
+        }
+        self.screen = Screen::Register(view);
+    }
+
+    /// Captures the UI state that should survive a reload as owned data
+    /// (no `'ctx` borrows): the whole session, arena included, is torn
+    /// down before the snapshot is restored into the next one.
+    pub fn snapshot(&self) -> UiSnapshot {
+        UiSnapshot {
+            viewport_height: self.balance_nav.viewport_height,
+            selected_account: self
+                .selected_balance_account()
+                .map(|a| a.as_str().to_owned()),
+            register: match &self.screen {
+                Screen::Balance => None,
+                Screen::Register(view) => Some(RegisterSnapshot {
+                    account: view.account.as_str().to_owned(),
+                    cursor: view.nav.table_state.selected().unwrap_or(0),
+                }),
+            },
+            search: self.search.as_ref().map(|s| s.intent.clone()),
+            last_search: self.last_search.clone(),
+        }
+    }
+
+    /// Restores a [`UiSnapshot`] into this freshly-built `App`: the balance
+    /// selection follows the previously selected account (or the closest one
+    /// by name when it disappeared), and any active search is recomputed
+    /// against the new rows.
+    ///
+    /// When the snapshot had the register screen open, returns
+    /// `Some((account, index))` asking the caller to query that account's
+    /// register and open it via [`Self::show_register_at`]. If the account
+    /// no longer exists, stays on the balance screen (with a notice) and
+    /// returns `None`.
+    pub fn restore(&mut self, snapshot: &UiSnapshot) -> Option<(Account<'ctx>, usize)> {
+        self.balance_nav.viewport_height = snapshot.viewport_height;
+        if let Some(prev) = &snapshot.selected_account
+            && let Some(idx) = restore_index(prev, &self.balance_rows)
+        {
+            self.balance_nav.select(idx);
+        }
+
+        self.last_search = snapshot.last_search.clone();
+        if let Some(intent) = &snapshot.search {
+            let mut intent = intent.clone();
+            intent.origin = min(intent.origin, self.balance_rows.len().saturating_sub(1));
+            let matches = SearchMatch::compute(&intent.input, &self.balance_rows);
+            self.search = Some(Search { intent, matches });
+        }
+
+        let RegisterSnapshot{account, cursor} = snapshot.register.as_ref()?;
+        match self
+            .balance_rows
+            .binary_search_by(|r| r.account.as_str().cmp(account.as_str()))
+        {
+            Ok(row) => Some((self.balance_rows[row].account, *cursor)),
+            Err(_) => {
+                self.error_toast = Some(format!(
+                    "account {account} is gone after reload; back to balance"
+                ));
+                None
+            }
+        }
     }
 
     /// Opens a search of the given style, recording the current selection as
@@ -569,6 +781,20 @@ impl<'ctx> App<'ctx> {
             self.balance_nav.select(idx);
         }
     }
+}
+
+/// Row index to restore after a reload: the row of `prev_name` when it still
+/// exists, otherwise the alphabetically closest row (insertion point, clamped
+/// to the end). `None` when `rows` is empty.
+///
+/// Relies on `rows` being sorted by account name, which is the order
+/// `Balance::into_vec` produces.
+fn restore_index(prev_name: &str, rows: &[BalanceRow<'_>]) -> Option<usize> {
+    let last = rows.len().checked_sub(1)?;
+    let idx = rows
+        .binary_search_by(|r| r.account.as_str().cmp(prev_name))
+        .unwrap_or_else(|insertion| insertion);
+    Some(min(idx, last))
 }
 
 #[cfg(test)]
@@ -1136,6 +1362,129 @@ mod tests {
         assert_eq!(app.balance_nav.table_state.selected(), Some(0));
     }
 
+    fn popup(lines: usize, viewport_height: u16) -> ErrorPopup {
+        let mut popup = ErrorPopup::new(
+            "failed to load test.ledger".to_owned(),
+            (0..lines).map(|i| format!("line {i}")).collect(),
+        );
+        popup.viewport_height = viewport_height;
+        popup
+    }
+
+    fn app_with_error_modal<'ctx>() -> App<'ctx> {
+        let mut app = app_no_rows();
+        app.overlay = Some(Overlay::Error(popup(10, 4)));
+        app
+    }
+
+    #[test]
+    fn popup_scroll_clamps_at_top() {
+        let mut p = popup(10, 4);
+        p.scroll(ScrollDelta::Lines(-1));
+        assert_eq!(p.scroll, 0);
+    }
+
+    #[test]
+    fn popup_scroll_clamps_at_bottom() {
+        let mut p = popup(10, 4);
+        p.scroll(ScrollDelta::Lines(100));
+        assert_eq!(p.scroll, 6);
+    }
+
+    #[test]
+    fn popup_scroll_pinned_when_body_fits() {
+        let mut p = popup(5, 10);
+        assert_eq!(p.max_scroll(), 0);
+        p.scroll(ScrollDelta::Bottom);
+        assert_eq!(p.scroll, 0);
+    }
+
+    #[test]
+    fn popup_page_scroll_uses_viewport_height() {
+        let mut p = popup(100, 4);
+        p.scroll(ScrollDelta::Pages(1));
+        assert_eq!(p.scroll, 4);
+        p.scroll(ScrollDelta::Pages(-1));
+        assert_eq!(p.scroll, 0);
+    }
+
+    #[test]
+    fn popup_top_and_bottom_jump() {
+        let mut p = popup(10, 4);
+        p.scroll(ScrollDelta::Bottom);
+        assert_eq!(p.scroll, 6);
+        p.scroll(ScrollDelta::Top);
+        assert_eq!(p.scroll, 0);
+    }
+
+    #[test]
+    fn popup_scroll_without_viewport_does_not_panic() {
+        // The first key can in principle arrive before a frame has been drawn;
+        // an unknown viewport falls back to a single line per page.
+        let mut p = popup(10, 0);
+        p.scroll(ScrollDelta::Pages(1));
+        assert_eq!(p.scroll, 1);
+        p.scroll(ScrollDelta::Bottom);
+        assert_eq!(p.scroll, 9);
+    }
+
+    #[test]
+    fn popup_clamps_after_viewport_shrink() {
+        let mut p = popup(10, 4);
+        p.scroll(ScrollDelta::Bottom);
+        p.viewport_height = 10;
+        p.clamp();
+        assert_eq!(p.scroll, 0);
+    }
+
+    #[test]
+    fn error_modal_scrolls_on_overlay_scroll() {
+        let mut app = app_with_error_modal();
+        assert!(
+            app.update(Message::OverlayScroll(ScrollDelta::Bottom))
+                .is_none()
+        );
+        assert_matches!(&app.overlay, Some(Overlay::Error(p)) if p.scroll == 6);
+    }
+
+    #[test]
+    fn error_modal_survives_key_that_clears_footer_notice() {
+        let mut app = app_with_error_modal();
+        app.error_toast = Some("transient".to_owned());
+        app.update(Message::MoveDown);
+        assert!(app.error_toast.is_none());
+        assert_matches!(app.overlay, Some(Overlay::Error(_)));
+    }
+
+    #[test]
+    fn request_quit_replaces_error_modal_with_quit_prompt() {
+        let mut app = app_with_error_modal();
+        app.update(Message::RequestQuit);
+        assert_eq!(app.overlay, Some(Overlay::QuitConfirm));
+        assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn dismiss_closes_error_modal() {
+        let mut app = app_with_error_modal();
+        app.update(Message::DismissOverlay);
+        assert_eq!(app.overlay, None);
+    }
+
+    #[test]
+    fn reload_through_error_modal_returns_command() {
+        let mut app = app_with_error_modal();
+        assert_matches!(app.update(Message::Reload), Some(Command::Reload));
+    }
+
+    #[test]
+    fn reload_during_quit_prompt_is_ignored() {
+        let mut app = app_no_rows();
+        app.update(Message::RequestQuit);
+        assert!(app.update(Message::Reload).is_none());
+        assert_eq!(app.overlay, Some(Overlay::QuitConfirm));
+    }
+
     #[test]
     fn leave_register_returns_to_balance() {
         let arena = Bump::new();
@@ -1150,6 +1499,210 @@ mod tests {
         });
         app.update(Message::LeaveRegister);
         assert!(matches!(app.screen, Screen::Balance));
+    }
+
+    /// Balance rows for `names` (must be sorted, matching `Balance::into_vec`
+    /// order) resolved against an existing context.
+    fn rows_of<'ctx>(ctx: &ReportContext<'ctx>, names: &[&str]) -> Vec<BalanceRow<'ctx>> {
+        names
+            .iter()
+            .map(|n| BalanceRow {
+                account: ctx.account(n).unwrap(),
+                amount: Amount::zero(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn restore_index_prefers_exact_match() {
+        let arena = Bump::new();
+        let (ctx, _app) = make_balance_app(&arena, ACCOUNTS);
+        let rows = rows_of(&ctx, ACCOUNTS);
+        assert_eq!(restore_index("Expenses:Food", &rows), Some(2));
+    }
+
+    #[test]
+    fn restore_index_falls_back_to_insertion_point() {
+        let arena = Bump::new();
+        let (ctx, _app) = make_balance_app(&arena, ACCOUNTS);
+        let rows = rows_of(&ctx, ACCOUNTS);
+        // Between Assets:Cash (1) and Expenses:Food (2).
+        assert_eq!(restore_index("Assets:Extra", &rows), Some(2));
+        // Before every row.
+        assert_eq!(restore_index("Aaa", &rows), Some(0));
+        // Past the last row, clamped.
+        assert_eq!(restore_index("Zzz", &rows), Some(4));
+    }
+
+    #[test]
+    fn restore_index_empty_rows_is_none() {
+        let rows: &[BalanceRow<'_>] = &[];
+        assert_eq!(restore_index("Assets:Bank", rows), None);
+    }
+
+    #[test]
+    fn reload_message_produces_command() {
+        let mut app = app_no_rows();
+        assert_matches!(app.update(Message::Reload), Some(Command::Reload));
+    }
+
+    #[test]
+    fn any_key_clears_error_notice() {
+        let mut app = app_no_rows();
+        app.error_toast = Some("boom".to_owned());
+        app.update(Message::MoveDown);
+        assert_eq!(app.error_toast, None);
+    }
+
+    /// A fresh `App` over `names`, as if built for the next session.
+    fn next_app<'ctx>(ctx: &ReportContext<'ctx>, names: &[&str]) -> App<'ctx> {
+        App::new("test".to_owned(), rows_of(ctx, names), template())
+    }
+
+    #[test]
+    fn restore_follows_selected_account() {
+        let arena = Bump::new();
+        let (ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
+        app.balance_nav.select(2); // Expenses:Food
+        let snapshot = app.snapshot();
+
+        let mut app = next_app(
+            &ctx,
+            &[
+                "Assets:Cash",
+                "Expenses:Food",
+                "Income:Salary",
+                "Liabilities:Card",
+            ],
+        );
+        assert_matches!(app.restore(&snapshot), None);
+        // Expenses:Food moved from index 2 to 1.
+        assert_eq!(selected(&app), Some(1));
+    }
+
+    #[test]
+    fn restore_vanished_account_selects_closest() {
+        let arena = Bump::new();
+        let (ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
+        app.balance_nav.select(2); // Expenses:Food
+        let snapshot = app.snapshot();
+
+        let mut app = next_app(
+            &ctx,
+            &[
+                "Assets:Bank",
+                "Assets:Cash",
+                "Income:Salary",
+                "Liabilities:Card",
+            ],
+        );
+        app.restore(&snapshot);
+        // Expenses:Food is gone; the insertion point lands on Income:Salary.
+        assert_eq!(selected(&app), Some(2));
+    }
+
+    #[test]
+    fn restore_keeps_viewport_height() {
+        let arena = Bump::new();
+        let (ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
+        app.balance_nav.viewport_height = 12;
+        let snapshot = app.snapshot();
+
+        let mut app = next_app(&ctx, ACCOUNTS);
+        app.restore(&snapshot);
+        assert_eq!(app.balance_nav.viewport_height, 12);
+    }
+
+    #[test]
+    fn restore_recomputes_search_matches() {
+        let arena = Bump::new();
+        let (ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
+        app.update(Message::StartModalSearch);
+        for c in "assets".chars() {
+            app.update(Message::SearchPush(c));
+        }
+        app.update(Message::SearchSubmit); // fixed
+        assert_eq!(app.search.as_ref().unwrap().matched_rows(), [0, 1]);
+        app.last_search = "salary".to_owned();
+        let snapshot = app.snapshot();
+
+        let mut app = next_app(&ctx, &["Assets:Bank", "Income:Salary"]);
+        app.restore(&snapshot);
+        let search = app.search.as_ref().unwrap();
+        assert_eq!(search.intent.input, "assets");
+        assert_eq!(search.matched_rows(), [0]);
+        // Origin is clamped into the new row range.
+        assert!(search.intent.origin < 2);
+        assert_eq!(&app.last_search, "salary");
+    }
+
+    #[test]
+    fn restore_requests_register_requery() {
+        let arena = Bump::new();
+        let (ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
+        let account = ctx.account("Assets:Cash").unwrap();
+        let mut nav = TableNav::new(5);
+        nav.select(3);
+        app.screen = Screen::Register(RegisterView {
+            account,
+            rows: Vec::new(),
+            nav,
+        });
+        let snapshot = app.snapshot();
+
+        let mut app = next_app(&ctx, ACCOUNTS);
+        let got = app.restore(&snapshot);
+        assert_matches!(got, Some((acc, 3)) if acc.as_str() == "Assets:Cash");
+        // The screen stays on balance until the caller queries the rows and
+        // opens the register via `show_register_at`.
+        assert!(matches!(app.screen, Screen::Balance));
+        assert_eq!(app.error_toast, None);
+    }
+
+    #[test]
+    fn restore_register_account_vanished_falls_back() {
+        let arena = Bump::new();
+        let (ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
+        let account = ctx.account("Assets:Cash").unwrap();
+        app.screen = Screen::Register(RegisterView {
+            account,
+            rows: Vec::new(),
+            nav: TableNav::new(0),
+        });
+        let snapshot = app.snapshot();
+
+        let mut app = next_app(&ctx, &["Assets:Bank", "Income:Salary"]);
+        let got = app.restore(&snapshot);
+        assert_matches!(got, None);
+        assert!(matches!(app.screen, Screen::Balance));
+        assert_matches!(&app.error_toast, Some(_));
+    }
+
+    #[test]
+    fn show_register_at_clamps_index() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:Cash");
+        let rows: Vec<RegisterRow<'_>> = (0..3)
+            .map(|i| RegisterRow {
+                date: NaiveDate::from_ymd_opt(2024, 1, i + 1).unwrap(),
+                payee: "payee".to_owned(),
+                amount: Amount::zero(),
+                total: Amount::zero(),
+            })
+            .collect();
+
+        let mut app = app_no_rows();
+        app.show_register_at(account, rows.clone(), 10);
+        let Screen::Register(view) = &app.screen else {
+            panic!("expected register screen");
+        };
+        assert_eq!(view.nav.table_state.selected(), Some(2));
+
+        app.show_register_at(account, rows, 1);
+        let Screen::Register(view) = &app.screen else {
+            panic!("expected register screen");
+        };
+        assert_eq!(view.nav.table_state.selected(), Some(1));
     }
 
     #[test]

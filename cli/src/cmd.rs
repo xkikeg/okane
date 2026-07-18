@@ -423,34 +423,19 @@ impl UiCmd {
     }
 
     pub fn run(self) -> anyhow::Result<()> {
-        let arena = Bump::new();
-        let mut ctx = report::ReportContext::new(&arena);
-        let mut ledger = report::process(
-            &mut ctx,
+        // All report data is built inside `run_ui`: its session loop resets
+        // the arena on reload (`r` / `F5`), which requires that nothing out
+        // here borrows it.
+        let reload = ui::report::ReloadContext::new(
             load::new_loader(self.source.clone()),
-            &self.eval_options.to_process_options(),
-        )?;
-        let conversion = self.eval_options.to_conversion(&ctx)?;
-        let date_range = self.eval_options.to_date_range()?;
-        let balance_query = query::BalanceQuery {
-            account: query::AccountFilter::All,
-            conversion,
-            date_range,
-        };
-        let balance = ledger.balance(&ctx, &balance_query)?.into_owned();
-        let rows: Vec<ui::report::BalanceRow> = balance
-            .into_vec()
-            .into_iter()
-            .map(|(account, amount)| ui::report::BalanceRow { account, amount })
-            .collect();
-        // Reused for every register drill-down during the session.
-        let register_template = ui::report::RegisterQueryTemplate {
-            conversion,
-            date_range,
-        };
-        let app = ui::report::App::new(self.source.display().to_string(), rows, register_template);
-        ui::report::run_ui(app, &mut ledger, &ctx).context("failed to run TUI")?;
-        Ok(())
+            load::new_loader(self.source.clone()),
+            self.eval_options.to_process_options(),
+            self.eval_options.to_conversion_spec(),
+            self.eval_options.to_date_range()?,
+        );
+        let mut arena = Bump::new();
+        ui::report::run_ui(&mut arena, self.source.display().to_string(), &reload)
+            .context("failed to run TUI")
     }
 }
 
@@ -633,6 +618,14 @@ impl EvalOptions {
         })
     }
 
+    fn conversion_strategy(&self) -> query::ConversionStrategy {
+        if self.historical {
+            query::ConversionStrategy::Historical
+        } else {
+            query::ConversionStrategy::UpToDate { today: self.today }
+        }
+    }
+
     fn to_conversion<'ctx>(
         &self,
         ctx: &report::ReportContext<'ctx>,
@@ -646,12 +639,19 @@ impl EvalOptions {
             .ok_or(query::QueryError::CommodityNotFound(
                 report::OwnedCommodity::from_string(ex.clone()),
             ))?;
-        let strategy = if self.historical {
-            query::ConversionStrategy::Historical
-        } else {
-            query::ConversionStrategy::UpToDate { today: self.today }
-        };
-        Ok(Some(query::Conversion { strategy, target }))
+        Ok(Some(query::Conversion {
+            strategy: self.conversion_strategy(),
+            target,
+        }))
+    }
+
+    /// Owned counterpart of [`Self::to_conversion`] for the UI session
+    /// loop, which re-resolves it against each session's fresh context.
+    fn to_conversion_spec(&self) -> Option<ui::report::ConversionSpec> {
+        self.exchange.as_ref().map(|ex| ui::report::ConversionSpec {
+            commodity: ex.clone(),
+            strategy: self.conversion_strategy(),
+        })
     }
 
     fn create_account_filter<'ctx>(
