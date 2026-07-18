@@ -1,6 +1,12 @@
 //! Contains the functions to load Ledger file,
 //! with recursively resolving the `include` directives.
 
+// Re-exported because it appears in the public [`Loader`] API (see
+// [`Loader::with_error_renderer`]); lets downstream crates name the type
+// without pinning their own (possibly mismatched) annotate-snippets
+// dependency.
+pub use annotate_snippets::Renderer;
+
 use std::{
     borrow::Cow,
     collections::HashMap,

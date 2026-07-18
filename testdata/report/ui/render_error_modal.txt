@@ -1,0 +1,24 @@
+ okane ui — test.ledger                                                         
+┌──────────────────────────────────────────────────────────────────────────────┐
+│       ┌ failed to load test.ledger ──────────────────────────────────┐       │
+│       │error line 0                                                  │       │
+│       │error line 1                                                  │       │
+│       │error line 2                                                  │       │
+│       │error line 3                                                  │       │
+│       │error line 4                                                  │       │
+│       │error line 5                                                  │       │
+│       │error line 6                                                  │       │
+│       │error line 7                                                  │       │
+│       │error line 8                                                  │       │
+│       │error line 9                                                  │       │
+│       │error line 10                                                 │       │
+│       │error line 11                                                 │       │
+│       │error line 12                                                 │       │
+│       │error line 13                                                 │       │
+│       │error line 14                                                 │       │
+│       │error line 15                                                 │       │
+│       │ ↑/↓ scroll · PgUp/PgDn page · g/G top/end · r reload ·  1/40 │       │
+│       └──────────────────────────────────────────────────────────────┘       │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+ ↑/↓ scroll · PgUp/PgDn page · g/G home/end · Enter register · / search · C-s is

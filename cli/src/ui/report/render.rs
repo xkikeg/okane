@@ -5,6 +5,8 @@
 //! render a `Clear` widget over a centered rect, then render the popup
 //! contents on top.
 
+use std::cmp::{max, min};
+
 use okane_core::report::{Amount, ReportContext};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
@@ -14,13 +16,16 @@ use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table};
 use unicode_width::UnicodeWidthStr;
 
 use super::app::{
-    App, BalanceRow, Overlay, RegisterRow, RegisterView, Screen, Search, SearchDirection,
-    SearchMatch, SearchMode, SearchPhase,
+    App, BalanceRow, ErrorPopup, Overlay, RegisterRow, RegisterView, Screen, Search,
+    SearchDirection, SearchMatch, SearchMode, SearchPhase,
 };
 use crate::ui::table::TableNav;
 
-const FOOTER_HINT_BALANCE: &str = " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · Enter register · / search · C-s isearch · q quit ";
-const FOOTER_HINT_REGISTER: &str = " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · q/Esc back ";
+const FOOTER_HINT_BALANCE: &str = " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · Enter register · / search · C-s isearch · r reload · q quit ";
+const FOOTER_HINT_REGISTER: &str =
+    " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · r reload · q/Esc back ";
+const ERROR_POPUP_HINT: &str =
+    " ↑/↓ scroll · PgUp/PgDn page · g/G top/end · r reload · Esc/Enter close · q quit ";
 
 /// Renders a frame for the given app state.
 pub fn draw<'ctx>(frame: &mut Frame, app: &mut App<'ctx>, ctx: &ReportContext<'ctx>) {
@@ -48,19 +53,25 @@ pub fn draw<'ctx>(frame: &mut Frame, app: &mut App<'ctx>, ctx: &ReportContext<'c
                 matches,
                 ctx,
             );
-            match &app.search {
-                Some(search) => draw_search_bar(frame, layout[2], search),
-                None => draw_footer(frame, layout[2], FOOTER_HINT_BALANCE),
+            match (&app.error_toast, &app.search) {
+                (Some(msg), _) => draw_error(frame, layout[2], msg),
+                (None, Some(search)) => draw_search_bar(frame, layout[2], search),
+                (None, None) => draw_footer(frame, layout[2], FOOTER_HINT_BALANCE),
             }
         }
         Screen::Register(view) => {
             draw_register_body(frame, layout[1], view, ctx);
-            draw_footer(frame, layout[2], FOOTER_HINT_REGISTER);
+            match &app.error_toast {
+                Some(msg) => draw_error(frame, layout[2], msg),
+                None => draw_footer(frame, layout[2], FOOTER_HINT_REGISTER),
+            }
         }
     }
 
-    if app.overlay == Some(Overlay::QuitConfirm) {
-        draw_quit_confirm(frame, area);
+    match &mut app.overlay {
+        Some(Overlay::QuitConfirm) => draw_quit_confirm(frame, area),
+        Some(Overlay::Error(popup)) => draw_error_popup(frame, area, popup),
+        None => {}
     }
 }
 
@@ -194,6 +205,14 @@ fn draw_footer(frame: &mut Frame, area: Rect, hint: &str) {
     frame.render_widget(footer, area);
 }
 
+/// Renders a transient error notice (e.g. a failed reload) in the footer
+/// slot. Takes priority over the key hint and the search bar; cleared by
+/// [`App::update`] on the next key press.
+fn draw_error(frame: &mut Frame, area: Rect, message: &str) {
+    let footer = Paragraph::new(format!(" {message} ")).style(Style::default().fg(Color::Red));
+    frame.render_widget(footer, area);
+}
+
 /// Renders the balance search bar in the footer slot: a prompt + the typed
 /// pattern (red on an invalid regex) plus a dim hint suffix. While editing it
 /// also places the terminal cursor at the end of the pattern.
@@ -245,10 +264,8 @@ fn draw_search_bar(frame: &mut Frame, area: Rect, search: &Search) {
     if show_cursor {
         // Cursor sits just past the last typed character (after the prompt),
         // clamped so it never leaves the footer row.
-        let cursor_x = area
-            .x
-            .saturating_add(display_width(&text) as u16)
-            .min(area.x + area.width.saturating_sub(1));
+        let cursor_x = area.x.saturating_add(display_width(&text) as u16);
+        let cursor_x = min(cursor_x, area.x + area.width.saturating_sub(1));
         frame.set_cursor_position((cursor_x, area.y));
     }
 }
@@ -270,10 +287,73 @@ fn draw_quit_confirm(frame: &mut Frame, area: Rect) {
     frame.render_widget(body, popup);
 }
 
+/// Near-full-screen modal showing a failure in full, e.g. a reload that could
+/// not parse the ledger.
+///
+/// The body is deliberately *not* wrapped: annotate-snippets output aligns a
+/// line-number gutter, the source line and a caret row by column, and soft
+/// wrapping would move the carets away from what they point at. Long lines are
+/// clipped instead. That also keeps `lines.len()` the rendered line count, so
+/// [`ErrorPopup::scroll`] can clamp exactly.
+fn draw_error_popup(frame: &mut Frame, area: Rect, popup: &mut ErrorPopup) {
+    let rect = error_popup_rect(area);
+    // Clear first so the popup paints over the table cleanly.
+    frame.render_widget(Clear, rect);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(popup.title.as_str())
+        .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD));
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+
+    let layout = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(inner);
+    // The body height is only known here; keep it fresh for the scroll math,
+    // the same way the tables refresh `TableNav::viewport_height`.
+    popup.viewport_height = layout[0].height;
+    popup.clamp();
+
+    let body: Vec<Line> = popup
+        .lines
+        .iter()
+        .map(|line| Line::from(line.as_str()))
+        .collect();
+    frame.render_widget(
+        Paragraph::new(body)
+            .style(
+                Style::default()
+                    .fg(Color::Reset)
+                    .remove_modifier(Modifier::BOLD),
+            )
+            .scroll((popup.scroll, 0)),
+        layout[0],
+    );
+
+    // Split so the position counter survives on narrow terminals; the hint
+    // is the part that gets clipped.
+    let position = format!(" {}/{} ", popup.scroll + 1, popup.lines.len());
+    let dim = Style::default().add_modifier(Modifier::DIM);
+    let footer = Layout::horizontal([
+        Constraint::Min(0),
+        Constraint::Length(display_width(&position) as u16),
+    ])
+    .split(layout[1]);
+    frame.render_widget(Paragraph::new(ERROR_POPUP_HINT).style(dim), footer[0]);
+    frame.render_widget(Paragraph::new(position).style(dim), footer[1]);
+}
+
+/// Four fifths of the screen, with a floor so tiny terminals still show
+/// something usable.
+fn error_popup_rect(area: Rect) -> Rect {
+    let width = (u32::from(area.width) * 4 / 5) as u16;
+    let height = (u32::from(area.height) * 4 / 5) as u16;
+    centered_rect(area, max(width, 20), max(height, 5))
+}
+
 /// Returns a sub-rect of `area` of the given size, centered.
 fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
-    let width = width.min(area.width);
-    let height = height.min(area.height);
+    let width = min(width, area.width);
+    let height = min(height, area.height);
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     Rect {
@@ -350,10 +430,17 @@ fn display_width(s: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use bumpalo::Bump;
+    use okane_core::report::query::DateRange;
     use okane_core::report::{Amount, ReportContext};
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::layout::Position;
     use rust_decimal_macros::dec;
 
+    use super::super::app::{Message, RegisterQueryTemplate, ScrollDelta};
     use super::*;
 
     #[test]
@@ -424,5 +511,92 @@ mod tests {
         let r = centered_rect(area, 40, 6);
         assert_eq!(r.width, 10);
         assert_eq!(r.height, 4);
+    }
+
+    #[test]
+    fn error_popup_rect_is_four_fifths() {
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 30,
+        };
+        let r = error_popup_rect(area);
+        assert_eq!(r.width, 80);
+        assert_eq!(r.height, 24);
+    }
+
+    #[test]
+    fn error_popup_rect_has_a_floor_on_tiny_terminals() {
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 12,
+            height: 4,
+        };
+        // The floor exceeds the area, so it clamps back to the whole screen.
+        let r = error_popup_rect(area);
+        assert_eq!(r.width, 12);
+        assert_eq!(r.height, 4);
+    }
+
+    /// Renders `app` into an 80×24 headless terminal and returns the plain text.
+    fn render<'ctx>(app: &mut App<'ctx>, ctx: &ReportContext<'ctx>) -> String {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(frame, app, ctx)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let mut s = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                s.push_str(buf[Position { x, y }].symbol());
+            }
+            s.push('\n');
+        }
+        s
+    }
+
+    fn golden(name: &str) -> okane_golden::Golden {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../testdata/report/ui")
+            .join(format!("{name}.txt"));
+        okane_golden::Golden::new(path).unwrap()
+    }
+
+    /// The state a failed reload leaves behind: no rows, error modal up.
+    fn app_with_error_modal<'ctx>() -> App<'ctx> {
+        let mut app = App::new(
+            "test.ledger".to_owned(),
+            Vec::new(),
+            RegisterQueryTemplate {
+                conversion: None,
+                date_range: DateRange::default(),
+            },
+        );
+        let lines = (0..40).map(|i| format!("error line {i}")).collect();
+        app.overlay = Some(Overlay::Error(ErrorPopup::new(
+            " failed to load test.ledger ".to_owned(),
+            lines,
+        )));
+        app
+    }
+
+    #[test]
+    fn render_error_modal() {
+        let arena = Bump::new();
+        let ctx = ReportContext::new(&arena);
+        let mut app = app_with_error_modal();
+        golden("render_error_modal").assert(&render(&mut app, &ctx));
+    }
+
+    #[test]
+    fn render_error_modal_scrolled_to_bottom() {
+        let arena = Bump::new();
+        let ctx = ReportContext::new(&arena);
+        let mut app = app_with_error_modal();
+        // The first frame is what teaches the popup its viewport height.
+        render(&mut app, &ctx);
+        app.update(Message::OverlayScroll(ScrollDelta::Bottom));
+        golden("render_error_modal_scrolled_to_bottom").assert(&render(&mut app, &ctx));
     }
 }
