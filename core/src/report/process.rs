@@ -103,7 +103,7 @@ pub fn process_account<'ctx>(
     for ad in &account.details {
         if let syntax::AccountDetail::Alias(alias) = ad {
             ctx.accounts
-                .insert_alias(alias, canonical)
+                .register_alias(alias, canonical)
                 .map_err(|_| BookKeepError::InvalidAccountAlias(alias.to_string()))?;
         }
     }
@@ -119,7 +119,7 @@ fn process_commodity<'ctx>(
         match cd {
             syntax::CommodityDetail::Alias(alias) => {
                 ctx.commodities
-                    .insert_alias(alias, canonical)
+                    .register_alias(alias, canonical)
                     .map_err(|_| BookKeepError::InvalidCommodityAlias(alias.to_string()))?;
             }
             syntax::CommodityDetail::Format(format_amount) => {

@@ -6,8 +6,12 @@ account Expenses:Grocery
 
 account SuperMarket
     alias Food
+    # redundant but not error
+    alias Food
 
 commodity JPY
+    alias 円
+    # redundant but not error
     alias 円
 
 commodity 円

@@ -159,15 +159,13 @@ impl<'arena> CommodityStore<'arena> {
         self.intern.try_insert(Commodity(value)).map(CommodityTag)
     }
 
-    /// Inserts given `value` as always alias of `canonical`.
-    /// Returns error if given `value` is already registered as canonical.
-    /// Facade for [InternStore::insert_alias].
-    pub(super) fn insert_alias(
+    /// Registers given `value` as always alias of `canonical`.
+    pub(super) fn register_alias(
         &mut self,
         value: &str,
         canonical: CommodityTag<'arena>,
     ) -> Result<(), OccupiedError<Commodity<'arena>>> {
-        self.intern.insert_alias(Commodity(value), canonical.0)
+        self.intern.register_alias(Commodity(value), canonical.0)
     }
 
     /// Returns the precision of the `commodity` if specified.
