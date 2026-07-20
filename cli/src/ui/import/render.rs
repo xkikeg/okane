@@ -5,6 +5,8 @@
 //! account prompt input line. Candidates pop up above the footer while the
 //! prompt is active; confirmation overlays are centered popups.
 
+use std::cmp::{max, min};
+
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Position, Rect};
 use ratatui::style::{Modifier, Style};
@@ -181,24 +183,24 @@ fn draw_prompt(frame: &mut Frame, footer_area: Rect, app: &ReviewApp) {
         draw_footer(frame, hint_area, FOOTER_HINT_PROMPT);
     }
     frame.set_cursor_position(Position {
-        x: footer_area.x + used.min(footer_area.width.saturating_sub(1) as usize) as u16,
+        x: footer_area.x + min(used, footer_area.width.saturating_sub(1) as usize) as u16,
         y: footer_area.y,
     });
 
     if prompt.matches.is_empty() {
         return;
     }
-    let height = (prompt.matches.len() as u16).min(PROMPT_LIST_HEIGHT) + 2;
+    let height = min(prompt.matches.len() as u16, PROMPT_LIST_HEIGHT) + 2;
     let width = prompt
         .matches
         .iter()
         .map(|&i| display_width(&app.accounts[i]))
         .max()
         .unwrap_or(0)
-        .saturating_add(4)
-        .max(20)
-        // The terminal can be narrower than the 20-column minimum.
-        .min(frame.area().width as usize) as u16;
+        .saturating_add(4);
+    let width = max(width, 20);
+    // The terminal can be narrower than the 20-column minimum.
+    let width = min(width, frame.area().width as usize) as u16;
     let popup = Rect {
         x: footer_area.x,
         y: footer_area.y.saturating_sub(height),
@@ -230,7 +232,7 @@ fn draw_overlay(frame: &mut Frame, area: Rect, overlay: Overlay) {
             "Abort the import? Nothing will be written. (y/n)".to_string(),
         ),
     };
-    let popup = centered_rect(area, (display_width(&body) + 4).min(60) as u16, 5);
+    let popup = centered_rect(area, min(display_width(&body) + 4, 60) as u16, 5);
     // Clear first so the popup paints over the queue cleanly.
     frame.render_widget(Clear, popup);
     let block = Block::default()
@@ -252,8 +254,8 @@ fn display_width(s: &str) -> usize {
 
 /// Returns a sub-rect of `area` of the given size, centered.
 fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
-    let width = width.min(area.width);
-    let height = height.min(area.height);
+    let width = min(width, area.width);
+    let height = min(height, area.height);
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     Rect {
