@@ -1,3 +1,5 @@
+use std::cmp::max;
+
 use ratatui::widgets::TableState;
 
 /// Pure scroll/selection state for a table.
@@ -47,7 +49,7 @@ impl TableNav {
     /// Page size — at least 1 row, falls back to a sensible default if the
     /// viewport height has not been observed yet.
     pub fn page_size(&self) -> usize {
-        self.viewport_height.max(1) as usize
+        max(1, self.viewport_height) as usize
     }
 
     pub fn select_first(&mut self) {
