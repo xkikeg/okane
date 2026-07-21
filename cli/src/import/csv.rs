@@ -261,6 +261,7 @@ mod tests {
             account: "Assets:Bank".to_string(),
             account_type: config::AccountType::Asset,
             operator: None,
+            charge_account: None,
             commodity: config::AccountCommoditySpec::default(),
             format: config::FormatSpec::default(),
             output: config::OutputSpec::default(),

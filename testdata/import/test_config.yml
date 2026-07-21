@@ -178,6 +178,7 @@ account_type: asset
 commodity:
   primary: USD
 operator: Broker Schrank
+charge_account: "Expenses:Broker Fees"
 format:
   date: "%m/%d/%Y"
   fields:
