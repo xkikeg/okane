@@ -7,6 +7,7 @@
 
 use std::cmp::{max, min};
 
+use ansi_to_tui::IntoText;
 use okane_core::report::{Amount, ReportContext};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
@@ -313,11 +314,8 @@ fn draw_error_popup(frame: &mut Frame, area: Rect, popup: &mut ErrorPopup) {
     popup.viewport_height = layout[0].height;
     popup.clamp();
 
-    let body: Vec<Line> = popup
-        .lines
-        .iter()
-        .map(|line| Line::from(line.as_str()))
-        .collect();
+    let joined = popup.lines.join("\n");
+    let body = joined.into_text().unwrap_or_else(|_| Text::from(joined));
     frame.render_widget(
         Paragraph::new(body)
             .style(
@@ -598,5 +596,53 @@ mod tests {
         render(&mut app, &ctx);
         app.update(Message::OverlayScroll(ScrollDelta::Bottom));
         golden("render_error_modal_scrolled_to_bottom").assert(&render(&mut app, &ctx));
+    }
+
+    /// The point of #489: ANSI SGR codes in the error text (as produced by
+    /// annotate-snippets' styled renderer) are parsed into real cell colors
+    /// instead of showing up as literal escape bytes.
+    #[test]
+    fn render_error_modal_parses_ansi_colors() {
+        let arena = Bump::new();
+        let ctx = ReportContext::new(&arena);
+        let mut app = App::new(
+            "test.ledger".to_owned(),
+            Vec::new(),
+            RegisterQueryTemplate {
+                conversion: None,
+                date_range: DateRange::default(),
+            },
+        );
+        app.overlay = Some(Overlay::Error(ErrorPopup::new(
+            " failed to load test.ledger ".to_owned(),
+            vec!["\u{1b}[32mgreen\u{1b}[0m plain".to_owned()],
+        )));
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app, &ctx)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+
+        let mut found_green = false;
+        let mut found_escape_byte = false;
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                let cell = &buf[Position { x, y }];
+                if cell.symbol() == "g" && cell.fg == Color::Green {
+                    found_green = true;
+                }
+                if cell.symbol().contains('\u{1b}') {
+                    found_escape_byte = true;
+                }
+            }
+        }
+        assert!(
+            found_green,
+            "expected a cell styled green from the parsed ANSI escape"
+        );
+        assert!(
+            !found_escape_byte,
+            "escape bytes should be consumed by the parser, not rendered as glyphs"
+        );
     }
 }

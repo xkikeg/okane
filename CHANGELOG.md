@@ -6,6 +6,8 @@
 
 ### Changed
 
+* CLI: `ui` reload errors are now shown in color instead of plain text (https://github.com/xkikeg/okane/issues/489).
+
 ### Fixed
 
 ## [0.20.0] - 2026-06-24

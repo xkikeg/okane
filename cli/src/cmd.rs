@@ -426,15 +426,14 @@ impl UiCmd {
         // All report data is built inside `run_ui`: its session loop resets
         // the arena on reload (`r` / `F5`), which requires that nothing out
         // here borrows it.
-        let reload = ui::report::ReloadContext::new(
-            load::new_loader(self.source.clone()),
+        let config = ui::report::SessionConfig::new(
             load::new_loader(self.source.clone()),
             self.eval_options.to_process_options(),
             self.eval_options.to_conversion_spec(),
             self.eval_options.to_date_range()?,
         );
         let mut arena = Bump::new();
-        ui::report::run_ui(&mut arena, self.source.display().to_string(), &reload)
+        ui::report::run_ui(&mut arena, self.source.display().to_string(), &config)
             .context("failed to run TUI")
     }
 }

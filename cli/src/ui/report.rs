@@ -29,19 +29,16 @@ use ratatui::DefaultTerminal;
 
 use app::{ErrorPopup, Overlay, UiSnapshot};
 
-/// Everything needed to build (and rebuild) a session: the loaders re-read
+/// Everything needed to build (and rebuild) a session: the loader re-reads
 /// the source from disk on every `load` call, and the options carry the CLI
 /// configuration. Fully owned — no arena references — so it survives the
 /// arena resets between sessions.
-pub struct ReloadContext<F: load::FileSystem> {
-    /// Loader for the very first build. Keeps its (styled) renderer: a
-    /// startup error aborts before the terminal is set up and prints to the
-    /// normal terminal.
-    initial_loader: load::Loader<F>,
-    /// Loader for reload builds. The error renderer is forced to plain
-    /// because the rendered message is shown inside the TUI, where ANSI
-    /// escape sequences would garble the error modal.
-    reload_loader: load::Loader<F>,
+pub struct SessionConfig<F: load::FileSystem> {
+    /// Loader shared by the first build and every reload. Errors from the
+    /// first build print to the normal terminal (before it's set up);
+    /// errors from a reload are shown in the TUI's error modal, which
+    /// renders the (styled) ANSI output via `ansi-to-tui`.
+    loader: load::Loader<F>,
     process_options: ProcessOptions,
     /// `--exchange` conversion as owned data, re-resolved against each
     /// session's fresh [`ReportContext`].
@@ -49,18 +46,16 @@ pub struct ReloadContext<F: load::FileSystem> {
     date_range: DateRange,
 }
 
-impl<F: load::FileSystem> ReloadContext<F> {
-    /// Wraps two loaders for the same source plus the query configuration.
+impl<F: load::FileSystem> SessionConfig<F> {
+    /// Wraps a loader for the source plus the query configuration.
     pub fn new(
-        initial_loader: load::Loader<F>,
-        reload_loader: load::Loader<F>,
+        loader: load::Loader<F>,
         process_options: ProcessOptions,
         conversion: Option<ConversionSpec>,
         date_range: DateRange,
     ) -> Self {
         Self {
-            initial_loader,
-            reload_loader: reload_loader.with_error_renderer(load::Renderer::plain()),
+            loader,
             process_options,
             conversion,
             date_range,
@@ -101,10 +96,10 @@ impl ConversionSpec {
 pub fn run_ui<F: load::FileSystem>(
     arena: &mut Bump,
     source_display: String,
-    reload: &ReloadContext<F>,
+    config: &SessionConfig<F>,
 ) -> anyhow::Result<()> {
     let mut terminal = None;
-    let result = session_loop(arena, &source_display, reload, &mut terminal);
+    let result = session_loop(arena, &source_display, config, &mut terminal);
     if terminal.is_some() {
         ratatui::restore();
     }
@@ -114,7 +109,7 @@ pub fn run_ui<F: load::FileSystem>(
 fn session_loop<F: load::FileSystem>(
     arena: &mut Bump,
     source_display: &str,
-    reload: &ReloadContext<F>,
+    config: &SessionConfig<F>,
     terminal: &mut Option<DefaultTerminal>,
 ) -> anyhow::Result<()> {
     let mut snapshot: Option<UiSnapshot> = None;
@@ -124,12 +119,7 @@ fn session_loop<F: load::FileSystem>(
             arena.reset();
         }
         let mut ctx = ReportContext::new(arena);
-        let loader = if first {
-            &reload.initial_loader
-        } else {
-            &reload.reload_loader
-        };
-        let built = build_session(&mut ctx, loader, reload, source_display, snapshot.as_ref());
+        let built = build_session(&mut ctx, config, source_display, snapshot.as_ref());
         let (mut ledger, mut app, has_data) = match built {
             Ok(SessionData { ledger, app }) => (ledger, app, true),
             // A startup failure aborts before the terminal is set up.
@@ -140,7 +130,7 @@ fn session_loop<F: load::FileSystem>(
             Err(err) => {
                 let template = RegisterQueryTemplate {
                     conversion: None,
-                    date_range: reload.date_range,
+                    date_range: config.date_range,
                 };
                 let mut app = App::new(source_display.to_owned(), Vec::new(), template);
                 app.overlay = Some(error_overlay(source_display, err.as_ref()));
@@ -171,13 +161,12 @@ struct SessionData<'ctx> {
 /// restoring the UI state from `snapshot` when given.
 fn build_session<'ctx, F: load::FileSystem>(
     ctx: &mut ReportContext<'ctx>,
-    loader: &load::Loader<F>,
-    reload: &ReloadContext<F>,
+    config: &SessionConfig<F>,
     source_display: &str,
     snapshot: Option<&UiSnapshot>,
 ) -> anyhow::Result<SessionData<'ctx>> {
-    let mut ledger = report::process(ctx, loader, &reload.process_options)?;
-    let conversion = reload
+    let mut ledger = report::process(ctx, &config.loader, &config.process_options)?;
+    let conversion = config
         .conversion
         .as_ref()
         .map(|spec| spec.resolve(ctx))
@@ -185,7 +174,7 @@ fn build_session<'ctx, F: load::FileSystem>(
     let query = BalanceQuery {
         account: AccountFilter::All,
         conversion,
-        date_range: reload.date_range,
+        date_range: config.date_range,
     };
     let balance = ledger.balance(ctx, &query)?.into_owned();
     let rows: Vec<BalanceRow<'ctx>> = balance
@@ -195,7 +184,7 @@ fn build_session<'ctx, F: load::FileSystem>(
         .collect();
     let template = RegisterQueryTemplate {
         conversion,
-        date_range: reload.date_range,
+        date_range: config.date_range,
     };
     let mut app = App::new(source_display.to_owned(), rows, template);
     if let Some(snapshot) = snapshot
@@ -307,9 +296,8 @@ mod tests {
         )
     }
 
-    fn reload_ctx(content: &str) -> ReloadContext<FakeFileSystem> {
-        ReloadContext::new(
-            fake_loader(content),
+    fn session_config(content: &str) -> SessionConfig<FakeFileSystem> {
+        SessionConfig::new(
             fake_loader(content),
             ProcessOptions::default(),
             None,
@@ -323,8 +311,8 @@ mod tests {
         content: &str,
         snapshot: Option<&UiSnapshot>,
     ) -> anyhow::Result<SessionData<'ctx>> {
-        let reload = reload_ctx(content);
-        build_session(ctx, &reload.reload_loader, &reload, "test", snapshot)
+        let config = session_config(content);
+        build_session(ctx, &config, "test", snapshot)
     }
 
     fn account_names(app: &App<'_>) -> Vec<String> {
