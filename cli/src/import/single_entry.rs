@@ -74,6 +74,10 @@ pub struct Options {
     /// Operator of the account. Mandatory when charges are needed.
     pub operator: Option<String>,
 
+    /// Account charges (fees / commissions) are posted to.
+    /// Falls back to [`DEFAULT_CHARGE_ACCOUNT`] when unset.
+    pub charge_account: Option<String>,
+
     /// Renames the commodity in the key into the corresponding value.
     pub commodity_rename: HashMap<String, String>,
 
@@ -108,11 +112,18 @@ impl Options {
             commodity: amount.commodity,
         }
     }
+
+    /// Returns the account charges (fees / commissions) are posted to.
+    fn charge_account(&self) -> &str {
+        self.charge_account
+            .as_deref()
+            .unwrap_or(DEFAULT_CHARGE_ACCOUNT)
+    }
 }
 
-// TODO: Allow injecting these values from config.
-// https://github.com/xkikeg/okane/issues/287
-const LABEL_COMMISSIONS: &str = "Expenses:Commissions";
+/// Default account charges (fees / commissions) are posted to,
+/// unless [`Options::charge_account`] overrides it.
+pub(super) const DEFAULT_CHARGE_ACCOUNT: &str = "Expenses:Commissions";
 pub(super) const LABEL_ADJUSTMENTS: &str = "Equity:Adjustments";
 const LABEL_UNKNOWN_INCOME: &str = "Income:Unknown";
 const LABEL_UNKNOWN_EXPENSE: &str = "Expenses:Unknown";
@@ -366,7 +377,7 @@ impl Txn {
                         key: Cow::Borrowed("Payee"),
                         value: syntax::MetadataValue::Text(operator()?),
                     }],
-                    ..syntax::Posting::new_untracked(LABEL_COMMISSIONS)
+                    ..syntax::Posting::new_untracked(opts.charge_account())
                 },
                 PostingType::Adjustment => syntax::Posting {
                     clear_state: syntax::ClearState::Pending,
@@ -940,6 +951,7 @@ mod tests {
             let mut ctx = ReportContext::new(&arena);
             let opts = Options {
                 operator: None,
+                charge_account: None,
                 commodity_format: ConfigResolver::default(),
                 commodity_rename: HashMap::new(),
             };
@@ -974,6 +986,7 @@ mod tests {
             let mut ctx = ReportContext::new(&arena);
             let opts = Options {
                 operator: Some("Okane bank".to_string()),
+                charge_account: None,
                 commodity_format: ConfigResolver::default(),
                 commodity_rename: HashMap::new(),
             };
@@ -994,6 +1007,46 @@ mod tests {
                 got_err.error_kind(),
                 "error={got_err:?}"
             );
+        }
+
+        #[test]
+        fn commission_uses_charge_account_override() {
+            let arena = Bump::new();
+            let mut ctx = ReportContext::new(&arena);
+            let opts = Options {
+                operator: Some("Okane bank".to_string()),
+                charge_account: Some("Assets:Points".to_string()),
+                commodity_format: ConfigResolver::default(),
+                commodity_rename: HashMap::new(),
+            };
+            let mut txn = Txn::new(
+                NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+                "foo",
+                owned_amount(dec!(-1000), "JPY"),
+            );
+            txn.dest_account("Expenses:Grocery")
+                .add_charge(owned_amount(dec!(100), "JPY"))
+                .transferred_amount(owned_amount(dec!(900), "JPY"));
+
+            let got = txn
+                .to_double_entry("Assets:Bank", &opts, &mut ctx)
+                .expect("to_double_entry must succeed");
+
+            let commission = got
+                .posts
+                .iter()
+                .find(|p| p.account == "Assets:Points")
+                .expect("a posting to the overridden charge_account must exist");
+            let amount = match &commission
+                .amount
+                .as_ref()
+                .expect("commission posting must have an amount")
+                .amount
+            {
+                syntax::expr::ValueExpr::Amount(amount) => amount,
+                other => panic!("unexpected value expr: {other:?}"),
+            };
+            assert_eq!(dec!(100), amount.value.value);
         }
     }
 
@@ -1031,6 +1084,7 @@ mod tests {
 
             let options = Options {
                 operator: None,
+                charge_account: None,
                 commodity_rename: hashmap! {
                     "米ドル".to_string() => "USD".to_string(),
                     "日本円".to_string() => "JPY".to_string(),

@@ -109,6 +109,9 @@ pub struct Config {
     /// Operator of the import target.
     /// Required only when some charges applied.
     pub operator: Option<String>,
+    /// Account charges (fees / commissions) are posted to.
+    /// Falls back to `Expenses:Commissions` when unset.
+    pub charge_account: Option<String>,
     /// Commodity handling about the account.
     pub commodity: commodity::AccountCommoditySpec,
     /// Format of the given input file.
@@ -143,6 +146,7 @@ impl TryFrom<ConfigFragment> for Config {
             account,
             account_type,
             operator: value.operator,
+            charge_account: value.charge_account,
             commodity,
             format,
             output,
@@ -159,6 +163,7 @@ impl From<Config> for ConfigFragment {
             account: Some(value.account),
             account_type: Some(value.account_type),
             operator: value.operator,
+            charge_account: value.charge_account,
             template: false,
             commodity: Some(value.commodity.into()),
             format: Some(value.format),
@@ -184,6 +189,9 @@ struct ConfigFragment {
     /// Operator of the import target.
     /// Required only when some charges applied.
     operator: Option<String>,
+    /// Account charges (fees / commissions) are posted to.
+    /// Falls back to `Expenses:Commissions` when unset.
+    charge_account: Option<String>,
     /// Set `true` to make this fragment "template".
     /// If the resolved config is all made up from template,
     /// It means no concrete config is matched and thus error.
@@ -208,6 +216,7 @@ impl Merge for ConfigFragment {
             account: other.account.or(self.account),
             account_type: other.account_type.or(self.account_type),
             operator: other.operator.or(self.operator),
+            charge_account: other.charge_account.or(self.charge_account),
             template: other.template && self.template,
             commodity: self.commodity,
             format: self.format,
@@ -300,6 +309,7 @@ mod tests {
             commodity: None,
             encoding: None,
             operator: None,
+            charge_account: None,
             template: false,
             format: None,
             output: None,
@@ -315,6 +325,7 @@ mod tests {
             path: path.to_owned(),
             account_type: Some(AccountType::Asset),
             operator: None,
+            charge_account: None,
             template: false,
             commodity: Some(AccountCommodityConfig::PrimaryCommodity("JPY".to_owned())),
             format: Some(format::FormatSpec {
@@ -457,6 +468,7 @@ mod tests {
             account: "Assets:Banks:Checking".to_string(),
             account_type: AccountType::Asset,
             operator: None,
+            charge_account: None,
             commodity: simple_commodity_spec("CHF".to_string()),
             format: format::FormatSpec {
                 date: "%Y/%m/%d".to_string(),
@@ -541,11 +553,16 @@ mod tests {
             operator: Some("foo operator".to_string()),
             ..create_empty_config_fragment("fragment/".to_string())
         };
+        let charge_account = || ConfigFragment {
+            charge_account: Some("Assets:Points".to_string()),
+            ..create_empty_config_fragment("fragment/".to_string())
+        };
         let cases: Vec<Box<dyn Fn() -> ConfigFragment>> = vec![
             Box::new(account),
             Box::new(account_type),
             Box::new(commodity),
             Box::new(operator),
+            Box::new(charge_account),
         ];
         for case in cases {
             assert_eq!(

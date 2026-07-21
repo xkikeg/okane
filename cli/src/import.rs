@@ -71,6 +71,7 @@ impl Importer {
         };
         let options = single_entry::Options {
             operator: config.operator.clone(),
+            charge_account: config.charge_account.clone(),
             commodity_rename: config.commodity.rename.clone(),
             commodity_format: display_context.commodity.clone(),
         };
@@ -275,6 +276,7 @@ mod tests {
             account: "Assets:Bank:Okane".to_string(),
             account_type: config::AccountType::Asset,
             operator: None,
+            charge_account: None,
             commodity: config::AccountCommoditySpec::default(),
             format: config::FormatSpec::default(),
             output: config::OutputSpec::default(),
