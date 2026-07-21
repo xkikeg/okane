@@ -10,3 +10,9 @@
     ! Expenses:Unknown                          1.45 USD
     Liabilities:Okane Card                     -1.45 USD
 
+2021/09/04 * (27182) CoffeeShop
+    ! Expenses:Unknown                         38.50 USD
+    Expenses:Commissions                        1.50 USD
+    ; Payee: Okane Card (fee)
+    Liabilities:Okane Card                    -40.00 USD
+

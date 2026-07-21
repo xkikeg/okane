@@ -16,6 +16,7 @@ path: index_amount.csv
 encoding: UTF-8
 account: "Liabilities:Okane Card"
 account_type: liability
+operator: Okane Card (fee)
 commodity: USD
 format:
   date: "%Y-%m-%d"
@@ -23,6 +24,7 @@ format:
     date: 1
     amount: 2
     payee: 3
+    charge: 4
 rewrite:
   - matcher:
       payee: Debit Card (?P<code>\d+) (?P<payee>.*)

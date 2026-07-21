@@ -172,17 +172,6 @@ fn extract_transaction(
             commodity: commodity.clone().into_owned(),
         });
     }
-    if let Some(charge) = resolver.extract(FieldKey::Charge, r)? {
-        match str_to_comma_decimal(&charge)? {
-            Some(value) if !value.is_zero() => {
-                txn.add_charge(OwnedAmount {
-                    value,
-                    commodity: commodity.clone().into_owned(),
-                });
-            }
-            _ => (),
-        }
-    }
     let default_conversion =
         if rate.is_some() && secondary_amount.is_some() && secondary_commodity.is_some() {
             Some(default_conversion)
@@ -212,7 +201,7 @@ fn extract_transaction(
             )?;
         let (target, rate, computed_transferred) = match conv.rate.unwrap_or_default() {
             config::ConversionRateMode::PriceOfPrimary => (
-                commodity.into_owned(),
+                commodity.clone().into_owned(),
                 OwnedAmount {
                     commodity: secondary_commodity.to_owned(),
                     value: rate,
@@ -222,7 +211,7 @@ fn extract_transaction(
             config::ConversionRateMode::PriceOfSecondary => (
                 secondary_commodity.to_owned(),
                 OwnedAmount {
-                    commodity: commodity.into_owned(),
+                    commodity: commodity.clone().into_owned(),
                     value: rate,
                 },
                 amount / rate,
@@ -240,6 +229,27 @@ fn extract_transaction(
             value: transferred,
             commodity: secondary_commodity.to_owned(),
         });
+    }
+    if let Some(charge) = resolver.extract(FieldKey::Charge, r)?
+        && let Some(value) = str_to_comma_decimal(&charge)?
+        && !value.is_zero()
+    {
+        if txn.has_transferred_amount() {
+            txn.add_charge(OwnedAmount {
+                value,
+                commodity: commodity.into_owned(),
+            });
+        } else {
+            // If transferred_amount isn't set,
+            // Txn assumes dest_amount == -amount.
+            // This conflicts with having charge, because
+            // `dest_amount + charge` should be `-amount`.
+            // This is achievable via `try_add_charge_not_included`.
+            txn.try_add_charge_not_included(OwnedAmount {
+                value,
+                commodity: commodity.into_owned(),
+            })?;
+        }
     }
     Ok(Some(txn))
 }

@@ -342,7 +342,12 @@ mod tests {
         use single_entry::ReviewKind;
         let kinds: Vec<ReviewKind> = txns.iter().map(|t| t.review_kind()).collect();
         assert_eq!(
-            vec![ReviewKind::Pending, ReviewKind::Auto, ReviewKind::Unknown],
+            vec![
+                ReviewKind::Pending,
+                ReviewKind::Auto,
+                ReviewKind::Unknown,
+                ReviewKind::Unknown
+            ],
             kinds
         );
     }
