@@ -204,6 +204,11 @@ impl Txn {
         self
     }
 
+    /// Returns `true` if `transferred_amount` is set.
+    pub fn has_transferred_amount(&self) -> bool {
+        self.transferred_amount.is_some()
+    }
+
     /// Adds the commodity rate information.
     ///
     /// 1 target == rate.
