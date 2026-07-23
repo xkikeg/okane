@@ -1,14 +1,14 @@
- okane ui — single_commodity.ledger                                             
+ okane ui — many_commodities.ledger                                             
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│Account                                                           Amount      │
-│Assets:Banks:Foo                                                     -1000 JPY│
-│Assets:Banks:あおによし                                             307000 JPY│
-│Equity:Initial                                                      -99000 JPY│
-│Expenses:Cash                                                        13000 JPY│
-│Expenses:T Assets:Banks:あおによし                                   10000 JPY│
-│Expenses:Tax:Income                                                  70000 JPY│
-│Income:Salary                                                      -300000 JPY│
-│Liabilities:Cards:Card X                                                     0│
+│Account                                                        Amount         │
+│▶ Equity                                                          -1000000 JPY│
+│                                                                  -5000.00 CHF│
+│                                                                 -39250.00 USD│
+│                                                                  -8000.00 EUR│
+│                                                                  -3000.00 AUD│
+│                                                                -200000.00 TWD│
+│                                                                              │
+│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │

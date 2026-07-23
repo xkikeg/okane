@@ -13,15 +13,15 @@ use std::time::Duration;
 use anyhow::Context;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use lender::FallibleLender;
+use okane_core::report::ReportContext;
 use okane_core::report::query::{AccountFilter, Ledger, RegisterQuery, Sort};
-use okane_core::report::{Account, ReportContext};
 use ratatui::DefaultTerminal;
 
 use crate::ui::keys::is_ctrl;
 
 use super::app::{
-    App, Command, Message, Overlay, RegisterQueryTemplate, RegisterRow, Screen, ScrollDelta,
-    SearchDirection, SearchMode, SearchPhase,
+    App, Command, Message, Overlay, RegisterQueryTemplate, RegisterRow, RegisterScope, Screen,
+    ScrollDelta, SearchDirection, SearchMode, SearchPhase,
 };
 use super::render;
 
@@ -57,12 +57,12 @@ pub(super) fn run<'ctx>(
         {
             match cmd {
                 Command::Reload => return Ok(RunOutcome::Reload),
-                Command::LoadRegister { account } => {
-                    let rows = load_register(ledger, ctx, &app.register_template, account)
+                Command::LoadRegister { scope } => {
+                    let rows = load_register(ledger, ctx, &app.register_template, scope)
                         .with_context(|| {
-                            format!("failed to load register for {}", account.as_str())
+                            format!("failed to load register for {}", scope.display_name())
                         })?;
-                    app.show_register(account, rows);
+                    app.show_register(scope, rows);
                 }
             }
         }
@@ -191,10 +191,14 @@ fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
         (Screen::Balance, KeyCode::Char('r')) if ctrl => {
             Some(Message::StartISearch(SearchDirection::Backward))
         }
+        (Screen::Balance, KeyCode::Char('t')) => Some(Message::ToggleTree),
+        (Screen::Balance, KeyCode::Char(' ')) => Some(Message::ToggleFold),
+        (Screen::Balance, KeyCode::Char('x')) => Some(Message::ToggleFoldAll),
         (Screen::Balance, KeyCode::Enter) => Some(Message::OpenRegister),
         (Screen::Balance, KeyCode::Char('q') | KeyCode::Esc) => Some(Message::RequestQuit),
-        (Screen::Balance | Screen::Register(_), KeyCode::Char('r')) => Some(Message::Reload),
         (Screen::Register(_), KeyCode::Char('q') | KeyCode::Esc) => Some(Message::LeaveRegister),
+        // this needs to come here, as it should come after Ctrl-r search backward.
+        (_, KeyCode::Char('r')) => Some(Message::Reload),
         _ => None,
     }
 }
@@ -205,10 +209,14 @@ pub fn load_register<'ctx>(
     ledger: &mut Ledger<'ctx>,
     ctx: &ReportContext<'ctx>,
     template: &RegisterQueryTemplate<'ctx>,
-    account: Account<'ctx>,
+    scope: RegisterScope<'ctx>,
 ) -> anyhow::Result<Vec<RegisterRow<'ctx>>> {
+    let account = match scope {
+        RegisterScope::Single(account) => AccountFilter::single(account),
+        RegisterScope::Subtree(aggregate) => AccountFilter::descendants_of(ctx, aggregate),
+    };
     let query = RegisterQuery {
-        account: AccountFilter::single(account),
+        account,
         date_range: template.date_range,
         conversion: template.conversion,
         sort: Sort::Date,
@@ -237,9 +245,21 @@ mod tests {
     use maplit::hashmap;
     use okane_core::{load, report};
 
+    use okane_core::report::Account;
+
     use crate::ui::table::TableNav;
 
     use super::super::app::{ErrorPopup, RegisterView, Search, SearchIntent, SearchMatch};
+
+    /// A single-account register screen for `account`, empty rows.
+    fn register_screen<'ctx>(account: Account<'ctx>) -> Screen<'ctx> {
+        Screen::Register(RegisterView {
+            scope: RegisterScope::Single(account),
+            rows: Vec::new(),
+            nav: TableNav::new(0),
+            col_widths: None,
+        })
+    }
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
@@ -319,12 +339,7 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, account) = make_account(&arena, "Assets:A");
         let mut app = app();
-        app.screen = Screen::Register(RegisterView {
-            account,
-            rows: Vec::new(),
-            nav: TableNav::new(0),
-            col_widths: None,
-        });
+        app.screen = register_screen(account);
         assert_eq!(
             key_to_message(&app, key(KeyCode::Char('q'))),
             Some(Message::LeaveRegister)
@@ -340,12 +355,7 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, account) = make_account(&arena, "Assets:A");
         let mut app = app();
-        app.screen = Screen::Register(RegisterView {
-            account,
-            rows: Vec::new(),
-            nav: TableNav::new(0),
-            col_widths: None,
-        });
+        app.screen = register_screen(account);
         assert_eq!(key_to_message(&app, key(KeyCode::Enter)), None);
     }
 
@@ -364,12 +374,7 @@ mod tests {
             Some(Message::QuitImmediate)
         );
         app.overlay = None;
-        app.screen = Screen::Register(RegisterView {
-            account,
-            rows: Vec::new(),
-            nav: TableNav::new(0),
-            col_widths: None,
-        });
+        app.screen = register_screen(account);
         assert_eq!(
             key_to_message(&app, ctrl_key('c')),
             Some(Message::QuitImmediate)
@@ -658,12 +663,7 @@ mod tests {
             key_to_message(&app, key(KeyCode::F(5))),
             Some(Message::Reload)
         );
-        app.screen = Screen::Register(RegisterView {
-            account,
-            rows: Vec::new(),
-            nav: TableNav::new(0),
-            col_widths: None,
-        });
+        app.screen = register_screen(account);
         assert_eq!(
             key_to_message(&app, key(KeyCode::Char('r'))),
             Some(Message::Reload)

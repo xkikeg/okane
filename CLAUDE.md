@@ -78,7 +78,7 @@ Converts external file formats to Ledger entries. Config is a YAML file (`config
 
 ## Testing
 
-- **Golden tests** use the `okane-golden` crate. Golden files live under `testdata/report/golden/` (for balance/register) and `testdata/error/*.error.txt` (for error output). Run with `BLESS=1 cargo test` to regenerate golden files when output intentionally changes.
+- **Golden tests** use the `okane-golden` crate. Golden files live under `testdata/report/golden/` (for balance/register) and `testdata/error/*.error.txt` (for error output). Run with `UPDATE_GOLDEN=1 cargo test` to regenerate golden files when output intentionally changes.
 - **Parameterized tests** use `rstest` with `#[files(...)]` to iterate over `testdata/` inputs automatically.
 - **`load::FakeFileSystem`** is the in-memory filesystem for unit tests that exercise loading/parsing without real I/O.
 - `RUST_LOG=info` (or `max`) enables logging during test runs; the test harness initializes `env_logger` via `#[ctor]`.

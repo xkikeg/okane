@@ -1,0 +1,24 @@
+ okane ui — multi_commodity.ledger                                              
+┌──────────────────────────────────────────────────────────────────────────────┐
+│Account                                                       Amount          │
+│▼ Assets                                                          44018.47 CHF│
+│                                                                    100000 JPY│
+│                                                                  13270.00 USD│
+│                                                                390.0000 OKANE│
+│                                                                   12.300 GOLD│
+│  ▼ Banks                                                         44018.47 CHF│
+│                                                                    100000 JPY│
+│      Swiss Bank                                                  44018.47 CHF│
+│      あおによし                                                    100000 JPY│
+│  ▼ Brokers                                                       13270.00 USD│
+│                                                                390.0000 OKANE│
+│                                                                   12.300 GOLD│
+│      US Broker                                                   13270.00 USD│
+│                                                                390.0000 OKANE│
+│                                                                   12.300 GOLD│
+│  ▼ Wire                                                                     0│
+│      US Broker                                                              0│
+│▼ Equity                                                         -48000.00 CHF│
+│                                                                    900000 JPY│
+└──────────────────────────────────────────────────────────────────────────────┘
+ ↑/↓ scroll · Enter register · t tree · space fold · x fold-all · / search · r r

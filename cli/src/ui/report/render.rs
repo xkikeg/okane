@@ -17,12 +17,12 @@ use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Table
 use unicode_width::UnicodeWidthStr;
 
 use super::app::{
-    App, BalanceRow, ErrorPopup, Overlay, RegisterRow, RegisterView, Screen, Search,
+    App, BalanceRow, DisplayMode, ErrorPopup, Overlay, RegisterRow, RegisterView, Screen, Search,
     SearchDirection, SearchMatch, SearchMode, SearchPhase,
 };
 use crate::ui::table::TableNav;
 
-const FOOTER_HINT_BALANCE: &str = " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · Enter register · / search · C-s isearch · r reload · q quit ";
+const FOOTER_HINT_BALANCE: &str = " ↑/↓ scroll · Enter register · t tree · space fold · x fold-all · / search · r reload · q quit ";
 const FOOTER_HINT_REGISTER: &str =
     " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · r reload · q/Esc back ";
 const ERROR_POPUP_HINT: &str =
@@ -53,6 +53,7 @@ pub fn draw<'ctx>(frame: &mut Frame, app: &mut App<'ctx>, ctx: &ReportContext<'c
                 &mut app.balance_nav,
                 matches,
                 ctx,
+                app.mode,
             );
             match (&app.error_toast, &app.search) {
                 (Some(msg), _) => draw_error(frame, layout[2], msg),
@@ -82,7 +83,7 @@ fn draw_title(frame: &mut Frame, area: Rect, app: &App<'_>) {
         Screen::Register(view) => format!(
             " okane ui — {} — register: {} ",
             app.source_display,
-            view.account.as_str()
+            view.title()
         ),
     };
     let paragraph =
@@ -97,6 +98,7 @@ fn draw_balance_body<'ctx>(
     nav: &mut TableNav,
     matches: Option<&SearchMatch>,
     ctx: &ReportContext<'ctx>,
+    mode: DisplayMode,
 ) {
     let block = Block::default().borders(Borders::ALL);
     let inner = block.inner(area);
@@ -123,7 +125,7 @@ fn draw_balance_body<'ctx>(
         .zip(&formatted)
         .enumerate()
         .map(|(i, (row, lines))| {
-            make_balance_row(row, lines, matches.is_some_and(|m| m.contains_row(i)))
+            make_balance_row(row, lines, matches.is_some_and(|m| m.contains_row(i)), mode)
         })
         .collect();
 
@@ -403,9 +405,14 @@ fn format_amount_lines<'ctx>(amount: &Amount<'ctx>, ctx: &ReportContext<'ctx>) -
     lines
 }
 
-fn make_balance_row<'r>(row: &'r BalanceRow<'_>, lines: &'r [String], is_match: bool) -> Row<'r> {
+fn make_balance_row<'r>(
+    row: &'r BalanceRow<'_>,
+    lines: &'r [String],
+    is_match: bool,
+    mode: DisplayMode,
+) -> Row<'r> {
     let height = row.line_count();
-    let mut account_cell = Cell::from(row.account.as_str());
+    let mut account_cell = Cell::from(account_cell_text(row, mode));
     if is_match {
         account_cell = account_cell.style(
             Style::default()
@@ -415,6 +422,23 @@ fn make_balance_row<'r>(row: &'r BalanceRow<'_>, lines: &'r [String], is_match: 
     }
     let amount_cell = Cell::from(amount_text(lines));
     Row::new(vec![account_cell, amount_cell]).height(height)
+}
+
+/// Account-column text for a balance row: the full name in flat mode, or the
+/// depth-indented leaf label with a fold marker in the gutter in tree mode.
+fn account_cell_text(row: &BalanceRow<'_>, mode: DisplayMode) -> String {
+    match mode {
+        DisplayMode::Flat => row.label.to_owned(),
+        DisplayMode::Tree => {
+            let indent = "  ".repeat(usize::from(row.depth.saturating_sub(1)));
+            let marker = if row.has_children {
+                if row.folded { "▶" } else { "▼" }
+            } else {
+                " "
+            };
+            format!("{indent}{marker} {}", row.label)
+        }
+    }
 }
 
 fn make_register_row<'r>(
@@ -727,8 +751,10 @@ mod tests {
     }
 
     /// The balance screen backed by `input`'s real computed balances, built the
-    /// same way [`super::super::run_ui`] does.
+    /// same way [`super::super::run_ui`] does: through the [`BalanceTree`] and
+    /// [`App::new`], so the flat-view rows are the production rows.
     fn balance_app<'ctx>(arena: &'ctx Bump, input: &Path) -> (ReportContext<'ctx>, App<'ctx>) {
+        use okane_core::report::BalanceTree;
         use okane_core::report::query::{AccountFilter, BalanceQuery};
 
         let (ctx, mut ledger) = session_from_file(arena, input);
@@ -737,15 +763,9 @@ mod tests {
             conversion: None,
             date_range: DateRange::default(),
         };
-        let rows: Vec<BalanceRow> = ledger
-            .balance(&ctx, &query)
-            .unwrap()
-            .into_owned()
-            .into_vec()
-            .into_iter()
-            .map(|(account, amount)| BalanceRow { account, amount })
-            .collect();
-        let app = App::new(source_display(input), rows, template());
+        let balance = ledger.balance(&ctx, &query).unwrap().into_owned();
+        let tree = BalanceTree::create(&ctx, balance).unwrap().into_nodes();
+        let app = App::new(source_display(input), tree, template());
         (ctx, app)
     }
 
@@ -753,6 +773,7 @@ mod tests {
     /// order — deterministic and present in every fixture), its rows loaded
     /// through the production query path.
     fn register_app<'ctx>(arena: &'ctx Bump, input: &Path) -> (ReportContext<'ctx>, App<'ctx>) {
+        use super::super::app::RegisterScope;
         use okane_core::report::query::{AccountFilter, BalanceQuery};
 
         let (ctx, mut ledger) = session_from_file(arena, input);
@@ -770,10 +791,47 @@ mod tests {
             .next()
             .map(|(account, _)| account)
             .expect("fixture ledger has at least one account");
+        let scope = RegisterScope::Single(account);
         let rows =
-            super::super::event::load_register(&mut ledger, &ctx, &template(), account).unwrap();
+            super::super::event::load_register(&mut ledger, &ctx, &template(), scope).unwrap();
         let mut app = App::new(source_display(input), Vec::new(), template());
-        app.show_register(account, rows);
+        app.show_register(scope, rows);
+        (ctx, app)
+    }
+
+    /// The register screen for an account *subtree*
+    /// (`RegisterScope::Subtree` / `AccountFilter::descendants_of`): the first
+    /// parent account in tree order, with the rows of every descendant, loaded
+    /// through the production query path.
+    fn register_subtree_app<'ctx>(
+        arena: &'ctx Bump,
+        input: &Path,
+    ) -> (ReportContext<'ctx>, App<'ctx>) {
+        use okane_core::report::BalanceTree;
+        use okane_core::report::query::{AccountFilter, BalanceQuery};
+
+        let (ctx, mut ledger) = session_from_file(arena, input);
+        let query = BalanceQuery {
+            account: AccountFilter::All,
+            conversion: None,
+            date_range: DateRange::default(),
+        };
+        let balance = ledger.balance(&ctx, &query).unwrap().into_owned();
+        let tree = BalanceTree::create(&ctx, balance).unwrap().into_nodes();
+        let mut app = App::new(source_display(input), tree, template());
+        // Tree view is what turns balance rows into `RegisterScope::Subtree`.
+        app.update(Message::ToggleTree);
+        // The first parent row (a real ancestor) exercises `descendants_of`
+        // with more than one underlying account.
+        let scope = app
+            .balance_rows
+            .iter()
+            .find(|r| r.has_children)
+            .map(|r| r.scope)
+            .expect("fixture has at least one parent account");
+        let rows =
+            super::super::event::load_register(&mut ledger, &ctx, &template(), scope).unwrap();
+        app.show_register(scope, rows);
         (ctx, app)
     }
 
@@ -791,6 +849,35 @@ mod tests {
         golden(&golden_name(&input, "balance")).assert(&render(&mut app, &ctx));
     }
 
+    /// The balance screen in tree (`DisplayMode::Tree`) mode for every fixture:
+    /// the account hierarchy, indented with fold markers and subtree totals.
+    #[rstest]
+    fn render_balance_tree(
+        #[base_dir = "../testdata/report"]
+        #[files("*.ledger")]
+        input: PathBuf,
+    ) {
+        let arena = Bump::new();
+        let (ctx, mut app) = balance_app(&arena, &input);
+        app.update(Message::ToggleTree); // Flat -> Tree
+        golden(&golden_name(&input, "balance-tree")).assert(&render(&mut app, &ctx));
+    }
+
+    /// The tree balance screen with every node collapsed (`x` fold-all): only
+    /// the top-level accounts remain, each showing its whole subtree total.
+    #[rstest]
+    fn render_balance_tree_all_folded(
+        #[base_dir = "../testdata/report"]
+        #[files("*.ledger")]
+        input: PathBuf,
+    ) {
+        let arena = Bump::new();
+        let (ctx, mut app) = balance_app(&arena, &input);
+        app.update(Message::ToggleTree); // Flat -> Tree
+        app.update(Message::ToggleFoldAll); // collapse every node
+        golden(&golden_name(&input, "balance-tree-all-folded")).assert(&render(&mut app, &ctx));
+    }
+
     /// The register drill-down for every fixture ledger: dated rows with
     /// per-entry amount and running total for one account, plus the register
     /// footer hints.
@@ -803,6 +890,19 @@ mod tests {
         let arena = Bump::new();
         let (ctx, mut app) = register_app(&arena, &input);
         golden(&golden_name(&input, "register")).assert(&render(&mut app, &ctx));
+    }
+
+    /// The subtree register drill-down for every fixture ledger: dated rows
+    /// aggregated across a parent account and all of its descendants.
+    #[rstest]
+    fn render_register_subtree(
+        #[base_dir = "../testdata/report"]
+        #[files("*.ledger")]
+        input: PathBuf,
+    ) {
+        let arena = Bump::new();
+        let (ctx, mut app) = register_subtree_app(&arena, &input);
+        golden(&golden_name(&input, "register-subtree")).assert(&render(&mut app, &ctx));
     }
 
     /// Renders `app` into a `width`×`height` headless terminal, plain text.
@@ -832,9 +932,9 @@ mod tests {
         arena: &'ctx Bump,
         n: usize,
     ) -> (ReportContext<'ctx>, App<'ctx>) {
-        use std::collections::HashMap;
         use std::path::PathBuf;
 
+        use maplit::hashmap;
         use okane_core::report::query::DateRange;
         use okane_core::{load, report};
 
@@ -846,8 +946,9 @@ mod tests {
                 "2024/01/01 Payee{i:02}\n    Assets:Cash    1 USD\n    Equity\n\n"
             ));
         }
-        let mut map = HashMap::new();
-        map.insert(PathBuf::from("test.ledger"), content.into_bytes());
+        let map = hashmap! {
+            PathBuf::from("test.ledger") => content.into_bytes(),
+        };
         let loader = load::Loader::new(
             PathBuf::from("test.ledger"),
             load::FakeFileSystem::from(map),
@@ -860,11 +961,12 @@ mod tests {
             conversion: None,
             date_range: DateRange::default(),
         };
+        let scope = super::super::app::RegisterScope::Single(account);
         let rows =
-            super::super::event::load_register(&mut ledger, &ctx, &template, account).unwrap();
+            super::super::event::load_register(&mut ledger, &ctx, &template, scope).unwrap();
         assert_eq!(rows.len(), n);
         let mut app = App::new("test.ledger".to_owned(), Vec::new(), template);
-        app.show_register(account, rows);
+        app.show_register(scope, rows);
         (ctx, app)
     }
 
