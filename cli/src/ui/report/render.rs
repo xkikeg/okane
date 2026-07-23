@@ -17,12 +17,12 @@ use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table};
 use unicode_width::UnicodeWidthStr;
 
 use super::app::{
-    App, BalanceRow, ErrorPopup, Overlay, RegisterRow, RegisterView, Screen, Search,
+    App, BalanceRow, DisplayMode, ErrorPopup, Overlay, RegisterRow, RegisterView, Screen, Search,
     SearchDirection, SearchMatch, SearchMode, SearchPhase,
 };
 use crate::ui::table::TableNav;
 
-const FOOTER_HINT_BALANCE: &str = " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · Enter register · / search · C-s isearch · r reload · q quit ";
+const FOOTER_HINT_BALANCE: &str = " ↑/↓ scroll · Enter register · t tree · space fold · x fold-all · / search · r reload · q quit ";
 const FOOTER_HINT_REGISTER: &str =
     " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · r reload · q/Esc back ";
 const ERROR_POPUP_HINT: &str =
@@ -53,6 +53,7 @@ pub fn draw<'ctx>(frame: &mut Frame, app: &mut App<'ctx>, ctx: &ReportContext<'c
                 &mut app.balance_nav,
                 matches,
                 ctx,
+                app.mode,
             );
             match (&app.error_toast, &app.search) {
                 (Some(msg), _) => draw_error(frame, layout[2], msg),
@@ -81,8 +82,7 @@ fn draw_title(frame: &mut Frame, area: Rect, app: &App<'_>) {
         Screen::Balance => format!(" okane ui — {} ", app.source_display),
         Screen::Register(view) => format!(
             " okane ui — {} — register: {} ",
-            app.source_display,
-            view.account.as_str()
+            app.source_display, view.title
         ),
     };
     let paragraph =
@@ -97,6 +97,7 @@ fn draw_balance_body<'ctx>(
     nav: &mut TableNav,
     matches: Option<&SearchMatch>,
     ctx: &ReportContext<'ctx>,
+    mode: DisplayMode,
 ) {
     let block = Block::default().borders(Borders::ALL);
     let inner = block.inner(area);
@@ -123,7 +124,7 @@ fn draw_balance_body<'ctx>(
         .zip(formatted.iter())
         .enumerate()
         .map(|(i, (row, lines))| {
-            make_balance_row(row, lines, matches.is_some_and(|m| m.contains_row(i)))
+            make_balance_row(row, lines, matches.is_some_and(|m| m.contains_row(i)), mode)
         })
         .collect();
 
@@ -375,9 +376,14 @@ fn format_amount_lines<'ctx>(amount: &Amount<'ctx>, ctx: &ReportContext<'ctx>) -
     lines
 }
 
-fn make_balance_row<'r>(row: &'r BalanceRow<'_>, lines: &'r [String], is_match: bool) -> Row<'r> {
+fn make_balance_row<'r>(
+    row: &'r BalanceRow<'_>,
+    lines: &'r [String],
+    is_match: bool,
+    mode: DisplayMode,
+) -> Row<'r> {
     let height = row.line_count();
-    let mut account_cell = Cell::from(row.account.as_str());
+    let mut account_cell = Cell::from(account_cell_text(row, mode));
     if is_match {
         account_cell = account_cell.style(
             Style::default()
@@ -387,6 +393,23 @@ fn make_balance_row<'r>(row: &'r BalanceRow<'_>, lines: &'r [String], is_match: 
     }
     let amount_cell = Cell::from(amount_text(lines));
     Row::new(vec![account_cell, amount_cell]).height(height)
+}
+
+/// Account-column text for a balance row: the full name in flat mode, or the
+/// depth-indented leaf label with a fold marker in the gutter in tree mode.
+fn account_cell_text(row: &BalanceRow<'_>, mode: DisplayMode) -> String {
+    match mode {
+        DisplayMode::Flat => row.label.to_owned(),
+        DisplayMode::Tree => {
+            let indent = "  ".repeat(usize::from(row.depth.saturating_sub(1)));
+            let marker = if row.has_children {
+                if row.folded { "▸" } else { "▾" }
+            } else {
+                " "
+            };
+            format!("{indent}{marker} {}", row.label)
+        }
+    }
 }
 
 fn make_register_row<'r>(

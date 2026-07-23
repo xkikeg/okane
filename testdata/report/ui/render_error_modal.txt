@@ -21,4 +21,4 @@
 │       └──────────────────────────────────────────────────────────────┘       │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
- ↑/↓ scroll · PgUp/PgDn page · g/G home/end · Enter register · / search · C-s is
+ ↑/↓ scroll · Enter register · t tree · space fold · x fold-all · / search · r r

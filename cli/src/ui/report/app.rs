@@ -6,26 +6,108 @@
 //! currently active screen and overlay.
 
 use std::cmp::{max, min};
+use std::collections::HashSet;
 
 use chrono::NaiveDate;
 use okane_core::report::query::{Conversion, DateRange};
-use okane_core::report::{Account, Amount};
+use okane_core::report::{Account, AccountAggregate, Amount, BalanceTreeNode};
 use regex::RegexBuilder;
 
 use crate::ui::table::TableNav;
 
-/// One row of the balance table.
-///
-/// Stores the typed account/amount values from the report layer so rendering
-/// can reformat lazily under different display contexts (currency conversion,
-/// commodity toggling, etc.) without rebuilding the row vector.
-#[derive(Debug, Clone)]
-pub struct BalanceRow<'ctx> {
-    pub account: Account<'ctx>,
-    pub amount: Amount<'ctx>,
+/// Whether the balance screen shows a flat account list or the account tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DisplayMode {
+    /// Every posted account, alphabetically, showing its own amount.
+    Flat,
+    /// The account hierarchy, indented and foldable, showing subtree totals.
+    Tree,
 }
 
-impl BalanceRow<'_> {
+/// What a register drill-in from the balance screen should match.
+#[derive(Debug, Clone, Copy)]
+pub enum Drill<'ctx> {
+    /// Exactly one account (flat-view drill-in).
+    Single(Account<'ctx>),
+    /// An account and all of its descendants (tree-view drill-in).
+    Subtree(AccountAggregate<'ctx>),
+}
+
+impl<'ctx> Drill<'ctx> {
+    /// The account/prefix name shown in the register title.
+    pub fn display_name(&self) -> &'ctx str {
+        match self {
+            Drill::Single(account) => account.as_str(),
+            Drill::Subtree(aggregate) => aggregate.as_str(),
+        }
+    }
+}
+
+/// Kind of a persisted [`Drill`], so it can be rebuilt after a reload resets
+/// the arena (the `'ctx` references cannot survive).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DrillKind {
+    Single,
+    Subtree,
+}
+
+/// Leaf segment of a colon-separated account path (the part after the last
+/// `:`), used as the tree-view row label.
+fn leaf_segment(full_name: &str) -> &str {
+    full_name
+        .rsplit_once(':')
+        .map(|(_, leaf)| leaf)
+        .unwrap_or(full_name)
+}
+
+/// One visible row of the balance table.
+///
+/// Derived from an [`App`]'s tree of [`BalanceTreeNode`]s for the current
+/// [`DisplayMode`] and fold state (see [`App::rebuild_rows`]). Stores the typed
+/// amount from the report layer so rendering can reformat lazily under
+/// different display contexts (currency conversion, commodity toggling, etc.)
+/// without rebuilding the row vector.
+#[derive(Debug, Clone)]
+pub struct BalanceRow<'ctx> {
+    /// Index of the backing node in [`App::tree`].
+    pub node: usize,
+    /// Full account path (`""` for the synthetic root, which is never shown).
+    /// Used for search, snapshot and reload restore.
+    pub full_name: &'ctx str,
+    /// Display label: the full path in [`DisplayMode::Flat`], the leaf segment
+    /// in [`DisplayMode::Tree`].
+    pub label: &'ctx str,
+    /// Depth in the account tree (`1` for a top-level account). Drives the
+    /// tree-view indentation.
+    pub depth: u16,
+    /// Amount to display: the node's own amount in flat view, its subtree
+    /// total in tree view.
+    pub amount: Amount<'ctx>,
+    /// Whether the backing node has children (shows a fold marker in tree view).
+    pub has_children: bool,
+    /// Whether the backing node is currently folded.
+    pub folded: bool,
+    /// What a register drill-in from this row should match.
+    pub drill: Drill<'ctx>,
+}
+
+impl<'ctx> BalanceRow<'ctx> {
+    /// A flat-view row for a concrete account. Used by the state-machine
+    /// tests, which don't carry a tree.
+    #[cfg(test)]
+    pub fn flat(account: Account<'ctx>, amount: Amount<'ctx>) -> Self {
+        Self {
+            node: 0,
+            full_name: account.as_str(),
+            label: account.as_str(),
+            depth: 0,
+            amount,
+            has_children: false,
+            folded: false,
+            drill: Drill::Single(account),
+        }
+    }
+
     /// Number of rendered lines this row occupies (>= 1).
     ///
     /// One line per commodity, with a `0` placeholder line for empty balances.
@@ -73,17 +155,25 @@ pub struct RegisterQueryTemplate<'ctx> {
 /// State for the register drill-down screen.
 #[derive(Debug)]
 pub struct RegisterView<'ctx> {
-    pub account: Account<'ctx>,
+    /// What this register is filtered to (single account or subtree).
+    pub drill: Drill<'ctx>,
+    /// Account/prefix name shown in the title bar.
+    pub title: String,
     pub rows: Vec<RegisterRow<'ctx>>,
     pub nav: TableNav,
 }
 
 impl<'ctx> RegisterView<'ctx> {
-    pub fn new(account: Account<'ctx>, rows: Vec<RegisterRow<'ctx>>) -> Self {
+    pub fn new(drill: Drill<'ctx>, title: String, rows: Vec<RegisterRow<'ctx>>) -> Self {
         let mut nav = TableNav::new(rows.len());
         // Most recent entry is the most useful starting point.
         nav.select_last();
-        Self { account, rows, nav }
+        Self {
+            drill,
+            title,
+            rows,
+            nav,
+        }
     }
 }
 
@@ -263,7 +353,7 @@ impl SearchMatch {
                     Self(
                         rows.iter()
                             .enumerate()
-                            .filter(|(_, row)| re.is_match(row.account.as_str()))
+                            .filter(|(_, row)| re.is_match(row.full_name))
                             .map(|(i, _)| i)
                             .collect(),
                     )
@@ -361,6 +451,12 @@ pub enum Message {
     SearchPrev,
     /// Re-read the ledger data from disk (`r` / `F5`), keeping the UI state.
     Reload,
+    /// Toggle between the flat list and the account tree (`t`).
+    ToggleTree,
+    /// Fold/unfold the selected tree node (`space`).
+    ToggleFold,
+    /// Fold or unfold every node in the tree (`x`).
+    ToggleFoldAll,
 }
 
 /// Effect requested by [`App::update`] that requires resources the pure
@@ -368,7 +464,7 @@ pub enum Message {
 #[derive(Debug, Clone, Copy)]
 pub enum Command<'ctx> {
     LoadRegister {
-        account: Account<'ctx>,
+        drill: Drill<'ctx>,
     },
     /// Re-run the whole load/process pipeline and swap the data in.
     Reload,
@@ -377,8 +473,10 @@ pub enum Command<'ctx> {
 /// Snapshot of register view that surives a reload, as part of [`UiSnapshot`].
 #[derive(Debug, Clone)]
 pub struct RegisterSnapshot {
-    /// account filter for the registry.
-    account: String,
+    /// Whether the register was a single account or a subtree.
+    kind: DrillKind,
+    /// Account/prefix name the register was filtered to.
+    name: String,
     /// Selected cursor index.
     cursor: usize,
 }
@@ -399,12 +497,27 @@ pub struct UiSnapshot {
     /// Active search intent; the matches are recomputed on restore.
     search: Option<SearchIntent>,
     last_search: String,
+    /// Flat vs tree display mode.
+    mode: DisplayMode,
+    /// Full names of the folded tree nodes, re-resolved to indices on restore.
+    folded: Vec<String>,
 }
 
 /// Application state for the TUI session.
 #[derive(Debug)]
 pub struct App<'ctx> {
     pub source_display: String,
+    /// The whole account tree, alphabetical/pre-order (index 0 is the root).
+    /// Empty in the pure state-machine tests, which drive [`Self::balance_rows`]
+    /// directly.
+    pub tree: Vec<BalanceTreeNode<'ctx>>,
+    /// Flat vs tree display mode.
+    pub mode: DisplayMode,
+    /// Indices into [`Self::tree`] of currently folded nodes (tree view only).
+    pub folded: HashSet<usize>,
+    /// The rows currently visible in the balance table, derived from
+    /// [`Self::tree`] + [`Self::mode`] + [`Self::folded`] by
+    /// [`Self::rebuild_rows`].
     pub balance_rows: Vec<BalanceRow<'ctx>>,
     pub balance_nav: TableNav,
     pub screen: Screen<'ctx>,
@@ -424,6 +537,8 @@ pub struct App<'ctx> {
 }
 
 impl<'ctx> App<'ctx> {
+    /// Builds an app from pre-derived balance rows, with no backing tree.
+    /// Used by the state-machine tests; production uses [`Self::with_tree`].
     pub fn new(
         source_display: String,
         balance_rows: Vec<BalanceRow<'ctx>>,
@@ -432,6 +547,9 @@ impl<'ctx> App<'ctx> {
         let balance_nav = TableNav::new(balance_rows.len());
         Self {
             source_display,
+            tree: Vec::new(),
+            mode: DisplayMode::Flat,
+            folded: HashSet::new(),
             balance_rows,
             balance_nav,
             screen: Screen::Balance,
@@ -444,10 +562,46 @@ impl<'ctx> App<'ctx> {
         }
     }
 
-    /// The currently-selected balance account, if any.
-    pub fn selected_balance_account(&self) -> Option<Account<'ctx>> {
+    /// Builds an app from a [`BalanceTree`](okane_core::report::BalanceTree)'s
+    /// nodes, starting in flat mode with the derived rows.
+    pub fn with_tree(
+        source_display: String,
+        tree: Vec<BalanceTreeNode<'ctx>>,
+        register_template: RegisterQueryTemplate<'ctx>,
+    ) -> Self {
+        let mut app = Self {
+            source_display,
+            tree,
+            mode: DisplayMode::Flat,
+            folded: HashSet::new(),
+            balance_rows: Vec::new(),
+            balance_nav: TableNav::new(0),
+            screen: Screen::Balance,
+            overlay: None,
+            error_toast: None,
+            search: None,
+            last_search: String::new(),
+            register_template,
+            should_quit: false,
+        };
+        app.rebuild_rows();
+        app
+    }
+
+    /// The currently-selected balance row, if any.
+    fn selected_row(&self) -> Option<&BalanceRow<'ctx>> {
         let idx = self.balance_nav.table_state.selected()?;
-        self.balance_rows.get(idx).map(|r| r.account)
+        self.balance_rows.get(idx)
+    }
+
+    /// Full name of the currently-selected account, if any.
+    fn selected_full_name(&self) -> Option<&'ctx str> {
+        self.selected_row().map(|r| r.full_name)
+    }
+
+    /// The drill target of the currently-selected balance row, if any.
+    fn selected_drill(&self) -> Option<Drill<'ctx>> {
+        self.selected_row().map(|r| r.drill)
     }
 
     /// Mutable handle to whichever nav drives the currently visible table.
@@ -456,6 +610,158 @@ impl<'ctx> App<'ctx> {
             Screen::Balance => &mut self.balance_nav,
             Screen::Register(view) => &mut view.nav,
         }
+    }
+
+    /// Recomputes [`Self::balance_rows`] from the tree for the current mode and
+    /// fold state, keeping the selection on the same account when possible (or
+    /// its nearest visible ancestor when it was folded away).
+    ///
+    /// A no-op without a backing tree: the pure state-machine tests drive
+    /// [`Self::balance_rows`] directly through [`Self::new`], and a real empty
+    /// ledger has no rows to rebuild either.
+    fn rebuild_rows(&mut self) {
+        if self.tree.is_empty() {
+            return;
+        }
+        let prev = self.selected_full_name();
+        let prev = prev.map(str::to_owned);
+        let viewport_height = self.balance_nav.viewport_height;
+        self.balance_rows = match self.mode {
+            DisplayMode::Flat => self.build_flat_rows(),
+            DisplayMode::Tree => self.build_tree_rows(),
+        };
+        self.balance_nav = TableNav::new(self.balance_rows.len());
+        self.balance_nav.viewport_height = viewport_height;
+        if let Some(name) = prev {
+            self.select_by_name(&name);
+        }
+    }
+
+    /// Flat rows: every posted account (non-zero own amount), full name, own
+    /// amount. Ancestor-only nodes have a zero own amount and are skipped.
+    fn build_flat_rows(&self) -> Vec<BalanceRow<'ctx>> {
+        self.tree
+            .iter()
+            .enumerate()
+            .filter_map(|(i, node)| {
+                let account = match node.account.as_aggregate()? {
+                    AccountAggregate::Account(account) => account,
+                    AccountAggregate::Ancestor(_) => return None,
+                };
+                if node.self_amount.is_zero() {
+                    return None;
+                }
+                Some(BalanceRow {
+                    node: i,
+                    full_name: account.as_str(),
+                    label: account.as_str(),
+                    depth: node.depth,
+                    amount: node.self_amount.clone(),
+                    has_children: node.has_children(),
+                    folded: false,
+                    drill: Drill::Single(account),
+                })
+            })
+            .collect()
+    }
+
+    /// Tree rows: a pre-order walk that skips the root and jumps over a folded
+    /// node's whole (contiguous) subtree. Each row shows the leaf label,
+    /// indented by depth, and the subtree total.
+    fn build_tree_rows(&self) -> Vec<BalanceRow<'ctx>> {
+        let mut rows = Vec::new();
+        let mut i = 1; // index 0 is the synthetic root, never shown.
+        while i < self.tree.len() {
+            let node = &self.tree[i];
+            let Some(aggregate) = node.account.as_aggregate() else {
+                i += 1;
+                continue;
+            };
+            let full_name = aggregate.as_str();
+            let folded = self.folded.contains(&i);
+            rows.push(BalanceRow {
+                node: i,
+                full_name,
+                label: leaf_segment(full_name),
+                depth: node.depth,
+                amount: node.subtree_amount.clone(),
+                has_children: node.has_children(),
+                folded,
+                drill: Drill::Subtree(aggregate),
+            });
+            if folded && node.has_children() {
+                i = node.subtree_range().end;
+            } else {
+                i += 1;
+            }
+        }
+        rows
+    }
+
+    /// Selects the row for `name`, or its nearest visible ancestor (the longest
+    /// full-name prefix present), leaving the selection unchanged when neither
+    /// exists.
+    fn select_by_name(&mut self, name: &str) {
+        if let Some(idx) = self.balance_rows.iter().position(|r| r.full_name == name) {
+            self.balance_nav.select(idx);
+            return;
+        }
+        let mut best: Option<usize> = None;
+        let mut best_len = 0;
+        for (idx, row) in self.balance_rows.iter().enumerate() {
+            let prefix = row.full_name;
+            let is_ancestor = name.len() > prefix.len()
+                && name.starts_with(prefix)
+                && name.as_bytes()[prefix.len()] == b':';
+            if is_ancestor && prefix.len() > best_len {
+                best = Some(idx);
+                best_len = prefix.len();
+            }
+        }
+        if let Some(idx) = best {
+            self.balance_nav.select(idx);
+        }
+    }
+
+    /// Folds/unfolds the selected node (tree view only, and only when it has
+    /// children), then rebuilds the rows.
+    fn toggle_fold_selected(&mut self) {
+        if self.mode != DisplayMode::Tree {
+            return;
+        }
+        let Some(row) = self.selected_row() else {
+            return;
+        };
+        if !row.has_children {
+            return;
+        }
+        let node = row.node;
+        if !self.folded.remove(&node) {
+            self.folded.insert(node);
+        }
+        self.rebuild_rows();
+    }
+
+    /// Folds every foldable node when any is unfolded, otherwise unfolds all
+    /// (tree view only), then rebuilds the rows.
+    fn toggle_fold_all(&mut self) {
+        if self.mode != DisplayMode::Tree {
+            return;
+        }
+        let foldable: Vec<usize> = self
+            .tree
+            .iter()
+            .enumerate()
+            .filter(|(i, node)| *i != 0 && node.has_children())
+            .map(|(i, _)| i)
+            .collect();
+        let all_folded = foldable.iter().all(|i| self.folded.contains(i));
+        if all_folded {
+            self.folded.clear();
+        } else {
+            self.folded = foldable.into_iter().collect();
+        }
+        self.rebuild_rows();
     }
 
     /// Applies a message; optionally returns a [`Command`] for the event
@@ -518,12 +824,12 @@ impl<'ctx> App<'ctx> {
             Message::SelectLast => self.active_nav_mut().select_last(),
             Message::OpenRegister => {
                 if matches!(self.screen, Screen::Balance)
-                    && let Some(account) = self.selected_balance_account()
+                    && let Some(drill) = self.selected_drill()
                 {
                     // An interactive search drills in like the normal view:
                     // end the search, keeping the cursor on the chosen account.
                     self.end_interactive_search();
-                    return Some(Command::LoadRegister { account });
+                    return Some(Command::LoadRegister { drill });
                 }
             }
             Message::LeaveRegister => {
@@ -580,6 +886,30 @@ impl<'ctx> App<'ctx> {
             Message::SearchNext => self.search_or_recall(SearchDirection::Forward),
             Message::SearchPrev => self.search_or_recall(SearchDirection::Backward),
             Message::Reload => return Some(Command::Reload),
+            Message::ToggleTree => {
+                if matches!(self.screen, Screen::Balance) {
+                    // Row identity changes between modes; drop any active search
+                    // rather than carry stale match indices across the reshape.
+                    self.search = None;
+                    self.mode = match self.mode {
+                        DisplayMode::Flat => DisplayMode::Tree,
+                        DisplayMode::Tree => DisplayMode::Flat,
+                    };
+                    self.rebuild_rows();
+                }
+            }
+            Message::ToggleFold => {
+                if matches!(self.screen, Screen::Balance) {
+                    self.toggle_fold_selected();
+                    self.recompute_search();
+                }
+            }
+            Message::ToggleFoldAll => {
+                if matches!(self.screen, Screen::Balance) {
+                    self.toggle_fold_all();
+                    self.recompute_search();
+                }
+            }
             // Already handled above, or only meaningful while an overlay is up.
             Message::QuitImmediate
             | Message::ConfirmQuit
@@ -591,8 +921,13 @@ impl<'ctx> App<'ctx> {
 
     /// Called by the event loop once a [`Command::LoadRegister`] has been
     /// fulfilled.
-    pub fn show_register(&mut self, account: Account<'ctx>, rows: Vec<RegisterRow<'ctx>>) {
-        self.screen = Screen::Register(RegisterView::new(account, rows));
+    pub fn show_register(
+        &mut self,
+        drill: Drill<'ctx>,
+        title: String,
+        rows: Vec<RegisterRow<'ctx>>,
+    ) {
+        self.screen = Screen::Register(RegisterView::new(drill, title, rows));
     }
 
     /// Like [`Self::show_register`], but restores a previous cursor position
@@ -600,15 +935,72 @@ impl<'ctx> App<'ctx> {
     /// Used when re-entering the register after a reload.
     pub fn show_register_at(
         &mut self,
-        account: Account<'ctx>,
+        drill: Drill<'ctx>,
+        title: String,
         rows: Vec<RegisterRow<'ctx>>,
         index: usize,
     ) {
-        let mut view = RegisterView::new(account, rows);
+        let mut view = RegisterView::new(drill, title, rows);
         if let Some(last) = view.nav.row_count.checked_sub(1) {
             view.nav.select(min(index, last));
         }
         self.screen = Screen::Register(view);
+    }
+
+    /// Full names of the currently folded tree nodes (for snapshotting).
+    fn folded_names(&self) -> Vec<String> {
+        self.folded
+            .iter()
+            .filter_map(|&i| self.tree.get(i))
+            .filter_map(|node| node.account.as_aggregate())
+            .map(|aggregate| aggregate.as_str().to_owned())
+            .collect()
+    }
+
+    /// Re-resolves folded node names (from a snapshot) to indices in the
+    /// freshly-built tree.
+    fn apply_folded_names(&mut self, names: &[String]) {
+        let wanted: HashSet<&str> = names.iter().map(String::as_str).collect();
+        self.folded = self
+            .tree
+            .iter()
+            .enumerate()
+            .filter(|(i, node)| {
+                *i != 0
+                    && node
+                        .account
+                        .as_aggregate()
+                        .is_some_and(|aggregate| wanted.contains(aggregate.as_str()))
+            })
+            .map(|(i, _)| i)
+            .collect();
+    }
+
+    /// Rebuilds a [`Drill`] from a persisted `kind`/`name` by locating the node
+    /// in the freshly-built tree. `None` when the account no longer exists (or
+    /// a `Single` drill now resolves to an ancestor-only node).
+    ///
+    /// Falls back to a matching visible row when there is no backing tree (the
+    /// state-machine tests), where a row still carries a usable drill.
+    fn resolve_drill(&self, kind: DrillKind, name: &str) -> Option<Drill<'ctx>> {
+        if let Some(aggregate) = self
+            .tree
+            .iter()
+            .filter_map(|node| node.account.as_aggregate())
+            .find(|aggregate| aggregate.as_str() == name)
+        {
+            return match kind {
+                DrillKind::Single => match aggregate {
+                    AccountAggregate::Account(account) => Some(Drill::Single(account)),
+                    AccountAggregate::Ancestor(_) => None,
+                },
+                DrillKind::Subtree => Some(Drill::Subtree(aggregate)),
+            };
+        }
+        self.balance_rows
+            .iter()
+            .find(|row| row.full_name == name)
+            .map(|row| row.drill)
     }
 
     /// Captures the UI state that should survive a reload as owned data
@@ -617,32 +1009,41 @@ impl<'ctx> App<'ctx> {
     pub fn snapshot(&self) -> UiSnapshot {
         UiSnapshot {
             viewport_height: self.balance_nav.viewport_height,
-            selected_account: self
-                .selected_balance_account()
-                .map(|a| a.as_str().to_owned()),
+            selected_account: self.selected_full_name().map(str::to_owned),
             register: match &self.screen {
                 Screen::Balance => None,
                 Screen::Register(view) => Some(RegisterSnapshot {
-                    account: view.account.as_str().to_owned(),
+                    kind: match view.drill {
+                        Drill::Single(_) => DrillKind::Single,
+                        Drill::Subtree(_) => DrillKind::Subtree,
+                    },
+                    name: view.drill.display_name().to_owned(),
                     cursor: view.nav.table_state.selected().unwrap_or(0),
                 }),
             },
             search: self.search.as_ref().map(|s| s.intent.clone()),
             last_search: self.last_search.clone(),
+            mode: self.mode,
+            folded: self.folded_names(),
         }
     }
 
-    /// Restores a [`UiSnapshot`] into this freshly-built `App`: the balance
-    /// selection follows the previously selected account (or the closest one
-    /// by name when it disappeared), and any active search is recomputed
-    /// against the new rows.
+    /// Restores a [`UiSnapshot`] into this freshly-built `App`: the display
+    /// mode and fold state are reapplied first (they reshape the rows), then
+    /// the balance selection follows the previously selected account (or the
+    /// closest one by name when it disappeared), and any active search is
+    /// recomputed against the new rows.
     ///
     /// When the snapshot had the register screen open, returns
-    /// `Some((account, index))` asking the caller to query that account's
-    /// register and open it via [`Self::show_register_at`]. If the account
-    /// no longer exists, stays on the balance screen (with a notice) and
-    /// returns `None`.
-    pub fn restore(&mut self, snapshot: &UiSnapshot) -> Option<(Account<'ctx>, usize)> {
+    /// `Some((drill, title, index))` asking the caller to re-query that
+    /// register and open it via [`Self::show_register_at`]. If the account no
+    /// longer exists, stays on the balance screen (with a notice) and returns
+    /// `None`.
+    pub fn restore(&mut self, snapshot: &UiSnapshot) -> Option<(Drill<'ctx>, String, usize)> {
+        self.mode = snapshot.mode;
+        self.apply_folded_names(&snapshot.folded);
+        self.rebuild_rows();
+
         self.balance_nav.viewport_height = snapshot.viewport_height;
         if let Some(prev) = &snapshot.selected_account
             && let Some(idx) = restore_index(prev, &self.balance_rows)
@@ -658,15 +1059,12 @@ impl<'ctx> App<'ctx> {
             self.search = Some(Search { intent, matches });
         }
 
-        let RegisterSnapshot{account, cursor} = snapshot.register.as_ref()?;
-        match self
-            .balance_rows
-            .binary_search_by(|r| r.account.as_str().cmp(account.as_str()))
-        {
-            Ok(row) => Some((self.balance_rows[row].account, *cursor)),
-            Err(_) => {
+        let RegisterSnapshot { kind, name, cursor } = snapshot.register.as_ref()?;
+        match self.resolve_drill(*kind, name) {
+            Some(drill) => Some((drill, name.clone(), *cursor)),
+            None => {
                 self.error_toast = Some(format!(
-                    "account {account} is gone after reload; back to balance"
+                    "account {name} is gone after reload; back to balance"
                 ));
                 None
             }
@@ -792,7 +1190,7 @@ impl<'ctx> App<'ctx> {
 fn restore_index(prev_name: &str, rows: &[BalanceRow<'_>]) -> Option<usize> {
     let last = rows.len().checked_sub(1)?;
     let idx = rows
-        .binary_search_by(|r| r.account.as_str().cmp(prev_name))
+        .binary_search_by(|r| r.full_name.cmp(prev_name))
         .unwrap_or_else(|insertion| insertion);
     Some(min(idx, last))
 }
@@ -871,10 +1269,7 @@ mod tests {
         let _ = report::process(&mut ctx, loader, &report::ProcessOptions::default()).unwrap();
         let rows: Vec<BalanceRow> = names
             .iter()
-            .map(|n| BalanceRow {
-                account: ctx.account(n).unwrap(),
-                amount: Amount::zero(),
-            })
+            .map(|n| BalanceRow::flat(ctx.account(n).unwrap(), Amount::zero()))
             .collect();
         let app = App::new("test".to_owned(), rows, template());
         (ctx, app)
@@ -1485,6 +1880,16 @@ mod tests {
         assert_eq!(app.overlay, Some(Overlay::QuitConfirm));
     }
 
+    /// A single-account register screen for `account` with `nav`.
+    fn register_screen<'ctx>(account: Account<'ctx>, nav: TableNav) -> Screen<'ctx> {
+        Screen::Register(RegisterView {
+            drill: Drill::Single(account),
+            title: account.as_str().to_owned(),
+            rows: Vec::new(),
+            nav,
+        })
+    }
+
     #[test]
     fn leave_register_returns_to_balance() {
         let arena = Bump::new();
@@ -1492,11 +1897,7 @@ mod tests {
         let mut app = app_no_rows();
         // Bypass show_register's RegisterView::new — it just needs *some*
         // register screen state to flip the enum variant.
-        app.screen = Screen::Register(RegisterView {
-            account,
-            rows: Vec::new(),
-            nav: TableNav::new(0),
-        });
+        app.screen = register_screen(account, TableNav::new(0));
         app.update(Message::LeaveRegister);
         assert!(matches!(app.screen, Screen::Balance));
     }
@@ -1506,10 +1907,7 @@ mod tests {
     fn rows_of<'ctx>(ctx: &ReportContext<'ctx>, names: &[&str]) -> Vec<BalanceRow<'ctx>> {
         names
             .iter()
-            .map(|n| BalanceRow {
-                account: ctx.account(n).unwrap(),
-                amount: Amount::zero(),
-            })
+            .map(|n| BalanceRow::flat(ctx.account(n).unwrap(), Amount::zero()))
             .collect()
     }
 
@@ -1643,16 +2041,12 @@ mod tests {
         let account = ctx.account("Assets:Cash").unwrap();
         let mut nav = TableNav::new(5);
         nav.select(3);
-        app.screen = Screen::Register(RegisterView {
-            account,
-            rows: Vec::new(),
-            nav,
-        });
+        app.screen = register_screen(account, nav);
         let snapshot = app.snapshot();
 
         let mut app = next_app(&ctx, ACCOUNTS);
         let got = app.restore(&snapshot);
-        assert_matches!(got, Some((acc, 3)) if acc.as_str() == "Assets:Cash");
+        assert_matches!(got, Some((drill, _, 3)) if drill.display_name() == "Assets:Cash");
         // The screen stays on balance until the caller queries the rows and
         // opens the register via `show_register_at`.
         assert!(matches!(app.screen, Screen::Balance));
@@ -1664,11 +2058,7 @@ mod tests {
         let arena = Bump::new();
         let (ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
         let account = ctx.account("Assets:Cash").unwrap();
-        app.screen = Screen::Register(RegisterView {
-            account,
-            rows: Vec::new(),
-            nav: TableNav::new(0),
-        });
+        app.screen = register_screen(account, TableNav::new(0));
         let snapshot = app.snapshot();
 
         let mut app = next_app(&ctx, &["Assets:Bank", "Income:Salary"]);
@@ -1692,13 +2082,15 @@ mod tests {
             .collect();
 
         let mut app = app_no_rows();
-        app.show_register_at(account, rows.clone(), 10);
+        let drill = Drill::Single(account);
+        let title = account.as_str().to_owned();
+        app.show_register_at(drill, title.clone(), rows.clone(), 10);
         let Screen::Register(view) = &app.screen else {
             panic!("expected register screen");
         };
         assert_eq!(view.nav.table_state.selected(), Some(2));
 
-        app.show_register_at(account, rows, 1);
+        app.show_register_at(drill, title, rows, 1);
         let Screen::Register(view) = &app.screen else {
             panic!("expected register screen");
         };
@@ -1710,14 +2102,186 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, account) = make_account(&arena, "Assets:Cash");
         let mut app = app_no_rows();
-        app.screen = Screen::Register(RegisterView {
-            account,
-            rows: Vec::new(),
-            nav: TableNav::new(0),
-        });
+        app.screen = register_screen(account, TableNav::new(0));
         assert!(app.update(Message::RequestQuit).is_none());
         // From register, q/Esc leaves to balance (mapped at the event layer)
         // rather than opening the quit overlay.
         assert_eq!(app.overlay, None);
+    }
+
+    /// A ledger with a small nested hierarchy:
+    /// `Assets:Bank:Checking`, `Assets:Cash`, `Expenses:Food`, `Equity`.
+    const TREE_LEDGER: &str = "2024/01/01 Init\n    Assets:Bank:Checking    10 USD\n    Assets:Cash    5 USD\n    Expenses:Food    3 USD\n    Equity\n";
+
+    /// Builds a tree-backed app from ledger `content`, in the flat default mode.
+    fn tree_app<'ctx>(arena: &'ctx Bump, content: &str) -> (ReportContext<'ctx>, App<'ctx>) {
+        use okane_core::report::BalanceTree;
+        use okane_core::report::query::BalanceQuery;
+
+        let mut map = HashMap::new();
+        map.insert(PathBuf::from("test.ledger"), content.as_bytes().to_vec());
+        let loader = load::Loader::new(
+            PathBuf::from("test.ledger"),
+            load::FakeFileSystem::from(map),
+        );
+        let mut ctx = ReportContext::new(arena);
+        let mut ledger =
+            report::process(&mut ctx, loader, &report::ProcessOptions::default()).unwrap();
+        let balance = ledger
+            .balance(&ctx, &BalanceQuery::default())
+            .unwrap()
+            .into_owned();
+        let tree = BalanceTree::create(&ctx, balance).unwrap().into_nodes();
+        let app = App::with_tree("test".to_owned(), tree, template());
+        (ctx, app)
+    }
+
+    fn row_labels(app: &App<'_>) -> Vec<String> {
+        app.balance_rows
+            .iter()
+            .map(|r| r.label.to_owned())
+            .collect()
+    }
+
+    fn full_names(app: &App<'_>) -> Vec<String> {
+        app.balance_rows
+            .iter()
+            .map(|r| r.full_name.to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn flat_mode_shows_only_posted_accounts() {
+        let arena = Bump::new();
+        let (_ctx, app) = tree_app(&arena, TREE_LEDGER);
+        // Ancestor-only nodes (Assets, Assets:Bank, Expenses) have a zero own
+        // amount and are hidden; every posted account is shown, full-name.
+        assert_eq!(
+            full_names(&app),
+            [
+                "Assets:Bank:Checking",
+                "Assets:Cash",
+                "Equity",
+                "Expenses:Food",
+            ]
+        );
+    }
+
+    #[test]
+    fn toggle_tree_shows_hierarchy_with_leaf_labels() {
+        let arena = Bump::new();
+        let (_ctx, mut app) = tree_app(&arena, TREE_LEDGER);
+        // Flat rows 0/1 are Assets:Bank:Checking (10 USD) and Assets:Cash (5 USD).
+        let checking = app.balance_rows[0].amount.clone();
+        let cash = app.balance_rows[1].amount.clone();
+        app.update(Message::ToggleTree);
+        assert_eq!(app.mode, DisplayMode::Tree);
+        // Pre-order over the whole hierarchy, leaf labels, ancestors included.
+        assert_eq!(
+            full_names(&app),
+            [
+                "Assets",
+                "Assets:Bank",
+                "Assets:Bank:Checking",
+                "Assets:Cash",
+                "Equity",
+                "Expenses",
+                "Expenses:Food",
+            ]
+        );
+        assert_eq!(
+            row_labels(&app),
+            [
+                "Assets", "Bank", "Checking", "Cash", "Equity", "Expenses", "Food"
+            ]
+        );
+        // Depth drives indentation: Assets is depth 1, Checking depth 3.
+        assert_eq!(app.balance_rows[0].depth, 1);
+        assert!(app.balance_rows[0].has_children);
+        assert_eq!(app.balance_rows[2].depth, 3);
+        assert!(!app.balance_rows[2].has_children);
+        // Tree view shows subtree totals: Assets rolls up Checking + Cash.
+        assert_eq!(app.balance_rows[0].amount, checking + cash);
+        // Back to flat.
+        app.update(Message::ToggleTree);
+        assert_eq!(app.mode, DisplayMode::Flat);
+        assert_eq!(app.balance_rows.len(), 4);
+    }
+
+    #[test]
+    fn toggle_fold_hides_selected_subtree() {
+        let arena = Bump::new();
+        let (_ctx, mut app) = tree_app(&arena, TREE_LEDGER);
+        app.update(Message::ToggleTree);
+        app.balance_nav.select(0); // Assets
+        app.update(Message::ToggleFold);
+        // Assets is folded: its Bank/Checking/Cash descendants disappear.
+        assert_eq!(
+            full_names(&app),
+            ["Assets", "Equity", "Expenses", "Expenses:Food"]
+        );
+        assert!(app.balance_rows[0].folded);
+        // Selection stays on the fold point.
+        assert_eq!(app.balance_nav.table_state.selected(), Some(0));
+        // Unfolding restores the descendants.
+        app.update(Message::ToggleFold);
+        assert!(!app.balance_rows[0].folded);
+        assert_eq!(app.balance_rows.len(), 7);
+    }
+
+    #[test]
+    fn toggle_fold_all_collapses_then_expands() {
+        let arena = Bump::new();
+        let (_ctx, mut app) = tree_app(&arena, TREE_LEDGER);
+        app.update(Message::ToggleTree);
+        app.update(Message::ToggleFoldAll);
+        // Every foldable node collapses: only top-level rows remain.
+        assert_eq!(full_names(&app), ["Assets", "Equity", "Expenses"]);
+        app.update(Message::ToggleFoldAll);
+        assert_eq!(app.balance_rows.len(), 7);
+    }
+
+    #[test]
+    fn tree_open_register_drills_into_subtree() {
+        let arena = Bump::new();
+        let (_ctx, mut app) = tree_app(&arena, TREE_LEDGER);
+        app.update(Message::ToggleTree);
+        app.balance_nav.select(0); // Assets
+        let cmd = app.update(Message::OpenRegister);
+        assert_matches!(
+            cmd,
+            Some(Command::LoadRegister { drill: Drill::Subtree(agg) }) if agg.as_str() == "Assets"
+        );
+    }
+
+    #[test]
+    fn flat_open_register_drills_into_single_account() {
+        let arena = Bump::new();
+        let (_ctx, mut app) = tree_app(&arena, TREE_LEDGER);
+        app.balance_nav.select(1); // Assets:Cash
+        let cmd = app.update(Message::OpenRegister);
+        assert_matches!(
+            cmd,
+            Some(Command::LoadRegister { drill: Drill::Single(account) }) if account.as_str() == "Assets:Cash"
+        );
+    }
+
+    #[test]
+    fn tree_state_survives_snapshot_restore() {
+        let arena = Bump::new();
+        let (_ctx, mut app) = tree_app(&arena, TREE_LEDGER);
+        app.update(Message::ToggleTree);
+        app.balance_nav.select(0); // Assets
+        app.update(Message::ToggleFold); // fold Assets
+        let snapshot = app.snapshot();
+
+        let (_ctx2, mut app2) = tree_app(&arena, TREE_LEDGER);
+        assert_matches!(app2.restore(&snapshot), None);
+        assert_eq!(app2.mode, DisplayMode::Tree);
+        assert_eq!(
+            full_names(&app2),
+            ["Assets", "Equity", "Expenses", "Expenses:Food"]
+        );
+        assert!(app2.balance_rows[0].folded);
     }
 }
