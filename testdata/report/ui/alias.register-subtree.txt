@@ -1,14 +1,14 @@
- okane ui — single_commodity.ledger                                             
+ okane ui — alias.ledger — register: Equity                                     
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│Account                                                           Amount      │
-│Assets:Banks:Foo                                                     -1000 JPY│
-│Assets:Banks:あおによし                                             307000 JPY│
-│Equity:Initial                                                      -99000 JPY│
-│Expenses:Cash                                                        13000 JPY│
-│Expenses:T Assets:Banks:あおによし                                   10000 JPY│
-│Expenses:Tax:Income                                                  70000 JPY│
-│Income:Salary                                                      -300000 JPY│
-│Liabilities:Cards:Card X                                                     0│
+│Date       Payee                                         Amount     Total     │
+│2024-01-29 Transaction                                     -100 JPY   -100 JPY│
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -21,4 +21,4 @@
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
- ↑/↓ scroll · Enter register · t tree · space fold · x fold-all · / search · r r
+ ↑/↓ scroll · PgUp/PgDn page · g/G home/end · r reload · q/Esc back             
