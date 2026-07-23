@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784669802419,
+  "lastUpdate": 1784787609681,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Criterion.rs Benchmark": [
@@ -48191,6 +48191,384 @@ window.BENCHMARK_DATA = {
             "name": "query::register/sort-date-warm/middle_more_commodity_10y16a500t",
             "value": 15905682,
             "range": "± 865084",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "9d89fcb319e5644c6978fcc12022f06ca97898f3",
+          "message": "Bump actions/checkout from 7.0.0 to 7.0.1\n\nBumps [actions/checkout](https://github.com/actions/checkout) from 7.0.0 to 7.0.1.\n- [Release notes](https://github.com/actions/checkout/releases)\n- [Changelog](https://github.com/actions/checkout/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/actions/checkout/compare/9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0...3d3c42e5aac5ba805825da76410c181273ba90b1)\n\n---\nupdated-dependencies:\n- dependency-name: actions/checkout\n  dependency-version: 7.0.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-07-23T08:04:39+02:00",
+          "tree_id": "94363a1f288f6a26515db935b4075a8e1ef4a980",
+          "url": "https://github.com/xkikeg/okane/commit/9d89fcb319e5644c6978fcc12022f06ca97898f3"
+        },
+        "date": 1784787608292,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "parse plain",
+            "value": 22,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "parse comma",
+            "value": 23,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "to_string plain",
+            "value": 86,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "to_string comma",
+            "value": 81,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load/on-file/middle_10y16a500t",
+            "value": 133683797,
+            "range": "± 2306079",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load/on-memory/small_5y10a200t",
+            "value": 15619952,
+            "range": "± 102877",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load/on-memory/middle_10y16a500t",
+            "value": 127606676,
+            "range": "± 2036633",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "load/on-memory/middle_more_commodity_10y16a500t",
+            "value": 127647032,
+            "range": "± 1364061",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process/small_5y10a200t",
+            "value": 22968112,
+            "range": "± 488944",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process/middle_10y16a500t",
+            "value": 183399079,
+            "range": "± 5549663",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "process/middle_more_commodity_10y16a500t",
+            "value": 186905779,
+            "range": "± 2291271",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/default/small_5y10a200t",
+            "value": 18,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/default/middle_10y16a500t",
+            "value": 18,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/default/middle_more_commodity_10y16a500t",
+            "value": 18,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/date-range-first10/small_5y10a200t",
+            "value": 141102,
+            "range": "± 1137",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/date-range-middle20/small_5y10a200t",
+            "value": 286384,
+            "range": "± 13358",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/date-range-last30/small_5y10a200t",
+            "value": 432036,
+            "range": "± 1254",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/date-range-first10/middle_10y16a500t",
+            "value": 1132592,
+            "range": "± 8807",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/date-range-middle20/middle_10y16a500t",
+            "value": 2269810,
+            "range": "± 24521",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/date-range-last30/middle_10y16a500t",
+            "value": 3524118,
+            "range": "± 85261",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/date-range-first10/middle_more_commodity_10y16a500t",
+            "value": 1217262,
+            "range": "± 19726",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/date-range-middle20/middle_more_commodity_10y16a500t",
+            "value": 2506956,
+            "range": "± 16280",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/date-range-last30/middle_more_commodity_10y16a500t",
+            "value": 3916082,
+            "range": "± 177964",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/conversion-up-to-date/small_5y10a200t",
+            "value": 4833,
+            "range": "± 23",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/conversion-up-to-date/middle_10y16a500t",
+            "value": 6537,
+            "range": "± 23",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/conversion-up-to-date/middle_more_commodity_10y16a500t",
+            "value": 10927,
+            "range": "± 69",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/conversion-historical/small_5y10a200t",
+            "value": 3786476,
+            "range": "± 20531",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/conversion-historical/middle_10y16a500t",
+            "value": 30342798,
+            "range": "± 197512",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/conversion-historical/middle_more_commodity_10y16a500t",
+            "value": 30766877,
+            "range": "± 175951",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/conversion-historical-pricedb/small_5y10a200t",
+            "value": 3516830,
+            "range": "± 122471",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/conversion-historical-pricedb/middle_10y16a500t",
+            "value": 26601839,
+            "range": "± 152797",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::balance/conversion-historical-pricedb/middle_more_commodity_10y16a500t",
+            "value": 27126268,
+            "range": "± 204172",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/default/small_5y10a200t",
+            "value": 381657,
+            "range": "± 1839",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/default/middle_10y16a500t",
+            "value": 3313830,
+            "range": "± 32559",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/default/middle_more_commodity_10y16a500t",
+            "value": 3810591,
+            "range": "± 24540",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/account-filter/small_5y10a200t",
+            "value": 53630,
+            "range": "± 1579",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/account-filter/middle_10y16a500t",
+            "value": 376120,
+            "range": "± 12980",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/account-filter/middle_more_commodity_10y16a500t",
+            "value": 374445,
+            "range": "± 9361",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/date-range-first10/small_5y10a200t",
+            "value": 53616,
+            "range": "± 333",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/date-range-middle20/small_5y10a200t",
+            "value": 89930,
+            "range": "± 707",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/date-range-last30/small_5y10a200t",
+            "value": 125797,
+            "range": "± 3100",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/date-range-first10/middle_10y16a500t",
+            "value": 419645,
+            "range": "± 1652",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/date-range-middle20/middle_10y16a500t",
+            "value": 712441,
+            "range": "± 2794",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/date-range-last30/middle_10y16a500t",
+            "value": 1007639,
+            "range": "± 34071",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/date-range-first10/middle_more_commodity_10y16a500t",
+            "value": 455194,
+            "range": "± 2034",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/date-range-middle20/middle_more_commodity_10y16a500t",
+            "value": 800432,
+            "range": "± 2933",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/date-range-last30/middle_more_commodity_10y16a500t",
+            "value": 1158735,
+            "range": "± 19724",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/conversion-historical/small_5y10a200t",
+            "value": 2581342,
+            "range": "± 16165",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/conversion-historical/middle_10y16a500t",
+            "value": 20771146,
+            "range": "± 58565",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/conversion-historical/middle_more_commodity_10y16a500t",
+            "value": 21148956,
+            "range": "± 103255",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/conversion-historical-pricedb/small_5y10a200t",
+            "value": 2827511,
+            "range": "± 22479",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/conversion-historical-pricedb/middle_10y16a500t",
+            "value": 21967659,
+            "range": "± 116032",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/conversion-historical-pricedb/middle_more_commodity_10y16a500t",
+            "value": 22375830,
+            "range": "± 98965",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/sort-date-cold/small_5y10a200t",
+            "value": 1364731,
+            "range": "± 88820",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/sort-date-cold/middle_10y16a500t",
+            "value": 19286228,
+            "range": "± 325929",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/sort-date-cold/middle_more_commodity_10y16a500t",
+            "value": 19696358,
+            "range": "± 289119",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/sort-date-warm/small_5y10a200t",
+            "value": 448762,
+            "range": "± 3765",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/sort-date-warm/middle_10y16a500t",
+            "value": 10822842,
+            "range": "± 594431",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query::register/sort-date-warm/middle_more_commodity_10y16a500t",
+            "value": 11111677,
+            "range": "± 987831",
             "unit": "ns/iter"
           }
         ]
