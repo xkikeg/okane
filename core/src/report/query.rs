@@ -711,7 +711,7 @@ mod tests {
                 Equity                         0.00 EUR @ 157.12 JPY
 
             2024/01/01 Initial
-                Assets:J 銀行             1,000,000 JPY
+                Assets:J 銀行:普通        1,000,000 JPY
                 Assets:CH Bank             2,000.00 CHF
                 Liabilities:EUR Card        -300.00 EUR
                 Assets:Broker            5,000.0000 OKANE {80 JPY}
@@ -719,11 +719,11 @@ mod tests {
 
             2024/01/05 Shopping
                 Expenses:Grocery             100.00 CHF @ 171.50 JPY
-                Assets:J 銀行               -17,150 JPY
+                Assets:J 銀行:普通          -17,150 JPY
 
             2024/01/09 Buy Stock
                 Assets:Broker               23.0000 OKANE {120 JPY}
-                Assets:J 銀行                -2,760 JPY
+                Assets:J 銀行:普通           -2,760 JPY
 
             2024/01/15 Sell Stock
                 Assets:Broker                12,300 JPY
@@ -731,9 +731,18 @@ mod tests {
                 Assets:Broker              -23.0000 OKANE {120 JPY} @ 100 JPY
                 Income:Capital Gain           -1540 JPY
 
-            2024/01/20 Shopping
+            2024/01/20 Restaurant
                 Expenses:Food                150.00 EUR @ 0.9464 CHF
                 Assets:CH Bank              -141.96 CHF
+
+            2025/10/30 event
+                ; Expenses:Foodをprefixに持つけど関係ないアカウント
+                Expenses:Food Fight          1,000 JPY
+                Assets:J 銀行:普通
+
+            2026/01/30 Ramen
+                Expenses:Food:Ramen             650 JPY
+                Assets:CH Bank                -3.25 CHF @ 200 JPY
         "};
         let fake = hashmap! {
             PathBuf::from("path/to/file.ledger") => content.as_bytes().to_vec(),
@@ -770,15 +779,15 @@ mod tests {
         let want: Balance = [
             (
                 ctx.account("Assets:CH Bank").unwrap(),
-                Amount::from_value(chf, dec!(1858.04)),
+                Amount::from_value(chf, dec!(1854.79)),
             ),
             (
                 ctx.account("Assets:Broker").unwrap(),
                 Amount::from_iter([(okane, dec!(4900.0000)), (jpy, dec!(12300))]),
             ),
             (
-                ctx.account("Assets:J 銀行").unwrap(),
-                Amount::from_value(jpy, dec!(980090)),
+                ctx.account("Assets:J 銀行:普通").unwrap(),
+                Amount::from_value(jpy, dec!(979_090)),
             ),
             (
                 ctx.account("Liabilities:EUR Card").unwrap(),
@@ -791,6 +800,14 @@ mod tests {
             (
                 ctx.account("Expenses:Food").unwrap(),
                 Amount::from_value(eur, dec!(150.00)),
+            ),
+            (
+                ctx.account("Expenses:Food:Ramen").unwrap(),
+                Amount::from_value(jpy, dec!(650)),
+            ),
+            (
+                ctx.account("Expenses:Food Fight").unwrap(),
+                Amount::from_value(jpy, dec!(1_000)),
             ),
             (
                 ctx.account("Expenses:Grocery").unwrap(),
@@ -839,8 +856,8 @@ mod tests {
         let want: Balance = [
             (
                 ctx.account("Assets:CH Bank").unwrap(),
-                // 2000.00 * 168.24 - 141.96 * 171.50
-                Amount::from_value(jpy, dec!(312_134)),
+                // 2000.00 * 168.24 - 141.96 * 171.50 - 650
+                Amount::from_value(jpy, dec!(311_484)),
             ),
             (
                 ctx.account("Assets:Broker").unwrap(),
@@ -857,8 +874,8 @@ mod tests {
                 ]),
             ),
             (
-                ctx.account("Assets:J 銀行").unwrap(),
-                Amount::from_value(jpy, dec!(980090)),
+                ctx.account("Assets:J 銀行:普通").unwrap(),
+                Amount::from_value(jpy, dec!(979_090)),
             ),
             (
                 ctx.account("Liabilities:EUR Card").unwrap(),
@@ -875,6 +892,14 @@ mod tests {
             (
                 ctx.account("Expenses:Food").unwrap(),
                 Amount::from_value(jpy, dec!(23_568)),
+            ),
+            (
+                ctx.account("Expenses:Food:Ramen").unwrap(),
+                Amount::from_value(jpy, dec!(650)),
+            ),
+            (
+                ctx.account("Expenses:Food Fight").unwrap(),
+                Amount::from_value(jpy, dec!(1_000)),
             ),
             (
                 ctx.account("Equity").unwrap(),
@@ -919,16 +944,16 @@ mod tests {
         let want: Balance = [
             (
                 ctx.account("Assets:CH Bank").unwrap(),
-                // 1858.04 * 171.50
-                Amount::from_value(jpy, dec!(318_654)),
+                // 1854.79 * 171.50
+                Amount::from_value(jpy, dec!(318_096)),
             ),
             (
                 ctx.account("Assets:Broker").unwrap(),
                 Amount::from_value(jpy, dec!(502_300)),
             ),
             (
-                ctx.account("Assets:J 銀行").unwrap(),
-                Amount::from_value(jpy, dec!(980090)),
+                ctx.account("Assets:J 銀行:普通").unwrap(),
+                Amount::from_value(jpy, dec!(979_090)),
             ),
             (
                 ctx.account("Liabilities:EUR Card").unwrap(),
@@ -943,6 +968,14 @@ mod tests {
                 ctx.account("Expenses:Food").unwrap(),
                 // 150.00 EUR * 157.12
                 Amount::from_value(jpy, dec!(23_568)),
+            ),
+            (
+                ctx.account("Expenses:Food:Ramen").unwrap(),
+                Amount::from_value(jpy, dec!(650)),
+            ),
+            (
+                ctx.account("Expenses:Food Fight").unwrap(),
+                Amount::from_value(jpy, dec!(1_000)),
             ),
             (
                 ctx.account("Expenses:Grocery").unwrap(),
@@ -990,7 +1023,7 @@ mod tests {
 
         let want: Balance = [
             (
-                ctx.account("Assets:J 銀行").unwrap(),
+                ctx.account("Assets:J 銀行:普通").unwrap(),
                 Amount::from_value(jpy, dec!(-17150)),
             ),
             (
@@ -1002,6 +1035,45 @@ mod tests {
         .collect();
 
         assert_eq!(want.into_vec(), got.into_owned().into_vec());
+    }
+
+    #[test]
+    fn balance_with_account_filter() {
+        let arena = Bump::new();
+        let (ctx, mut ledger) = create_ledger(&arena);
+        let chf = ctx.commodities.resolve("CHF").unwrap();
+        let jpy = ctx.commodities.resolve("JPY").unwrap();
+        let okane = ctx.commodities.resolve("OKANE").unwrap();
+
+        let got = ledger
+            .balance(
+                &ctx,
+                &BalanceQuery {
+                    account: AccountFilter::from_regex_patterns(&ctx, &["^Assets"]).unwrap(),
+                    conversion: None,
+                    date_range: DateRange::default(),
+                },
+            )
+            .unwrap()
+            .into_owned();
+
+        let want: Balance = [
+            (
+                ctx.account("Assets:CH Bank").unwrap(),
+                Amount::from_value(chf, dec!(1854.79)),
+            ),
+            (
+                ctx.account("Assets:Broker").unwrap(),
+                Amount::from_iter([(okane, dec!(4900.0000)), (jpy, dec!(12300))]),
+            ),
+            (
+                ctx.account("Assets:J 銀行:普通").unwrap(),
+                Amount::from_value(jpy, dec!(979_090)),
+            ),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(want, got);
     }
 
     #[test]
@@ -1054,7 +1126,7 @@ mod tests {
         let (ctx, mut ledger) = create_ledger(&arena);
         let jpy = ctx.commodities.resolve("JPY").unwrap();
 
-        let bank = ctx.account("Assets:J 銀行").unwrap();
+        let bank = ctx.account("Assets:J 銀行:普通").unwrap();
         let got = collect_register(
             ledger
                 .register_entries(
@@ -1075,22 +1147,29 @@ mod tests {
                 NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
                 "Initial".to_string(),
                 bank,
-                Amount::from_value(jpy, dec!(1000000)),
-                Amount::from_value(jpy, dec!(1000000)),
+                Amount::from_value(jpy, dec!(1_000_000)),
+                Amount::from_value(jpy, dec!(1_000_000)),
             ),
             (
                 NaiveDate::from_ymd_opt(2024, 1, 5).unwrap(),
                 "Shopping".to_string(),
                 bank,
-                Amount::from_value(jpy, dec!(-17150)),
-                Amount::from_value(jpy, dec!(982850)),
+                Amount::from_value(jpy, dec!(-17_150)),
+                Amount::from_value(jpy, dec!(982_850)),
             ),
             (
                 NaiveDate::from_ymd_opt(2024, 1, 9).unwrap(),
                 "Buy Stock".to_string(),
                 bank,
                 Amount::from_value(jpy, dec!(-2760)),
-                Amount::from_value(jpy, dec!(980090)),
+                Amount::from_value(jpy, dec!(980_090)),
+            ),
+            (
+                NaiveDate::from_ymd_opt(2025, 10, 30).unwrap(),
+                "event".to_string(),
+                bank,
+                Amount::from_value(jpy, dec!(-1000)),
+                Amount::from_value(jpy, dec!(979_090)),
             ),
         ];
         assert_eq!(want, got);
@@ -1104,7 +1183,7 @@ mod tests {
         let chf = ctx.commodities.resolve("CHF").unwrap();
 
         let grocery = ctx.account("Expenses:Grocery").unwrap();
-        let bank = ctx.account("Assets:J 銀行").unwrap();
+        let bank = ctx.account("Assets:J 銀行:普通").unwrap();
         let got = collect_register(
             ledger
                 .register_entries(
@@ -1173,7 +1252,7 @@ mod tests {
         let (ctx, mut ledger) = create_ledger(&arena);
         let jpy = ctx.commodities.resolve("JPY").unwrap();
         let grocery = ctx.account("Expenses:Grocery").unwrap();
-        let bank = ctx.account("Assets:J 銀行").unwrap();
+        let bank = ctx.account("Assets:J 銀行:普通").unwrap();
 
         // Restrict to the single 2024/01/05 Shopping transaction so the
         // assertion stays small. Conversion is to JPY at the historical rate
@@ -1431,7 +1510,7 @@ mod tests {
             HashSet::from([
                 ctx.account("Assets:CH Bank").unwrap(),
                 ctx.account("Assets:Broker").unwrap(),
-                ctx.account("Assets:J 銀行").unwrap()
+                ctx.account("Assets:J 銀行:普通").unwrap()
             ]),
         );
     }
@@ -1490,44 +1569,5 @@ mod tests {
 
         let err = AccountFilter::from_regex_patterns(&ctx, &["("]);
         assert!(err.is_err(), "expected regex compile error, got {err:?}");
-    }
-
-    #[test]
-    fn balance_with_account_filter() {
-        let arena = Bump::new();
-        let (ctx, mut ledger) = create_ledger(&arena);
-        let chf = ctx.commodities.resolve("CHF").unwrap();
-        let jpy = ctx.commodities.resolve("JPY").unwrap();
-        let okane = ctx.commodities.resolve("OKANE").unwrap();
-
-        let got = ledger
-            .balance(
-                &ctx,
-                &BalanceQuery {
-                    account: AccountFilter::from_regex_patterns(&ctx, &["^Assets"]).unwrap(),
-                    conversion: None,
-                    date_range: DateRange::default(),
-                },
-            )
-            .unwrap()
-            .into_owned();
-
-        let want: Balance = [
-            (
-                ctx.account("Assets:CH Bank").unwrap(),
-                Amount::from_value(chf, dec!(1858.04)),
-            ),
-            (
-                ctx.account("Assets:Broker").unwrap(),
-                Amount::from_iter([(okane, dec!(4900.0000)), (jpy, dec!(12300))]),
-            ),
-            (
-                ctx.account("Assets:J 銀行").unwrap(),
-                Amount::from_value(jpy, dec!(980090)),
-            ),
-        ]
-        .into_iter()
-        .collect();
-        assert_eq!(want, got);
     }
 }
