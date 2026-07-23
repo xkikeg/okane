@@ -672,6 +672,25 @@ impl<'ctx> AccountFilter<'ctx> {
         Ok(Self::from_set(matched))
     }
 
+    /// Builds a filter matching `prefix` itself and every account nested
+    /// under it — accounts which are equal to `prefix`, or their name starting with
+    /// `"{prefix}:"`.
+    pub fn descendants_of(ctx: &ReportContext<'ctx>, prefix: Account<'ctx>) -> Self {
+        let mut matched: HashSet<Account<'ctx>> = HashSet::new();
+        for account in ctx.all_accounts_unsorted() {
+            let name = account.as_str();
+            let is_self = account == prefix;
+            let is_descendant = name
+                .strip_prefix(prefix.as_str())
+                .map(|rest| rest.starts_with(':'))
+                .unwrap_or(false);
+            if is_self || is_descendant {
+                matched.insert(account);
+            }
+        }
+        Self::from_set(matched)
+    }
+
     /// Returns `true` when the filter can never match any account.
     fn is_exhaustive_empty(&self) -> bool {
         matches!(self, AccountFilter::Set(s) if s.is_empty())
@@ -1488,86 +1507,118 @@ mod tests {
         );
     }
 
-    #[test]
-    fn account_filter_from_regex_patterns_empty_matches_nothing() {
-        let arena = Bump::new();
-        let (ctx, _ledger) = create_ledger(&arena);
+    mod account_filter {
+        use super::assert_eq;
+        use super::*;
 
-        let filter = AccountFilter::from_regex_patterns(&ctx, &[] as &[&str]).unwrap();
-        assert_matches!(filter, AccountFilter::Set(s) if s.is_empty());
-    }
+        #[test]
+        fn from_regex_patterns_empty_matches_nothing() {
+            let arena = Bump::new();
+            let (ctx, _ledger) = create_ledger(&arena);
 
-    #[test]
-    fn account_filter_from_regex_patterns_matches_substring() {
-        let arena = Bump::new();
-        let (ctx, _ledger) = create_ledger(&arena);
+            let filter = AccountFilter::from_regex_patterns(&ctx, &[] as &[&str]).unwrap();
+            assert_matches!(filter, AccountFilter::Set(s) if s.is_empty());
+        }
 
-        // Unanchored regex: "Assets" matches every account starting with it.
-        let filter = AccountFilter::from_regex_patterns(&ctx, &["Assets"]).unwrap();
-        let matched = assert_matches!(filter, AccountFilter::Set(s) => s);
-        assert_eq!(
-            matched,
-            HashSet::from([
-                ctx.account("Assets:CH Bank").unwrap(),
-                ctx.account("Assets:Broker").unwrap(),
-                ctx.account("Assets:J 銀行:普通").unwrap()
-            ]),
-        );
-    }
+        #[test]
+        fn from_regex_patterns_matches_substring() {
+            let arena = Bump::new();
+            let (ctx, _ledger) = create_ledger(&arena);
 
-    #[test]
-    fn account_filter_from_regex_patterns_multiple_patterns_are_unioned() {
-        let arena = Bump::new();
-        let (ctx, _ledger) = create_ledger(&arena);
+            // Unanchored regex: "Assets" matches every account starting with it.
+            let filter = AccountFilter::from_regex_patterns(&ctx, &["Assets"]).unwrap();
+            let matched = assert_matches!(filter, AccountFilter::Set(s) => s);
+            assert_eq!(
+                matched,
+                HashSet::from([
+                    ctx.account("Assets:CH Bank").unwrap(),
+                    ctx.account("Assets:Broker").unwrap(),
+                    ctx.account("Assets:J 銀行:普通").unwrap()
+                ]),
+            );
+        }
 
-        let filter = AccountFilter::from_regex_patterns(&ctx, &["^Income", "Card$"]).unwrap();
-        assert_matches!(filter, AccountFilter::Set(s) => {
-            assert_eq!(s, hashset![
-                ctx.account("Income:Capital Gain").unwrap(),
-                ctx.account("Liabilities:EUR Card").unwrap(),
+        #[test]
+        fn from_regex_patterns_multiple_patterns_are_unioned() {
+            let arena = Bump::new();
+            let (ctx, _ledger) = create_ledger(&arena);
+
+            let filter = AccountFilter::from_regex_patterns(&ctx, &["^Income", "Card$"]).unwrap();
+            assert_matches!(filter, AccountFilter::Set(s) => {
+                assert_eq!(s, hashset![
+                    ctx.account("Income:Capital Gain").unwrap(),
+                    ctx.account("Liabilities:EUR Card").unwrap(),
+                    ]);
+            });
+        }
+
+        #[test]
+        fn from_regex_patterns_single_match_collapses_to_exact() {
+            let arena = Bump::new();
+            let (ctx, _ledger) = create_ledger(&arena);
+
+            let filter = AccountFilter::from_regex_patterns(&ctx, &["Grocery"]).unwrap();
+            let expected = ctx.account("Expenses:Grocery").unwrap();
+            assert_matches!(filter, AccountFilter::Exact(a) if a == expected);
+        }
+
+        #[test]
+        fn from_regex_patterns_invalid_regex_errors() {
+            let arena = Bump::new();
+            let (ctx, _ledger) = create_ledger(&arena);
+
+            let err = AccountFilter::from_regex_patterns(&ctx, &["("]);
+            assert!(err.is_err(), "expected regex compile error, got {err:?}");
+        }
+
+        #[test]
+        fn from_exact_accounts_matches_names_verbatim() {
+            let arena = Bump::new();
+            let (ctx, _ledger) = create_ledger(&arena);
+
+            // "." would match everything if treated as regex; as an exact name it
+            // resolves to nothing. The known exact account is added; the unknown
+            // ones contribute nothing.
+            let filter =
+                AccountFilter::from_exact_accounts(&ctx, &["Assets:Broker", ".", "Does:Not:Exist"]);
+            let expected = ctx.account("Assets:Broker").unwrap();
+            assert_matches!(filter, AccountFilter::Exact(a) if a == expected);
+        }
+
+        #[test]
+        fn from_exact_accounts_no_matches_is_empty_set() {
+            let arena = Bump::new();
+            let (ctx, _ledger) = create_ledger(&arena);
+
+            let filter = AccountFilter::from_exact_accounts(&ctx, &["Does:Not:Exist"]);
+            assert_matches!(filter, AccountFilter::Set(s) if s.is_empty());
+        }
+
+        #[test]
+        fn descendants_of_leaf_collapses_to_exact() {
+            let arena = Bump::new();
+            let (ctx, _ledger) = create_ledger(&arena);
+
+            // A leaf account has no descendants, so the filter is just itself.
+            let broker = ctx.account("Assets:Broker").unwrap();
+            let filter = AccountFilter::descendants_of(&ctx, broker);
+            assert_matches!(filter, AccountFilter::Exact(a) if a == broker);
+        }
+
+        #[test]
+        fn descendants_of_account_with_child() {
+            let arena = Bump::new();
+            let (ctx, _ledger) = create_ledger(&arena);
+
+            let food = ctx.account("Expenses:Food").unwrap();
+            let filter = AccountFilter::descendants_of(&ctx, food);
+            assert_matches!(filter, AccountFilter::Set(s) => {
+                assert_eq!(s, hashset![
+                    ctx.account("Expenses:Food").unwrap(),
+                    ctx.account("Expenses:Food:Ramen").unwrap(),
+                    // no food fight
                 ]);
-        });
-    }
-
-    #[test]
-    fn account_filter_from_regex_patterns_single_match_collapses_to_exact() {
-        let arena = Bump::new();
-        let (ctx, _ledger) = create_ledger(&arena);
-
-        let filter = AccountFilter::from_regex_patterns(&ctx, &["Grocery"]).unwrap();
-        let expected = ctx.account("Expenses:Grocery").unwrap();
-        assert_matches!(filter, AccountFilter::Exact(a) if a == expected);
-    }
-
-    #[test]
-    fn account_filter_from_exact_accounts_matches_names_verbatim() {
-        let arena = Bump::new();
-        let (ctx, _ledger) = create_ledger(&arena);
-
-        // "." would match everything if treated as regex; as an exact name it
-        // resolves to nothing. The known exact account is added; the unknown
-        // ones contribute nothing.
-        let filter =
-            AccountFilter::from_exact_accounts(&ctx, &["Assets:Broker", ".", "Does:Not:Exist"]);
-        let expected = ctx.account("Assets:Broker").unwrap();
-        assert_matches!(filter, AccountFilter::Exact(a) if a == expected);
-    }
-
-    #[test]
-    fn account_filter_from_exact_accounts_no_matches_is_empty_set() {
-        let arena = Bump::new();
-        let (ctx, _ledger) = create_ledger(&arena);
-
-        let filter = AccountFilter::from_exact_accounts(&ctx, &["Does:Not:Exist"]);
-        assert_matches!(filter, AccountFilter::Set(s) if s.is_empty());
-    }
-
-    #[test]
-    fn account_filter_from_regex_patterns_invalid_regex_errors() {
-        let arena = Bump::new();
-        let (ctx, _ledger) = create_ledger(&arena);
-
-        let err = AccountFilter::from_regex_patterns(&ctx, &["("]);
-        assert!(err.is_err(), "expected regex compile error, got {err:?}");
+            });
+        }
     }
 }
