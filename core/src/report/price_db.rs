@@ -560,7 +560,7 @@ mod tests {
                     || (event.price_x.commodity == eur && event.price_y.commodity == chf))
         };
         let got: Vec<_> = builder.iter_events().collect();
-        assert_eq!(got.len(), 17 * 2);
+        assert_eq!(got.len(), 21 * 2);
         assert!(
             got.iter()
                 .all(|(source, _)| *source == PriceSource::PriceDB)

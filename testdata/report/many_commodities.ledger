@@ -1,0 +1,87 @@
+; Many commodities in one ledger: six fiat currencies (JPY CHF USD EUR AUD TWD)
+; spread across a bank, a brokerage and a credit card, plus a brokerage holding
+; all 26 stock lots STOCKA..STOCKZ. Exercises the reports — and the `okane ui`
+; balance/register screens — against very tall, multi-commodity amount cells.
+
+commodity JPY
+    format 1,000 JPY
+commodity CHF
+    format 1,000.00 CHF
+commodity USD
+    format 1,000.00 USD
+commodity EUR
+    format 1,000.00 EUR
+commodity AUD
+    format 1,000.00 AUD
+commodity TWD
+    format 1,000.00 TWD
+
+2024/01/01 * Opening balances across currencies
+    Assets:Banks:Foo                     1,000,000 JPY
+    Assets:Banks:Foo                      5,000.00 CHF
+    Assets:Banks:Foo                     10,000.00 USD
+    Assets:Banks:Foo                      8,000.00 EUR
+    Assets:Banks:Foo                      3,000.00 AUD
+    Assets:Banks:Foo                    200,000.00 TWD
+    Equity:Initial
+
+2024/01/03 * Buy 26 stock lots at the brokerage
+    Assets:Brokers:Bar                    10 STOCKA @ 100.00 USD
+    Assets:Brokers:Bar                    10 STOCKB @ 101.00 USD
+    Assets:Brokers:Bar                    10 STOCKC @ 102.00 USD
+    Assets:Brokers:Bar                    10 STOCKD @ 103.00 USD
+    Assets:Brokers:Bar                    10 STOCKE @ 104.00 USD
+    Assets:Brokers:Bar                    10 STOCKF @ 105.00 USD
+    Assets:Brokers:Bar                    10 STOCKG @ 106.00 USD
+    Assets:Brokers:Bar                    10 STOCKH @ 107.00 USD
+    Assets:Brokers:Bar                    10 STOCKI @ 108.00 USD
+    Assets:Brokers:Bar                    10 STOCKJ @ 109.00 USD
+    Assets:Brokers:Bar                    10 STOCKK @ 110.00 USD
+    Assets:Brokers:Bar                    10 STOCKL @ 111.00 USD
+    Assets:Brokers:Bar                    10 STOCKM @ 112.00 USD
+    Assets:Brokers:Bar                    10 STOCKN @ 113.00 USD
+    Assets:Brokers:Bar                    10 STOCKO @ 114.00 USD
+    Assets:Brokers:Bar                    10 STOCKP @ 115.00 USD
+    Assets:Brokers:Bar                    10 STOCKQ @ 116.00 USD
+    Assets:Brokers:Bar                    10 STOCKR @ 117.00 USD
+    Assets:Brokers:Bar                    10 STOCKS @ 118.00 USD
+    Assets:Brokers:Bar                    10 STOCKT @ 119.00 USD
+    Assets:Brokers:Bar                    10 STOCKU @ 120.00 USD
+    Assets:Brokers:Bar                    10 STOCKV @ 121.00 USD
+    Assets:Brokers:Bar                    10 STOCKW @ 122.00 USD
+    Assets:Brokers:Bar                    10 STOCKX @ 123.00 USD
+    Assets:Brokers:Bar                    10 STOCKY @ 124.00 USD
+    Assets:Brokers:Bar                    10 STOCKZ @ 125.00 USD
+    Equity:Initial
+
+2024/01/10 * Groceries
+    Expenses:Food                            85.50 CHF
+    Liabilities:Cards:Baz
+
+2024/01/12 * Train tickets
+    Expenses:Travel                         120.00 EUR
+    Liabilities:Cards:Baz
+
+2024/01/15 * Flight to Sydney
+    Expenses:Flight                       1,200.00 AUD
+    Liabilities:Cards:Baz
+
+2024/01/18 * Cash withdrawal
+    Expenses:Cash                         5,000.00 TWD
+    Assets:Banks:Foo
+
+2024/01/20 * Dinner in Tokyo
+    Expenses:Food                            8,000 JPY
+    Assets:Banks:Foo
+
+2024/01/22 * Souvenirs
+    Expenses:Travel                          45.00 USD
+    Liabilities:Cards:Baz
+
+2024/01/25 * Flight to Zurich
+    Expenses:Flight                         300.00 EUR
+    Liabilities:Cards:Baz
+
+2024/01/27 * ATM abroad
+    Expenses:Cash                           200.00 USD
+    Assets:Banks:Foo
