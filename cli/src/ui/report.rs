@@ -267,29 +267,51 @@ fn error_overlay(source_display: &str, err: &(dyn std::error::Error + 'static)) 
 mod tests {
     use super::*;
 
-    use std::collections::HashMap;
     use std::path::PathBuf;
 
     use assert_matches::assert_matches;
+    use indoc::indoc;
+    use maplit::hashmap;
     use okane_core::load::FakeFileSystem;
 
     use app::Screen;
 
-    const V1: &str = "2024/01/01 Init\n    Assets:Bank    10 USD\n    Assets:Cash    5 USD\n    Expenses:Food    3 USD\n    Equity\n";
+    const V1: &str = indoc! {"
+        2024/01/01 Init
+            Assets:Bank    10 USD
+            Assets:Cash    5 USD
+            Expenses:Food    3 USD
+            Equity
+    "};
     // V1 plus a new account sorting before all others.
-    const V2: &str = "2024/01/01 Init\n    Assets:Aaa    1 USD\n    Assets:Bank    10 USD\n    Assets:Cash    5 USD\n    Expenses:Food    3 USD\n    Equity\n";
+    const V2: &str = indoc! {"
+        2024/01/01 Init
+            Assets:Aaa    1 USD
+            Assets:Bank    10 USD
+            Assets:Cash    5 USD
+            Expenses:Food    3 USD
+            Equity
+    "};
     // V1 without Expenses:Food.
-    const V3: &str =
-        "2024/01/01 Init\n    Assets:Bank    10 USD\n    Assets:Cash    5 USD\n    Equity\n";
+    const V3: &str = indoc! {"
+        2024/01/01 Init
+            Assets:Bank    10 USD
+            Assets:Cash    5 USD
+            Equity
+    "};
     const BROKEN: &str = "@@ this is not a valid ledger file @@\n";
     // Parses fine, fails book-keeping — `ReportError::BookKeep`, whose whole
     // payload is its `Display` (no `source()` behind it).
-    const UNBALANCED: &str =
-        "2024/01/01 Groceries\n    Expenses:Food    30 CHF\n    Assets:Bank    -25 CHF\n";
+    const UNBALANCED: &str = indoc! {"
+        2024/01/01 Groceries
+            Expenses:Food    30 CHF
+            Assets:Bank    -25 CHF
+    "};
 
     fn fake_loader(content: &str) -> load::Loader<FakeFileSystem> {
-        let mut map = HashMap::new();
-        map.insert(PathBuf::from("test.ledger"), content.as_bytes().to_vec());
+        let map = hashmap! {
+            PathBuf::from("test.ledger") => content.as_bytes().to_vec(),
+        };
         load::Loader::new(
             PathBuf::from("test.ledger"),
             load::FakeFileSystem::from(map),

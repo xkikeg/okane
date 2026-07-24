@@ -230,11 +230,11 @@ pub fn load_register<'ctx>(
 mod tests {
     use super::*;
 
-    use std::collections::HashMap;
     use std::path::PathBuf;
 
     use bumpalo::Bump;
     use crossterm::event::KeyModifiers;
+    use maplit::hashmap;
     use okane_core::{load, report};
 
     use crate::ui::table::TableNav;
@@ -266,8 +266,9 @@ mod tests {
         account_name: &str,
     ) -> (report::ReportContext<'ctx>, Account<'ctx>) {
         let content = format!("2024/01/01 Init\n    {account_name}    1 USD\n    Equity\n");
-        let mut map = HashMap::new();
-        map.insert(PathBuf::from("test.ledger"), content.into_bytes());
+        let map = hashmap! {
+            PathBuf::from("test.ledger") => content.into_bytes(),
+        };
         let loader = load::Loader::new(
             PathBuf::from("test.ledger"),
             load::FakeFileSystem::from(map),
