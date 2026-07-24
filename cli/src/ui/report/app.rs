@@ -161,6 +161,11 @@ pub struct RegisterView<'ctx> {
     pub title: String,
     pub rows: Vec<RegisterRow<'ctx>>,
     pub nav: TableNav,
+    /// Cached `(amount, total)` column widths. The amounts are fixed for the
+    /// life of the view, so the renderer computes these once (scanning all
+    /// rows) on first draw and reuses them, keeping per-frame work
+    /// proportional to the viewport rather than the row count.
+    pub col_widths: Option<(u16, u16)>,
 }
 
 impl<'ctx> RegisterView<'ctx> {
@@ -173,6 +178,7 @@ impl<'ctx> RegisterView<'ctx> {
             title,
             rows,
             nav,
+            col_widths: None,
         }
     }
 }
@@ -1887,6 +1893,7 @@ mod tests {
             title: account.as_str().to_owned(),
             rows: Vec::new(),
             nav,
+            col_widths: None,
         })
     }
 

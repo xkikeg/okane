@@ -256,6 +256,7 @@ mod tests {
             title: account.as_str().to_owned(),
             rows: Vec::new(),
             nav: TableNav::new(0),
+            col_widths: None,
         })
     }
 
