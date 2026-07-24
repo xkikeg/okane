@@ -1,0 +1,24 @@
+ okane ui — many_commodities.ledger — register: Assets:Banks:Foo                
+┌──────────────────────────────────────────────────────────────────────────────┐
+│Date       Payee                                 Amount         Total         │
+│2024-01-18 Cash withdrawal                         -5000.00 TWD    1000000 JPY│
+│                                                                   5000.00 CHF│
+│                                                                  10000.00 USD│
+│                                                                   8000.00 EUR│
+│                                                                   3000.00 AUD│
+│                                                                 195000.00 TWD│
+│2024-01-20 Dinner in Tokyo                            -8000 JPY     992000 JPY│
+│                                                                   5000.00 CHF│
+│                                                                  10000.00 USD│
+│                                                                   8000.00 EUR│
+│                                                                   3000.00 AUD│
+│                                                                 195000.00 TWD│
+│2024-01-27 ATM abroad                               -200.00 USD     992000 JPY│
+│                                                                   5000.00 CHF│
+│                                                                   9800.00 USD│
+│                                                                   8000.00 EUR│
+│                                                                   3000.00 AUD│
+│                                                                 195000.00 TWD│
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+ ↑/↓ scroll · PgUp/PgDn page · g/G home/end · r reload · q/Esc back             

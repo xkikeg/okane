@@ -1,0 +1,8 @@
+Assets:Banks:Foo: 34184.92 CHF
+Assets:Brokers:Bar: 25764.25 CHF
+Equity:Initial: -60310.07 CHF
+Expenses:Cash: 314.14 CHF
+Expenses:Flight: 988.62 CHF
+Expenses:Food: 132.26 CHF
+Expenses:Travel: 153.88 CHF
+Liabilities:Cards:Baz: -1227.99 CHF
