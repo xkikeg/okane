@@ -1,0 +1,24 @@
+ okane ui — alias.ledger — register: Equity:Initial                             
+┌──────────────────────────────────────────────────────────────────────────────┐
+│Date       Payee                                         Amount     Total     │
+│2024-01-29 Transaction                                     -100 JPY   -100 JPY│
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+ ↑/↓ scroll · PgUp/PgDn page · g/G home/end · r reload · q/Esc back             

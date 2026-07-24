@@ -1,0 +1,24 @@
+ okane ui — single_commodity.ledger — register: Assets:Banks:Foo                
+┌──────────────────────────────────────────────────────────────────────────────┐
+│Date       Payee                                         Amount     Total     │
+│2024-02-20 payment                                        -1000 JPY  -1000 JPY│
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+ ↑/↓ scroll · PgUp/PgDn page · g/G home/end · r reload · q/Esc back             

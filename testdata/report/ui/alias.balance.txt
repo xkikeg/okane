@@ -1,0 +1,24 @@
+ okane ui — alias.ledger                                                        
+┌──────────────────────────────────────────────────────────────────────────────┐
+│Account                                                             Amount    │
+│Equity:Initial                                                        -100 JPY│
+│Expenses:Grocery                                                       100 JPY│
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+ ↑/↓ scroll · PgUp/PgDn page · g/G home/end · Enter register · / search · C-s is
