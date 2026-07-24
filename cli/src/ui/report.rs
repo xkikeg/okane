@@ -17,7 +17,7 @@ mod app;
 mod event;
 mod render;
 
-pub use app::{App, BalanceRow, RegisterQueryTemplate};
+pub use app::{App, RegisterQueryTemplate};
 
 use bumpalo::Bump;
 use okane_core::load;
@@ -177,27 +177,23 @@ fn build_session<'ctx, F: load::FileSystem>(
         date_range: config.date_range,
     };
     let balance = ledger.balance(ctx, &query)?.into_owned();
-    let rows: Vec<BalanceRow<'ctx>> = balance
-        .into_vec()
-        .into_iter()
-        .map(|(account, amount)| BalanceRow { account, amount })
-        .collect();
+    let tree = report::BalanceTree::create(ctx, balance)?.into_nodes();
     let template = RegisterQueryTemplate {
         conversion,
         date_range: config.date_range,
     };
-    let mut app = App::new(source_display.to_owned(), rows, template);
+    let mut app = App::with_tree(source_display.to_owned(), tree, template);
     if let Some(snapshot) = snapshot
-        && let Some((account, index)) = app.restore(snapshot)
+        && let Some((drill, title, index)) = app.restore(snapshot)
     {
         // The snapshot had the register screen open; re-query its rows
         // against the fresh data.
-        match event::load_register(&mut ledger, ctx, &app.register_template, account) {
-            Ok(rows) => app.show_register_at(account, rows, index),
+        match event::load_register(&mut ledger, ctx, &app.register_template, drill) {
+            Ok(rows) => app.show_register_at(drill, title, rows, index),
             Err(err) => {
                 app.error_toast = Some(format!(
                     "failed to load register for {}: {}",
-                    account.as_str(),
+                    title,
                     error_summary(err.as_ref())
                 ));
             }
@@ -273,7 +269,7 @@ mod tests {
     use assert_matches::assert_matches;
     use okane_core::load::FakeFileSystem;
 
-    use app::Screen;
+    use app::{Drill, Screen};
 
     const V1: &str = "2024/01/01 Init\n    Assets:Bank    10 USD\n    Assets:Cash    5 USD\n    Expenses:Food    3 USD\n    Equity\n";
     // V1 plus a new account sorting before all others.
@@ -318,7 +314,7 @@ mod tests {
     fn account_names(app: &App<'_>) -> Vec<String> {
         app.balance_rows
             .iter()
-            .map(|r| r.account.as_str().to_owned())
+            .map(|r| r.full_name.to_owned())
             .collect()
     }
 
@@ -383,9 +379,10 @@ mod tests {
                 mut ledger,
             } = build(&mut ctx, V1, None).unwrap();
             let account = ctx.account("Assets:Bank").unwrap();
+            let drill = Drill::Single(account);
             let rows =
-                event::load_register(&mut ledger, &ctx, &app.register_template, account).unwrap();
-            app.show_register(account, rows);
+                event::load_register(&mut ledger, &ctx, &app.register_template, drill).unwrap();
+            app.show_register(drill, account.as_str().to_owned(), rows);
             app.snapshot()
         };
         arena.reset();
@@ -397,7 +394,7 @@ mod tests {
         let Screen::Register(view) = &app.screen else {
             panic!("expected register screen");
         };
-        assert_eq!(view.account.as_str(), "Assets:Bank");
+        assert_eq!(view.title, "Assets:Bank");
         assert_eq!(view.rows.len(), 1);
         assert_eq!(view.nav.table_state.selected(), Some(0));
     }
@@ -412,9 +409,10 @@ mod tests {
                 mut ledger,
             } = build(&mut ctx, V1, None).unwrap();
             let account = ctx.account("Expenses:Food").unwrap();
+            let drill = Drill::Single(account);
             let rows =
-                event::load_register(&mut ledger, &ctx, &app.register_template, account).unwrap();
-            app.show_register(account, rows);
+                event::load_register(&mut ledger, &ctx, &app.register_template, drill).unwrap();
+            app.show_register(drill, account.as_str().to_owned(), rows);
             app.snapshot()
         };
         arena.reset();

@@ -1,8 +1,8 @@
 version: 2.1
 orbs:
-  rust: circleci/rust@1.8.0
+  rust: circleci/rust@2.0.0
 workflows:
   production:
     jobs:
       - rust/lint-test-build:
-          version: "1.88.0"
+          version: "1.89.0"

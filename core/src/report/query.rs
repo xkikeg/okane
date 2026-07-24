@@ -13,7 +13,7 @@ use crate::{
 };
 
 use super::{
-    account::Account,
+    account::{Account, AccountAggregate},
     balance::Balance,
     commodity::OwnedCommodity,
     context::ReportContext,
@@ -56,6 +56,8 @@ pub enum QueryError {
     CommodityConversionFailure(#[from] ConversionError),
     #[error("unsupported conversion strategy for this query")]
     UnsupportedConversionStrategy,
+    #[error("internal failure: {0}")]
+    Internal(String),
 }
 
 /// Specifies the iteration order of `register` rows.
@@ -675,16 +677,19 @@ impl<'ctx> AccountFilter<'ctx> {
     /// Builds a filter matching `prefix` itself and every account nested
     /// under it — accounts which are equal to `prefix`, or their name starting with
     /// `"{prefix}:"`.
-    pub fn descendants_of(ctx: &ReportContext<'ctx>, prefix: Account<'ctx>) -> Self {
+    pub fn descendants_of(ctx: &ReportContext<'ctx>, prefix: AccountAggregate<'ctx>) -> Self {
         let mut matched: HashSet<Account<'ctx>> = HashSet::new();
+        let prefix_account = match prefix {
+            AccountAggregate::Account(account) => Some(account),
+            AccountAggregate::Ancestor(_) => None,
+        };
         for account in ctx.all_accounts_unsorted() {
             let name = account.as_str();
-            let is_self = account == prefix;
             let is_descendant = name
                 .strip_prefix(prefix.as_str())
                 .map(|rest| rest.starts_with(':'))
                 .unwrap_or(false);
-            if is_self || is_descendant {
+            if Some(account) == prefix_account || is_descendant {
                 matched.insert(account);
             }
         }
@@ -1595,13 +1600,31 @@ mod tests {
         }
 
         #[test]
+        fn descendants_of_ancestor_prefix_matches_subtree() {
+            let arena = Bump::new();
+            let (ctx, _ledger) = create_ledger(&arena);
+
+            // "Assets" only exists as an ancestor prefix; its whole subtree matches.
+            let assets =
+                AccountAggregate::Ancestor(ctx.account_tree.resolve_prefix("Assets").unwrap());
+            let filter = AccountFilter::descendants_of(&ctx, assets);
+            assert_matches!(filter, AccountFilter::Set(s) => {
+                assert_eq!(s, hashset![
+                    ctx.account("Assets:CH Bank").unwrap(),
+                    ctx.account("Assets:Broker").unwrap(),
+                    ctx.account("Assets:J 銀行:普通").unwrap(),
+                ]);
+            });
+        }
+
+        #[test]
         fn descendants_of_leaf_collapses_to_exact() {
             let arena = Bump::new();
             let (ctx, _ledger) = create_ledger(&arena);
 
             // A leaf account has no descendants, so the filter is just itself.
             let broker = ctx.account("Assets:Broker").unwrap();
-            let filter = AccountFilter::descendants_of(&ctx, broker);
+            let filter = AccountFilter::descendants_of(&ctx, broker.into());
             assert_matches!(filter, AccountFilter::Exact(a) if a == broker);
         }
 
@@ -1611,7 +1634,7 @@ mod tests {
             let (ctx, _ledger) = create_ledger(&arena);
 
             let food = ctx.account("Expenses:Food").unwrap();
-            let filter = AccountFilter::descendants_of(&ctx, food);
+            let filter = AccountFilter::descendants_of(&ctx, food.into());
             assert_matches!(filter, AccountFilter::Set(s) => {
                 assert_eq!(s, hashset![
                     ctx.account("Expenses:Food").unwrap(),

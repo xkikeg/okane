@@ -44,18 +44,18 @@ impl<'ctx> FromIterator<(Account<'ctx>, Amount<'ctx>)> for Balance<'ctx> {
     where
         T: IntoIterator<Item = (Account<'ctx>, Amount<'ctx>)>,
     {
-        Self {
-            accounts: iter.into_iter().collect(),
+        let iter = iter.into_iter();
+        let mut value = Self {
+            accounts: HashMap::with_capacity(iter.size_hint().0),
+        };
+        for (account, amount) in iter {
+            value.add_amount(account, amount);
         }
+        value
     }
 }
 
 impl<'ctx> Balance<'ctx> {
-    /// Constructs an instance directly from the map.
-    pub fn from_map(values: HashMap<Account<'ctx>, Amount<'ctx>>) -> Self {
-        Self { accounts: values }
-    }
-
     /// Converts into the underlying [`HashMap`].
     pub fn into_map(self) -> HashMap<Account<'ctx>, Amount<'ctx>> {
         self.accounts
@@ -156,7 +156,7 @@ mod tests {
     use super::super::context::ReportContext;
 
     #[test]
-    fn to_from_map() {
+    fn from_iter_to_map_round_trip() {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
         let expenses = ctx.accounts.ensure("Expenses");
@@ -171,7 +171,7 @@ mod tests {
                 ]),
         };
 
-        let b = Balance::from_map(m.clone());
+        let b = Balance::from_iter(m.clone());
         assert_eq!(
             b.get(expenses),
             Some(&Amount::from_value(ctx.commodities.ensure("JPY"), dec!(10)))
@@ -180,6 +180,34 @@ mod tests {
         let m2 = b.into_map();
 
         assert_eq!(m, m2);
+    }
+
+    #[test]
+    fn from_iter_removes_zero_valued_commodity() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let expenses = ctx.accounts.ensure("Expenses");
+        let income = ctx.accounts.ensure("Income");
+        let chf = ctx.commodities.ensure("CHF");
+
+        let b = Balance::from_iter(hashmap! {
+            expenses =>
+                Amount::from_value(ctx.commodities.ensure("JPY"), Decimal::ZERO),
+            income =>
+                Amount::from_iter([
+                (chf, dec!(15)),
+                    (ctx.commodities.ensure("USD"), dec!(0)),
+                ]),
+        });
+
+        let m2 = b.into_map();
+        assert_eq!(
+            m2,
+            hashmap! {
+                income => Amount::from_value(chf, dec!(15)),
+                expenses => Amount::zero(),
+            }
+        );
     }
 
     #[test]
@@ -193,7 +221,7 @@ mod tests {
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
 
-        let balance = Balance::from_map(hashmap! {
+        let balance = Balance::from_iter(hashmap! {
             ctx.accounts.ensure("Expenses") =>
                 Amount::from_value(ctx.commodities.ensure("JPY"), Decimal::ZERO),
         });

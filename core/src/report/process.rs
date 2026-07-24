@@ -44,6 +44,7 @@ where
             )
         })
     })?;
+    ctx.account_tree.construct(&ctx.accounts);
     if let Some(price_db_path) = options.price_db_path.as_deref() {
         accum
             .price_repos

@@ -13,16 +13,16 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table};
+use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState};
 use unicode_width::UnicodeWidthStr;
 
 use super::app::{
-    App, BalanceRow, ErrorPopup, Overlay, RegisterRow, RegisterView, Screen, Search,
+    App, BalanceRow, DisplayMode, ErrorPopup, Overlay, RegisterRow, RegisterView, Screen, Search,
     SearchDirection, SearchMatch, SearchMode, SearchPhase,
 };
-use crate::ui::table::TableNav;
+use crate::ui::table::{TableNav, visible_window};
 
-const FOOTER_HINT_BALANCE: &str = " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · Enter register · / search · C-s isearch · r reload · q quit ";
+const FOOTER_HINT_BALANCE: &str = " ↑/↓ scroll · Enter register · t tree · space fold · x fold-all · / search · r reload · q quit ";
 const FOOTER_HINT_REGISTER: &str =
     " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · r reload · q/Esc back ";
 const ERROR_POPUP_HINT: &str =
@@ -53,6 +53,7 @@ pub fn draw<'ctx>(frame: &mut Frame, app: &mut App<'ctx>, ctx: &ReportContext<'c
                 &mut app.balance_nav,
                 matches,
                 ctx,
+                app.mode,
             );
             match (&app.error_toast, &app.search) {
                 (Some(msg), _) => draw_error(frame, layout[2], msg),
@@ -81,8 +82,7 @@ fn draw_title(frame: &mut Frame, area: Rect, app: &App<'_>) {
         Screen::Balance => format!(" okane ui — {} ", app.source_display),
         Screen::Register(view) => format!(
             " okane ui — {} — register: {} ",
-            app.source_display,
-            view.account.as_str()
+            app.source_display, view.title
         ),
     };
     let paragraph =
@@ -97,6 +97,7 @@ fn draw_balance_body<'ctx>(
     nav: &mut TableNav,
     matches: Option<&SearchMatch>,
     ctx: &ReportContext<'ctx>,
+    mode: DisplayMode,
 ) {
     let block = Block::default().borders(Borders::ALL);
     let inner = block.inner(area);
@@ -123,7 +124,7 @@ fn draw_balance_body<'ctx>(
         .zip(formatted.iter())
         .enumerate()
         .map(|(i, (row, lines))| {
-            make_balance_row(row, lines, matches.is_some_and(|m| m.contains_row(i)))
+            make_balance_row(row, lines, matches.is_some_and(|m| m.contains_row(i)), mode)
         })
         .collect();
 
@@ -164,21 +165,54 @@ fn draw_register_body<'ctx>(
     ])
     .style(Style::default().add_modifier(Modifier::BOLD));
 
-    let amount_lines: Vec<Vec<String>> = view
-        .rows
+    // The amount/total column widths are fixed for the life of the view, so
+    // compute them once (scanning all rows) and cache them. Everything else
+    // below only touches the visible window, keeping per-frame work
+    // proportional to the viewport rather than the (potentially huge) row
+    // count of a subtree register.
+    if view.col_widths.is_none() {
+        let amount_width = compute_amount_width(
+            &view
+                .rows
+                .iter()
+                .map(|row| format_amount_lines(&row.amount, ctx))
+                .collect::<Vec<_>>(),
+        );
+        let total_width = compute_amount_width(
+            &view
+                .rows
+                .iter()
+                .map(|row| format_amount_lines(&row.total, ctx))
+                .collect::<Vec<_>>(),
+        );
+        view.col_widths = Some((amount_width, total_width));
+    }
+    let (amount_width, total_width) = view.col_widths.expect("just populated above");
+
+    // Virtualize: build widget rows only for the slice that is actually
+    // visible. The absolute selection stays in `nav.table_state`; the local
+    // `TableState` below carries the viewport-relative position for rendering.
+    let selected = view.nav.table_state.selected().unwrap_or(0);
+    let (offset, end) = visible_window(
+        selected,
+        view.nav.offset,
+        view.nav.viewport_height,
+        view.rows.len(),
+        |i| view.rows[i].line_count(),
+    );
+    view.nav.offset = offset;
+
+    let visible = &view.rows[offset..end];
+    let amount_lines: Vec<Vec<String>> = visible
         .iter()
         .map(|row| format_amount_lines(&row.amount, ctx))
         .collect();
-    let total_lines: Vec<Vec<String>> = view
-        .rows
+    let total_lines: Vec<Vec<String>> = visible
         .iter()
         .map(|row| format_amount_lines(&row.total, ctx))
         .collect();
-    let amount_width = compute_amount_width(&amount_lines);
-    let total_width = compute_amount_width(&total_lines);
 
-    let table_rows: Vec<Row> = view
-        .rows
+    let table_rows: Vec<Row> = visible
         .iter()
         .zip(amount_lines.iter())
         .zip(total_lines.iter())
@@ -198,7 +232,10 @@ fn draw_register_body<'ctx>(
     .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED))
     .block(block);
 
-    frame.render_stateful_widget(table, area, &mut view.nav.table_state);
+    let mut state = TableState::default()
+        .with_offset(0)
+        .with_selected(Some(selected - offset));
+    frame.render_stateful_widget(table, area, &mut state);
 }
 
 fn draw_footer(frame: &mut Frame, area: Rect, hint: &str) {
@@ -375,9 +412,14 @@ fn format_amount_lines<'ctx>(amount: &Amount<'ctx>, ctx: &ReportContext<'ctx>) -
     lines
 }
 
-fn make_balance_row<'r>(row: &'r BalanceRow<'_>, lines: &'r [String], is_match: bool) -> Row<'r> {
+fn make_balance_row<'r>(
+    row: &'r BalanceRow<'_>,
+    lines: &'r [String],
+    is_match: bool,
+    mode: DisplayMode,
+) -> Row<'r> {
     let height = row.line_count();
-    let mut account_cell = Cell::from(row.account.as_str());
+    let mut account_cell = Cell::from(account_cell_text(row, mode));
     if is_match {
         account_cell = account_cell.style(
             Style::default()
@@ -387,6 +429,23 @@ fn make_balance_row<'r>(row: &'r BalanceRow<'_>, lines: &'r [String], is_match: 
     }
     let amount_cell = Cell::from(amount_text(lines));
     Row::new(vec![account_cell, amount_cell]).height(height)
+}
+
+/// Account-column text for a balance row: the full name in flat mode, or the
+/// depth-indented leaf label with a fold marker in the gutter in tree mode.
+fn account_cell_text(row: &BalanceRow<'_>, mode: DisplayMode) -> String {
+    match mode {
+        DisplayMode::Flat => row.label.to_owned(),
+        DisplayMode::Tree => {
+            let indent = "  ".repeat(usize::from(row.depth.saturating_sub(1)));
+            let marker = if row.has_children {
+                if row.folded { "▸" } else { "▾" }
+            } else {
+                " "
+            };
+            format!("{indent}{marker} {}", row.label)
+        }
+    }
 }
 
 fn make_register_row<'r>(
@@ -643,6 +702,91 @@ mod tests {
         assert!(
             !found_escape_byte,
             "escape bytes should be consumed by the parser, not rendered as glyphs"
+        );
+    }
+
+    /// Renders `app` into a `width`×`height` headless terminal, plain text.
+    fn render_sized<'ctx>(
+        app: &mut App<'ctx>,
+        ctx: &ReportContext<'ctx>,
+        width: u16,
+        height: u16,
+    ) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(frame, app, ctx)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let mut s = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                s.push_str(buf[Position { x, y }].symbol());
+            }
+            s.push('\n');
+        }
+        s
+    }
+
+    /// A register view backed by `n` real entries against one account, plus the
+    /// context that keeps its arena references alive.
+    fn register_app_with_rows<'ctx>(arena: &'ctx Bump, n: usize) -> (ReportContext<'ctx>, App<'ctx>) {
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        use okane_core::report::query::DateRange;
+        use okane_core::{load, report};
+
+        // Same date for every entry (distinct payees are what we assert on), so
+        // we don't have to worry about month/day arithmetic.
+        let mut content = String::new();
+        for i in 0..n {
+            content.push_str(&format!(
+                "2024/01/01 Payee{i:02}\n    Assets:Cash    1 USD\n    Equity\n\n"
+            ));
+        }
+        let mut map = HashMap::new();
+        map.insert(PathBuf::from("test.ledger"), content.into_bytes());
+        let loader =
+            load::Loader::new(PathBuf::from("test.ledger"), load::FakeFileSystem::from(map));
+        let mut ctx = ReportContext::new(arena);
+        let mut ledger =
+            report::process(&mut ctx, loader, &report::ProcessOptions::default()).unwrap();
+        let account = ctx.account("Assets:Cash").unwrap();
+        let template = RegisterQueryTemplate {
+            conversion: None,
+            date_range: DateRange::default(),
+        };
+        let drill = super::super::app::Drill::Single(account);
+        let rows =
+            super::super::event::load_register(&mut ledger, &ctx, &template, drill).unwrap();
+        assert_eq!(rows.len(), n);
+        let mut app = App::new("test.ledger".to_owned(), Vec::new(), template);
+        app.show_register(drill, "Assets:Cash".to_owned(), rows);
+        (ctx, app)
+    }
+
+    /// A register far longer than the viewport renders only a window: it opens
+    /// on the last entry (bottom pinned) and scrolls to the top on `g`, showing
+    /// entries at the far end but not the other.
+    #[test]
+    fn register_renders_only_the_visible_window() {
+        let arena = Bump::new();
+        let (ctx, mut app) = register_app_with_rows(&arena, 50);
+
+        // Opens pinned to the last entry.
+        let bottom = render_sized(&mut app, &ctx, 80, 10);
+        assert!(bottom.contains("Payee49"), "last entry should be visible");
+        assert!(
+            !bottom.contains("Payee00"),
+            "first entry should be scrolled off:\n{bottom}"
+        );
+
+        // Jump to the top: now the first entries show and the last are gone.
+        app.update(Message::SelectFirst);
+        let top = render_sized(&mut app, &ctx, 80, 10);
+        assert!(top.contains("Payee00"), "first entry should be visible");
+        assert!(
+            !top.contains("Payee49"),
+            "last entry should be scrolled off:\n{top}"
         );
     }
 }
