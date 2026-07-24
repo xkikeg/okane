@@ -323,6 +323,7 @@ mod tests {
             account,
             rows: Vec::new(),
             nav: TableNav::new(0),
+            col_widths: None,
         });
         assert_eq!(
             key_to_message(&app, key(KeyCode::Char('q'))),
@@ -343,6 +344,7 @@ mod tests {
             account,
             rows: Vec::new(),
             nav: TableNav::new(0),
+            col_widths: None,
         });
         assert_eq!(key_to_message(&app, key(KeyCode::Enter)), None);
     }
@@ -366,6 +368,7 @@ mod tests {
             account,
             rows: Vec::new(),
             nav: TableNav::new(0),
+            col_widths: None,
         });
         assert_eq!(
             key_to_message(&app, ctrl_key('c')),
@@ -659,6 +662,7 @@ mod tests {
             account,
             rows: Vec::new(),
             nav: TableNav::new(0),
+            col_widths: None,
         });
         assert_eq!(
             key_to_message(&app, key(KeyCode::Char('r'))),
