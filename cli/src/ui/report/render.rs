@@ -428,7 +428,7 @@ fn display_width(s: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use bumpalo::Bump;
     use okane_core::report::query::DateRange;
@@ -436,6 +436,7 @@ mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::layout::Position;
+    use rstest::rstest;
     use rust_decimal_macros::dec;
 
     use super::super::app::{Message, RegisterQueryTemplate, ScrollDelta};
@@ -546,8 +547,18 @@ mod tests {
         let buf = terminal.backend().buffer().clone();
         let mut s = String::new();
         for y in 0..buf.area.height {
-            for x in 0..buf.area.width {
-                s.push_str(buf[Position { x, y }].symbol());
+            let mut x = 0;
+            while x < buf.area.width {
+                let sym = buf[Position { x, y }].symbol();
+                s.push_str(sym);
+                // A double-width (CJK) glyph already spans two columns; ratatui
+                // stores it in one cell and blanks the following continuation
+                // cell. Skip that placeholder so the dumped text lines up the
+                // same way the real terminal draws it. This must use the plain
+                // (non-CJK) width — the one ratatui used to lay the glyph out —
+                // so East-Asian *ambiguous* cells (│, ─, ·, ↑) that occupy a
+                // single cell are not mistaken for wide glyphs.
+                x += max(UnicodeWidthStr::width(sym) as u16,1);
             }
             s.push('\n');
         }
@@ -644,5 +655,117 @@ mod tests {
             !found_escape_byte,
             "escape bytes should be consumed by the parser, not rendered as glyphs"
         );
+    }
+
+    fn template<'ctx>() -> RegisterQueryTemplate<'ctx> {
+        RegisterQueryTemplate {
+            conversion: None,
+            date_range: DateRange::default(),
+        }
+    }
+
+    /// Loads a `testdata/report/*.ledger` fixture from disk and returns the
+    /// report context together with its processed `Ledger`, ready to query —
+    /// via the same [`load::new_loader`] production path the CLI uses.
+    fn session_from_file<'ctx>(
+        arena: &'ctx Bump,
+        input: &Path,
+    ) -> (ReportContext<'ctx>, okane_core::report::query::Ledger<'ctx>) {
+        use okane_core::{load, report};
+
+        let loader = load::new_loader(input.to_path_buf());
+        let mut ctx = ReportContext::new(arena);
+        let ledger = report::process(&mut ctx, loader, &report::ProcessOptions::default()).unwrap();
+        (ctx, ledger)
+    }
+
+    /// The file name (e.g. `multi_commodity.ledger`) shown in the title bar.
+    fn source_display(input: &Path) -> String {
+        input.file_name().unwrap().to_string_lossy().into_owned()
+    }
+
+    /// The golden slug for `input` under `testdata/report/ui/`, e.g.
+    /// `multi_commodity.balance`.
+    fn golden_name(input: &Path, report: &str) -> String {
+        format!("{}.{report}", input.file_stem().unwrap().to_string_lossy())
+    }
+
+    /// The balance screen backed by `input`'s real computed balances, built the
+    /// same way [`super::super::run_ui`] does.
+    fn balance_app<'ctx>(arena: &'ctx Bump, input: &Path) -> (ReportContext<'ctx>, App<'ctx>) {
+        use okane_core::report::query::{AccountFilter, BalanceQuery};
+
+        let (ctx, mut ledger) = session_from_file(arena, input);
+        let query = BalanceQuery {
+            account: AccountFilter::All,
+            conversion: None,
+            date_range: DateRange::default(),
+        };
+        let rows: Vec<BalanceRow> = ledger
+            .balance(&ctx, &query)
+            .unwrap()
+            .into_owned()
+            .into_vec()
+            .into_iter()
+            .map(|(account, amount)| BalanceRow { account, amount })
+            .collect();
+        let app = App::new(source_display(input), rows, template());
+        (ctx, app)
+    }
+
+    /// The register screen for `input`, drilled into its first account (sorted
+    /// order — deterministic and present in every fixture), its rows loaded
+    /// through the production query path.
+    fn register_app<'ctx>(arena: &'ctx Bump, input: &Path) -> (ReportContext<'ctx>, App<'ctx>) {
+        use okane_core::report::query::{AccountFilter, BalanceQuery};
+
+        let (ctx, mut ledger) = session_from_file(arena, input);
+        let query = BalanceQuery {
+            account: AccountFilter::All,
+            conversion: None,
+            date_range: DateRange::default(),
+        };
+        let account = ledger
+            .balance(&ctx, &query)
+            .unwrap()
+            .into_owned()
+            .into_vec()
+            .into_iter()
+            .next()
+            .map(|(account, _)| account)
+            .expect("fixture ledger has at least one account");
+        let rows =
+            super::super::event::load_register(&mut ledger, &ctx, &template(), account).unwrap();
+        let mut app = App::new(source_display(input), Vec::new(), template());
+        app.show_register(account, rows);
+        (ctx, app)
+    }
+
+    /// The default balance screen for every fixture ledger: a flat list of
+    /// every account with its balance, the title bar, and the balance footer
+    /// hints.
+    #[rstest]
+    fn render_balance(
+        #[base_dir = "../testdata/report"]
+        #[files("*.ledger")]
+        input: PathBuf,
+    ) {
+        let arena = Bump::new();
+        let (ctx, mut app) = balance_app(&arena, &input);
+        golden(&golden_name(&input, "balance")).assert(&render(&mut app, &ctx));
+    }
+
+    /// The register drill-down for every fixture ledger: dated rows with
+    /// per-entry amount and running total for one account, plus the register
+    /// footer hints.
+    #[rstest]
+    fn render_register(
+        #[base_dir = "../testdata/report"]
+        #[files("*.ledger")]
+        input: PathBuf,
+    ) {
+        let arena = Bump::new();
+        let (ctx, mut app) = register_app(&arena, &input);
+        golden(&golden_name(&input, "register")).assert(&render(&mut app, &ctx));
     }
 }
