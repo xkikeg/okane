@@ -801,11 +801,11 @@ fn restore_index(prev_name: &str, rows: &[BalanceRow<'_>]) -> Option<usize> {
 mod tests {
     use super::*;
 
-    use std::collections::HashMap;
     use std::path::PathBuf;
 
     use assert_matches::assert_matches;
     use bumpalo::Bump;
+    use maplit::hashmap;
     use okane_core::report::ReportContext;
     use okane_core::{load, report};
     use rust_decimal_macros::dec;
@@ -837,8 +837,9 @@ mod tests {
         account_name: &str,
     ) -> (ReportContext<'ctx>, Account<'ctx>) {
         let content = format!("2024/01/01 Init\n    {account_name}    100 USD\n    Equity\n");
-        let mut map = HashMap::new();
-        map.insert(PathBuf::from("test.ledger"), content.into_bytes());
+        let map = hashmap! {
+            PathBuf::from("test.ledger") => content.into_bytes(),
+        };
         let loader = load::Loader::new(
             PathBuf::from("test.ledger"),
             load::FakeFileSystem::from(map),
@@ -861,8 +862,9 @@ mod tests {
             content.push_str(&format!("    {name}    1 USD\n"));
         }
         content.push_str("    Equity\n");
-        let mut map = HashMap::new();
-        map.insert(PathBuf::from("test.ledger"), content.into_bytes());
+        let map = hashmap! {
+            PathBuf::from("test.ledger") => content.into_bytes(),
+        };
         let loader = load::Loader::new(
             PathBuf::from("test.ledger"),
             load::FakeFileSystem::from(map),
