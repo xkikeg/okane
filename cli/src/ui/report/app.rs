@@ -76,6 +76,11 @@ pub struct RegisterView<'ctx> {
     pub account: Account<'ctx>,
     pub rows: Vec<RegisterRow<'ctx>>,
     pub nav: TableNav,
+    /// Cached `(amount, total)` column widths. The amounts are fixed for the
+    /// life of the view, so the renderer computes these once (scanning all
+    /// rows) on first draw and reuses them, keeping per-frame work
+    /// proportional to the viewport rather than the row count.
+    pub col_widths: Option<(u16, u16)>,
 }
 
 impl<'ctx> RegisterView<'ctx> {
@@ -83,7 +88,12 @@ impl<'ctx> RegisterView<'ctx> {
         let mut nav = TableNav::new(rows.len());
         // Most recent entry is the most useful starting point.
         nav.select_last();
-        Self { account, rows, nav }
+        Self {
+            account,
+            rows,
+            nav,
+            col_widths: None,
+        }
     }
 }
 
@@ -1496,6 +1506,7 @@ mod tests {
             account,
             rows: Vec::new(),
             nav: TableNav::new(0),
+            col_widths: None,
         });
         app.update(Message::LeaveRegister);
         assert!(matches!(app.screen, Screen::Balance));
@@ -1647,6 +1658,7 @@ mod tests {
             account,
             rows: Vec::new(),
             nav,
+            col_widths: None,
         });
         let snapshot = app.snapshot();
 
@@ -1668,6 +1680,7 @@ mod tests {
             account,
             rows: Vec::new(),
             nav: TableNav::new(0),
+            col_widths: None,
         });
         let snapshot = app.snapshot();
 
@@ -1714,6 +1727,7 @@ mod tests {
             account,
             rows: Vec::new(),
             nav: TableNav::new(0),
+            col_widths: None,
         });
         assert!(app.update(Message::RequestQuit).is_none());
         // From register, q/Esc leaves to balance (mapped at the event layer)
