@@ -40,8 +40,12 @@ pub(super) fn process<'ctx>(
     content: &str,
 ) -> (ReportContext<'ctx>, Ledger<'ctx>) {
     let mut ctx = ReportContext::new(arena);
-    let ledger = report::process(&mut ctx, fake_loader(content), &report::ProcessOptions::default())
-        .expect("test ledger should process");
+    let ledger = report::process(
+        &mut ctx,
+        fake_loader(content),
+        &report::ProcessOptions::default(),
+    )
+    .expect("test ledger should process");
     (ctx, ledger)
 }
 
