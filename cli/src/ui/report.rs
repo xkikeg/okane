@@ -275,7 +275,8 @@ mod tests {
     use indoc::indoc;
     use okane_core::load::FakeFileSystem;
 
-    use register::{RegisterScope, Screen};
+    use app::Screen;
+    use register::RegisterScope;
     use testing::fake_loader;
 
     const V1: &str = indoc! {"

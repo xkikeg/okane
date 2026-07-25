@@ -16,10 +16,10 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState};
 use unicode_width::UnicodeWidthStr;
 
-use super::app::App;
+use super::app::{App, Screen};
 use super::balance::{BalanceRow, DisplayMode};
 use super::overlay::{ErrorPopup, Overlay};
-use super::register::{RegisterRow, RegisterView, Screen};
+use super::register::{RegisterRow, RegisterView};
 use super::search::{Search, SearchDirection, SearchMatch, SearchMode, SearchPhase};
 use crate::ui::table::TableNav;
 
@@ -491,6 +491,8 @@ fn display_width(s: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::path::{Path, PathBuf};
 
     use bumpalo::Bump;
@@ -507,7 +509,6 @@ mod tests {
     use super::super::overlay::ScrollDelta;
     use super::super::register::{RegisterMessage, RegisterQueryTemplate};
     use super::super::testing::template;
-    use super::*;
     use crate::ui::table::NavCommand;
 
     #[test]
@@ -963,8 +964,7 @@ mod tests {
             date_range: DateRange::default(),
         };
         let scope = super::super::register::RegisterScope::Single(account);
-        let rows =
-            super::super::event::load_register(&mut ledger, &ctx, &template, scope).unwrap();
+        let rows = super::super::event::load_register(&mut ledger, &ctx, &template, scope).unwrap();
         assert_eq!(rows.len(), n);
         let mut app = App::new("test.ledger".to_owned(), Vec::new(), template);
         app.show_register(scope, rows);

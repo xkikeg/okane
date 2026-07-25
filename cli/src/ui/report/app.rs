@@ -20,8 +20,15 @@ use super::balance::{BalanceAction, BalanceMessage, BalanceSnapshot, BalanceView
 use super::overlay::{Overlay, ScrollDelta};
 use super::register::{
     RegisterAction, RegisterMessage, RegisterQueryTemplate, RegisterRow, RegisterScope,
-    RegisterSnapshot, RegisterView, Screen,
+    RegisterSnapshot, RegisterView,
 };
+
+/// Top-level screen the user is currently looking at.
+#[derive(Debug)]
+pub enum Screen<'ctx> {
+    Balance,
+    Register(RegisterView<'ctx>),
+}
 
 /// Messages that drive state transitions (Elm-style).
 ///

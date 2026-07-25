@@ -1,5 +1,4 @@
-//! Register drill-down screen: its rows, the scope it is filtered to, and the
-//! [`Screen`] focus enum that selects between the balance and register views.
+//! Register drill-down screen: its rows and the scope it is filtered to.
 
 use std::cmp::max;
 
@@ -149,13 +148,6 @@ impl<'ctx> RegisterView<'ctx> {
     }
 }
 
-/// Top-level screen the user is currently looking at.
-#[derive(Debug)]
-pub enum Screen<'ctx> {
-    Balance,
-    Register(RegisterView<'ctx>),
-}
-
 /// Messages handled by the register drill-down screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegisterMessage {
@@ -260,7 +252,10 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, account) = make_account(&arena, "Assets:A");
         let mut view = register_view(account, 1);
-        assert_eq!(view.update(RegisterMessage::Leave), Some(RegisterAction::Leave));
+        assert_eq!(
+            view.update(RegisterMessage::Leave),
+            Some(RegisterAction::Leave)
+        );
     }
 
     #[test]
