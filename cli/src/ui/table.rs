@@ -1,4 +1,4 @@
-use std::cmp::max;
+use std::cmp::{max, min};
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::widgets::TableState;
@@ -182,48 +182,47 @@ fn visible_window(
     if row_count == 0 {
         return (0, 0);
     }
-    let budget = u32::from(viewport_height);
+    let budget = viewport_height;
     // The window never starts below the selection; a selection above the
     // previous offset pulls the window up to it (selection at the top).
-    let offset = prev_offset.min(selected);
-    let end = fill_from(offset, budget, row_count, &height_of);
+    let offset = min(prev_offset, selected);
+    let end = fill_forward(offset, budget, row_count, &height_of);
     if selected < end {
         return (offset, end);
     }
     // Selection sits below the window: pin it to the bottom by walking up from
     // it, accumulating heights until the viewport is full.
-    let mut offset = selected;
-    let mut used = u32::from(height_of(selected));
-    while offset > 0 {
-        let h = u32::from(height_of(offset - 1));
-        if used + h > budget {
-            break;
-        }
-        used += h;
-        offset -= 1;
-    }
-    (offset, selected + 1)
+    (fill_backward(selected, budget, &height_of), selected + 1)
 }
 
-/// Largest `end` such that rows `[start, end)` fit within `budget` lines,
-/// always including at least the `start` row (even if it alone overflows).
-fn fill_from(
+/// Smallest `end` such that rows `start..end` fulfill the `budget` lines.
+fn fill_forward(
     start: usize,
-    budget: u32,
+    budget: u16,
     row_count: usize,
     height_of: &impl Fn(usize) -> u16,
 ) -> usize {
     let mut end = start;
-    let mut used = 0u32;
-    while end < row_count {
-        let h = u32::from(height_of(end));
-        if end > start && used + h > budget {
-            break;
-        }
-        used += h;
+    let mut used = 0u16;
+    while end < row_count && used < budget {
+        used += height_of(end);
         end += 1;
     }
     end
+}
+
+/// Largest `start` such that rows `start..=last` fulfill the `budget` lines.
+fn fill_backward(last: usize, budget: u16, height_of: &impl Fn(usize) -> u16) -> usize {
+    let mut start = last;
+    let mut used = 0u16;
+    loop {
+        used += height_of(start);
+        if start == 0 || used >= budget {
+            break;
+        }
+        start -= 1;
+    }
+    start
 }
 
 #[cfg(test)]
@@ -252,7 +251,10 @@ mod tests {
         assert_eq!(key_to_nav(ctrl('n')), Some(NavCommand::Down));
         assert_eq!(key_to_nav(key(KeyCode::Up)), Some(NavCommand::Up));
         assert_eq!(key_to_nav(ctrl('p')), Some(NavCommand::Up));
-        assert_eq!(key_to_nav(key(KeyCode::PageDown)), Some(NavCommand::PageDown));
+        assert_eq!(
+            key_to_nav(key(KeyCode::PageDown)),
+            Some(NavCommand::PageDown)
+        );
         assert_eq!(key_to_nav(ctrl('f')), Some(NavCommand::PageDown));
         assert_eq!(key_to_nav(ctrl('b')), Some(NavCommand::PageUp));
         assert_eq!(key_to_nav(key(KeyCode::Home)), Some(NavCommand::First));
@@ -282,7 +284,6 @@ mod tests {
         n.apply(NavCommand::Up); // clamps at top
         assert_eq!(n.table_state.selected(), Some(0));
     }
-
 
     #[test]
     fn empty_nav_has_no_selection() {
@@ -391,9 +392,9 @@ mod tests {
     #[test]
     fn variable_heights_respect_line_budget() {
         // Rows alternate 1 and 2 lines tall. Viewport of 5 lines from offset 0:
-        // row0(1)+row1(2)+row2(1) = 4, +row3(2)=6 > 5 → stop → rows [0, 3).
+        // row0(1)+row1(2)+row2(1) = 4, +row3(2)=6 > 5 → stop → rows [0, 4).
         let heights = |i: usize| if i.is_multiple_of(2) { 1 } else { 2 };
-        assert_eq!(visible_window(0, 0, 5, 10, heights), (0, 3));
+        assert_eq!(visible_window(0, 0, 5, 10, heights), (0, 4));
     }
 
     #[test]
