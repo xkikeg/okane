@@ -5,6 +5,8 @@
 
 use std::cmp::{max, min};
 
+use crate::ui::table::NavCommand;
+
 /// A scroll request against a scrollable overlay body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollDelta {
@@ -12,6 +14,22 @@ pub enum ScrollDelta {
     Pages(i16),
     Top,
     Bottom,
+}
+
+/// The error popup reuses the table navigation keys for scrolling: a row step
+/// scrolls one line, a page step scrolls a page, and first/last jump to the
+/// ends.
+impl From<NavCommand> for ScrollDelta {
+    fn from(cmd: NavCommand) -> Self {
+        match cmd {
+            NavCommand::Up => ScrollDelta::Lines(-1),
+            NavCommand::Down => ScrollDelta::Lines(1),
+            NavCommand::PageUp => ScrollDelta::Pages(-1),
+            NavCommand::PageDown => ScrollDelta::Pages(1),
+            NavCommand::First => ScrollDelta::Top,
+            NavCommand::Last => ScrollDelta::Bottom,
+        }
+    }
 }
 
 /// Body of the error modal: a full error report the user scrolls through.

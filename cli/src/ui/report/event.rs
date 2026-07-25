@@ -18,17 +18,14 @@ use okane_core::report::query::{AccountFilter, Ledger, RegisterQuery, Sort};
 use ratatui::DefaultTerminal;
 
 use crate::ui::keys::is_ctrl;
+use crate::ui::table::key_to_nav;
 
 use super::app::{App, Command, Message};
-use super::overlay::{Overlay, ScrollDelta};
+use super::overlay::Overlay;
 use super::register::{RegisterQueryTemplate, RegisterRow, RegisterScope, RegisterView, Screen};
 use super::render;
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(250);
-
-fn scroll(delta: ScrollDelta) -> Option<Message> {
-    Some(Message::OverlayScroll(delta))
-}
 
 /// Why the event loop returned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,23 +93,16 @@ fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
                 _ => None,
             };
         }
-        // Scrolling mirrors the common navigation block below so the modal
-        // needs no new muscle memory. `r`/`F5` retry the load without a
-        // dismiss step; `q` goes straight to the quit prompt.
+        // Scrolling mirrors the table navigation keys so the modal needs no new
+        // muscle memory. `r`/`F5` retry the load without a dismiss step; `q`
+        // goes straight to the quit prompt.
         Some(Overlay::Error(_)) => {
+            if let Some(cmd) = key_to_nav(key) {
+                return Some(Message::OverlayScroll(cmd.into()));
+            }
             return match key.code {
                 KeyCode::Esc | KeyCode::Enter => Some(Message::DismissOverlay),
                 KeyCode::Char('q') => Some(Message::RequestQuit),
-                KeyCode::Up | KeyCode::Char('k') => scroll(ScrollDelta::Lines(-1)),
-                KeyCode::Char('p') if ctrl => scroll(ScrollDelta::Lines(-1)),
-                KeyCode::Down | KeyCode::Char('j') => scroll(ScrollDelta::Lines(1)),
-                KeyCode::Char('n') if ctrl => scroll(ScrollDelta::Lines(1)),
-                KeyCode::PageUp => scroll(ScrollDelta::Pages(-1)),
-                KeyCode::Char('b') if ctrl => scroll(ScrollDelta::Pages(-1)),
-                KeyCode::PageDown => scroll(ScrollDelta::Pages(1)),
-                KeyCode::Char('f') if ctrl => scroll(ScrollDelta::Pages(1)),
-                KeyCode::Home | KeyCode::Char('g') => scroll(ScrollDelta::Top),
-                KeyCode::End | KeyCode::Char('G') => scroll(ScrollDelta::Bottom),
                 KeyCode::Char('r') | KeyCode::F(5) => Some(Message::Reload),
                 _ => None,
             };
@@ -180,10 +170,10 @@ mod tests {
 
     use okane_core::report::Account;
 
-    use crate::ui::table::TableNav;
+    use crate::ui::table::{NavCommand, TableNav};
 
     use super::super::balance::BalanceMessage;
-    use super::super::overlay::ErrorPopup;
+    use super::super::overlay::{ErrorPopup, ScrollDelta};
     use super::super::register::{RegisterMessage, RegisterView};
     use super::super::search::{
         Search, SearchDirection, SearchIntent, SearchMatch, SearchMode, SearchPhase,
@@ -217,11 +207,11 @@ mod tests {
         let app = app();
         assert_eq!(
             key_to_message(&app, key(KeyCode::Down)),
-            Some(Message::Balance(BalanceMessage::MoveDown))
+            Some(Message::Balance(BalanceMessage::Nav(NavCommand::Down)))
         );
         assert_eq!(
             key_to_message(&app, key(KeyCode::Char('k'))),
-            Some(Message::Balance(BalanceMessage::MoveUp))
+            Some(Message::Balance(BalanceMessage::Nav(NavCommand::Up)))
         );
         assert_eq!(
             key_to_message(&app, key(KeyCode::Enter)),
@@ -237,7 +227,7 @@ mod tests {
         app.screen = register_screen(account);
         assert_eq!(
             key_to_message(&app, key(KeyCode::Down)),
-            Some(Message::Register(RegisterMessage::MoveDown))
+            Some(Message::Register(RegisterMessage::Nav(NavCommand::Down)))
         );
     }
 
