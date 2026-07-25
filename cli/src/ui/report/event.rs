@@ -21,7 +21,7 @@ use crate::ui::keys::is_ctrl;
 
 use super::app::{App, Command, Message};
 use super::overlay::{Overlay, ScrollDelta};
-use super::register::{RegisterQueryTemplate, RegisterRow, RegisterScope, Screen};
+use super::register::{RegisterQueryTemplate, RegisterRow, RegisterScope, RegisterView, Screen};
 use super::search::{SearchDirection, SearchMode, SearchPhase};
 use super::render;
 
@@ -121,6 +121,17 @@ fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
         None => {}
     }
 
+    // The register screen owns its keys; global keys (reload) fall through.
+    if let Screen::Register(_) = &app.screen {
+        if let Some(msg) = RegisterView::key_to_message(key) {
+            return Some(Message::Register(msg));
+        }
+        return match key.code {
+            KeyCode::Char('r') | KeyCode::F(5) => Some(Message::Reload),
+            _ => None,
+        };
+    }
+
     // Balance account-search capture. The editing phases (modal incremental,
     // interactive i-search) own every key; the modal fixed phase intercepts
     // only its own controls and lets the rest fall through so full navigation
@@ -196,7 +207,6 @@ fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
         (Screen::Balance, KeyCode::Char('x')) => Some(Message::ToggleFoldAll),
         (Screen::Balance, KeyCode::Enter) => Some(Message::OpenRegister),
         (Screen::Balance, KeyCode::Char('q') | KeyCode::Esc) => Some(Message::RequestQuit),
-        (Screen::Register(_), KeyCode::Char('q') | KeyCode::Esc) => Some(Message::LeaveRegister),
         // this needs to come here, as it should come after Ctrl-r search backward.
         (_, KeyCode::Char('r')) => Some(Message::Reload),
         _ => None,
@@ -246,7 +256,7 @@ mod tests {
     use crate::ui::table::TableNav;
 
     use super::super::overlay::ErrorPopup;
-    use super::super::register::RegisterView;
+    use super::super::register::{RegisterMessage, RegisterView};
     use super::super::search::{Search, SearchIntent, SearchMatch};
     use super::super::testing::{make_account, template};
 
@@ -308,18 +318,18 @@ mod tests {
     }
 
     #[test]
-    fn register_q_leaves_register() {
+    fn register_q_routes_to_leave() {
         let arena = Bump::new();
         let (_ctx, account) = make_account(&arena, "Assets:A");
         let mut app = app();
         app.screen = register_screen(account);
         assert_eq!(
             key_to_message(&app, key(KeyCode::Char('q'))),
-            Some(Message::LeaveRegister)
+            Some(Message::Register(RegisterMessage::Leave))
         );
         assert_eq!(
             key_to_message(&app, key(KeyCode::Esc)),
-            Some(Message::LeaveRegister)
+            Some(Message::Register(RegisterMessage::Leave))
         );
     }
 

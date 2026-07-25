@@ -21,7 +21,8 @@ use okane_core::report::BalanceTreeNode;
 use super::balance::{BalanceSnapshot, BalanceView};
 use super::overlay::{Overlay, ScrollDelta};
 use super::register::{
-    RegisterQueryTemplate, RegisterRow, RegisterScope, RegisterSnapshot, RegisterView, Screen,
+    RegisterAction, RegisterMessage, RegisterQueryTemplate, RegisterRow, RegisterScope,
+    RegisterSnapshot, RegisterView, Screen,
 };
 use super::search::{SearchDirection, SearchMode, SearchPhase};
 
@@ -43,8 +44,8 @@ pub enum Message {
     ToggleFoldAll,
     /// User asked to drill into the selected balance row.
     OpenRegister,
-    /// Leave the register view and go back to balance.
-    LeaveRegister,
+    /// A message routed to the active register screen.
+    Register(RegisterMessage),
     /// User asked to quit from balance — show the confirmation overlay.
     RequestQuit,
     /// Confirm quit from the overlay.
@@ -236,9 +237,12 @@ impl<'ctx> App<'ctx> {
                     return Some(Command::LoadRegister { scope });
                 }
             }
-            Message::LeaveRegister => {
-                if matches!(self.screen, Screen::Register(_)) {
-                    self.screen = Screen::Balance;
+            Message::Register(register_msg) => {
+                if let Screen::Register(view) = &mut self.screen {
+                    match view.update(register_msg) {
+                        Some(RegisterAction::Leave) => self.screen = Screen::Balance,
+                        None => {}
+                    }
                 }
             }
             Message::RequestQuit => {
@@ -883,7 +887,7 @@ mod tests {
         // Bypass show_register's RegisterView::new — it just needs *some*
         // register screen state to flip the enum variant.
         app.screen = register_screen(account, TableNav::new(0));
-        app.update(Message::LeaveRegister);
+        app.update(Message::Register(RegisterMessage::Leave));
         assert!(matches!(app.screen, Screen::Balance));
     }
 
