@@ -20,9 +20,9 @@ use ratatui::DefaultTerminal;
 use crate::ui::keys::is_ctrl;
 use crate::ui::table::key_to_nav;
 
-use super::app::{App, Command, Message};
+use super::app::{App, Command, Message, Screen};
 use super::overlay::Overlay;
-use super::register::{RegisterQueryTemplate, RegisterRow, RegisterScope, RegisterView, Screen};
+use super::register::{RegisterQueryTemplate, RegisterRow, RegisterScope, RegisterView};
 use super::render;
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(250);
