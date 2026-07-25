@@ -8,8 +8,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use okane_core::report::query::{Conversion, DateRange};
 use okane_core::report::{Account, AccountAggregate, Amount};
 
-use crate::ui::keys::is_ctrl;
-use crate::ui::table::TableNav;
+use crate::ui::table::{NavCommand, TableNav, key_to_nav};
 
 use super::balance::amount_line_count;
 
@@ -131,18 +130,7 @@ impl<'ctx> RegisterView<'ctx> {
     /// cross-screen transitions the view cannot perform itself.
     pub(super) fn update(&mut self, msg: RegisterMessage) -> Option<RegisterAction> {
         match msg {
-            RegisterMessage::MoveUp => self.nav.move_selection(-1),
-            RegisterMessage::MoveDown => self.nav.move_selection(1),
-            RegisterMessage::PageUp => {
-                let delta = -(self.nav.page_size() as isize);
-                self.nav.move_selection(delta);
-            }
-            RegisterMessage::PageDown => {
-                let delta = self.nav.page_size() as isize;
-                self.nav.move_selection(delta);
-            }
-            RegisterMessage::SelectFirst => self.nav.select_first(),
-            RegisterMessage::SelectLast => self.nav.select_last(),
+            RegisterMessage::Nav(cmd) => self.nav.apply(cmd),
             RegisterMessage::Leave => return Some(RegisterAction::Leave),
         }
         None
@@ -151,18 +139,10 @@ impl<'ctx> RegisterView<'ctx> {
     /// Translates a key event into a [`RegisterMessage`]. Global keys (`Ctrl-C`,
     /// reload) are left for [`super::event`], so `None` lets them fall through.
     pub(super) fn key_to_message(key: KeyEvent) -> Option<RegisterMessage> {
-        let ctrl = is_ctrl(key.modifiers);
+        if let Some(cmd) = key_to_nav(key) {
+            return Some(RegisterMessage::Nav(cmd));
+        }
         match key.code {
-            KeyCode::Up | KeyCode::Char('k') => Some(RegisterMessage::MoveUp),
-            KeyCode::Char('p') if ctrl => Some(RegisterMessage::MoveUp),
-            KeyCode::Down | KeyCode::Char('j') => Some(RegisterMessage::MoveDown),
-            KeyCode::Char('n') if ctrl => Some(RegisterMessage::MoveDown),
-            KeyCode::PageUp => Some(RegisterMessage::PageUp),
-            KeyCode::Char('b') if ctrl => Some(RegisterMessage::PageUp),
-            KeyCode::PageDown => Some(RegisterMessage::PageDown),
-            KeyCode::Char('f') if ctrl => Some(RegisterMessage::PageDown),
-            KeyCode::Home | KeyCode::Char('g') => Some(RegisterMessage::SelectFirst),
-            KeyCode::End | KeyCode::Char('G') => Some(RegisterMessage::SelectLast),
             KeyCode::Char('q') | KeyCode::Esc => Some(RegisterMessage::Leave),
             _ => None,
         }
@@ -179,12 +159,8 @@ pub enum Screen<'ctx> {
 /// Messages handled by the register drill-down screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegisterMessage {
-    MoveUp,
-    MoveDown,
-    PageUp,
-    PageDown,
-    SelectFirst,
-    SelectLast,
+    /// Move the selection within the register table.
+    Nav(NavCommand),
     /// Leave the register and return to the balance screen.
     Leave,
 }
@@ -269,13 +245,13 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, account) = make_account(&arena, "Assets:A");
         let mut view = register_view(account, 3);
-        view.update(RegisterMessage::SelectFirst);
+        view.update(RegisterMessage::Nav(NavCommand::First));
         assert_eq!(view.nav.table_state.selected(), Some(0));
-        assert_eq!(view.update(RegisterMessage::MoveUp), None);
+        assert_eq!(view.update(RegisterMessage::Nav(NavCommand::Up)), None);
         assert_eq!(view.nav.table_state.selected(), Some(0));
-        view.update(RegisterMessage::MoveDown);
+        view.update(RegisterMessage::Nav(NavCommand::Down));
         assert_eq!(view.nav.table_state.selected(), Some(1));
-        view.update(RegisterMessage::SelectLast);
+        view.update(RegisterMessage::Nav(NavCommand::Last));
         assert_eq!(view.nav.table_state.selected(), Some(2));
     }
 
@@ -291,15 +267,15 @@ mod tests {
     fn key_to_message_maps_nav_and_leave() {
         assert_eq!(
             RegisterView::key_to_message(key(KeyCode::Down)),
-            Some(RegisterMessage::MoveDown)
+            Some(RegisterMessage::Nav(NavCommand::Down))
         );
         assert_eq!(
             RegisterView::key_to_message(key(KeyCode::Char('k'))),
-            Some(RegisterMessage::MoveUp)
+            Some(RegisterMessage::Nav(NavCommand::Up))
         );
         assert_eq!(
             RegisterView::key_to_message(ctrl_key('n')),
-            Some(RegisterMessage::MoveDown)
+            Some(RegisterMessage::Nav(NavCommand::Down))
         );
         assert_eq!(
             RegisterView::key_to_message(key(KeyCode::Char('q'))),

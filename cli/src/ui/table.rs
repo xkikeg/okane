@@ -1,6 +1,43 @@
 use std::cmp::max;
 
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::widgets::TableState;
+
+use crate::ui::keys::is_ctrl;
+
+/// A navigation command over a table — the vocabulary shared by every table
+/// screen. Keeps the key bindings and the [`TableNav`] mutations in one place
+/// so each screen wraps [`NavCommand`] in its own message rather than
+/// re-deriving `move_selection`/`select_first` from scratch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NavCommand {
+    Up,
+    Down,
+    PageUp,
+    PageDown,
+    First,
+    Last,
+}
+
+/// Maps a key event to a [`NavCommand`], the navigation bindings shared by the
+/// balance and register tables (and mirrored by the error-popup scroll).
+/// Returns `None` for keys that aren't navigation.
+pub fn key_to_nav(key: KeyEvent) -> Option<NavCommand> {
+    let ctrl = is_ctrl(key.modifiers);
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k') => Some(NavCommand::Up),
+        KeyCode::Char('p') if ctrl => Some(NavCommand::Up),
+        KeyCode::Down | KeyCode::Char('j') => Some(NavCommand::Down),
+        KeyCode::Char('n') if ctrl => Some(NavCommand::Down),
+        KeyCode::PageUp => Some(NavCommand::PageUp),
+        KeyCode::Char('b') if ctrl => Some(NavCommand::PageUp),
+        KeyCode::PageDown => Some(NavCommand::PageDown),
+        KeyCode::Char('f') if ctrl => Some(NavCommand::PageDown),
+        KeyCode::Home | KeyCode::Char('g') => Some(NavCommand::First),
+        KeyCode::End | KeyCode::Char('G') => Some(NavCommand::Last),
+        _ => None,
+    }
+}
 
 /// Pure scroll/selection state for a table.
 ///
@@ -78,6 +115,24 @@ impl TableNav {
     pub fn select(&mut self, index: usize) {
         if index < self.row_count {
             self.table_state.select(Some(index));
+        }
+    }
+
+    /// Applies a [`NavCommand`].
+    pub fn apply(&mut self, cmd: NavCommand) {
+        match cmd {
+            NavCommand::Up => self.move_selection(-1),
+            NavCommand::Down => self.move_selection(1),
+            NavCommand::PageUp => {
+                let delta = -(self.page_size() as isize);
+                self.move_selection(delta);
+            }
+            NavCommand::PageDown => {
+                let delta = self.page_size() as isize;
+                self.move_selection(delta);
+            }
+            NavCommand::First => self.select_first(),
+            NavCommand::Last => self.select_last(),
         }
     }
 
@@ -175,13 +230,60 @@ fn fill_from(
 mod tests {
     use super::*;
 
+    use crossterm::event::KeyModifiers;
     use pretty_assertions::assert_eq;
 
     fn nav(n: usize) -> TableNav {
         TableNav::new(n)
     }
 
-    
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn ctrl(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+    }
+
+    #[test]
+    fn key_to_nav_maps_the_shared_bindings() {
+        assert_eq!(key_to_nav(key(KeyCode::Down)), Some(NavCommand::Down));
+        assert_eq!(key_to_nav(key(KeyCode::Char('j'))), Some(NavCommand::Down));
+        assert_eq!(key_to_nav(ctrl('n')), Some(NavCommand::Down));
+        assert_eq!(key_to_nav(key(KeyCode::Up)), Some(NavCommand::Up));
+        assert_eq!(key_to_nav(ctrl('p')), Some(NavCommand::Up));
+        assert_eq!(key_to_nav(key(KeyCode::PageDown)), Some(NavCommand::PageDown));
+        assert_eq!(key_to_nav(ctrl('f')), Some(NavCommand::PageDown));
+        assert_eq!(key_to_nav(ctrl('b')), Some(NavCommand::PageUp));
+        assert_eq!(key_to_nav(key(KeyCode::Home)), Some(NavCommand::First));
+        assert_eq!(key_to_nav(key(KeyCode::Char('g'))), Some(NavCommand::First));
+        assert_eq!(key_to_nav(key(KeyCode::Char('G'))), Some(NavCommand::Last));
+        // Non-navigation keys are left for the caller.
+        assert_eq!(key_to_nav(key(KeyCode::Char('q'))), None);
+        assert_eq!(key_to_nav(key(KeyCode::Enter)), None);
+        assert_eq!(key_to_nav(key(KeyCode::Char('f'))), None); // f without ctrl
+    }
+
+    #[test]
+    fn apply_moves_and_jumps() {
+        let mut n = nav(5);
+        n.viewport_height = 2;
+        assert_eq!(n.table_state.selected(), Some(0));
+        n.apply(NavCommand::Down);
+        assert_eq!(n.table_state.selected(), Some(1));
+        n.apply(NavCommand::PageDown); // +2
+        assert_eq!(n.table_state.selected(), Some(3));
+        n.apply(NavCommand::Last);
+        assert_eq!(n.table_state.selected(), Some(4));
+        n.apply(NavCommand::PageUp); // -2
+        assert_eq!(n.table_state.selected(), Some(2));
+        n.apply(NavCommand::First);
+        assert_eq!(n.table_state.selected(), Some(0));
+        n.apply(NavCommand::Up); // clamps at top
+        assert_eq!(n.table_state.selected(), Some(0));
+    }
+
+
     #[test]
     fn empty_nav_has_no_selection() {
         let n = nav(0);

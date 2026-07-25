@@ -271,7 +271,7 @@ mod tests {
     use chrono::NaiveDate;
     use okane_core::report::{Account, Amount, ReportContext};
 
-    use crate::ui::table::TableNav;
+    use crate::ui::table::{NavCommand, TableNav};
 
     use super::super::balance::BalanceRow;
     use super::super::overlay::ErrorPopup;
@@ -368,7 +368,7 @@ mod tests {
         // Pretend there are rows to move through by poking the nav directly.
         app.balance.nav = TableNav::new(3);
         app.update(Message::RequestQuit);
-        app.update(Message::Balance(BalanceMessage::MoveDown));
+        app.update(Message::Balance(BalanceMessage::Nav(NavCommand::Down)));
         assert_eq!(app.balance.nav.table_state.selected(), Some(0));
     }
 
@@ -401,7 +401,7 @@ mod tests {
     fn error_modal_survives_key_that_clears_footer_notice() {
         let mut app = app_with_error_modal();
         app.error_toast = Some("transient".to_owned());
-        app.update(Message::Balance(BalanceMessage::MoveDown));
+        app.update(Message::Balance(BalanceMessage::Nav(NavCommand::Down)));
         assert!(app.error_toast.is_none());
         assert_matches!(app.overlay, Some(Overlay::Error(_)));
     }
@@ -476,7 +476,7 @@ mod tests {
     fn any_key_clears_error_notice() {
         let mut app = app_no_rows();
         app.error_toast = Some("boom".to_owned());
-        app.update(Message::Balance(BalanceMessage::MoveDown));
+        app.update(Message::Balance(BalanceMessage::Nav(NavCommand::Down)));
         assert_eq!(app.error_toast, None);
     }
 

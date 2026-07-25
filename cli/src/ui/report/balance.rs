@@ -17,12 +17,10 @@ use okane_core::report::Account;
 use okane_core::report::{AccountAggregate, AccountTreeKey, Amount, BalanceTreeNode};
 
 use crate::ui::keys::is_ctrl;
-use crate::ui::table::TableNav;
+use crate::ui::table::{NavCommand, TableNav, key_to_nav};
 
 use super::register::{OwnedRegisterScope, RegisterScope};
-use super::search::{
-    Search, SearchDirection, SearchIntent, SearchMatch, SearchMode, SearchPhase,
-};
+use super::search::{Search, SearchDirection, SearchIntent, SearchMatch, SearchMode, SearchPhase};
 
 /// Whether the balance screen shows a flat account list or the account tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,12 +131,8 @@ pub struct BalanceSnapshot {
 /// Messages handled by the balance screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BalanceMessage {
-    MoveUp,
-    MoveDown,
-    PageUp,
-    PageDown,
-    SelectFirst,
-    SelectLast,
+    /// Move the selection within the balance table.
+    Nav(NavCommand),
     /// Toggle between the flat list and the account tree (`t`).
     ToggleTree,
     /// Fold/unfold the selected tree node (`space`).
@@ -255,28 +249,13 @@ impl<'ctx> BalanceView<'ctx> {
     /// cross-screen transitions the view cannot perform itself.
     pub(super) fn update(&mut self, msg: BalanceMessage) -> Option<BalanceAction<'ctx>> {
         match msg {
-            BalanceMessage::MoveUp => {
+            BalanceMessage::Nav(cmd) => {
                 self.end_interactive_search();
-                self.nav.move_selection(-1);
+                self.nav.apply(cmd);
             }
-            BalanceMessage::MoveDown => {
-                self.end_interactive_search();
-                self.nav.move_selection(1);
-            }
-            BalanceMessage::PageUp => {
-                let delta = -(self.nav.page_size() as isize);
-                self.nav.move_selection(delta);
-            }
-            BalanceMessage::PageDown => {
-                let delta = self.nav.page_size() as isize;
-                self.nav.move_selection(delta);
-            }
-            BalanceMessage::SelectFirst => self.nav.select_first(),
-            BalanceMessage::SelectLast => self.nav.select_last(),
             BalanceMessage::OpenRegister => {
                 if let Some(scope) = self.selected_scope() {
-                    // An interactive search drills in like the normal view:
-                    // end the search, keeping the cursor on the chosen account.
+                    // An interactive search terminates on the register view transition.
                     self.end_interactive_search();
                     return Some(BalanceAction::OpenRegister { scope });
                 }
@@ -340,22 +319,9 @@ impl<'ctx> BalanceView<'ctx> {
             }
         }
 
-        // Navigation.
-        let nav = match key.code {
-            KeyCode::Up | KeyCode::Char('k') => Some(BalanceMessage::MoveUp),
-            KeyCode::Char('p') if ctrl => Some(BalanceMessage::MoveUp),
-            KeyCode::Down | KeyCode::Char('j') => Some(BalanceMessage::MoveDown),
-            KeyCode::Char('n') if ctrl => Some(BalanceMessage::MoveDown),
-            KeyCode::PageUp => Some(BalanceMessage::PageUp),
-            KeyCode::Char('b') if ctrl => Some(BalanceMessage::PageUp),
-            KeyCode::PageDown => Some(BalanceMessage::PageDown),
-            KeyCode::Char('f') if ctrl => Some(BalanceMessage::PageDown),
-            KeyCode::Home | KeyCode::Char('g') => Some(BalanceMessage::SelectFirst),
-            KeyCode::End | KeyCode::Char('G') => Some(BalanceMessage::SelectLast),
-            _ => None,
-        };
-        if nav.is_some() {
-            return nav;
+        // Shared table navigation.
+        if let Some(cmd) = key_to_nav(key) {
+            return Some(BalanceMessage::Nav(cmd));
         }
 
         // Balance-specific actions.
@@ -928,8 +894,8 @@ mod tests {
     fn start_search_records_origin() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::MoveDown);
-        view.update(BalanceMessage::MoveDown);
+        view.update(BalanceMessage::Nav(NavCommand::Down));
+        view.update(BalanceMessage::Nav(NavCommand::Down));
         assert_eq!(selected(&view), Some(2));
         view.update(BalanceMessage::StartModalSearch);
         let search = view.search.as_ref().expect("search active");
@@ -946,7 +912,7 @@ mod tests {
     fn incremental_jumps_to_first_match_at_or_after_origin() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::MoveDown);
+        view.update(BalanceMessage::Nav(NavCommand::Down));
         view.update(BalanceMessage::StartModalSearch);
         for c in "assets".chars() {
             view.update(BalanceMessage::SearchPush(c));
@@ -962,7 +928,7 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
         for _ in 0..3 {
-            view.update(BalanceMessage::MoveDown);
+            view.update(BalanceMessage::Nav(NavCommand::Down));
         }
         view.update(BalanceMessage::StartModalSearch);
         for c in "assets".chars() {
@@ -1042,7 +1008,7 @@ mod tests {
     fn isearch_backward_jumps_to_last_match() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::SelectLast);
+        view.update(BalanceMessage::Nav(NavCommand::Last));
         view.update(BalanceMessage::StartISearch(SearchDirection::Backward));
         for c in "assets".chars() {
             view.update(BalanceMessage::SearchPush(c));
@@ -1074,8 +1040,8 @@ mod tests {
     fn isearch_cancel_restores_origin() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::MoveDown);
-        view.update(BalanceMessage::MoveDown);
+        view.update(BalanceMessage::Nav(NavCommand::Down));
+        view.update(BalanceMessage::Nav(NavCommand::Down));
         view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
         for c in "assets".chars() {
             view.update(BalanceMessage::SearchPush(c));
@@ -1127,7 +1093,7 @@ mod tests {
         for c in "assets".chars() {
             view.update(BalanceMessage::SearchPush(c));
         }
-        view.update(BalanceMessage::MoveDown);
+        view.update(BalanceMessage::Nav(NavCommand::Down));
         assert!(view.search.is_none());
         assert_eq!(selected(&view), Some(1));
         assert_eq!(&view.last_search, "assets");
@@ -1156,7 +1122,7 @@ mod tests {
             view.update(BalanceMessage::SearchPush(c));
         }
         view.update(BalanceMessage::SearchSubmit);
-        view.update(BalanceMessage::MoveDown);
+        view.update(BalanceMessage::Nav(NavCommand::Down));
         assert!(view.search.is_some());
     }
 
@@ -1165,7 +1131,7 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
         view.last_search = "assets".to_owned();
-        view.update(BalanceMessage::SelectLast);
+        view.update(BalanceMessage::Nav(NavCommand::Last));
         view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
         view.update(BalanceMessage::SearchPrev);
         let search = view.search.as_ref().unwrap();
@@ -1179,8 +1145,8 @@ mod tests {
     fn cancel_restores_origin() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::MoveDown);
-        view.update(BalanceMessage::MoveDown);
+        view.update(BalanceMessage::Nav(NavCommand::Down));
+        view.update(BalanceMessage::Nav(NavCommand::Down));
         view.update(BalanceMessage::StartModalSearch);
         for c in "assets".chars() {
             view.update(BalanceMessage::SearchPush(c));
@@ -1276,7 +1242,12 @@ mod tests {
         let (_ctx, view) = tree_view(&arena, TREE_LEDGER);
         assert_eq!(
             full_names(&view),
-            ["Assets:Bank:Checking", "Assets:Cash", "Equity", "Expenses:Food"]
+            [
+                "Assets:Bank:Checking",
+                "Assets:Cash",
+                "Equity",
+                "Expenses:Food"
+            ]
         );
     }
 
@@ -1302,7 +1273,9 @@ mod tests {
         );
         assert_eq!(
             row_labels(&view),
-            ["Assets", "Bank", "Checking", "Cash", "Equity", "Expenses", "Food"]
+            [
+                "Assets", "Bank", "Checking", "Cash", "Equity", "Expenses", "Food"
+            ]
         );
         assert_eq!(view.rows[0].depth, 1);
         assert!(view.rows[0].has_children);
@@ -1402,19 +1375,19 @@ mod tests {
         let (_ctx, view) = view_from_names(&arena, ACCOUNTS);
         assert_eq!(
             view.key_to_message(key(KeyCode::Down)),
-            Some(BalanceMessage::MoveDown)
+            Some(BalanceMessage::Nav(NavCommand::Down))
         );
         assert_eq!(
             view.key_to_message(key(KeyCode::Char('k'))),
-            Some(BalanceMessage::MoveUp)
+            Some(BalanceMessage::Nav(NavCommand::Up))
         );
         assert_eq!(
             view.key_to_message(ctrl_key('n')),
-            Some(BalanceMessage::MoveDown)
+            Some(BalanceMessage::Nav(NavCommand::Down))
         );
         assert_eq!(
             view.key_to_message(ctrl_key('p')),
-            Some(BalanceMessage::MoveUp)
+            Some(BalanceMessage::Nav(NavCommand::Up))
         );
     }
 
@@ -1505,7 +1478,7 @@ mod tests {
         // Everything else falls through to normal navigation / drill-in.
         assert_eq!(
             view.key_to_message(key(KeyCode::Char('j'))),
-            Some(BalanceMessage::MoveDown)
+            Some(BalanceMessage::Nav(NavCommand::Down))
         );
         assert_eq!(
             view.key_to_message(key(KeyCode::Enter)),
@@ -1551,11 +1524,11 @@ mod tests {
         );
         assert_eq!(
             view.key_to_message(ctrl_key('n')),
-            Some(BalanceMessage::MoveDown)
+            Some(BalanceMessage::Nav(NavCommand::Down))
         );
         assert_eq!(
             view.key_to_message(ctrl_key('p')),
-            Some(BalanceMessage::MoveUp)
+            Some(BalanceMessage::Nav(NavCommand::Up))
         );
     }
 }

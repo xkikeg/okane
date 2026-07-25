@@ -508,6 +508,7 @@ mod tests {
     use super::super::register::{RegisterMessage, RegisterQueryTemplate};
     use super::super::testing::template;
     use super::*;
+    use crate::ui::table::NavCommand;
 
     #[test]
     fn amount_width_has_minimum() {
@@ -987,7 +988,7 @@ mod tests {
         );
 
         // Jump to the top: now the first entries show and the last are gone.
-        app.update(Message::Register(RegisterMessage::SelectFirst));
+        app.update(Message::Register(RegisterMessage::Nav(NavCommand::First)));
         let top = render_sized(&mut app, &ctx, 80, 10);
         assert!(top.contains("Payee00"), "first entry should be visible");
         assert!(
