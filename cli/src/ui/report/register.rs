@@ -4,9 +4,11 @@
 use std::cmp::max;
 
 use chrono::NaiveDate;
+use crossterm::event::{KeyCode, KeyEvent};
 use okane_core::report::query::{Conversion, DateRange};
 use okane_core::report::{Account, AccountAggregate, Amount};
 
+use crate::ui::keys::is_ctrl;
 use crate::ui::table::TableNav;
 
 use super::balance::amount_line_count;
@@ -124,6 +126,47 @@ impl<'ctx> RegisterView<'ctx> {
     pub fn title(&self) -> &'ctx str {
         self.scope.display_name()
     }
+
+    /// Applies a [`RegisterMessage`], returning a [`RegisterAction`] for the
+    /// cross-screen transitions the view cannot perform itself.
+    pub(super) fn update(&mut self, msg: RegisterMessage) -> Option<RegisterAction> {
+        match msg {
+            RegisterMessage::MoveUp => self.nav.move_selection(-1),
+            RegisterMessage::MoveDown => self.nav.move_selection(1),
+            RegisterMessage::PageUp => {
+                let delta = -(self.nav.page_size() as isize);
+                self.nav.move_selection(delta);
+            }
+            RegisterMessage::PageDown => {
+                let delta = self.nav.page_size() as isize;
+                self.nav.move_selection(delta);
+            }
+            RegisterMessage::SelectFirst => self.nav.select_first(),
+            RegisterMessage::SelectLast => self.nav.select_last(),
+            RegisterMessage::Leave => return Some(RegisterAction::Leave),
+        }
+        None
+    }
+
+    /// Translates a key event into a [`RegisterMessage`]. Global keys (`Ctrl-C`,
+    /// reload) are left for [`super::event`], so `None` lets them fall through.
+    pub(super) fn key_to_message(key: KeyEvent) -> Option<RegisterMessage> {
+        let ctrl = is_ctrl(key.modifiers);
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => Some(RegisterMessage::MoveUp),
+            KeyCode::Char('p') if ctrl => Some(RegisterMessage::MoveUp),
+            KeyCode::Down | KeyCode::Char('j') => Some(RegisterMessage::MoveDown),
+            KeyCode::Char('n') if ctrl => Some(RegisterMessage::MoveDown),
+            KeyCode::PageUp => Some(RegisterMessage::PageUp),
+            KeyCode::Char('b') if ctrl => Some(RegisterMessage::PageUp),
+            KeyCode::PageDown => Some(RegisterMessage::PageDown),
+            KeyCode::Char('f') if ctrl => Some(RegisterMessage::PageDown),
+            KeyCode::Home | KeyCode::Char('g') => Some(RegisterMessage::SelectFirst),
+            KeyCode::End | KeyCode::Char('G') => Some(RegisterMessage::SelectLast),
+            KeyCode::Char('q') | KeyCode::Esc => Some(RegisterMessage::Leave),
+            _ => None,
+        }
+    }
 }
 
 /// Top-level screen the user is currently looking at.
@@ -131,6 +174,27 @@ impl<'ctx> RegisterView<'ctx> {
 pub enum Screen<'ctx> {
     Balance,
     Register(RegisterView<'ctx>),
+}
+
+/// Messages handled by the register drill-down screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegisterMessage {
+    MoveUp,
+    MoveDown,
+    PageUp,
+    PageDown,
+    SelectFirst,
+    SelectLast,
+    /// Leave the register and return to the balance screen.
+    Leave,
+}
+
+/// Effect a [`RegisterView`] asks the [`App`](super::app::App) to perform;
+/// everything else is handled inside the view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegisterAction {
+    /// Return to the balance screen.
+    Leave,
 }
 
 /// Snapshot of register view that survives a reload, as part of
@@ -159,5 +223,99 @@ impl RegisterSnapshot {
 
     pub(super) fn cursor(&self) -> usize {
         self.cursor
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use bumpalo::Bump;
+    use crossterm::event::KeyModifiers;
+
+    use super::super::testing::make_account;
+
+    /// A register view for `account` with `n` one-line rows, cursor on the last.
+    fn register_view<'ctx>(account: Account<'ctx>, n: usize) -> RegisterView<'ctx> {
+        let rows: Vec<RegisterRow<'ctx>> = (0..n)
+            .map(|i| RegisterRow {
+                date: NaiveDate::from_ymd_opt(2024, 1, (i + 1) as u32).unwrap(),
+                payee: "payee".to_owned(),
+                amount: Amount::zero(),
+                total: Amount::zero(),
+            })
+            .collect();
+        RegisterView::new(RegisterScope::Single(account), rows)
+    }
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn ctrl_key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+    }
+
+    #[test]
+    fn new_selects_last_row() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
+        let view = register_view(account, 3);
+        assert_eq!(view.nav.table_state.selected(), Some(2));
+    }
+
+    #[test]
+    fn nav_moves_and_clamps_selection() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
+        let mut view = register_view(account, 3);
+        view.update(RegisterMessage::SelectFirst);
+        assert_eq!(view.nav.table_state.selected(), Some(0));
+        assert_eq!(view.update(RegisterMessage::MoveUp), None);
+        assert_eq!(view.nav.table_state.selected(), Some(0));
+        view.update(RegisterMessage::MoveDown);
+        assert_eq!(view.nav.table_state.selected(), Some(1));
+        view.update(RegisterMessage::SelectLast);
+        assert_eq!(view.nav.table_state.selected(), Some(2));
+    }
+
+    #[test]
+    fn leave_returns_action() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
+        let mut view = register_view(account, 1);
+        assert_eq!(view.update(RegisterMessage::Leave), Some(RegisterAction::Leave));
+    }
+
+    #[test]
+    fn key_to_message_maps_nav_and_leave() {
+        assert_eq!(
+            RegisterView::key_to_message(key(KeyCode::Down)),
+            Some(RegisterMessage::MoveDown)
+        );
+        assert_eq!(
+            RegisterView::key_to_message(key(KeyCode::Char('k'))),
+            Some(RegisterMessage::MoveUp)
+        );
+        assert_eq!(
+            RegisterView::key_to_message(ctrl_key('n')),
+            Some(RegisterMessage::MoveDown)
+        );
+        assert_eq!(
+            RegisterView::key_to_message(key(KeyCode::Char('q'))),
+            Some(RegisterMessage::Leave)
+        );
+        assert_eq!(
+            RegisterView::key_to_message(key(KeyCode::Esc)),
+            Some(RegisterMessage::Leave)
+        );
+    }
+
+    #[test]
+    fn key_to_message_leaves_global_keys_unmapped() {
+        // Enter and reload keys fall through to the event layer.
+        assert_eq!(RegisterView::key_to_message(key(KeyCode::Enter)), None);
+        assert_eq!(RegisterView::key_to_message(key(KeyCode::Char('r'))), None);
+        assert_eq!(RegisterView::key_to_message(key(KeyCode::F(5))), None);
     }
 }
