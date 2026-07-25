@@ -127,7 +127,13 @@ fn draw_balance_body<'ctx>(
         .zip(&formatted)
         .enumerate()
         .map(|(i, (row, lines))| {
-            make_balance_row(row, lines, matches.is_some_and(|m| m.contains_row(i)), mode)
+            make_balance_row(
+                row,
+                lines,
+                matches.is_some_and(|m| m.contains_row(i)),
+                mode,
+                nav.viewport_height,
+            )
         })
         .collect();
 
@@ -211,7 +217,7 @@ fn draw_register_body<'ctx>(
         .iter()
         .zip(amount_lines.iter())
         .zip(total_lines.iter())
-        .map(|((row, amt), tot)| make_register_row(row, amt, tot))
+        .map(|((row, amt), tot)| make_register_row(row, amt, tot, view.nav.viewport_height))
         .collect();
 
     let table = Table::new(
@@ -412,8 +418,9 @@ fn make_balance_row<'r>(
     lines: &'r [String],
     is_match: bool,
     mode: DisplayMode,
+    viewport_height: u16,
 ) -> Row<'r> {
-    let height = row.line_count();
+    let height = clip_row_height(row.line_count(), viewport_height);
     let mut account_cell = Cell::from(account_cell_text(row, mode));
     if is_match {
         account_cell = account_cell.style(
@@ -422,7 +429,7 @@ fn make_balance_row<'r>(
                 .add_modifier(Modifier::BOLD),
         );
     }
-    let amount_cell = Cell::from(amount_text(lines));
+    let amount_cell = Cell::from(amount_text(clip_lines(lines, height)));
     Row::new(vec![account_cell, amount_cell]).height(height)
 }
 
@@ -447,13 +454,35 @@ fn make_register_row<'r>(
     row: &'r RegisterRow<'_>,
     amount_lines: &'r [String],
     total_lines: &'r [String],
+    viewport_height: u16,
 ) -> Row<'r> {
-    let height = row.line_count();
+    let height = clip_row_height(row.line_count(), viewport_height);
     let date_cell = Cell::from(row.date.to_string());
     let payee_cell = Cell::from(row.payee.as_str());
-    let amount_cell = Cell::from(amount_text(amount_lines));
-    let total_cell = Cell::from(amount_text(total_lines));
+    let amount_cell = Cell::from(amount_text(clip_lines(amount_lines, height)));
+    let total_cell = Cell::from(amount_text(clip_lines(total_lines, height)));
     Row::new(vec![date_cell, payee_cell, amount_cell, total_cell]).height(height)
+}
+
+/// The height a table row may declare, given the height of the table body.
+///
+/// A row taller than the body is not clipped by ratatui's `Table` — it is
+/// dropped outright. `Table::visible_rows` refuses to count it (`height +
+/// item.height > area.height` breaks the fill loop), then its scroll-to-
+/// selection loop admits it and immediately evicts it again to get back under
+/// budget, leaving `start == end` and an empty render range. The whole table
+/// comes out blank. Capping the declared height keeps the row renderable; its
+/// extra lines are cut by [`clip_lines`].
+///
+/// The `max(1)` floor keeps a degenerate zero-height viewport (a terminal too
+/// short for the body) from producing zero-height rows.
+fn clip_row_height(line_count: u16, viewport_height: u16) -> u16 {
+    min(line_count, max(viewport_height, 1))
+}
+
+/// The leading `height` lines of a cell's text — the rest do not fit the row.
+fn clip_lines(lines: &[String], height: u16) -> &[String] {
+    &lines[..min(lines.len(), usize::from(height))]
 }
 
 fn amount_text<'a>(lines: &'a [String]) -> Text<'a> {
@@ -530,6 +559,32 @@ mod tests {
     fn amount_width_considers_all_commodity_lines() {
         let formatted = vec![vec!["1 USD".to_string(), "12,345,678.90 EUR".to_string()]];
         assert_eq!(compute_amount_width(&formatted), 18);
+    }
+
+    #[test]
+    fn clip_row_height_leaves_rows_that_fit() {
+        assert_eq!(clip_row_height(1, 19), 1);
+        assert_eq!(clip_row_height(19, 19), 19);
+    }
+
+    #[test]
+    fn clip_row_height_caps_rows_taller_than_the_body() {
+        assert_eq!(clip_row_height(32, 19), 19);
+    }
+
+    #[test]
+    fn clip_row_height_never_returns_zero() {
+        // A terminal too short to have a body still gets a one-line row.
+        assert_eq!(clip_row_height(32, 0), 1);
+        assert_eq!(clip_row_height(1, 0), 1);
+    }
+
+    #[test]
+    fn clip_lines_cuts_to_the_row_height() {
+        let lines = vec!["a".to_owned(), "b".to_owned(), "c".to_owned()];
+        assert_eq!(clip_lines(&lines, 2), &lines[..2]);
+        // Fewer lines than the row is tall (the other column is the tall one).
+        assert_eq!(clip_lines(&lines, 10), &lines[..]);
     }
 
     #[test]
@@ -905,6 +960,36 @@ mod tests {
         let arena = Bump::new();
         let (ctx, mut app) = register_subtree_app(&arena, &input);
         golden(&golden_name(&input, "register-subtree")).assert(&render(&mut app, &ctx));
+    }
+
+    /// A balance row taller than the table body must still be drawn, clipped.
+    ///
+    /// ratatui's `Table` drops such a row outright rather than clipping it, and
+    /// its scroll-to-selection pass then renders some *other* row — so before
+    /// [`clip_row_height`] this showed `Equity:Initial` with the selected
+    /// account nowhere on screen. `Assets:Brokers:Bar` holds all 26 stock lots,
+    /// against a 19-line body on an 80×24 terminal.
+    ///
+    /// The `many_commodities` goldens only cover the initial selection (row 0),
+    /// where the tall row happens to survive as ratatui's trailing partial row,
+    /// so this needs its own test.
+    #[test]
+    fn balance_row_taller_than_the_body_is_clipped_not_dropped() {
+        let arena = Bump::new();
+        let input = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../testdata/report/many_commodities.ledger");
+        let (ctx, mut app) = balance_app(&arena, &input);
+        // Row 0 is Assets:Banks:Foo (6 lines); row 1 is the tall broker account.
+        app.update(Message::Balance(BalanceMessage::Nav(NavCommand::Down)));
+        let out = render(&mut app, &ctx);
+        assert!(
+            out.contains("Assets:Brokers:Bar"),
+            "the selected row should be on screen:\n{out}"
+        );
+        assert!(
+            out.contains("10 STOCKA"),
+            "its commodity lines should be on screen:\n{out}"
+        );
     }
 
     /// Renders `app` into a `width`×`height` headless terminal, plain text.
