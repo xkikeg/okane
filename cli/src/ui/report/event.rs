@@ -238,12 +238,8 @@ pub fn load_register<'ctx>(
 mod tests {
     use super::*;
 
-    use std::path::PathBuf;
-
     use bumpalo::Bump;
     use crossterm::event::KeyModifiers;
-    use maplit::hashmap;
-    use okane_core::{load, report};
 
     use okane_core::report::Account;
 
@@ -252,6 +248,7 @@ mod tests {
     use super::super::overlay::ErrorPopup;
     use super::super::register::RegisterView;
     use super::super::search::{Search, SearchIntent, SearchMatch};
+    use super::super::testing::{make_account, template};
 
     /// A single-account register screen for `account`, empty rows.
     fn register_screen<'ctx>(account: Account<'ctx>) -> Screen<'ctx> {
@@ -272,33 +269,7 @@ mod tests {
     }
 
     fn app<'ctx>() -> App<'ctx> {
-        App::new(
-            "test".to_owned(),
-            Vec::new(),
-            RegisterQueryTemplate {
-                conversion: None,
-                date_range: Default::default(),
-            },
-        )
-    }
-
-    /// Process a trivial ledger and return a resolved account.
-    fn make_account<'ctx>(
-        arena: &'ctx Bump,
-        account_name: &str,
-    ) -> (report::ReportContext<'ctx>, Account<'ctx>) {
-        let content = format!("2024/01/01 Init\n    {account_name}    1 USD\n    Equity\n");
-        let map = hashmap! {
-            PathBuf::from("test.ledger") => content.into_bytes(),
-        };
-        let loader = load::Loader::new(
-            PathBuf::from("test.ledger"),
-            load::FakeFileSystem::from(map),
-        );
-        let mut ctx = report::ReportContext::new(arena);
-        let _ = report::process(&mut ctx, loader, &report::ProcessOptions::default()).unwrap();
-        let account = ctx.account(account_name).unwrap();
-        (ctx, account)
+        App::new("test".to_owned(), Vec::new(), template())
     }
 
     #[test]
