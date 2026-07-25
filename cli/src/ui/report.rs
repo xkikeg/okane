@@ -20,6 +20,8 @@ mod overlay;
 mod register;
 mod render;
 mod search;
+#[cfg(test)]
+mod testing;
 
 pub use app::App;
 pub use register::RegisterQueryTemplate;
@@ -269,14 +271,12 @@ fn error_overlay(source_display: &str, err: &(dyn std::error::Error + 'static)) 
 mod tests {
     use super::*;
 
-    use std::path::PathBuf;
-
     use assert_matches::assert_matches;
     use indoc::indoc;
-    use maplit::hashmap;
     use okane_core::load::FakeFileSystem;
 
     use register::{RegisterScope, Screen};
+    use testing::fake_loader;
 
     const V1: &str = indoc! {"
         2024/01/01 Init
@@ -309,16 +309,6 @@ mod tests {
             Expenses:Food    30 CHF
             Assets:Bank    -25 CHF
     "};
-
-    fn fake_loader(content: &str) -> load::Loader<FakeFileSystem> {
-        let map = hashmap! {
-            PathBuf::from("test.ledger") => content.as_bytes().to_vec(),
-        };
-        load::Loader::new(
-            PathBuf::from("test.ledger"),
-            load::FakeFileSystem::from(map),
-        )
-    }
 
     fn session_config(content: &str) -> SessionConfig<FakeFileSystem> {
         SessionConfig::new(

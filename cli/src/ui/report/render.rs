@@ -505,6 +505,7 @@ mod tests {
     use super::super::app::Message;
     use super::super::overlay::ScrollDelta;
     use super::super::register::RegisterQueryTemplate;
+    use super::super::testing::template;
     use super::*;
 
     #[test]
@@ -721,13 +722,6 @@ mod tests {
             "escape bytes should be consumed by the parser, not rendered as glyphs"
         );
     }
-    fn template<'ctx>() -> RegisterQueryTemplate<'ctx> {
-        RegisterQueryTemplate {
-            conversion: None,
-            date_range: DateRange::default(),
-        }
-    }
-
     /// Loads a `testdata/report/*.ledger` fixture from disk and returns the
     /// report context together with its processed `Ledger`, ready to query —
     /// via the same [`load::new_loader`] production path the CLI uses.

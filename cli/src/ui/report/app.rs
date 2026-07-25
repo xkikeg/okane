@@ -357,29 +357,18 @@ impl<'ctx> App<'ctx> {
 mod tests {
     use super::*;
 
-    use std::path::PathBuf;
-
     use assert_matches::assert_matches;
     use bumpalo::Bump;
     use chrono::NaiveDate;
     use indoc::indoc;
-    use maplit::hashmap;
-    use okane_core::report::query::DateRange;
     use okane_core::report::{Account, Amount, ReportContext};
-    use okane_core::{load, report};
     use rust_decimal_macros::dec;
 
     use crate::ui::table::TableNav;
 
     use super::super::balance::{BalanceRow, DisplayMode, amount_line_count, restore_index};
     use super::super::overlay::ErrorPopup;
-
-    fn template<'ctx>() -> RegisterQueryTemplate<'ctx> {
-        RegisterQueryTemplate {
-            conversion: None,
-            date_range: DateRange::default(),
-        }
-    }
+    use super::super::testing::{make_account, process, template};
 
     /// Build an `App` with no balance rows — sufficient for testing the
     /// pure state machine. (Constructing a `BalanceRow` requires an
@@ -387,25 +376,6 @@ mod tests {
     /// `okane_core`, so we side-step it.)
     fn app_no_rows<'ctx>() -> App<'ctx> {
         App::new("test".to_owned(), Vec::new(), template())
-    }
-
-    /// Process a trivial ledger and return the context + a resolved account.
-    fn make_account<'ctx>(
-        arena: &'ctx Bump,
-        account_name: &str,
-    ) -> (ReportContext<'ctx>, Account<'ctx>) {
-        let content = format!("2024/01/01 Init\n    {account_name}    100 USD\n    Equity\n");
-        let map = hashmap! {
-            PathBuf::from("test.ledger") => content.into_bytes(),
-        };
-        let loader = load::Loader::new(
-            PathBuf::from("test.ledger"),
-            load::FakeFileSystem::from(map),
-        );
-        let mut ctx = ReportContext::new(arena);
-        let _ = report::process(&mut ctx, loader, &report::ProcessOptions::default()).unwrap();
-        let account = ctx.account(account_name).unwrap();
-        (ctx, account)
     }
 
     /// Process a ledger containing `names` and return the context plus an
@@ -420,15 +390,7 @@ mod tests {
             content.push_str(&format!("    {name}    1 USD\n"));
         }
         content.push_str("    Equity\n");
-        let map = hashmap! {
-            PathBuf::from("test.ledger") => content.into_bytes(),
-        };
-        let loader = load::Loader::new(
-            PathBuf::from("test.ledger"),
-            load::FakeFileSystem::from(map),
-        );
-        let mut ctx = ReportContext::new(arena);
-        let _ = report::process(&mut ctx, loader, &report::ProcessOptions::default()).unwrap();
+        let (ctx, _ledger) = process(arena, &content);
         let rows: Vec<BalanceRow> = names
             .iter()
             .map(|n| BalanceRow::flat(ctx.account(n).unwrap(), Amount::zero()))
@@ -1146,16 +1108,7 @@ mod tests {
         use okane_core::report::BalanceTree;
         use okane_core::report::query::BalanceQuery;
 
-        let map = hashmap! {
-            PathBuf::from("test.ledger") => content.as_bytes().to_vec(),
-        };
-        let loader = load::Loader::new(
-            PathBuf::from("test.ledger"),
-            load::FakeFileSystem::from(map),
-        );
-        let mut ctx = ReportContext::new(arena);
-        let mut ledger =
-            report::process(&mut ctx, loader, &report::ProcessOptions::default()).unwrap();
+        let (ctx, mut ledger) = process(arena, content);
         let balance = ledger
             .balance(&ctx, &BalanceQuery::default())
             .unwrap()
