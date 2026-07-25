@@ -14,10 +14,15 @@
 //! screen) crosses the boundary. See [`run_ui`] for the loop.
 
 mod app;
+mod balance;
 mod event;
+mod overlay;
+mod register;
 mod render;
+mod search;
 
-pub use app::{App, RegisterQueryTemplate};
+pub use app::App;
+pub use register::RegisterQueryTemplate;
 
 use bumpalo::Bump;
 use okane_core::load;
@@ -27,7 +32,8 @@ use okane_core::report::query::{
 use okane_core::report::{self, OwnedCommodity, ProcessOptions, ReportContext};
 use ratatui::DefaultTerminal;
 
-use app::{ErrorPopup, Overlay, UiSnapshot};
+use app::UiSnapshot;
+use overlay::{ErrorPopup, Overlay};
 
 /// Everything needed to build (and rebuild) a session: the loader re-reads
 /// the source from disk on every `load` call, and the options carry the CLI
@@ -270,7 +276,7 @@ mod tests {
     use maplit::hashmap;
     use okane_core::load::FakeFileSystem;
 
-    use app::{RegisterScope, Screen};
+    use register::{RegisterScope, Screen};
 
     const V1: &str = indoc! {"
         2024/01/01 Init
@@ -334,7 +340,8 @@ mod tests {
     }
 
     fn account_names(app: &App<'_>) -> Vec<String> {
-        app.balance_rows
+        app.balance
+            .rows
             .iter()
             .map(|r| r.full_name().to_owned())
             .collect()
@@ -350,7 +357,7 @@ mod tests {
                 account_names(&app),
                 ["Assets:Bank", "Assets:Cash", "Equity", "Expenses:Food"]
             );
-            app.balance_nav.select(3); // Expenses:Food
+            app.balance.nav.select(3); // Expenses:Food
             app.snapshot()
         };
         arena.reset();
@@ -370,7 +377,7 @@ mod tests {
             ]
         );
         // The selection followed Expenses:Food to its new index.
-        assert_eq!(app.balance_nav.table_state.selected(), Some(4));
+        assert_eq!(app.balance.nav.table_state.selected(), Some(4));
     }
 
     /// The reason reload rebuilds from scratch: interned entries of the

@@ -16,10 +16,11 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState};
 use unicode_width::UnicodeWidthStr;
 
-use super::app::{
-    App, BalanceRow, DisplayMode, ErrorPopup, Overlay, RegisterRow, RegisterView, Screen, Search,
-    SearchDirection, SearchMatch, SearchMode, SearchPhase,
-};
+use super::app::App;
+use super::balance::{BalanceRow, DisplayMode};
+use super::overlay::{ErrorPopup, Overlay};
+use super::register::{RegisterRow, RegisterView, Screen};
+use super::search::{Search, SearchDirection, SearchMatch, SearchMode, SearchPhase};
 use crate::ui::table::TableNav;
 
 const FOOTER_HINT_BALANCE: &str = " ↑/↓ scroll · Enter register · t tree · space fold · x fold-all · / search · r reload · q quit ";
@@ -42,6 +43,7 @@ pub fn draw<'ctx>(frame: &mut Frame, app: &mut App<'ctx>, ctx: &ReportContext<'c
     match &mut app.screen {
         Screen::Balance => {
             let matches = app
+                .balance
                 .search
                 .as_ref()
                 .and_then(|s| s.matches.as_ref())
@@ -49,13 +51,13 @@ pub fn draw<'ctx>(frame: &mut Frame, app: &mut App<'ctx>, ctx: &ReportContext<'c
             draw_balance_body(
                 frame,
                 layout[1],
-                &app.balance_rows,
-                &mut app.balance_nav,
+                &app.balance.rows,
+                &mut app.balance.nav,
                 matches,
                 ctx,
-                app.mode,
+                app.balance.mode,
             );
-            match (&app.error_toast, &app.search) {
+            match (&app.error_toast, &app.balance.search) {
                 (Some(msg), _) => draw_error(frame, layout[2], msg),
                 (None, Some(search)) => draw_search_bar(frame, layout[2], search),
                 (None, None) => draw_footer(frame, layout[2], FOOTER_HINT_BALANCE),
@@ -500,7 +502,9 @@ mod tests {
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
-    use super::super::app::{Message, RegisterQueryTemplate, ScrollDelta};
+    use super::super::app::Message;
+    use super::super::overlay::ScrollDelta;
+    use super::super::register::RegisterQueryTemplate;
     use super::*;
 
     #[test]
@@ -773,7 +777,7 @@ mod tests {
     /// order — deterministic and present in every fixture), its rows loaded
     /// through the production query path.
     fn register_app<'ctx>(arena: &'ctx Bump, input: &Path) -> (ReportContext<'ctx>, App<'ctx>) {
-        use super::super::app::RegisterScope;
+        use super::super::register::RegisterScope;
         use okane_core::report::query::{AccountFilter, BalanceQuery};
 
         let (ctx, mut ledger) = session_from_file(arena, input);
@@ -824,7 +828,8 @@ mod tests {
         // The first parent row (a real ancestor) exercises `descendants_of`
         // with more than one underlying account.
         let scope = app
-            .balance_rows
+            .balance
+            .rows
             .iter()
             .find(|r| r.has_children)
             .map(|r| r.scope)
@@ -961,7 +966,7 @@ mod tests {
             conversion: None,
             date_range: DateRange::default(),
         };
-        let scope = super::super::app::RegisterScope::Single(account);
+        let scope = super::super::register::RegisterScope::Single(account);
         let rows =
             super::super::event::load_register(&mut ledger, &ctx, &template, scope).unwrap();
         assert_eq!(rows.len(), n);
