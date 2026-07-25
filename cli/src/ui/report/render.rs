@@ -503,8 +503,9 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::super::app::Message;
+    use super::super::balance::BalanceMessage;
     use super::super::overlay::ScrollDelta;
-    use super::super::register::RegisterQueryTemplate;
+    use super::super::register::{RegisterMessage, RegisterQueryTemplate};
     use super::super::testing::template;
     use super::*;
 
@@ -818,7 +819,7 @@ mod tests {
         let tree = BalanceTree::create(&ctx, balance).unwrap().into_nodes();
         let mut app = App::new(source_display(input), tree, template());
         // Tree view is what turns balance rows into `RegisterScope::Subtree`.
-        app.update(Message::ToggleTree);
+        app.update(Message::Balance(BalanceMessage::ToggleTree));
         // The first parent row (a real ancestor) exercises `descendants_of`
         // with more than one underlying account.
         let scope = app
@@ -858,7 +859,7 @@ mod tests {
     ) {
         let arena = Bump::new();
         let (ctx, mut app) = balance_app(&arena, &input);
-        app.update(Message::ToggleTree); // Flat -> Tree
+        app.update(Message::Balance(BalanceMessage::ToggleTree)); // Flat -> Tree
         golden(&golden_name(&input, "balance-tree")).assert(&render(&mut app, &ctx));
     }
 
@@ -872,8 +873,8 @@ mod tests {
     ) {
         let arena = Bump::new();
         let (ctx, mut app) = balance_app(&arena, &input);
-        app.update(Message::ToggleTree); // Flat -> Tree
-        app.update(Message::ToggleFoldAll); // collapse every node
+        app.update(Message::Balance(BalanceMessage::ToggleTree)); // Flat -> Tree
+        app.update(Message::Balance(BalanceMessage::ToggleFoldAll)); // collapse every node
         golden(&golden_name(&input, "balance-tree-all-folded")).assert(&render(&mut app, &ctx));
     }
 
@@ -986,7 +987,7 @@ mod tests {
         );
 
         // Jump to the top: now the first entries show and the last are gone.
-        app.update(Message::SelectFirst);
+        app.update(Message::Register(RegisterMessage::SelectFirst));
         let top = render_sized(&mut app, &ctx, 80, 10);
         assert!(top.contains("Payee00"), "first entry should be visible");
         assert!(

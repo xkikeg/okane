@@ -11,10 +11,12 @@
 use std::cmp::min;
 use std::collections::HashSet;
 
+use crossterm::event::{KeyCode, KeyEvent};
 #[cfg(test)]
 use okane_core::report::Account;
 use okane_core::report::{AccountAggregate, AccountTreeKey, Amount, BalanceTreeNode};
 
+use crate::ui::keys::is_ctrl;
 use crate::ui::table::TableNav;
 
 use super::register::{OwnedRegisterScope, RegisterScope};
@@ -128,6 +130,51 @@ pub struct BalanceSnapshot {
     folded: Vec<String>,
 }
 
+/// Messages handled by the balance screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BalanceMessage {
+    MoveUp,
+    MoveDown,
+    PageUp,
+    PageDown,
+    SelectFirst,
+    SelectLast,
+    /// Toggle between the flat list and the account tree (`t`).
+    ToggleTree,
+    /// Fold/unfold the selected tree node (`space`).
+    ToggleFold,
+    /// Fold or unfold every node in the tree (`x`).
+    ToggleFoldAll,
+    /// Drill into the selected balance row's register.
+    OpenRegister,
+    /// Open the modal (`/`) search bar (incremental phase).
+    StartModalSearch,
+    /// Open an interactive (`C-s`/`C-r`) search in the given direction.
+    StartISearch(SearchDirection),
+    /// Append a character to the search pattern.
+    SearchPush(char),
+    /// Remove the last character from the search pattern.
+    SearchPop,
+    /// Fix the current pattern (modal incremental → fixed); empty pattern exits.
+    SearchSubmit,
+    /// Cancel an editing search: restore the origin selection and exit.
+    SearchCancel,
+    /// Close the search: keep the current selection.
+    SearchClose,
+    /// Next match (modal `n` / interactive `C-s`).
+    SearchNext,
+    /// Previous match (modal `N` / interactive `C-r`).
+    SearchPrev,
+}
+
+/// Effect a [`BalanceView`] asks the [`App`](super::app::App) to perform;
+/// everything else is handled inside the view.
+#[derive(Debug, Clone, Copy)]
+pub enum BalanceAction<'ctx> {
+    /// Drill into the register for `scope` (App loads the rows via the Ledger).
+    OpenRegister { scope: RegisterScope<'ctx> },
+}
+
 /// State for the balance screen: the account tree, the rows derived from it,
 /// the display mode and fold state, and the active account search.
 #[derive(Debug)]
@@ -200,8 +247,133 @@ impl<'ctx> BalanceView<'ctx> {
     }
 
     /// The drill target of the currently-selected balance row, if any.
-    pub(super) fn selected_scope(&self) -> Option<RegisterScope<'ctx>> {
+    fn selected_scope(&self) -> Option<RegisterScope<'ctx>> {
         self.selected_row().map(|r| r.scope)
+    }
+
+    /// Applies a [`BalanceMessage`], returning a [`BalanceAction`] for the
+    /// cross-screen transitions the view cannot perform itself.
+    pub(super) fn update(&mut self, msg: BalanceMessage) -> Option<BalanceAction<'ctx>> {
+        match msg {
+            BalanceMessage::MoveUp => {
+                self.end_interactive_search();
+                self.nav.move_selection(-1);
+            }
+            BalanceMessage::MoveDown => {
+                self.end_interactive_search();
+                self.nav.move_selection(1);
+            }
+            BalanceMessage::PageUp => {
+                let delta = -(self.nav.page_size() as isize);
+                self.nav.move_selection(delta);
+            }
+            BalanceMessage::PageDown => {
+                let delta = self.nav.page_size() as isize;
+                self.nav.move_selection(delta);
+            }
+            BalanceMessage::SelectFirst => self.nav.select_first(),
+            BalanceMessage::SelectLast => self.nav.select_last(),
+            BalanceMessage::OpenRegister => {
+                if let Some(scope) = self.selected_scope() {
+                    // An interactive search drills in like the normal view:
+                    // end the search, keeping the cursor on the chosen account.
+                    self.end_interactive_search();
+                    return Some(BalanceAction::OpenRegister { scope });
+                }
+            }
+            BalanceMessage::StartModalSearch => self.start_search(
+                SearchMode::Modal(SearchPhase::Incremental),
+                SearchDirection::Forward,
+            ),
+            BalanceMessage::StartISearch(dir) => self.start_search(SearchMode::Interactive, dir),
+            BalanceMessage::SearchPush(c) => self.search_push(c),
+            BalanceMessage::SearchPop => self.search_pop(),
+            BalanceMessage::SearchSubmit => self.search_submit(),
+            BalanceMessage::SearchCancel => self.search_cancel(),
+            BalanceMessage::SearchClose => self.search_close(),
+            BalanceMessage::SearchNext => self.search_next(),
+            BalanceMessage::SearchPrev => self.search_prev(),
+            BalanceMessage::ToggleTree => self.toggle_tree(),
+            BalanceMessage::ToggleFold => self.fold_selected(),
+            BalanceMessage::ToggleFoldAll => self.fold_all(),
+        }
+        None
+    }
+
+    /// Translates a key event into a [`BalanceMessage`]. The editing search
+    /// phases own every key; otherwise navigation and the balance actions map
+    /// as usual. Global keys (quit, reload) return `None` for [`super::event`]
+    /// to handle.
+    pub(super) fn key_to_message(&self, key: KeyEvent) -> Option<BalanceMessage> {
+        let ctrl = is_ctrl(key.modifiers);
+
+        // Search capture. The editing phases (modal incremental, interactive
+        // i-search) own every key; the modal fixed phase intercepts only its
+        // own controls and lets the rest fall through so full navigation (and
+        // Enter-to-register) keep working.
+        if let Some(search) = &self.search {
+            match search.intent.mode {
+                SearchMode::Modal(SearchPhase::Incremental) => {
+                    return match key.code {
+                        KeyCode::Esc => Some(BalanceMessage::SearchCancel),
+                        KeyCode::Enter => Some(BalanceMessage::SearchSubmit),
+                        KeyCode::Backspace => Some(BalanceMessage::SearchPop),
+                        KeyCode::Char(c) if !ctrl => Some(BalanceMessage::SearchPush(c)),
+                        _ => None,
+                    };
+                }
+                SearchMode::Modal(SearchPhase::Fixed) => match key.code {
+                    KeyCode::Esc => return Some(BalanceMessage::SearchClose),
+                    KeyCode::Char('n') => return Some(BalanceMessage::SearchNext),
+                    KeyCode::Char('N') => return Some(BalanceMessage::SearchPrev),
+                    _ => {} // fall through to normal UI
+                },
+                SearchMode::Interactive => match key.code {
+                    KeyCode::Char('s') if ctrl => return Some(BalanceMessage::SearchNext),
+                    KeyCode::Char('r') if ctrl => return Some(BalanceMessage::SearchPrev),
+                    KeyCode::Char('g') if ctrl => return Some(BalanceMessage::SearchCancel),
+                    KeyCode::Esc => return Some(BalanceMessage::SearchCancel),
+                    KeyCode::Backspace => return Some(BalanceMessage::SearchPop),
+                    KeyCode::Char(c) if !ctrl => return Some(BalanceMessage::SearchPush(c)),
+                    _ => {} // fall through to normal UI
+                },
+            }
+        }
+
+        // Navigation.
+        let nav = match key.code {
+            KeyCode::Up | KeyCode::Char('k') => Some(BalanceMessage::MoveUp),
+            KeyCode::Char('p') if ctrl => Some(BalanceMessage::MoveUp),
+            KeyCode::Down | KeyCode::Char('j') => Some(BalanceMessage::MoveDown),
+            KeyCode::Char('n') if ctrl => Some(BalanceMessage::MoveDown),
+            KeyCode::PageUp => Some(BalanceMessage::PageUp),
+            KeyCode::Char('b') if ctrl => Some(BalanceMessage::PageUp),
+            KeyCode::PageDown => Some(BalanceMessage::PageDown),
+            KeyCode::Char('f') if ctrl => Some(BalanceMessage::PageDown),
+            KeyCode::Home | KeyCode::Char('g') => Some(BalanceMessage::SelectFirst),
+            KeyCode::End | KeyCode::Char('G') => Some(BalanceMessage::SelectLast),
+            _ => None,
+        };
+        if nav.is_some() {
+            return nav;
+        }
+
+        // Balance-specific actions.
+        match key.code {
+            KeyCode::Char('/') => Some(BalanceMessage::StartModalSearch),
+            KeyCode::Char('s') if ctrl => {
+                Some(BalanceMessage::StartISearch(SearchDirection::Forward))
+            }
+            KeyCode::Char('r') if ctrl => {
+                Some(BalanceMessage::StartISearch(SearchDirection::Backward))
+            }
+            KeyCode::Char('t') => Some(BalanceMessage::ToggleTree),
+            KeyCode::Char(' ') => Some(BalanceMessage::ToggleFold),
+            KeyCode::Char('x') => Some(BalanceMessage::ToggleFoldAll),
+            KeyCode::Enter => Some(BalanceMessage::OpenRegister),
+            // q/Esc (quit) and r/F5 (reload) are handled by `super::event`.
+            _ => None,
+        }
     }
 
     /// Recomputes [`Self::rows`] from the tree for the current mode and fold
@@ -320,7 +492,7 @@ impl<'ctx> BalanceView<'ctx> {
     /// Toggles between the flat list and the account tree, dropping any active
     /// search (row identity changes between modes, so stale match indices must
     /// not carry over the reshape) and rebuilding the rows.
-    pub(super) fn toggle_tree(&mut self) {
+    fn toggle_tree(&mut self) {
         self.search = None;
         self.mode = match self.mode {
             DisplayMode::Flat => DisplayMode::Tree,
@@ -331,14 +503,14 @@ impl<'ctx> BalanceView<'ctx> {
 
     /// Folds/unfolds the selected node (tree view only, and only when it has
     /// children), rebuilds the rows, then recomputes the active search.
-    pub(super) fn fold_selected(&mut self) {
+    fn fold_selected(&mut self) {
         self.toggle_fold_selected();
         self.recompute_search();
     }
 
     /// Folds or unfolds every node (tree view only), rebuilds the rows, then
     /// recomputes the active search.
-    pub(super) fn fold_all(&mut self) {
+    fn fold_all(&mut self) {
         self.toggle_fold_all();
         self.recompute_search();
     }
@@ -478,7 +650,7 @@ impl<'ctx> BalanceView<'ctx> {
 
     /// Opens a search of the given style, recording the current selection as
     /// the origin.
-    pub(super) fn start_search(&mut self, mode: SearchMode, dir: SearchDirection) {
+    fn start_search(&mut self, mode: SearchMode, dir: SearchDirection) {
         let origin = self.nav.table_state.selected().unwrap_or(0);
         self.search = Some(Search {
             intent: SearchIntent {
@@ -493,7 +665,7 @@ impl<'ctx> BalanceView<'ctx> {
     }
 
     /// Appends a character to the active search pattern and recomputes matches.
-    pub(super) fn search_push(&mut self, c: char) {
+    fn search_push(&mut self, c: char) {
         if let Some(search) = self.search.as_mut() {
             search.intent.input.push(c);
             search.intent.no_previous = false;
@@ -502,7 +674,7 @@ impl<'ctx> BalanceView<'ctx> {
     }
 
     /// Removes the last character from the active search pattern and recomputes.
-    pub(super) fn search_pop(&mut self) {
+    fn search_pop(&mut self) {
         if let Some(search) = self.search.as_mut() {
             search.intent.input.pop();
             search.intent.no_previous = false;
@@ -512,7 +684,7 @@ impl<'ctx> BalanceView<'ctx> {
 
     /// Fixes the current pattern (modal incremental → fixed); an empty pattern
     /// exits the search instead.
-    pub(super) fn search_submit(&mut self) {
+    fn search_submit(&mut self) {
         match &self.search {
             // If empty pattern submitted, simply exits the search mode.
             Some(s) if s.intent.input.is_empty() => self.search = None,
@@ -529,7 +701,7 @@ impl<'ctx> BalanceView<'ctx> {
     }
 
     /// Cancels an editing search: restores the origin selection and exits.
-    pub(super) fn search_cancel(&mut self) {
+    fn search_cancel(&mut self) {
         if let Some(search) = self.search.take() {
             // on cancel, search query won't be saved.
             self.nav.select(search.intent.origin);
@@ -537,26 +709,26 @@ impl<'ctx> BalanceView<'ctx> {
     }
 
     /// Closes the search, keeping the current selection.
-    pub(super) fn search_close(&mut self) {
+    fn search_close(&mut self) {
         self.search = None;
     }
 
     /// Next match (modal `n`); or, for interactive search, repeat forward /
     /// recall the previous pattern when empty (`C-s`).
-    pub(super) fn search_next(&mut self) {
+    fn search_next(&mut self) {
         self.search_or_recall(SearchDirection::Forward);
     }
 
     /// Previous match (modal `N`); or, for interactive search, repeat backward
     /// / recall the previous pattern when empty (`C-r`).
-    pub(super) fn search_prev(&mut self) {
+    fn search_prev(&mut self) {
         self.search_or_recall(SearchDirection::Backward);
     }
 
     /// Ends an active interactive search, keeping the current selection. Used
     /// by keys that both navigate and leave i-search (`C-n`/`C-p`, Enter). A
     /// no-op for modal searches, which stay active during navigation.
-    pub(super) fn end_interactive_search(&mut self) {
+    fn end_interactive_search(&mut self) {
         if self
             .search
             .as_ref()
@@ -622,7 +794,7 @@ impl<'ctx> BalanceView<'ctx> {
     /// Modal searches always jump relative to the fixed origin; interactive
     /// searches jump relative to the current point, mirroring isearch. No-op
     /// when no search is active.
-    pub(super) fn recompute_search(&mut self) {
+    fn recompute_search(&mut self) {
         let Some(search) = self.search.as_mut() else {
             return;
         };
@@ -656,4 +828,734 @@ pub(super) fn restore_index(prev_name: &str, rows: &[BalanceRow<'_>]) -> Option<
         .binary_search_by(|r| r.full_name().cmp(prev_name))
         .unwrap_or_else(|insertion| insertion);
     Some(min(idx, last))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use assert_matches::assert_matches;
+    use bumpalo::Bump;
+    use crossterm::event::KeyModifiers;
+    use indoc::indoc;
+    use okane_core::report::ReportContext;
+    use rust_decimal_macros::dec;
+
+    use super::super::testing::process;
+
+    const ACCOUNTS: &[&str] = &[
+        "Assets:Bank",      // 0
+        "Assets:Cash",      // 1
+        "Expenses:Food",    // 2
+        "Income:Salary",    // 3
+        "Liabilities:Card", // 4
+    ];
+
+    /// A ledger with a small nested hierarchy:
+    /// `Assets:Bank:Checking`, `Assets:Cash`, `Expenses:Food`, `Equity`.
+    const TREE_LEDGER: &str = indoc! {"
+        2024/01/01 Init
+            Assets:Bank:Checking    10 USD
+            Assets:Cash    5 USD
+            Expenses:Food    3 USD
+            Equity
+    "};
+
+    /// Balance rows for `names`, in order, with zero amounts (no backing tree).
+    fn rows_of<'ctx>(ctx: &ReportContext<'ctx>, names: &[&str]) -> Vec<BalanceRow<'ctx>> {
+        names
+            .iter()
+            .map(|n| BalanceRow::flat(ctx.account(n).unwrap(), Amount::zero()))
+            .collect()
+    }
+
+    /// A [`BalanceView`] whose rows are `names`, in order, with no backing tree.
+    fn view_from_names<'ctx>(
+        arena: &'ctx Bump,
+        names: &[&str],
+    ) -> (ReportContext<'ctx>, BalanceView<'ctx>) {
+        let mut content = String::from("2024/01/01 Init\n");
+        for name in names {
+            content.push_str(&format!("    {name}    1 USD\n"));
+        }
+        content.push_str("    Equity\n");
+        let (ctx, _ledger) = process(arena, &content);
+        let view = BalanceView::with_rows(rows_of(&ctx, names));
+        (ctx, view)
+    }
+
+    /// A tree-backed [`BalanceView`] from ledger `content`, in flat mode.
+    fn tree_view<'ctx>(
+        arena: &'ctx Bump,
+        content: &str,
+    ) -> (ReportContext<'ctx>, BalanceView<'ctx>) {
+        use okane_core::report::BalanceTree;
+        use okane_core::report::query::BalanceQuery;
+
+        let (ctx, mut ledger) = process(arena, content);
+        let balance = ledger
+            .balance(&ctx, &BalanceQuery::default())
+            .unwrap()
+            .into_owned();
+        let tree = BalanceTree::create(&ctx, balance).unwrap().into_nodes();
+        let view = BalanceView::new(tree);
+        (ctx, view)
+    }
+
+    fn selected(view: &BalanceView<'_>) -> Option<usize> {
+        view.nav.table_state.selected()
+    }
+
+    fn full_names(view: &BalanceView<'_>) -> Vec<String> {
+        view.rows.iter().map(|r| r.full_name().to_owned()).collect()
+    }
+
+    fn row_labels(view: &BalanceView<'_>) -> Vec<String> {
+        view.rows.iter().map(|r| r.label.to_owned()).collect()
+    }
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn ctrl_key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+    }
+
+    // --- search behaviour (BalanceView::update) ---
+
+    #[test]
+    fn start_search_records_origin() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::MoveDown);
+        view.update(BalanceMessage::MoveDown);
+        assert_eq!(selected(&view), Some(2));
+        view.update(BalanceMessage::StartModalSearch);
+        let search = view.search.as_ref().expect("search active");
+        assert_eq!(
+            search.intent.mode,
+            SearchMode::Modal(SearchPhase::Incremental)
+        );
+        assert_eq!(search.intent.origin, 2);
+        assert!(search.intent.input.is_empty());
+        assert!(search.matched_rows().is_empty());
+    }
+
+    #[test]
+    fn incremental_jumps_to_first_match_at_or_after_origin() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::MoveDown);
+        view.update(BalanceMessage::StartModalSearch);
+        for c in "assets".chars() {
+            view.update(BalanceMessage::SearchPush(c));
+        }
+        let search = view.search.as_ref().unwrap();
+        assert_eq!(search.matched_rows(), [0, 1]);
+        assert_matches!(search.err(), None);
+        assert_eq!(selected(&view), Some(1));
+    }
+
+    #[test]
+    fn incremental_wraps_when_no_match_after_origin() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        for _ in 0..3 {
+            view.update(BalanceMessage::MoveDown);
+        }
+        view.update(BalanceMessage::StartModalSearch);
+        for c in "assets".chars() {
+            view.update(BalanceMessage::SearchPush(c));
+        }
+        assert_eq!(view.search.as_ref().unwrap().matched_rows(), [0, 1]);
+        assert_eq!(selected(&view), Some(0));
+    }
+
+    #[test]
+    fn incremental_invalid_regex_sets_error() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::StartModalSearch);
+        view.update(BalanceMessage::SearchPush('['));
+        let search = view.search.as_ref().unwrap();
+        assert_matches!(search.err(), Some(_));
+        assert!(search.matched_rows().is_empty());
+    }
+
+    #[test]
+    fn backspace_recomputes_matches() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::StartModalSearch);
+        for c in "cash".chars() {
+            view.update(BalanceMessage::SearchPush(c));
+        }
+        assert_eq!(view.search.as_ref().unwrap().matched_rows(), [1]);
+        view.update(BalanceMessage::SearchPop);
+        view.update(BalanceMessage::SearchPop);
+        assert_eq!(view.search.as_ref().unwrap().matched_rows(), [1, 4]);
+    }
+
+    #[test]
+    fn submit_empty_exits_search() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::StartModalSearch);
+        view.update(BalanceMessage::SearchSubmit);
+        assert!(view.search.is_none());
+    }
+
+    #[test]
+    fn submit_nonempty_enters_fixed_phase() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::StartModalSearch);
+        view.update(BalanceMessage::SearchPush('a'));
+        view.update(BalanceMessage::SearchSubmit);
+        assert_eq!(
+            view.search.as_ref().unwrap().intent.mode,
+            SearchMode::Modal(SearchPhase::Fixed)
+        );
+    }
+
+    #[test]
+    fn isearch_forward_jumps_and_repeats() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
+        let search = view.search.as_ref().unwrap();
+        assert_eq!(search.intent.mode, SearchMode::Interactive);
+        assert_eq!(search.intent.dir, SearchDirection::Forward);
+        for c in "assets".chars() {
+            view.update(BalanceMessage::SearchPush(c));
+        }
+        assert_eq!(view.search.as_ref().unwrap().matched_rows(), [0, 1]);
+        assert_eq!(selected(&view), Some(0));
+        view.update(BalanceMessage::SearchNext);
+        assert_eq!(selected(&view), Some(1));
+        view.update(BalanceMessage::SearchNext);
+        assert_eq!(selected(&view), Some(0));
+    }
+
+    #[test]
+    fn isearch_backward_jumps_to_last_match() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::SelectLast);
+        view.update(BalanceMessage::StartISearch(SearchDirection::Backward));
+        for c in "assets".chars() {
+            view.update(BalanceMessage::SearchPush(c));
+        }
+        assert_eq!(selected(&view), Some(1));
+        view.update(BalanceMessage::SearchPrev);
+        assert_eq!(selected(&view), Some(0));
+    }
+
+    #[test]
+    fn isearch_repeat_direction_steers_later_input() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(
+            &arena,
+            &["Assets:A", "Bonds:x", "Assets:B", "Bonds:y", "Assets:C"],
+        );
+        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
+        for c in "assets".chars() {
+            view.update(BalanceMessage::SearchPush(c));
+        }
+        assert_eq!(selected(&view), Some(0));
+        view.update(BalanceMessage::SearchPrev);
+        assert_eq!(selected(&view), Some(4));
+        view.update(BalanceMessage::SearchPop);
+        assert_eq!(selected(&view), Some(4));
+    }
+
+    #[test]
+    fn isearch_cancel_restores_origin() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::MoveDown);
+        view.update(BalanceMessage::MoveDown);
+        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
+        for c in "assets".chars() {
+            view.update(BalanceMessage::SearchPush(c));
+        }
+        view.update(BalanceMessage::SearchCancel);
+        assert!(view.search.is_none());
+        assert_eq!(selected(&view), Some(2));
+    }
+
+    #[test]
+    fn search_pattern_is_remembered_for_recall() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::StartModalSearch);
+        for c in "salary".chars() {
+            view.update(BalanceMessage::SearchPush(c));
+        }
+        view.update(BalanceMessage::SearchSubmit);
+        view.update(BalanceMessage::SearchClose);
+        assert_eq!(&view.last_search, "salary");
+
+        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
+        view.update(BalanceMessage::SearchNext);
+        let search = view.search.as_ref().unwrap();
+        assert_eq!(search.intent.input, "salary");
+        assert!(!search.intent.no_previous);
+        assert_eq!(search.matched_rows(), [3]);
+        assert_eq!(selected(&view), Some(3));
+    }
+
+    #[test]
+    fn isearch_recall_without_history_shows_notice() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
+        view.update(BalanceMessage::SearchNext);
+        let search = view.search.as_ref().unwrap();
+        assert!(search.intent.no_previous);
+        assert!(search.intent.input.is_empty());
+        view.update(BalanceMessage::SearchPush('a'));
+        assert!(!view.search.as_ref().unwrap().intent.no_previous);
+    }
+
+    #[test]
+    fn isearch_move_ends_search_and_navigates() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
+        for c in "assets".chars() {
+            view.update(BalanceMessage::SearchPush(c));
+        }
+        view.update(BalanceMessage::MoveDown);
+        assert!(view.search.is_none());
+        assert_eq!(selected(&view), Some(1));
+        assert_eq!(&view.last_search, "assets");
+    }
+
+    #[test]
+    fn isearch_open_register_ends_search() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
+        for c in "salary".chars() {
+            view.update(BalanceMessage::SearchPush(c));
+        }
+        let action = view.update(BalanceMessage::OpenRegister);
+        assert_matches!(action, Some(BalanceAction::OpenRegister { .. }));
+        assert!(view.search.is_none());
+        assert_eq!(selected(&view), Some(3));
+    }
+
+    #[test]
+    fn modal_fixed_search_survives_navigation() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::StartModalSearch);
+        for c in "assets".chars() {
+            view.update(BalanceMessage::SearchPush(c));
+        }
+        view.update(BalanceMessage::SearchSubmit);
+        view.update(BalanceMessage::MoveDown);
+        assert!(view.search.is_some());
+    }
+
+    #[test]
+    fn isearch_recall_backward_sets_direction() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.last_search = "assets".to_owned();
+        view.update(BalanceMessage::SelectLast);
+        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
+        view.update(BalanceMessage::SearchPrev);
+        let search = view.search.as_ref().unwrap();
+        assert_eq!(search.intent.input, "assets");
+        assert_eq!(search.intent.mode, SearchMode::Interactive);
+        assert_eq!(search.intent.dir, SearchDirection::Backward);
+        assert_eq!(selected(&view), Some(1));
+    }
+
+    #[test]
+    fn cancel_restores_origin() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::MoveDown);
+        view.update(BalanceMessage::MoveDown);
+        view.update(BalanceMessage::StartModalSearch);
+        for c in "assets".chars() {
+            view.update(BalanceMessage::SearchPush(c));
+        }
+        assert_eq!(selected(&view), Some(0));
+        view.update(BalanceMessage::SearchCancel);
+        assert!(view.search.is_none());
+        assert_eq!(selected(&view), Some(2));
+    }
+
+    #[test]
+    fn close_keeps_selection() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::StartModalSearch);
+        for c in "salary".chars() {
+            view.update(BalanceMessage::SearchPush(c));
+        }
+        view.update(BalanceMessage::SearchSubmit);
+        assert_eq!(selected(&view), Some(3));
+        view.update(BalanceMessage::SearchClose);
+        assert!(view.search.is_none());
+        assert_eq!(selected(&view), Some(3));
+    }
+
+    #[test]
+    fn search_next_prev_wrap_over_matches() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::StartModalSearch);
+        for c in "assets".chars() {
+            view.update(BalanceMessage::SearchPush(c));
+        }
+        view.update(BalanceMessage::SearchSubmit);
+        assert_eq!(selected(&view), Some(0));
+        view.update(BalanceMessage::SearchNext);
+        assert_eq!(selected(&view), Some(1));
+        view.update(BalanceMessage::SearchNext);
+        assert_eq!(selected(&view), Some(0));
+        view.update(BalanceMessage::SearchPrev);
+        assert_eq!(selected(&view), Some(1));
+    }
+
+    // --- amount / restore-index free functions ---
+
+    #[test]
+    fn amount_line_count_zero_amount_is_one() {
+        let amount = Amount::zero();
+        assert_eq!(amount_line_count(&amount), 1);
+    }
+
+    #[test]
+    fn amount_line_count_matches_commodity_count() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let usd = ctx.commodity_store_mut().ensure("USD");
+        let eur = ctx.commodity_store_mut().ensure("EUR");
+        let one = Amount::from_value(usd, dec!(1));
+        let two = Amount::from_value(usd, dec!(1)) + Amount::from_value(eur, dec!(2));
+        assert_eq!(amount_line_count(&one), 1);
+        assert_eq!(amount_line_count(&two), 2);
+    }
+
+    #[test]
+    fn restore_index_prefers_exact_match() {
+        let arena = Bump::new();
+        let (ctx, _view) = view_from_names(&arena, ACCOUNTS);
+        let rows = rows_of(&ctx, ACCOUNTS);
+        assert_eq!(restore_index("Expenses:Food", &rows), Some(2));
+    }
+
+    #[test]
+    fn restore_index_falls_back_to_insertion_point() {
+        let arena = Bump::new();
+        let (ctx, _view) = view_from_names(&arena, ACCOUNTS);
+        let rows = rows_of(&ctx, ACCOUNTS);
+        assert_eq!(restore_index("Assets:Extra", &rows), Some(2));
+        assert_eq!(restore_index("Aaa", &rows), Some(0));
+        assert_eq!(restore_index("Zzz", &rows), Some(4));
+    }
+
+    #[test]
+    fn restore_index_empty_rows_is_none() {
+        let rows: &[BalanceRow<'_>] = &[];
+        assert_eq!(restore_index("Assets:Bank", rows), None);
+    }
+
+    // --- tree / fold (BalanceView::update) ---
+
+    #[test]
+    fn flat_mode_shows_only_posted_accounts() {
+        let arena = Bump::new();
+        let (_ctx, view) = tree_view(&arena, TREE_LEDGER);
+        assert_eq!(
+            full_names(&view),
+            ["Assets:Bank:Checking", "Assets:Cash", "Equity", "Expenses:Food"]
+        );
+    }
+
+    #[test]
+    fn toggle_tree_shows_hierarchy_with_leaf_labels() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
+        let checking = view.rows[0].amount.clone();
+        let cash = view.rows[1].amount.clone();
+        view.update(BalanceMessage::ToggleTree);
+        assert_eq!(view.mode, DisplayMode::Tree);
+        assert_eq!(
+            full_names(&view),
+            [
+                "Assets",
+                "Assets:Bank",
+                "Assets:Bank:Checking",
+                "Assets:Cash",
+                "Equity",
+                "Expenses",
+                "Expenses:Food",
+            ]
+        );
+        assert_eq!(
+            row_labels(&view),
+            ["Assets", "Bank", "Checking", "Cash", "Equity", "Expenses", "Food"]
+        );
+        assert_eq!(view.rows[0].depth, 1);
+        assert!(view.rows[0].has_children);
+        assert_eq!(view.rows[2].depth, 3);
+        assert!(!view.rows[2].has_children);
+        assert_eq!(view.rows[0].amount, checking + cash);
+        view.update(BalanceMessage::ToggleTree);
+        assert_eq!(view.mode, DisplayMode::Flat);
+        assert_eq!(view.rows.len(), 4);
+    }
+
+    #[test]
+    fn toggle_fold_hides_selected_subtree() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
+        view.update(BalanceMessage::ToggleTree);
+        view.nav.select(0); // Assets
+        view.update(BalanceMessage::ToggleFold);
+        assert_eq!(
+            full_names(&view),
+            ["Assets", "Equity", "Expenses", "Expenses:Food"]
+        );
+        assert!(view.rows[0].folded);
+        assert_eq!(view.nav.table_state.selected(), Some(0));
+        view.update(BalanceMessage::ToggleFold);
+        assert!(!view.rows[0].folded);
+        assert_eq!(view.rows.len(), 7);
+    }
+
+    #[test]
+    fn toggle_fold_all_collapses_then_expands() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
+        view.update(BalanceMessage::ToggleTree);
+        view.update(BalanceMessage::ToggleFoldAll);
+        assert_eq!(full_names(&view), ["Assets", "Equity", "Expenses"]);
+        view.update(BalanceMessage::ToggleFoldAll);
+        assert_eq!(view.rows.len(), 7);
+    }
+
+    #[test]
+    fn tree_open_register_drills_into_subtree() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
+        view.update(BalanceMessage::ToggleTree);
+        view.nav.select(0); // Assets
+        let action = view.update(BalanceMessage::OpenRegister);
+        assert_matches!(
+            action,
+            Some(BalanceAction::OpenRegister { scope: RegisterScope::Subtree(agg) }) if agg.as_str() == "Assets"
+        );
+    }
+
+    #[test]
+    fn flat_open_register_drills_into_single_account() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
+        view.nav.select(1); // Assets:Cash
+        let action = view.update(BalanceMessage::OpenRegister);
+        assert_matches!(
+            action,
+            Some(BalanceAction::OpenRegister { scope: RegisterScope::Single(account) }) if account.as_str() == "Assets:Cash"
+        );
+    }
+
+    #[test]
+    fn open_register_with_no_selection_is_none() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, &[]);
+        assert_matches!(view.update(BalanceMessage::OpenRegister), None);
+    }
+
+    #[test]
+    fn tree_state_survives_snapshot_restore() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
+        view.update(BalanceMessage::ToggleTree);
+        view.nav.select(0); // Assets
+        view.update(BalanceMessage::ToggleFold); // fold Assets
+        let snapshot = view.snapshot();
+
+        let (_ctx2, mut view2) = tree_view(&arena, TREE_LEDGER);
+        view2.restore(&snapshot);
+        assert_eq!(view2.mode, DisplayMode::Tree);
+        assert_eq!(
+            full_names(&view2),
+            ["Assets", "Equity", "Expenses", "Expenses:Food"]
+        );
+        assert!(view2.rows[0].folded);
+    }
+
+    // --- key mapping (BalanceView::key_to_message) ---
+
+    #[test]
+    fn key_maps_nav_keys() {
+        let arena = Bump::new();
+        let (_ctx, view) = view_from_names(&arena, ACCOUNTS);
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Down)),
+            Some(BalanceMessage::MoveDown)
+        );
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Char('k'))),
+            Some(BalanceMessage::MoveUp)
+        );
+        assert_eq!(
+            view.key_to_message(ctrl_key('n')),
+            Some(BalanceMessage::MoveDown)
+        );
+        assert_eq!(
+            view.key_to_message(ctrl_key('p')),
+            Some(BalanceMessage::MoveUp)
+        );
+    }
+
+    #[test]
+    fn key_maps_balance_actions() {
+        let arena = Bump::new();
+        let (_ctx, view) = view_from_names(&arena, ACCOUNTS);
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Enter)),
+            Some(BalanceMessage::OpenRegister)
+        );
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Char('/'))),
+            Some(BalanceMessage::StartModalSearch)
+        );
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Char('t'))),
+            Some(BalanceMessage::ToggleTree)
+        );
+        assert_eq!(
+            view.key_to_message(ctrl_key('s')),
+            Some(BalanceMessage::StartISearch(SearchDirection::Forward))
+        );
+        assert_eq!(
+            view.key_to_message(ctrl_key('r')),
+            Some(BalanceMessage::StartISearch(SearchDirection::Backward))
+        );
+    }
+
+    #[test]
+    fn key_leaves_quit_and_reload_unmapped() {
+        let arena = Bump::new();
+        let (_ctx, view) = view_from_names(&arena, ACCOUNTS);
+        // q/Esc and r/F5 are global; the event layer handles them.
+        assert_eq!(view.key_to_message(key(KeyCode::Char('q'))), None);
+        assert_eq!(view.key_to_message(key(KeyCode::Esc)), None);
+        assert_eq!(view.key_to_message(key(KeyCode::Char('r'))), None);
+        assert_eq!(view.key_to_message(key(KeyCode::F(5))), None);
+    }
+
+    #[test]
+    fn key_incremental_search_captures_editing_keys() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::StartModalSearch);
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Char('j'))),
+            Some(BalanceMessage::SearchPush('j'))
+        );
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Backspace)),
+            Some(BalanceMessage::SearchPop)
+        );
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Enter)),
+            Some(BalanceMessage::SearchSubmit)
+        );
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Esc)),
+            Some(BalanceMessage::SearchCancel)
+        );
+        // 'r' during editing is input, not reload.
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Char('r'))),
+            Some(BalanceMessage::SearchPush('r'))
+        );
+    }
+
+    #[test]
+    fn key_fixed_search_intercepts_only_its_controls() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::StartModalSearch);
+        view.update(BalanceMessage::SearchPush('a'));
+        view.update(BalanceMessage::SearchSubmit); // fixed
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Char('n'))),
+            Some(BalanceMessage::SearchNext)
+        );
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Char('N'))),
+            Some(BalanceMessage::SearchPrev)
+        );
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Esc)),
+            Some(BalanceMessage::SearchClose)
+        );
+        // Everything else falls through to normal navigation / drill-in.
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Char('j'))),
+            Some(BalanceMessage::MoveDown)
+        );
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Enter)),
+            Some(BalanceMessage::OpenRegister)
+        );
+        // 'r' in fixed search is unmapped (event layer reloads).
+        assert_eq!(view.key_to_message(key(KeyCode::Char('r'))), None);
+    }
+
+    #[test]
+    fn key_interactive_search_captures_keys() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Char('j'))),
+            Some(BalanceMessage::SearchPush('j'))
+        );
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Backspace)),
+            Some(BalanceMessage::SearchPop)
+        );
+        assert_eq!(
+            view.key_to_message(ctrl_key('s')),
+            Some(BalanceMessage::SearchNext)
+        );
+        assert_eq!(
+            view.key_to_message(ctrl_key('r')),
+            Some(BalanceMessage::SearchPrev)
+        );
+        assert_eq!(
+            view.key_to_message(ctrl_key('g')),
+            Some(BalanceMessage::SearchCancel)
+        );
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Esc)),
+            Some(BalanceMessage::SearchCancel)
+        );
+        // RET drills in; C-n/C-p move — all end the search at update time.
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Enter)),
+            Some(BalanceMessage::OpenRegister)
+        );
+        assert_eq!(
+            view.key_to_message(ctrl_key('n')),
+            Some(BalanceMessage::MoveDown)
+        );
+        assert_eq!(
+            view.key_to_message(ctrl_key('p')),
+            Some(BalanceMessage::MoveUp)
+        );
+    }
 }
