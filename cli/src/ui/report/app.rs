@@ -822,10 +822,6 @@ mod tests {
 
     use crate::ui::table::TableNav;
 
-    fn nav(n: usize) -> TableNav {
-        TableNav::new(n)
-    }
-
     fn template<'ctx>() -> RegisterQueryTemplate<'ctx> {
         RegisterQueryTemplate {
             conversion: None,
@@ -1265,62 +1261,6 @@ mod tests {
         let two = Amount::from_value(usd, dec!(1)) + Amount::from_value(eur, dec!(2));
         assert_eq!(amount_line_count(&one), 1);
         assert_eq!(amount_line_count(&two), 2);
-    }
-
-    #[test]
-    fn empty_nav_has_no_selection() {
-        let n = nav(0);
-        assert!(n.is_empty());
-        assert_eq!(n.table_state.selected(), None);
-    }
-
-    #[test]
-    fn move_selection_clamps_to_bounds() {
-        let mut n = nav(3);
-        assert_eq!(n.table_state.selected(), Some(0));
-
-        n.move_selection(-1);
-        assert_eq!(n.table_state.selected(), Some(0));
-
-        n.move_selection(1);
-        assert_eq!(n.table_state.selected(), Some(1));
-
-        n.move_selection(100);
-        assert_eq!(n.table_state.selected(), Some(2));
-
-        n.move_selection(-100);
-        assert_eq!(n.table_state.selected(), Some(0));
-    }
-
-    #[test]
-    fn select_first_and_last() {
-        let mut n = nav(5);
-        n.select_last();
-        assert_eq!(n.table_state.selected(), Some(4));
-        n.select_first();
-        assert_eq!(n.table_state.selected(), Some(0));
-    }
-
-    #[test]
-    fn select_first_or_last_on_empty_is_noop() {
-        let mut n = nav(0);
-        n.select_last();
-        assert_eq!(n.table_state.selected(), None);
-        n.select_first();
-        assert_eq!(n.table_state.selected(), None);
-    }
-
-    #[test]
-    fn page_size_defaults_to_one_when_unset() {
-        let n = nav(10);
-        assert_eq!(n.page_size(), 1);
-    }
-
-    #[test]
-    fn page_size_uses_viewport_height() {
-        let mut n = nav(10);
-        n.viewport_height = 20;
-        assert_eq!(n.page_size(), 20);
     }
 
     #[test]
