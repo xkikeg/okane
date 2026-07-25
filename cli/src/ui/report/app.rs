@@ -4,446 +4,26 @@
 //! through [`App::update`] driven by a [`Message`]. Key handling in
 //! [`super::event`] translates raw `KeyEvent`s into messages based on the
 //! currently active screen and overlay.
+//!
+//! [`App`] is a thin dispatcher over two screen states: the persistent
+//! [`BalanceView`] (the account list/tree, always present) and the transient
+//! [`RegisterView`] nested in [`Screen::Register`]. Balance-screen transitions
+//! are delegated to [`BalanceView`]; [`App`] owns only the cross-screen
+//! concerns — the focused screen, the modal overlay, the footer notice, and
+//! the reload snapshot.
 
-use std::cmp::{max, min};
-use std::collections::HashSet;
-
-use chrono::NaiveDate;
-use okane_core::report::query::{Conversion, DateRange};
-use okane_core::report::{Account, AccountAggregate, AccountTreeKey, Amount, BalanceTreeNode};
-use regex::RegexBuilder;
+use std::cmp::min;
 
 use crate::ui::table::TableNav;
 
-/// Whether the balance screen shows a flat account list or the account tree.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DisplayMode {
-    /// Every posted account, alphabetically, showing its own amount.
-    Flat,
-    /// The account hierarchy, indented and foldable, showing subtree totals.
-    Tree,
-}
+use okane_core::report::BalanceTreeNode;
 
-/// What a register drill-in from the balance screen should match.
-#[derive(Debug, Clone, Copy)]
-pub enum RegisterScope<'ctx> {
-    /// Exactly one account (flat-view drill-in).
-    Single(Account<'ctx>),
-    /// An account and all of its descendants (tree-view drill-in).
-    Subtree(AccountAggregate<'ctx>),
-}
-
-impl<'ctx> RegisterScope<'ctx> {
-    /// The account/prefix name shown in the register title.
-    pub fn display_name(&self) -> &'ctx str {
-        match self {
-            RegisterScope::Single(account) => account.as_str(),
-            RegisterScope::Subtree(aggregate) => aggregate.as_str(),
-        }
-    }
-
-    /// Owned form that survives a reload (see [`OwnedRegisterScope`]).
-    fn as_owned_scope(self) -> OwnedRegisterScope {
-        match self {
-            RegisterScope::Single(account) => {
-                OwnedRegisterScope::Single(account.as_str().to_owned())
-            }
-            RegisterScope::Subtree(aggregate) => {
-                OwnedRegisterScope::Subtree(aggregate.as_str().to_owned())
-            }
-        }
-    }
-}
-
-/// Owned mirror of [`RegisterScope`] that survives a reload: the arena reset
-/// invalidates the `'ctx` references, so the scope is kept by account name and
-/// rebuilt with [`App::resolve_scope`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum OwnedRegisterScope {
-    /// A single account, by full name.
-    Single(String),
-    /// An account and all its descendants, by full name.
-    Subtree(String),
-}
-
-impl OwnedRegisterScope {
-    /// The account/prefix name the register was filtered to.
-    fn name(&self) -> &str {
-        match self {
-            OwnedRegisterScope::Single(name) | OwnedRegisterScope::Subtree(name) => name,
-        }
-    }
-}
-
-/// One visible row of the balance table.
-///
-/// Derived from an [`App`]'s tree of [`BalanceTreeNode`]s for the current
-/// [`DisplayMode`] and fold state (see [`App::rebuild_rows`]). Stores the typed
-/// amount from the report layer so rendering can reformat lazily under
-/// different display contexts (currency conversion, commodity toggling, etc.)
-/// without rebuilding the row vector.
-#[derive(Debug, Clone)]
-pub struct BalanceRow<'ctx> {
-    /// Index of the backing node in [`App::tree`].
-    pub node: usize,
-    /// Associated account.
-    /// Used for search, snapshot and reload restore.
-    pub account: AccountTreeKey<'ctx>,
-    /// Display label: the full path in [`DisplayMode::Flat`], the leaf segment
-    /// in [`DisplayMode::Tree`].
-    pub label: &'ctx str,
-    /// Depth in the account tree (`1` for a top-level account). Drives the
-    /// tree-view indentation.
-    pub depth: u16,
-    /// Amount to display: the node's own amount in flat view, its subtree
-    /// total in tree view.
-    pub amount: Amount<'ctx>,
-    /// Whether the backing node has children (shows a fold marker in tree view).
-    pub has_children: bool,
-    /// Whether the backing node is currently folded.
-    pub folded: bool,
-    /// The scope of the register this balance row is associated with.
-    /// It's impossible to derive from account as tree-view balance account would include decendants_of,
-    /// while the flat-view balance will use exact.
-    pub scope: RegisterScope<'ctx>,
-}
-
-impl<'ctx> BalanceRow<'ctx> {
-    /// A flat-view row for a concrete account. Used by the state-machine
-    /// tests, which don't carry a tree.
-    #[cfg(test)]
-    pub fn flat(account: Account<'ctx>, amount: Amount<'ctx>) -> Self {
-        Self {
-            node: 0,
-            account: account.into(),
-            label: account.as_str(),
-            depth: 0,
-            amount,
-            has_children: false,
-            folded: false,
-            scope: RegisterScope::Single(account),
-        }
-    }
-
-    /// Number of rendered lines this row occupies (>= 1).
-    ///
-    /// One line per commodity, with a `0` placeholder line for empty balances.
-    pub fn line_count(&self) -> u16 {
-        amount_line_count(&self.amount)
-    }
-
-    /// Returns the full name of the account.
-    pub fn full_name(&self)-> &'ctx str {
-        account_full_label(&self.account)
-    }
-}
-
-/// One row of the register table.
-///
-/// The account is implied by the active [`RegisterView`] (exact-match
-/// filter), so it is not duplicated per row.
-#[derive(Debug, Clone)]
-pub struct RegisterRow<'ctx> {
-    pub date: NaiveDate,
-    pub payee: String,
-    pub amount: Amount<'ctx>,
-    pub total: Amount<'ctx>,
-}
-
-impl RegisterRow<'_> {
-    /// Number of rendered lines this row occupies (>= 1).
-    pub fn line_count(&self) -> u16 {
-        max(
-            amount_line_count(&self.amount),
-            amount_line_count(&self.total),
-        )
-    }
-}
-
-/// Printable full label of the AccountTeeKey.
-pub fn account_full_label<'ctx>(account: &AccountTreeKey<'ctx>) -> &'ctx str {
-    match account {
-        AccountTreeKey::Root => "(total)",
-        AccountTreeKey::Descendant(account) => account.as_str(),
-    }
-}
-
-/// Number of lines an [`Amount`] would render as in a table.
-fn amount_line_count(amount: &Amount<'_>) -> u16 {
-    let n = amount.iter().count();
-    n.clamp(1, u16::MAX as usize) as u16
-}
-
-/// Query parameters reused for every register lookup during the session
-/// (built once from the CLI's `EvalOptions`).
-#[derive(Debug, Clone, Copy)]
-pub struct RegisterQueryTemplate<'ctx> {
-    pub conversion: Option<Conversion<'ctx>>,
-    pub date_range: DateRange,
-}
-
-/// State for the register drill-down screen.
-#[derive(Debug)]
-pub struct RegisterView<'ctx> {
-    /// What this register is filtered to (single account or subtree). Also the
-    /// source of the title-bar label (see [`Self::title`]).
-    pub scope: RegisterScope<'ctx>,
-    pub rows: Vec<RegisterRow<'ctx>>,
-    pub nav: TableNav,
-    /// Cached `(amount, total)` column widths. The amounts are fixed for the
-    /// life of the view, so the renderer computes these once (scanning all
-    /// rows) on first draw and reuses them, keeping per-frame work
-    /// proportional to the viewport rather than the row count.
-    pub col_widths: Option<(u16, u16)>,
-}
-
-impl<'ctx> RegisterView<'ctx> {
-    pub fn new(scope: RegisterScope<'ctx>, rows: Vec<RegisterRow<'ctx>>) -> Self {
-        let mut nav = TableNav::new(rows.len());
-        // Most recent entry is the most useful starting point.
-        nav.select_last();
-        Self {
-            scope,
-            rows,
-            nav,
-            col_widths: None,
-        }
-    }
-
-    /// The account/prefix name shown in the title bar (always the scope's name).
-    pub fn title(&self) -> &'ctx str {
-        self.scope.display_name()
-    }
-}
-
-/// Top-level screen the user is currently looking at.
-#[derive(Debug)]
-pub enum Screen<'ctx> {
-    Balance,
-    Register(RegisterView<'ctx>),
-}
-
-/// A scroll request against a scrollable overlay body.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScrollDelta {
-    Lines(i16),
-    Pages(i16),
-    Top,
-    Bottom,
-}
-
-/// Body of the error modal: a full error report the user scrolls through.
-///
-/// The message is pre-split into display lines, and the renderer does not
-/// re-wrap them (annotate-snippets output is column-aligned — soft wrapping
-/// would move the carets away from what they point at). That keeps
-/// `lines.len()` the exact rendered line count, so the scroll bound is
-/// computable — and testable — without a terminal.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ErrorPopup {
-    /// Modal title, e.g. `failed to load main.ledger`.
-    pub title: String,
-    /// The error report, one entry per display line.
-    pub lines: Vec<String>,
-    /// Index of the first visible line.
-    pub scroll: u16,
-    /// Last known height of the body. Updated each frame, the same way
-    /// [`crate::ui::table::TableNav::viewport_height`] is.
-    pub viewport_height: u16,
-}
-
-impl ErrorPopup {
-    pub fn new(title: String, lines: Vec<String>) -> Self {
-        Self {
-            title,
-            lines,
-            scroll: 0,
-            viewport_height: 0,
-        }
-    }
-
-    /// Rows the body can scroll before its last line reaches the bottom of the
-    /// viewport. Zero when everything already fits.
-    fn max_scroll(&self) -> u16 {
-        let lines = u16::try_from(self.lines.len()).unwrap_or(u16::MAX);
-        lines.saturating_sub(max(self.viewport_height, 1))
-    }
-
-    /// Applies a scroll request, clamped to the scrollable range.
-    pub fn scroll(&mut self, delta: ScrollDelta) {
-        let page = i32::from(max(self.viewport_height, 1));
-        let current = i32::from(self.scroll);
-        let target = match delta {
-            ScrollDelta::Lines(n) => current + i32::from(n),
-            ScrollDelta::Pages(n) => current + i32::from(n) * page,
-            ScrollDelta::Top => 0,
-            ScrollDelta::Bottom => i32::from(self.max_scroll()),
-        };
-        self.scroll = target.clamp(0, i32::from(self.max_scroll())) as u16;
-    }
-
-    /// Re-clamps the offset after the viewport height changes (terminal resize).
-    pub fn clamp(&mut self) {
-        self.scroll = min(self.scroll, self.max_scroll());
-    }
-}
-
-/// Modal overlay drawn on top of the current screen.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Overlay {
-    /// "Quit? y/n" prompt shown when leaving the balance screen.
-    QuitConfirm,
-    /// A failure the user must acknowledge, shown in full.
-    Error(ErrorPopup),
-}
-
-/// Phase of the modal (`/`) account search.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SearchPhase {
-    /// Pattern is being typed; matches recompute on every keystroke.
-    Incremental,
-    /// Pattern is frozen; `n`/`N` jump between matches.
-    Fixed,
-}
-
-/// Direction an interactive search last moved in. Determines which way fresh
-/// input jumps (forward `C-s` vs backward `C-r`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SearchDirection {
-    Forward,
-    Backward,
-}
-
-/// Interaction style of an account search.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SearchMode {
-    /// Modal `/` search: incremental editing, then a frozen `n`/`N` phase.
-    Modal(SearchPhase),
-    /// Interactive `C-s`/`C-r` search (i-search): editing is always live.
-    Interactive,
-}
-
-/// What the user is searching for and how — pure intent, no computed state.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SearchIntent {
-    pub mode: SearchMode,
-    /// Direction of the search.
-    /// Currently Modal search is only provided with forward,
-    /// but implementing backward won't be hard.
-    pub dir: SearchDirection,
-    /// Raw pattern as typed (without the leading `/` or `I-search:` prompt).
-    pub input: String,
-    /// Set when `C-s`/`C-r` was pressed on an empty interactive pattern but no
-    /// previous search text exists; drives the `[no previous search text]`
-    /// notice. Cleared as soon as the pattern changes.
-    pub no_previous: bool,
-    /// Balance selection when search started; restored on cancel/abort.
-    pub origin: usize,
-}
-
-/// Computed set of balance-row indices that matched the search pattern.
-/// Newtype so we can attach match-specific methods.
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct SearchMatch(Vec<usize>);
-
-impl From<Vec<usize>> for SearchMatch {
-    fn from(v: Vec<usize>) -> Self {
-        Self(v)
-    }
-}
-
-impl SearchMatch {
-    fn rows(&self) -> &[usize] {
-        &self.0
-    }
-
-    /// Returns true if it contains the row
-    pub fn contains_row(&self, i: usize) -> bool {
-        self.0.binary_search(&i).is_ok()
-    }
-
-    /// First match at-or-after/before `pos` depending on `dir`, wrapping around.
-    /// Stays on `pos` if it is already a match. Returns `None` when empty.
-    pub fn first_match(&self, pos: usize, dir: SearchDirection) -> Option<usize> {
-        let rows = &self.0;
-        if rows.is_empty() {
-            return None;
-        }
-        let len = rows.len();
-        let idx = match (rows.binary_search(&pos), dir) {
-            (Ok(i), _) => i,
-            (Err(i), SearchDirection::Forward) => i % len,
-            (Err(i), SearchDirection::Backward) => (i + len - 1) % len,
-        };
-        Some(rows[idx])
-    }
-
-    /// Computes matching row indices for `input` as a case-insensitive regex.
-    /// Returns `None` for empty input, `Err` for an invalid pattern.
-    pub fn compute(input: &str, rows: &[BalanceRow<'_>]) -> Option<Result<Self, regex::Error>> {
-        if input.is_empty() {
-            return None;
-        }
-        Some(
-            RegexBuilder::new(input)
-                .case_insensitive(true)
-                .build()
-                .map(|re| {
-                    Self(
-                        rows.iter()
-                            .enumerate()
-                            .filter(|(_, row)| re.is_match(row.full_name()))
-                            .map(|(i, _)| i)
-                            .collect(),
-                    )
-                }),
-        )
-    }
-
-    /// Row index of the next/previous match relative to `current` (wrapping).
-    /// None if empty.
-    pub fn step(&self, current: usize, dir: SearchDirection) -> Option<usize> {
-        let rows = &self.0;
-        if rows.is_empty() {
-            return None;
-        }
-        let len = rows.len();
-        let next_idx = match (rows.binary_search(&current), dir) {
-            // `current` is a match: step one slot in the requested direction.
-            (Ok(i), SearchDirection::Forward) => (i + 1) % len,
-            (Ok(i), SearchDirection::Backward) => (i + len - 1) % len,
-            // `current` is between matches: `i` is the insertion point, i.e. the
-            // first match after `current` (mod len for the wrap).
-            (Err(i), SearchDirection::Forward) => i % len,
-            (Err(i), SearchDirection::Backward) => (i + len - 1) % len,
-        };
-        Some(rows[next_idx])
-    }
-}
-
-/// Account-name search state on the balance screen.
-///
-/// Not `PartialEq` because `regex::Error` doesn't implement it — tests inspect
-/// the individual fields.
-#[derive(Debug)]
-pub struct Search {
-    pub intent: SearchIntent,
-    /// `None` when `input` is empty; `Ok` with matching row indices; `Err` when
-    /// the pattern fails to compile as a regex.
-    pub matches: Option<Result<SearchMatch, regex::Error>>,
-}
-
-impl Search {
-    pub(super) fn err(&self) -> Option<&regex::Error> {
-        self.matches.as_ref()?.as_ref().err()
-    }
-    pub(super) fn matched_rows(&self) -> &[usize] {
-        self.matches
-            .as_ref()
-            .and_then(|r| r.as_ref().ok())
-            .map_or(&[][..], |m| m.rows())
-    }
-}
+use super::balance::{BalanceSnapshot, BalanceView};
+use super::overlay::{Overlay, ScrollDelta};
+use super::register::{
+    RegisterQueryTemplate, RegisterRow, RegisterScope, RegisterSnapshot, RegisterView, Screen,
+};
+use super::search::{SearchDirection, SearchMode, SearchPhase};
 
 /// Messages that drive state transitions (Elm-style).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -510,67 +90,32 @@ pub enum Command<'ctx> {
     Reload,
 }
 
-/// Snapshot of register view that surives a reload, as part of [`UiSnapshot`].
-#[derive(Debug, Clone)]
-pub struct RegisterSnapshot {
-    /// What the register was filtered to (single account or subtree), owned so
-    /// it survives the arena reset.
-    scope: OwnedRegisterScope,
-    /// Selected cursor index.
-    cursor: usize,
-}
-
 /// UI state that survives a reload, captured by [`App::snapshot`] and
 /// re-applied by [`App::restore`]. Everything is plain owned data — arena
 /// references would dangle across the reload's arena reset, so accounts
 /// are kept by name and re-resolved against the rebuilt session.
 #[derive(Debug, Clone)]
 pub struct UiSnapshot {
-    /// Carried over so page-up/down keeps working before the first frame.
-    viewport_height: u16,
-    /// Selected account on the balance screen, by name.
-    selected_account: Option<String>,
-    /// Snapshot of the register if it's register view.
+    /// Balance-screen state (selection, search, mode, fold state).
+    balance: BalanceSnapshot,
+    /// Snapshot of the register if it's the register screen.
     /// Extend this once [`Screen`] is more than 2 states.
     register: Option<RegisterSnapshot>,
-    /// Active search intent; the matches are recomputed on restore.
-    search: Option<SearchIntent>,
-    last_search: String,
-    /// Flat vs tree display mode.
-    mode: DisplayMode,
-    /// Full names of the folded tree nodes, re-resolved to indices on restore.
-    folded: Vec<String>,
 }
 
 /// Application state for the TUI session.
 #[derive(Debug)]
 pub struct App<'ctx> {
     pub source_display: String,
-    /// The whole account tree, alphabetical/pre-order (index 0 is the root).
-    /// Empty in the pure state-machine tests, which drive [`Self::balance_rows`]
-    /// directly.
-    pub tree: Vec<BalanceTreeNode<'ctx>>,
-    /// Flat vs tree display mode.
-    pub mode: DisplayMode,
-    /// Indices into [`Self::tree`] of currently folded nodes (tree view only).
-    pub folded: HashSet<usize>,
-    /// The rows currently visible in the balance table, derived from
-    /// [`Self::tree`] + [`Self::mode`] + [`Self::folded`] by
-    /// [`Self::rebuild_rows`].
-    pub balance_rows: Vec<BalanceRow<'ctx>>,
-    pub balance_nav: TableNav,
+    /// Balance screen state — always present; the register screen is a
+    /// transient drill-in drawn over it.
+    pub balance: BalanceView<'ctx>,
     pub screen: Screen<'ctx>,
     pub overlay: Option<Overlay>,
     /// Transient one-line notice shown in the footer. Cleared on the next key
     /// press. Failures worth reading in full go to [`Overlay::Error`] instead,
     /// which is dismissed explicitly.
     pub error_toast: Option<String>,
-    /// Active account search on the balance screen, if any.
-    pub search: Option<Search>,
-    /// Most recently used search pattern, recalled by an empty interactive
-    /// search via `C-s`/`C-r`. Shared across modal and interactive searches.
-    /// Not `Option` because empty string can represent empty state.
-    pub last_search: String,
     pub register_template: RegisterQueryTemplate<'ctx>,
     pub should_quit: bool,
 }
@@ -584,23 +129,15 @@ impl<'ctx> App<'ctx> {
         tree: Vec<BalanceTreeNode<'ctx>>,
         register_template: RegisterQueryTemplate<'ctx>,
     ) -> Self {
-        let mut app = Self {
+        Self {
             source_display,
-            tree,
-            mode: DisplayMode::Flat,
-            folded: HashSet::new(),
-            balance_rows: Vec::new(),
-            balance_nav: TableNav::new(0),
+            balance: BalanceView::new(tree),
             screen: Screen::Balance,
             overlay: None,
             error_toast: None,
-            search: None,
-            last_search: String::new(),
             register_template,
             should_quit: false,
-        };
-        app.rebuild_rows();
-        app
+        }
     }
 
     /// Builds an app from pre-derived balance rows, with no backing tree.
@@ -609,203 +146,26 @@ impl<'ctx> App<'ctx> {
     #[cfg(test)]
     pub fn with_rows(
         source_display: String,
-        balance_rows: Vec<BalanceRow<'ctx>>,
+        balance_rows: Vec<super::balance::BalanceRow<'ctx>>,
         register_template: RegisterQueryTemplate<'ctx>,
     ) -> Self {
-        let balance_nav = TableNav::new(balance_rows.len());
         Self {
             source_display,
-            tree: Vec::new(),
-            mode: DisplayMode::Flat,
-            folded: HashSet::new(),
-            balance_rows,
-            balance_nav,
+            balance: BalanceView::with_rows(balance_rows),
             screen: Screen::Balance,
             overlay: None,
             error_toast: None,
-            search: None,
-            last_search: String::new(),
             register_template,
             should_quit: false,
         }
     }
 
-    /// The currently-selected balance row, if any.
-    fn selected_row(&self) -> Option<&BalanceRow<'ctx>> {
-        let idx = self.balance_nav.table_state.selected()?;
-        self.balance_rows.get(idx)
-    }
-
-    /// Full name of the currently-selected account, if any.
-    fn selected_full_name(&self) -> Option<&'ctx str> {
-        self.selected_row().map(|r| r.full_name())
-    }
-
-    /// The drill target of the currently-selected balance row, if any.
-    fn selected_scope(&self) -> Option<RegisterScope<'ctx>> {
-        self.selected_row().map(|r| r.scope)
-    }
-
     /// Mutable handle to whichever nav drives the currently visible table.
     fn active_nav_mut(&mut self) -> &mut TableNav {
         match &mut self.screen {
-            Screen::Balance => &mut self.balance_nav,
+            Screen::Balance => &mut self.balance.nav,
             Screen::Register(view) => &mut view.nav,
         }
-    }
-
-    /// Recomputes [`Self::balance_rows`] from the tree for the current mode and
-    /// fold state, keeping the selection on the same account when possible (or
-    /// its nearest visible ancestor when it was folded away).
-    ///
-    /// A no-op without a backing tree: the pure state-machine tests drive
-    /// [`Self::balance_rows`] directly through [`Self::with_rows`], and a real
-    /// empty ledger has no rows to rebuild either.
-    fn rebuild_rows(&mut self) {
-        if self.tree.is_empty() {
-            return;
-        }
-        // `&'ctx str`, not tied to `&self`, so it survives the rebuild below
-        // without owning a copy.
-        let prev = self.selected_full_name();
-        let viewport_height = self.balance_nav.viewport_height;
-        self.balance_rows = match self.mode {
-            DisplayMode::Flat => self.build_flat_rows(),
-            DisplayMode::Tree => self.build_tree_rows(),
-        };
-        self.balance_nav = TableNav::new(self.balance_rows.len());
-        self.balance_nav.viewport_height = viewport_height;
-        if let Some(name) = prev {
-            self.select_by_name(name);
-        }
-    }
-
-    /// Flat rows: every posted account (non-zero own amount), full name, own
-    /// amount. Ancestor-only nodes have a zero own amount and are skipped.
-    fn build_flat_rows(&self) -> Vec<BalanceRow<'ctx>> {
-        self.tree
-            .iter()
-            .enumerate()
-            .filter_map(|(i, node)| {
-                let account = match node.account.as_aggregate()? {
-                    AccountAggregate::Account(account) => account,
-                    AccountAggregate::Ancestor(_) => return None,
-                };
-                Some(BalanceRow {
-                    node: i,
-                    account: account.into(),
-                    label: account.as_str(),
-                    depth: node.depth,
-                    amount: node.self_amount.clone(),
-                    // it's flat and impossible to have children.
-                    has_children: false,
-                    folded: false,
-                    scope: RegisterScope::Single(account),
-                })
-            })
-            .collect()
-    }
-
-    /// Tree rows: a pre-order walk that skips the root and jumps over a folded
-    /// node's whole (contiguous) subtree. Each row shows the leaf label,
-    /// indented by depth, and the subtree total.
-    fn build_tree_rows(&self) -> Vec<BalanceRow<'ctx>> {
-        let mut rows = Vec::new();
-        let mut i = 1; // index 0 is the synthetic root, never shown.
-        while i < self.tree.len() {
-            let node = &self.tree[i];
-            let Some(aggregate) = node.account.as_aggregate() else {
-                i += 1;
-                continue;
-            };
-            let folded = self.folded.contains(&i);
-            let label = match node.account {
-                AccountTreeKey::Root => "(total)",
-                AccountTreeKey::Descendant(account) => account.last_segment(),
-            };
-            rows.push(BalanceRow {
-                node: i,
-                account: aggregate.into(),
-                label,
-                depth: node.depth,
-                amount: node.subtree_amount.clone(),
-                has_children: node.has_children(),
-                folded,
-                scope: RegisterScope::Subtree(aggregate),
-            });
-            if folded && node.has_children() {
-                i = node.subtree_range().end;
-            } else {
-                i += 1;
-            }
-        }
-        rows
-    }
-
-    /// Selects the row for `name`, or its nearest visible ancestor (the longest
-    /// full-name prefix present), leaving the selection unchanged when neither
-    /// exists.
-    fn select_by_name(&mut self, name: &str) {
-        if let Some(idx) = self.balance_rows.iter().position(|r| r.full_name() == name) {
-            self.balance_nav.select(idx);
-            return;
-        }
-        let mut best: Option<usize> = None;
-        let mut best_len = 0;
-        for (idx, row) in self.balance_rows.iter().enumerate() {
-            let prefix = row.full_name();
-            let is_ancestor = name.len() > prefix.len()
-                && name.starts_with(prefix)
-                && name.as_bytes()[prefix.len()] == b':';
-            if is_ancestor && prefix.len() > best_len {
-                best = Some(idx);
-                best_len = prefix.len();
-            }
-        }
-        if let Some(idx) = best {
-            self.balance_nav.select(idx);
-        }
-    }
-
-    /// Folds/unfolds the selected node (tree view only, and only when it has
-    /// children), then rebuilds the rows.
-    fn toggle_fold_selected(&mut self) {
-        if self.mode != DisplayMode::Tree {
-            return;
-        }
-        let Some(row) = self.selected_row() else {
-            return;
-        };
-        if !row.has_children {
-            return;
-        }
-        let node = row.node;
-        if !self.folded.remove(&node) {
-            self.folded.insert(node);
-        }
-        self.rebuild_rows();
-    }
-
-    /// Folds every foldable node when any is unfolded, otherwise unfolds all
-    /// (tree view only), then rebuilds the rows.
-    fn toggle_fold_all(&mut self) {
-        if self.mode != DisplayMode::Tree {
-            return;
-        }
-        let foldable: Vec<usize> = self
-            .tree
-            .iter()
-            .enumerate()
-            .filter(|(i, node)| *i != 0 && node.has_children())
-            .map(|(i, _)| i)
-            .collect();
-        let all_folded = foldable.iter().all(|i| self.folded.contains(i));
-        if all_folded {
-            self.folded.clear();
-        } else {
-            self.folded = foldable.into_iter().collect();
-        }
-        self.rebuild_rows();
     }
 
     /// Applies a message; optionally returns a [`Command`] for the event
@@ -847,11 +207,11 @@ impl<'ctx> App<'ctx> {
 
         match msg {
             Message::MoveUp => {
-                self.end_interactive_search();
+                self.balance.end_interactive_search();
                 self.active_nav_mut().move_selection(-1);
             }
             Message::MoveDown => {
-                self.end_interactive_search();
+                self.balance.end_interactive_search();
                 self.active_nav_mut().move_selection(1);
             }
             Message::PageUp => {
@@ -868,11 +228,11 @@ impl<'ctx> App<'ctx> {
             Message::SelectLast => self.active_nav_mut().select_last(),
             Message::OpenRegister => {
                 if matches!(self.screen, Screen::Balance)
-                    && let Some(scope) = self.selected_scope()
+                    && let Some(scope) = self.balance.selected_scope()
                 {
                     // An interactive search drills in like the normal view:
                     // end the search, keeping the cursor on the chosen account.
-                    self.end_interactive_search();
+                    self.balance.end_interactive_search();
                     return Some(Command::LoadRegister { scope });
                 }
             }
@@ -886,72 +246,42 @@ impl<'ctx> App<'ctx> {
                     self.overlay = Some(Overlay::QuitConfirm);
                 }
             }
-            Message::StartModalSearch => self.start_search(
-                SearchMode::Modal(SearchPhase::Incremental),
-                SearchDirection::Forward,
-            ),
-            Message::StartISearch(dir) => self.start_search(SearchMode::Interactive, dir),
-            Message::SearchPush(c) => {
-                if let Some(search) = self.search.as_mut() {
-                    search.intent.input.push(c);
-                    search.intent.no_previous = false;
-                }
-                self.recompute_search();
-            }
-            Message::SearchPop => {
-                if let Some(search) = self.search.as_mut() {
-                    search.intent.input.pop();
-                    search.intent.no_previous = false;
-                }
-                self.recompute_search();
-            }
-            Message::SearchSubmit => match &self.search {
-                // If empty pattern submitted, simply exists the search mode.
-                Some(s) if s.intent.input.is_empty() => self.search = None,
-                Some(search) => {
-                    self.last_search = search.intent.input.clone();
-                    if let Some(search) = self.search.as_mut()
-                        && let SearchMode::Modal(phase) = &mut search.intent.mode
-                    {
-                        *phase = SearchPhase::Fixed;
-                    }
-                }
-                None => {}
-            },
-            Message::SearchCancel => {
-                if let Some(search) = self.search.take() {
-                    // on cancel, search query won't be saved.
-                    self.balance_nav.select(search.intent.origin);
+            // The screen guard mirrors the old inline guard: start a search on
+            // the balance screen, or continue editing one that is already open.
+            Message::StartModalSearch => {
+                if matches!(self.screen, Screen::Balance) || self.balance.search.is_some() {
+                    self.balance.start_search(
+                        SearchMode::Modal(SearchPhase::Incremental),
+                        SearchDirection::Forward,
+                    );
                 }
             }
-            Message::SearchClose => {
-                self.search = None;
+            Message::StartISearch(dir) => {
+                if matches!(self.screen, Screen::Balance) || self.balance.search.is_some() {
+                    self.balance.start_search(SearchMode::Interactive, dir);
+                }
             }
-            Message::SearchNext => self.search_or_recall(SearchDirection::Forward),
-            Message::SearchPrev => self.search_or_recall(SearchDirection::Backward),
+            Message::SearchPush(c) => self.balance.search_push(c),
+            Message::SearchPop => self.balance.search_pop(),
+            Message::SearchSubmit => self.balance.search_submit(),
+            Message::SearchCancel => self.balance.search_cancel(),
+            Message::SearchClose => self.balance.search_close(),
+            Message::SearchNext => self.balance.search_next(),
+            Message::SearchPrev => self.balance.search_prev(),
             Message::Reload => return Some(Command::Reload),
             Message::ToggleTree => {
                 if matches!(self.screen, Screen::Balance) {
-                    // Row identity changes between modes; drop any active search
-                    // rather than carry stale match indices across the reshape.
-                    self.search = None;
-                    self.mode = match self.mode {
-                        DisplayMode::Flat => DisplayMode::Tree,
-                        DisplayMode::Tree => DisplayMode::Flat,
-                    };
-                    self.rebuild_rows();
+                    self.balance.toggle_tree();
                 }
             }
             Message::ToggleFold => {
                 if matches!(self.screen, Screen::Balance) {
-                    self.toggle_fold_selected();
-                    self.recompute_search();
+                    self.balance.fold_selected();
                 }
             }
             Message::ToggleFoldAll => {
                 if matches!(self.screen, Screen::Balance) {
-                    self.toggle_fold_all();
-                    self.recompute_search();
+                    self.balance.fold_all();
                 }
             }
             // Already handled above, or only meaningful while an overlay is up.
@@ -985,119 +315,35 @@ impl<'ctx> App<'ctx> {
         self.screen = Screen::Register(view);
     }
 
-    /// Full names of the currently folded tree nodes (for snapshotting).
-    fn folded_names(&self) -> Vec<String> {
-        self.folded
-            .iter()
-            .filter_map(|&i| self.tree.get(i))
-            .filter_map(|node| node.account.as_aggregate())
-            .map(|aggregate| aggregate.as_str().to_owned())
-            .collect()
-    }
-
-    /// Re-resolves folded node names (from a snapshot) to indices in the
-    /// freshly-built tree.
-    fn apply_folded_names(&mut self, names: &[String]) {
-        let wanted: HashSet<&str> = names.iter().map(String::as_str).collect();
-        self.folded = self
-            .tree
-            .iter()
-            .enumerate()
-            .filter(|(i, node)| {
-                *i != 0
-                    && node
-                        .account
-                        .as_aggregate()
-                        .is_some_and(|aggregate| wanted.contains(aggregate.as_str()))
-            })
-            .map(|(i, _)| i)
-            .collect();
-    }
-
-    /// Rebuilds a [`RegisterScope`] from a persisted [`OwnedRegisterScope`] by
-    /// locating the node in the freshly-built tree. `None` when the account no
-    /// longer exists (or a `Single` scope now resolves to an ancestor-only node).
-    ///
-    /// Falls back to a matching visible row when there is no backing tree (the
-    /// state-machine tests), where a row still carries a usable scope.
-    fn resolve_scope(&self, scope: &OwnedRegisterScope) -> Option<RegisterScope<'ctx>> {
-        let name = scope.name();
-        if let Some(aggregate) = self
-            .tree
-            .iter()
-            .filter_map(|node| node.account.as_aggregate())
-            .find(|aggregate| aggregate.as_str() == name)
-        {
-            return match scope {
-                OwnedRegisterScope::Single(_) => match aggregate {
-                    AccountAggregate::Account(account) => Some(RegisterScope::Single(account)),
-                    AccountAggregate::Ancestor(_) => None,
-                },
-                OwnedRegisterScope::Subtree(_) => Some(RegisterScope::Subtree(aggregate)),
-            };
-        }
-        self.balance_rows
-            .iter()
-            .find(|row| row.full_name() == name)
-            .map(|row| row.scope)
-    }
-
     /// Captures the UI state that should survive a reload as owned data
     /// (no `'ctx` borrows): the whole session, arena included, is torn
     /// down before the snapshot is restored into the next one.
     pub fn snapshot(&self) -> UiSnapshot {
         UiSnapshot {
-            viewport_height: self.balance_nav.viewport_height,
-            selected_account: self.selected_full_name().map(str::to_owned),
+            balance: self.balance.snapshot(),
             register: match &self.screen {
                 Screen::Balance => None,
-                Screen::Register(view) => Some(RegisterSnapshot {
-                    scope: view.scope.as_owned_scope(),
-                    cursor: view.nav.table_state.selected().unwrap_or(0),
-                }),
+                Screen::Register(view) => Some(RegisterSnapshot::capture(view)),
             },
-            search: self.search.as_ref().map(|s| s.intent.clone()),
-            last_search: self.last_search.clone(),
-            mode: self.mode,
-            folded: self.folded_names(),
         }
     }
 
-    /// Restores a [`UiSnapshot`] into this freshly-built `App`: the display
-    /// mode and fold state are reapplied first (they reshape the rows), then
-    /// the balance selection follows the previously selected account (or the
-    /// closest one by name when it disappeared), and any active search is
-    /// recomputed against the new rows.
+    /// Restores a [`UiSnapshot`] into this freshly-built `App`: the balance
+    /// screen is restored first (mode, fold state, selection, and search are
+    /// reapplied against the new rows).
     ///
     /// When the snapshot had the register screen open, returns
     /// `Some((scope, index))` asking the caller to re-query that register and
     /// open it via [`Self::show_register_at`]. If the account no longer exists,
     /// stays on the balance screen (with a notice) and returns `None`.
     pub fn restore(&mut self, snapshot: &UiSnapshot) -> Option<(RegisterScope<'ctx>, usize)> {
-        self.mode = snapshot.mode;
-        self.apply_folded_names(&snapshot.folded);
-        self.rebuild_rows();
+        self.balance.restore(&snapshot.balance);
 
-        self.balance_nav.viewport_height = snapshot.viewport_height;
-        if let Some(prev) = &snapshot.selected_account
-            && let Some(idx) = restore_index(prev, &self.balance_rows)
-        {
-            self.balance_nav.select(idx);
-        }
-
-        self.last_search = snapshot.last_search.clone();
-        if let Some(intent) = &snapshot.search {
-            let mut intent = intent.clone();
-            intent.origin = min(intent.origin, self.balance_rows.len().saturating_sub(1));
-            let matches = SearchMatch::compute(&intent.input, &self.balance_rows);
-            self.search = Some(Search { intent, matches });
-        }
-
-        let RegisterSnapshot { scope, cursor } = snapshot.register.as_ref()?;
-        match self.resolve_scope(scope) {
-            Some(register_scope) => Some((register_scope, *cursor)),
+        let register = snapshot.register.as_ref()?;
+        match self.balance.resolve_scope(register.scope()) {
+            Some(register_scope) => Some((register_scope, register.cursor())),
             None => {
-                let name = scope.name();
+                let name = register.scope().name();
                 self.error_toast = Some(format!(
                     "account {name} is gone after reload; back to balance"
                 ));
@@ -1105,129 +351,6 @@ impl<'ctx> App<'ctx> {
             }
         }
     }
-
-    /// Opens a search of the given style, recording the current selection as
-    /// the origin. No-op off the balance screen or when one is already open.
-    fn start_search(&mut self, mode: SearchMode, dir: SearchDirection) {
-        if !matches!(self.screen, Screen::Balance) && self.search.is_none() {
-            return;
-        }
-        let origin = self.balance_nav.table_state.selected().unwrap_or(0);
-        self.search = Some(Search {
-            intent: SearchIntent {
-                mode,
-                dir,
-                input: String::new(),
-                no_previous: false,
-                origin,
-            },
-            matches: None,
-        });
-    }
-
-    /// Ends an active interactive search, keeping the current selection. Used
-    /// by keys that both navigate and leave i-search (`C-n`/`C-p`, Enter). A
-    /// no-op for modal searches, which stay active during navigation.
-    fn end_interactive_search(&mut self) {
-        if self
-            .search
-            .as_ref()
-            .is_some_and(|s| matches!(s.intent.mode, SearchMode::Interactive))
-            // clear search with take().
-            && let Some(search) = self.search.take()
-            && !search.intent.input.is_empty()
-        {
-            self.last_search = search.intent.input;
-        }
-    }
-
-    /// Handles `C-s`/`C-r` (and modal `n`/`N`). An interactive search on an
-    /// empty pattern recalls the last-used pattern (canonical isearch);
-    /// otherwise it steps to the next/previous match.
-    fn search_or_recall(&mut self, dir: SearchDirection) {
-        let Some(search) = &mut self.search else {
-            return;
-        };
-        // update direction before operation
-        search.intent.dir = dir;
-        let recall =
-            search.intent.mode == SearchMode::Interactive && search.intent.input.is_empty();
-        if recall {
-            self.recall_last_search();
-        } else {
-            self.search_step();
-        }
-    }
-
-    /// Restores [`Self::last_search`] into the active interactive search and
-    /// jumps in `dir`. With no previous pattern, flips on the
-    /// `[no previous search text]` notice and waits for input.
-    fn recall_last_search(&mut self) {
-        let Some(search) = self.search.as_mut() else {
-            return;
-        };
-        search.intent.input = self.last_search.clone();
-        search.intent.no_previous = self.last_search.is_empty();
-        self.recompute_search();
-    }
-
-    /// Moves the balance selection to the next/previous match (wrapping). For
-    /// an interactive search this also records `dir` so subsequent input keeps
-    /// jumping the same way. No-op without matches.
-    fn search_step(&mut self) {
-        let Some(search) = self.search.as_ref() else {
-            return;
-        };
-        let Some(Ok(m)) = search.matches.as_ref() else {
-            return;
-        };
-        let current = self.balance_nav.table_state.selected().unwrap_or(0);
-        let Some(next) = m.step(current, search.intent.dir) else {
-            return;
-        };
-        self.balance_nav.select(next);
-    }
-
-    /// Recompiles the search pattern, recollects matching balance-row indices,
-    /// and jumps the selection to the first match in the active direction.
-    ///
-    /// Modal searches always jump relative to the fixed origin; interactive
-    /// searches jump relative to the current point, mirroring isearch. No-op
-    /// when no search is active.
-    fn recompute_search(&mut self) {
-        let Some(search) = self.search.as_mut() else {
-            return;
-        };
-        let intent = &search.intent;
-        let origin = intent.origin;
-        let reference = match intent.mode {
-            SearchMode::Modal(_) => origin,
-            SearchMode::Interactive => self.balance_nav.table_state.selected().unwrap_or(origin),
-        };
-        let matches = SearchMatch::compute(&intent.input, &self.balance_rows);
-        let jump = match &matches {
-            Some(Ok(m)) => m.first_match(reference, intent.dir),
-            _ => None,
-        };
-        search.matches = matches;
-        if let Some(idx) = jump {
-            self.balance_nav.select(idx);
-        }
-    }
-}
-
-/// Row index to restore after a reload: the row of `prev_name` when it still
-/// exists, otherwise the alphabetically closest row (insertion point, clamped
-/// to the end). `None` when `rows` is empty.
-///
-/// Relies on `rows` being sorted by account name, which is the order
-/// `Balance::into_vec` produces.
-fn restore_index(prev_name: &str, rows: &[BalanceRow<'_>]) -> Option<usize> {
-    let last = rows.len().checked_sub(1)?;
-    let idx = rows
-        .binary_search_by(|r| r.full_name().cmp(prev_name))
-        .unwrap_or_else(|insertion| insertion);
-    Some(min(idx, last))
 }
 
 #[cfg(test)]
@@ -1238,13 +361,18 @@ mod tests {
 
     use assert_matches::assert_matches;
     use bumpalo::Bump;
+    use chrono::NaiveDate;
     use indoc::indoc;
     use maplit::hashmap;
-    use okane_core::report::ReportContext;
+    use okane_core::report::query::DateRange;
+    use okane_core::report::{Account, Amount, ReportContext};
     use okane_core::{load, report};
     use rust_decimal_macros::dec;
 
     use crate::ui::table::TableNav;
+
+    use super::super::balance::{BalanceRow, DisplayMode, amount_line_count, restore_index};
+    use super::super::overlay::ErrorPopup;
 
     fn template<'ctx>() -> RegisterQueryTemplate<'ctx> {
         RegisterQueryTemplate {
@@ -1318,30 +446,7 @@ mod tests {
     ];
 
     fn selected(app: &App<'_>) -> Option<usize> {
-        app.balance_nav.table_state.selected()
-    }
-
-    #[test]
-    fn step_match_next_and_prev_wrap() {
-        let m = SearchMatch::from(vec![2usize, 5, 8]);
-        // From a match.
-        assert_eq!(m.step(5, SearchDirection::Forward), Some(8));
-        assert_eq!(m.step(8, SearchDirection::Forward), Some(2)); // wrap forward
-        assert_eq!(m.step(2, SearchDirection::Backward), Some(8)); // wrap backward
-        assert_eq!(m.step(5, SearchDirection::Backward), Some(2));
-        // From a non-match position.
-        assert_eq!(m.step(4, SearchDirection::Forward), Some(5)); // first after 4
-        assert_eq!(m.step(4, SearchDirection::Backward), Some(2)); // last before 4
-        assert_eq!(m.step(0, SearchDirection::Backward), Some(8)); // before all, prev wraps
-        assert_eq!(m.step(9, SearchDirection::Forward), Some(2)); // after all, next wraps
-    }
-
-    #[test]
-    fn compute_matches_classifies_input() {
-        let rows: &[BalanceRow<'_>] = &[];
-        assert_matches!(SearchMatch::compute("", rows), None);
-        assert_matches!(SearchMatch::compute("assets", rows), Some(Ok(_)));
-        assert_matches!(SearchMatch::compute("[", rows), Some(Err(_)));
+        app.balance.nav.table_state.selected()
     }
 
     #[test]
@@ -1352,7 +457,7 @@ mod tests {
         app.update(Message::MoveDown);
         assert_eq!(selected(&app), Some(2));
         app.update(Message::StartModalSearch);
-        let search = app.search.as_ref().expect("search active");
+        let search = app.balance.search.as_ref().expect("search active");
         assert_eq!(
             search.intent.mode,
             SearchMode::Modal(SearchPhase::Incremental)
@@ -1372,7 +477,7 @@ mod tests {
         for c in "assets".chars() {
             app.update(Message::SearchPush(c));
         }
-        let search = app.search.as_ref().unwrap();
+        let search = app.balance.search.as_ref().unwrap();
         assert_eq!(search.matched_rows(), [0, 1]);
         assert_matches!(search.err(), None);
         // First match at-or-after origin 1 is 1.
@@ -1391,7 +496,7 @@ mod tests {
         for c in "assets".chars() {
             app.update(Message::SearchPush(c));
         }
-        assert_eq!(app.search.as_ref().unwrap().matched_rows(), [0, 1]);
+        assert_eq!(app.balance.search.as_ref().unwrap().matched_rows(), [0, 1]);
         assert_eq!(selected(&app), Some(0));
     }
 
@@ -1401,7 +506,7 @@ mod tests {
         let (_ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
         app.update(Message::StartModalSearch);
         app.update(Message::SearchPush('['));
-        let search = app.search.as_ref().unwrap();
+        let search = app.balance.search.as_ref().unwrap();
         assert_matches!(search.err(), Some(_));
         assert!(search.matched_rows().is_empty());
     }
@@ -1414,11 +519,11 @@ mod tests {
         for c in "cash".chars() {
             app.update(Message::SearchPush(c));
         }
-        assert_eq!(app.search.as_ref().unwrap().matched_rows(), [1]);
+        assert_eq!(app.balance.search.as_ref().unwrap().matched_rows(), [1]);
         // Backspace down to "ca" — matches "Assets:Cash" and "Liabilities:Card".
         app.update(Message::SearchPop);
         app.update(Message::SearchPop);
-        assert_eq!(app.search.as_ref().unwrap().matched_rows(), [1, 4]);
+        assert_eq!(app.balance.search.as_ref().unwrap().matched_rows(), [1, 4]);
     }
 
     #[test]
@@ -1427,7 +532,7 @@ mod tests {
         let (_ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
         app.update(Message::StartModalSearch);
         app.update(Message::SearchSubmit);
-        assert!(app.search.is_none());
+        assert!(app.balance.search.is_none());
     }
 
     #[test]
@@ -1438,7 +543,7 @@ mod tests {
         app.update(Message::SearchPush('a'));
         app.update(Message::SearchSubmit);
         assert_eq!(
-            app.search.as_ref().unwrap().intent.mode,
+            app.balance.search.as_ref().unwrap().intent.mode,
             SearchMode::Modal(SearchPhase::Fixed)
         );
     }
@@ -1450,7 +555,7 @@ mod tests {
 
         app.update(Message::StartISearch(SearchDirection::Forward));
 
-        let search = app.search.as_ref().unwrap();
+        let search = app.balance.search.as_ref().unwrap();
         assert_eq!(search.intent.mode, SearchMode::Interactive);
         assert_eq!(search.intent.dir, SearchDirection::Forward);
 
@@ -1459,7 +564,7 @@ mod tests {
         }
 
         // First forward match at-or-after origin 0.
-        assert_eq!(app.search.as_ref().unwrap().matched_rows(), [0, 1]);
+        assert_eq!(app.balance.search.as_ref().unwrap().matched_rows(), [0, 1]);
         assert_eq!(selected(&app), Some(0));
         // C-s repeats forward, wrapping.
         app.update(Message::SearchNext);
@@ -1515,7 +620,7 @@ mod tests {
             app.update(Message::SearchPush(c)); // jumps to 0
         }
         app.update(Message::SearchCancel);
-        assert!(app.search.is_none());
+        assert!(app.balance.search.is_none());
         assert_eq!(selected(&app), Some(2));
     }
 
@@ -1530,12 +635,12 @@ mod tests {
         }
         app.update(Message::SearchSubmit); // → fixed
         app.update(Message::SearchClose);
-        assert_eq!(&app.last_search, "salary");
+        assert_eq!(&app.balance.last_search, "salary");
 
         // A fresh interactive search with an empty pattern recalls it on C-s.
         app.update(Message::StartISearch(SearchDirection::Forward));
         app.update(Message::SearchNext);
-        let search = app.search.as_ref().unwrap();
+        let search = app.balance.search.as_ref().unwrap();
         assert_eq!(search.intent.input, "salary");
         assert!(!search.intent.no_previous);
         assert_eq!(search.matched_rows(), [3]);
@@ -1549,12 +654,12 @@ mod tests {
         app.update(Message::StartISearch(SearchDirection::Forward));
         // No previous search: C-s flips on the notice and waits for input.
         app.update(Message::SearchNext);
-        let search = app.search.as_ref().unwrap();
+        let search = app.balance.search.as_ref().unwrap();
         assert!(search.intent.no_previous);
         assert!(search.intent.input.is_empty());
         // Typing clears the notice and resumes a normal search.
         app.update(Message::SearchPush('a'));
-        assert!(!app.search.as_ref().unwrap().intent.no_previous);
+        assert!(!app.balance.search.as_ref().unwrap().intent.no_previous);
     }
 
     #[test]
@@ -1567,10 +672,10 @@ mod tests {
         }
         // C-n (MoveDown) ends the i-search and moves one row down.
         app.update(Message::MoveDown);
-        assert!(app.search.is_none());
+        assert!(app.balance.search.is_none());
         assert_eq!(selected(&app), Some(1));
         // The pattern is remembered for later recall.
-        assert_eq!(&app.last_search, "assets");
+        assert_eq!(&app.balance.last_search, "assets");
     }
 
     #[test]
@@ -1583,7 +688,7 @@ mod tests {
         }
         let cmd = app.update(Message::OpenRegister);
         assert_matches!(cmd, Some(Command::LoadRegister { .. }));
-        assert!(app.search.is_none());
+        assert!(app.balance.search.is_none());
         assert_eq!(selected(&app), Some(3));
     }
 
@@ -1598,19 +703,19 @@ mod tests {
         app.update(Message::SearchSubmit); // fixed
         // Unlike i-search, a modal search stays active during navigation.
         app.update(Message::MoveDown);
-        assert!(app.search.is_some());
+        assert!(app.balance.search.is_some());
     }
 
     #[test]
     fn isearch_recall_backward_sets_direction() {
         let arena = Bump::new();
         let (_ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
-        app.last_search = "assets".to_owned();
+        app.balance.last_search = "assets".to_owned();
         app.update(Message::SelectLast); // origin 4
         app.update(Message::StartISearch(SearchDirection::Forward));
         // C-r on empty: recall + search backward from origin → last match (1).
         app.update(Message::SearchPrev);
-        let search = app.search.as_ref().unwrap();
+        let search = app.balance.search.as_ref().unwrap();
         assert_eq!(search.intent.input, "assets");
         assert_eq!(search.intent.mode, SearchMode::Interactive);
         assert_eq!(search.intent.dir, SearchDirection::Backward);
@@ -1629,7 +734,7 @@ mod tests {
         }
         assert_eq!(selected(&app), Some(0));
         app.update(Message::SearchCancel);
-        assert!(app.search.is_none());
+        assert!(app.balance.search.is_none());
         assert_eq!(selected(&app), Some(2));
     }
 
@@ -1644,7 +749,7 @@ mod tests {
         app.update(Message::SearchSubmit); // fixed; selection at the match (3)
         assert_eq!(selected(&app), Some(3));
         app.update(Message::SearchClose);
-        assert!(app.search.is_none());
+        assert!(app.balance.search.is_none());
         assert_eq!(selected(&app), Some(3));
     }
 
@@ -1729,10 +834,10 @@ mod tests {
     fn nav_messages_ignored_while_overlay_visible() {
         let mut app = app_no_rows();
         // Pretend there are rows to move through by poking the nav directly.
-        app.balance_nav = TableNav::new(3);
+        app.balance.nav = TableNav::new(3);
         app.update(Message::RequestQuit);
         app.update(Message::MoveDown);
-        assert_eq!(app.balance_nav.table_state.selected(), Some(0));
+        assert_eq!(app.balance.nav.table_state.selected(), Some(0));
     }
 
     fn popup(lines: usize, viewport_height: u16) -> ErrorPopup {
@@ -1748,66 +853,6 @@ mod tests {
         let mut app = app_no_rows();
         app.overlay = Some(Overlay::Error(popup(10, 4)));
         app
-    }
-
-    #[test]
-    fn popup_scroll_clamps_at_top() {
-        let mut p = popup(10, 4);
-        p.scroll(ScrollDelta::Lines(-1));
-        assert_eq!(p.scroll, 0);
-    }
-
-    #[test]
-    fn popup_scroll_clamps_at_bottom() {
-        let mut p = popup(10, 4);
-        p.scroll(ScrollDelta::Lines(100));
-        assert_eq!(p.scroll, 6);
-    }
-
-    #[test]
-    fn popup_scroll_pinned_when_body_fits() {
-        let mut p = popup(5, 10);
-        assert_eq!(p.max_scroll(), 0);
-        p.scroll(ScrollDelta::Bottom);
-        assert_eq!(p.scroll, 0);
-    }
-
-    #[test]
-    fn popup_page_scroll_uses_viewport_height() {
-        let mut p = popup(100, 4);
-        p.scroll(ScrollDelta::Pages(1));
-        assert_eq!(p.scroll, 4);
-        p.scroll(ScrollDelta::Pages(-1));
-        assert_eq!(p.scroll, 0);
-    }
-
-    #[test]
-    fn popup_top_and_bottom_jump() {
-        let mut p = popup(10, 4);
-        p.scroll(ScrollDelta::Bottom);
-        assert_eq!(p.scroll, 6);
-        p.scroll(ScrollDelta::Top);
-        assert_eq!(p.scroll, 0);
-    }
-
-    #[test]
-    fn popup_scroll_without_viewport_does_not_panic() {
-        // The first key can in principle arrive before a frame has been drawn;
-        // an unknown viewport falls back to a single line per page.
-        let mut p = popup(10, 0);
-        p.scroll(ScrollDelta::Pages(1));
-        assert_eq!(p.scroll, 1);
-        p.scroll(ScrollDelta::Bottom);
-        assert_eq!(p.scroll, 9);
-    }
-
-    #[test]
-    fn popup_clamps_after_viewport_shrink() {
-        let mut p = popup(10, 4);
-        p.scroll(ScrollDelta::Bottom);
-        p.viewport_height = 10;
-        p.clamp();
-        assert_eq!(p.scroll, 0);
     }
 
     #[test]
@@ -1939,7 +984,7 @@ mod tests {
     fn restore_follows_selected_account() {
         let arena = Bump::new();
         let (ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
-        app.balance_nav.select(2); // Expenses:Food
+        app.balance.nav.select(2); // Expenses:Food
         let snapshot = app.snapshot();
 
         let mut app = next_app(
@@ -1960,7 +1005,7 @@ mod tests {
     fn restore_vanished_account_selects_closest() {
         let arena = Bump::new();
         let (ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
-        app.balance_nav.select(2); // Expenses:Food
+        app.balance.nav.select(2); // Expenses:Food
         let snapshot = app.snapshot();
 
         let mut app = next_app(
@@ -1981,12 +1026,12 @@ mod tests {
     fn restore_keeps_viewport_height() {
         let arena = Bump::new();
         let (ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
-        app.balance_nav.viewport_height = 12;
+        app.balance.nav.viewport_height = 12;
         let snapshot = app.snapshot();
 
         let mut app = next_app(&ctx, ACCOUNTS);
         app.restore(&snapshot);
-        assert_eq!(app.balance_nav.viewport_height, 12);
+        assert_eq!(app.balance.nav.viewport_height, 12);
     }
 
     #[test]
@@ -1998,18 +1043,18 @@ mod tests {
             app.update(Message::SearchPush(c));
         }
         app.update(Message::SearchSubmit); // fixed
-        assert_eq!(app.search.as_ref().unwrap().matched_rows(), [0, 1]);
-        app.last_search = "salary".to_owned();
+        assert_eq!(app.balance.search.as_ref().unwrap().matched_rows(), [0, 1]);
+        app.balance.last_search = "salary".to_owned();
         let snapshot = app.snapshot();
 
         let mut app = next_app(&ctx, &["Assets:Bank", "Income:Salary"]);
         app.restore(&snapshot);
-        let search = app.search.as_ref().unwrap();
+        let search = app.balance.search.as_ref().unwrap();
         assert_eq!(search.intent.input, "assets");
         assert_eq!(search.matched_rows(), [0]);
         // Origin is clamped into the new row range.
         assert!(search.intent.origin < 2);
-        assert_eq!(&app.last_search, "salary");
+        assert_eq!(&app.balance.last_search, "salary");
     }
 
     #[test]
@@ -2121,14 +1166,14 @@ mod tests {
     }
 
     fn row_labels(app: &App<'_>) -> Vec<String> {
-        app.balance_rows
+        app.balance.rows
             .iter()
             .map(|r| r.label.to_owned())
             .collect()
     }
 
     fn full_names(app: &App<'_>) -> Vec<String> {
-        app.balance_rows
+        app.balance.rows
             .iter()
             .map(|r| r.full_name().to_owned())
             .collect()
@@ -2156,10 +1201,10 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, mut app) = tree_app(&arena, TREE_LEDGER);
         // Flat rows 0/1 are Assets:Bank:Checking (10 USD) and Assets:Cash (5 USD).
-        let checking = app.balance_rows[0].amount.clone();
-        let cash = app.balance_rows[1].amount.clone();
+        let checking = app.balance.rows[0].amount.clone();
+        let cash = app.balance.rows[1].amount.clone();
         app.update(Message::ToggleTree);
-        assert_eq!(app.mode, DisplayMode::Tree);
+        assert_eq!(app.balance.mode, DisplayMode::Tree);
         // Pre-order over the whole hierarchy, leaf labels, ancestors included.
         assert_eq!(
             full_names(&app),
@@ -2180,16 +1225,16 @@ mod tests {
             ]
         );
         // Depth drives indentation: Assets is depth 1, Checking depth 3.
-        assert_eq!(app.balance_rows[0].depth, 1);
-        assert!(app.balance_rows[0].has_children);
-        assert_eq!(app.balance_rows[2].depth, 3);
-        assert!(!app.balance_rows[2].has_children);
+        assert_eq!(app.balance.rows[0].depth, 1);
+        assert!(app.balance.rows[0].has_children);
+        assert_eq!(app.balance.rows[2].depth, 3);
+        assert!(!app.balance.rows[2].has_children);
         // Tree view shows subtree totals: Assets rolls up Checking + Cash.
-        assert_eq!(app.balance_rows[0].amount, checking + cash);
+        assert_eq!(app.balance.rows[0].amount, checking + cash);
         // Back to flat.
         app.update(Message::ToggleTree);
-        assert_eq!(app.mode, DisplayMode::Flat);
-        assert_eq!(app.balance_rows.len(), 4);
+        assert_eq!(app.balance.mode, DisplayMode::Flat);
+        assert_eq!(app.balance.rows.len(), 4);
     }
 
     #[test]
@@ -2197,20 +1242,20 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, mut app) = tree_app(&arena, TREE_LEDGER);
         app.update(Message::ToggleTree);
-        app.balance_nav.select(0); // Assets
+        app.balance.nav.select(0); // Assets
         app.update(Message::ToggleFold);
         // Assets is folded: its Bank/Checking/Cash descendants disappear.
         assert_eq!(
             full_names(&app),
             ["Assets", "Equity", "Expenses", "Expenses:Food"]
         );
-        assert!(app.balance_rows[0].folded);
+        assert!(app.balance.rows[0].folded);
         // Selection stays on the fold point.
-        assert_eq!(app.balance_nav.table_state.selected(), Some(0));
+        assert_eq!(app.balance.nav.table_state.selected(), Some(0));
         // Unfolding restores the descendants.
         app.update(Message::ToggleFold);
-        assert!(!app.balance_rows[0].folded);
-        assert_eq!(app.balance_rows.len(), 7);
+        assert!(!app.balance.rows[0].folded);
+        assert_eq!(app.balance.rows.len(), 7);
     }
 
     #[test]
@@ -2222,7 +1267,7 @@ mod tests {
         // Every foldable node collapses: only top-level rows remain.
         assert_eq!(full_names(&app), ["Assets", "Equity", "Expenses"]);
         app.update(Message::ToggleFoldAll);
-        assert_eq!(app.balance_rows.len(), 7);
+        assert_eq!(app.balance.rows.len(), 7);
     }
 
     #[test]
@@ -2230,7 +1275,7 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, mut app) = tree_app(&arena, TREE_LEDGER);
         app.update(Message::ToggleTree);
-        app.balance_nav.select(0); // Assets
+        app.balance.nav.select(0); // Assets
         let cmd = app.update(Message::OpenRegister);
         assert_matches!(
             cmd,
@@ -2242,7 +1287,7 @@ mod tests {
     fn flat_open_register_drills_into_single_account() {
         let arena = Bump::new();
         let (_ctx, mut app) = tree_app(&arena, TREE_LEDGER);
-        app.balance_nav.select(1); // Assets:Cash
+        app.balance.nav.select(1); // Assets:Cash
         let cmd = app.update(Message::OpenRegister);
         assert_matches!(
             cmd,
@@ -2255,17 +1300,17 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, mut app) = tree_app(&arena, TREE_LEDGER);
         app.update(Message::ToggleTree);
-        app.balance_nav.select(0); // Assets
+        app.balance.nav.select(0); // Assets
         app.update(Message::ToggleFold); // fold Assets
         let snapshot = app.snapshot();
 
         let (_ctx2, mut app2) = tree_app(&arena, TREE_LEDGER);
         assert_matches!(app2.restore(&snapshot), None);
-        assert_eq!(app2.mode, DisplayMode::Tree);
+        assert_eq!(app2.balance.mode, DisplayMode::Tree);
         assert_eq!(
             full_names(&app2),
             ["Assets", "Equity", "Expenses", "Expenses:Food"]
         );
-        assert!(app2.balance_rows[0].folded);
+        assert!(app2.balance.rows[0].folded);
     }
 }

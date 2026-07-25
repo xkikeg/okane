@@ -19,10 +19,10 @@ use ratatui::DefaultTerminal;
 
 use crate::ui::keys::is_ctrl;
 
-use super::app::{
-    App, Command, Message, Overlay, RegisterQueryTemplate, RegisterRow, RegisterScope, Screen,
-    ScrollDelta, SearchDirection, SearchMode, SearchPhase,
-};
+use super::app::{App, Command, Message};
+use super::overlay::{Overlay, ScrollDelta};
+use super::register::{RegisterQueryTemplate, RegisterRow, RegisterScope, Screen};
+use super::search::{SearchDirection, SearchMode, SearchPhase};
 use super::render;
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(250);
@@ -125,7 +125,7 @@ fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
     // interactive i-search) own every key; the modal fixed phase intercepts
     // only its own controls and lets the rest fall through so full navigation
     // (and Enter-to-register) keep working.
-    if let Some(search) = &app.search {
+    if let Some(search) = &app.balance.search {
         match search.intent.mode {
             SearchMode::Modal(SearchPhase::Incremental) => {
                 return match key.code {
@@ -249,7 +249,9 @@ mod tests {
 
     use crate::ui::table::TableNav;
 
-    use super::super::app::{ErrorPopup, RegisterView, Search, SearchIntent, SearchMatch};
+    use super::super::overlay::ErrorPopup;
+    use super::super::register::RegisterView;
+    use super::super::search::{Search, SearchIntent, SearchMatch};
 
     /// A single-account register screen for `account`, empty rows.
     fn register_screen<'ctx>(account: Account<'ctx>) -> Screen<'ctx> {
@@ -558,7 +560,7 @@ mod tests {
     #[test]
     fn fixed_search_intercepts_only_its_controls() {
         let mut app = app();
-        app.search = Some(fixed_search());
+        app.balance.search = Some(fixed_search());
         // Own controls.
         assert_eq!(
             key_to_message(&app, key(KeyCode::Char('n'))),
@@ -599,7 +601,7 @@ mod tests {
     #[test]
     fn interactive_search_captures_keys() {
         let mut app = app();
-        app.search = Some(interactive_search());
+        app.balance.search = Some(interactive_search());
         // Plain characters refine the pattern.
         assert_eq!(
             key_to_message(&app, key(KeyCode::Char('j'))),
@@ -685,7 +687,7 @@ mod tests {
         );
         // Interactive i-search: same.
         let mut isearch_app = app();
-        isearch_app.search = Some(interactive_search());
+        isearch_app.balance.search = Some(interactive_search());
         assert_eq!(
             key_to_message(&isearch_app, key(KeyCode::Char('r'))),
             Some(Message::SearchPush('r'))
@@ -695,7 +697,7 @@ mod tests {
     #[test]
     fn r_during_fixed_search_reloads() {
         let mut app = app();
-        app.search = Some(fixed_search());
+        app.balance.search = Some(fixed_search());
         assert_eq!(
             key_to_message(&app, key(KeyCode::Char('r'))),
             Some(Message::Reload)
