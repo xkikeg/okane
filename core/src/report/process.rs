@@ -142,7 +142,7 @@ mod tests {
     use assert_matches::assert_matches;
     use bumpalo::Bump;
 
-    use super::super::account::{AccountAggregate,AccountTreeKey};
+    use super::super::account::{AccountAggregate, AccountTreeKey};
 
     #[test]
     fn process_constructs_account_tree() {
@@ -167,6 +167,9 @@ mod tests {
         let children: &[_] = &[child1, child2];
 
         assert_eq!(Some(children), ctx.account_tree.children(parent));
-        assert_eq!(Some(AccountTreeKey::Descendant(parent)), ctx.account_tree.parent(child1));
+        assert_eq!(
+            Some(AccountTreeKey::Descendant(parent)),
+            ctx.account_tree.parent(child1)
+        );
     }
 }

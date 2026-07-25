@@ -216,11 +216,11 @@ impl From<NodeRange> for std::ops::Range<usize> {
 mod tests {
     use super::*;
 
+    use assert_matches::assert_matches;
     use bumpalo::Bump;
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use rust_decimal::Decimal;
-    use assert_matches::assert_matches;
     use rust_decimal_macros::dec;
 
     #[test]

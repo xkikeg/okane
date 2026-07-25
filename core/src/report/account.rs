@@ -322,7 +322,7 @@ mod tests {
         let grocery = accounts.ensure("Expenses:Grocery");
         tree.construct(&accounts);
         let expenses = tree.resolve_ancestor("Expenses").unwrap();
-        
+
         assert_eq!("Grocery", AccountAggregate::from(grocery).last_segment());
         assert_eq!("Expenses", AccountAggregate::from(expenses).last_segment());
     }
