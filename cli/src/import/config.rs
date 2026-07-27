@@ -275,15 +275,22 @@ pub enum AccountType {
 
 /// Loads Config object from given path as YAML encoded file.
 pub fn load_from_yaml<R: std::io::Read>(r: R) -> Result<ConfigSet, ImportError> {
-    let mut entries = Vec::new();
-    let docs = serde_yaml::Deserializer::from_reader(r);
-    for doc in docs {
-        let entry = ConfigFragment::deserialize(doc).into_import_err(
+    // `ya` parses a `&str`, so the whole config has to be in memory before parsing. Config files
+    // are small, and this also makes the UTF-8 requirement an explicit, well-labelled error.
+    let content = std::io::read_to_string(r).into_import_err(
+        ImportErrorKind::ConfigFileReadFailed,
+        "failed to read config file",
+    )?;
+    // A config file is a multi-document stream, one `ConfigFragment` per document, so this needs
+    // `Deserializer::into_iter` rather than `ya::from_str` (which rejects a stream of more than
+    // one document).
+    let entries = ya::Deserializer::from_str(&content)
+        .into_iter::<ConfigFragment>()
+        .collect::<ya::Result<Vec<_>>>()
+        .into_import_err(
             ImportErrorKind::InvalidConfig,
             "failed to parse config file",
         )?;
-        entries.push(entry);
-    }
     Ok(ConfigSet { entries })
 }
 
@@ -696,14 +703,14 @@ mod tests {
 
     #[test]
     fn test_parse_template_field_pos() {
-        let de = serde_yaml::Deserializer::from_str("template: \"{payee} - {category} - {note}\"");
-        format::TemplateField::deserialize(de).expect("must not fail");
+        ya::from_str::<format::TemplateField>("template: \"{payee} - {category} - {note}\"")
+            .expect("must not fail");
 
         let input = indoc! {r#"
             payee:
               template: "{commodity} - {note}"
         "#};
-        let got: HashMap<format::FieldKey, format::FieldPos> = serde_yaml::from_str(input).unwrap();
+        let got: HashMap<format::FieldKey, format::FieldPos> = ya::from_str(input).unwrap();
         assert!(got.contains_key(&format::FieldKey::Payee));
     }
 
@@ -716,7 +723,6 @@ mod tests {
         conversion:
           rate: price_of_primary
         "#};
-        let de = serde_yaml::Deserializer::from_str(input);
         let want = RewriteRule {
             conversion: Some(CommodityConversionSpec {
                 amount: None,
@@ -731,7 +737,7 @@ mod tests {
                 Some("Income:Salary".to_string()),
             )
         };
-        assert_eq!(want, RewriteRule::deserialize(de).unwrap());
+        assert_eq!(want, ya::from_str::<RewriteRule>(input).unwrap());
     }
 
     #[test]
