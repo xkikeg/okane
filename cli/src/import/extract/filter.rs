@@ -46,7 +46,7 @@ impl FieldFilter {
         let field = match f {
             config::RewriteField::DomainCode => {
                 check_camt()?;
-                let code = serde_yaml::from_str(v)
+                let code = ya::from_str(v)
                     .into_import_err(ImportErrorKind::InvalidConfig, || {
                         format!("matcher has invalid domain code {v}")
                     })?;
@@ -54,7 +54,7 @@ impl FieldFilter {
             }
             config::RewriteField::DomainFamily => {
                 check_camt()?;
-                let code = serde_yaml::from_str(v)
+                let code = ya::from_str(v)
                     .into_import_err(ImportErrorKind::InvalidConfig, || {
                         format!("matcher has invalid domain family {v}")
                     })?;
@@ -62,7 +62,7 @@ impl FieldFilter {
             }
             config::RewriteField::DomainSubFamily => {
                 check_camt()?;
-                let code = serde_yaml::from_str(v)
+                let code = ya::from_str(v)
                     .into_import_err(ImportErrorKind::InvalidConfig, || {
                         format!("matcher has invalid domain sub family {v}")
                     })?;

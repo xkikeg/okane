@@ -7,6 +7,10 @@
 ### Changed
 
 * CLI: `ui` reload errors are now shown in color instead of plain text (https://github.com/xkikeg/okane/issues/489).
+* CLI: import config is now parsed with [`ya`](https://crates.io/crates/ya) instead of the
+  unmaintained `serde_yaml`, dropping the `unsafe-libyaml` dependency. Config errors now point at
+  the offending source line, and config files must be valid UTF-8 (a leading BOM is still
+  accepted).
 
 ### Fixed
 
