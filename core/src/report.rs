@@ -12,6 +12,7 @@ mod eval;
 mod price_db;
 mod process;
 pub mod query;
+mod tags;
 mod transaction;
 
 use std::borrow::Borrow;
@@ -25,6 +26,7 @@ pub use error::ReportError;
 pub use eval::{Amount, SingleAmount};
 pub use price_db::LoadError;
 pub use process::{ProcessOptions, process};
+pub use tags::{Tag, TagQuery, TagValue, tags};
 pub use transaction::{Posting, Transaction};
 
 use crate::{load, syntax::plain::LedgerEntry};
