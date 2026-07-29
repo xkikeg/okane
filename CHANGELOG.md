@@ -4,6 +4,8 @@
 
 ### Added
 
+* CLI: Added `tags` command, listing all tags in the file, sorted and deduped (https://github.com/xkikeg/okane/pull/523). Pass `--values` to print `key: value` pairs instead of the keys alone.
+
 ### Changed
 
 * CLI: `ui` reload errors are now shown in color instead of plain text (https://github.com/xkikeg/okane/issues/489).

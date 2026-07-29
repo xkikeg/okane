@@ -9,6 +9,7 @@ This tool supports various commands:
 * `balance` to get the current balance of the accounts.
 * `register` to get the history of the accounts.
 * `accounts` to list all accounts in the file.
+* `tags` to list all tags in the file.
 * `format` to format given Ledger file into organized format.
 * `import` to convert various source including CSV, ISO Camt053 XML into Ledger format.
 * `primitive` to hold commands that are not so useful but good for debugging.
@@ -41,6 +42,7 @@ Similar to [Ledger][ledger document], you can use similar commands.
 
 ```shell
 $ okane accounts /path/to/file.ledger
+$ okane tags /path/to/file.ledger [--values]
 $ okane balance /path/to/file.ledger
 $ okane registry /path/to/file.ledger [optional account]
 ```
