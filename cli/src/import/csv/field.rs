@@ -114,14 +114,25 @@ impl FieldResolver {
         config_mapping: &HashMap<config::FieldKey, config::FieldPos>,
         header: &csv::StringRecord,
     ) -> Result<Self, ImportError> {
-        let hm: HashMap<&str, OneBasedUsize> = column_index(header)?;
+        let hm: HashMap<&str, Vec<OneBasedUsize>> = column_index(header)?;
         let mut not_found_labels: Vec<&str> = Vec::new();
         let mut ki: HashMap<config::FieldKey, Field> = HashMap::with_capacity(config_mapping.len());
         for (&k, pos) in config_mapping {
             let field = match &pos {
                 config::FieldPos::Index(i) => Some(Field::ColumnIndex((*i).try_into().unwrap())),
-                config::FieldPos::Label(label) => match hm.get(label.as_str()).cloned() {
-                    Some(i) => Some(Field::ColumnIndex(i)),
+                config::FieldPos::Label(label) => match hm.get(label.as_str()) {
+                    Some(is) => Some(Field::ColumnIndex(pick_one(is).ok_or_else(|| {
+                        ImportError::new(
+                            ImportErrorKind::InvalidSource,
+                            format!(
+                                "header column {label} is duplicated: column {}",
+                                is.iter()
+                                    .map(|x| x.to_string())
+                                    .collect::<Vec<String>>()
+                                    .join(","),
+                            ),
+                        )
+                    })?)),
                     None => {
                         // Report the error later to collect all not found labels.
                         not_found_labels.push(label);
@@ -197,16 +208,21 @@ impl FieldResolver {
     }
 }
 
-fn column_index(header: &csv::StringRecord) -> Result<HashMap<&str, OneBasedUsize>, ImportError> {
+fn pick_one<T: Clone>(xs: &[T]) -> Option<T> {
+    let (x, remaining) = xs.split_first()?;
+    if !remaining.is_empty() {
+        return None;
+    }
+    Some(x.clone())
+}
+
+fn column_index(
+    header: &csv::StringRecord,
+) -> Result<HashMap<&str, Vec<OneBasedUsize>>, ImportError> {
     let mut i = OneBasedUsize::MIN;
-    let mut m = HashMap::with_capacity(header.len());
+    let mut m: HashMap<&str, Vec<OneBasedUsize>> = HashMap::with_capacity(header.len());
     for key in header.iter() {
-        if let Some(j) = m.insert(key, i) {
-            return Err(ImportError::new(
-                ImportErrorKind::InvalidSource,
-                format!("header column {key} is duplicated: column {j} and {i}"),
-            ));
-        }
+        m.entry(key).or_default().push(i);
         i = i.checked_add(1).into_import_err(
             ImportErrorKind::InvalidSource,
             "header has usize::MAX or more columns",
@@ -285,13 +301,13 @@ mod tests {
 
         let got_err = FieldResolver::try_new(
             &config,
-            &csv::StringRecord::from(vec!["日付", "摘要", "金額", "日付"]),
+            &csv::StringRecord::from(vec!["日付", "摘要", "金額", "日付", "日付"]),
         )
         .unwrap_err();
 
         assert_eq!(ImportErrorKind::InvalidSource, got_err.error_kind());
         assert_eq!(
-            "header column 日付 is duplicated: column 1 and 4",
+            "header column 日付 is duplicated: column 1,4,5",
             got_err.message()
         );
     }
@@ -331,7 +347,16 @@ mod tests {
 
         let got = FieldResolver::try_new(
             &config,
-            &csv::StringRecord::from(vec!["日付", "摘要", "お預け入れ額", "お引き出し額", "残高"]),
+            &csv::StringRecord::from(vec![
+                "日付",
+                "摘要",
+                "お預け入れ額",
+                "お引き出し額",
+                "残高",
+                // unused fields can be duplicated
+                "unused",
+                "unused",
+            ]),
         )
         .unwrap();
 
