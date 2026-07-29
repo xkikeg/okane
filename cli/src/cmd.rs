@@ -51,6 +51,8 @@ pub enum Command {
     Format(FormatCmd),
     /// List all accounts in the file.
     Accounts(AccountsCmd),
+    /// List all tags in the file.
+    Tags(TagsCmd),
     /// Gives balance report.
     Balance(BalanceCmd),
     /// Gives register report.
@@ -79,6 +81,7 @@ impl Command {
             Command::Import(cmd) => cmd.run(w),
             Command::Format(cmd) => cmd.run(w),
             Command::Accounts(cmd) => cmd.run(w),
+            Command::Tags(cmd) => cmd.run(w),
             Command::Balance(cmd) => cmd.run(w),
             Command::Register(cmd) => cmd.run(w),
             Command::Ui(cmd) => cmd.run(),
@@ -346,6 +349,40 @@ impl AccountsCmd {
         let accounts = report::accounts(&mut ctx, load::new_loader(self.source))?;
         for acc in accounts.iter() {
             writeln!(w, "{}", acc.as_str())?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Args, Debug)]
+pub struct TagsCmd {
+    /// Path to the Ledger file.
+    pub source: std::path::PathBuf,
+
+    /// Print each tag as `key: value`, instead of the key alone.
+    ///
+    /// Tags without a value, such as `; :tag1:tag2:`, are still printed as the bare key.
+    #[arg(long)]
+    pub values: bool,
+}
+
+impl TagsCmd {
+    pub fn run<W>(self, w: &mut W) -> anyhow::Result<()>
+    where
+        W: std::io::Write,
+    {
+        let query = if self.values {
+            report::TagQuery::WithValues
+        } else {
+            report::TagQuery::KeysOnly
+        };
+        let tags = report::tags(load::new_loader(self.source), query)?;
+        for tag in tags {
+            match tag.value {
+                None => writeln!(w, "{}", tag.key),
+                Some(report::TagValue::Expr(expr)) => writeln!(w, "{}:: {}", tag.key, expr),
+                Some(report::TagValue::Text(text)) => writeln!(w, "{}: {}", tag.key, text),
+            }?;
         }
         Ok(())
     }

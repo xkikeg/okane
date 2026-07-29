@@ -1,0 +1,8 @@
+Workflow
+food
+project: okane
+total:: 20.00 CHF + 5.00 CHF
+trip
+trip: hokkaido-2026
+trip: kyoto
+type: reimbursable

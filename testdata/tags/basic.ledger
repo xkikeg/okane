@@ -1,0 +1,20 @@
+include include/tagged.ledger
+
+apply tag Workflow
+apply tag trip: kyoto
+
+2026/01/01 lunch
+    ; :food:trip:
+    ; type: reimbursable
+    ; just a comment, not a tag
+    Expenses:Food                              10.00 CHF
+      ; trip: hokkaido-2026
+    Assets:Banks:Main
+
+end apply tag
+
+2026/01/02 dinner
+    ; :food:
+    ; total:: 20.00 CHF + 5.00 CHF
+    Expenses:Food                              25.00 CHF
+    Assets:Banks:Main
