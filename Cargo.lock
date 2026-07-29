@@ -316,12 +316,13 @@ checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 
 [[package]]
 name = "bumpalo-intern"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71a57d618b5bb91f5dc39891019fde2466902006961a0f513c9a47b6a40e6b3b"
+checksum = "fd1add49394dbab9b31eccf3e9d02f752c92b6a61fd610c8ded344ffe89f83ac"
 dependencies = [
  "bumpalo",
  "derive-where",
+ "doctest-file",
 ]
 
 [[package]]
@@ -846,6 +847,12 @@ dependencies = [
  "quote",
  "syn 2.0.119",
 ]
+
+[[package]]
+name = "doctest-file"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2db04e74f0a9a93103b50e90b96024c9b2bdca8bce6a632ec71b88736d3d359"
 
 [[package]]
 name = "document-features"
