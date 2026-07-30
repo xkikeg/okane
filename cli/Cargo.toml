@@ -41,8 +41,10 @@ rust_decimal.workspace = true
 serde = { version = "1.0", features = [ "derive" ] }
 serde_with = { version = "3.21", features = [ "chrono" ] }
 shadow-rs = { version = "2.0.0", default-features = false }
+similar.workspace = true
 soft-canonicalize = { version = "0.5.6", features = [ "dunce" ] }
 strum.workspace = true
+tempfile.workspace = true
 thiserror.workspace = true
 unicode-width.workspace = true
 winnow.workspace = true
@@ -61,7 +63,7 @@ rstest.workspace = true
 rust_decimal_macros.workspace = true
 serde_test = "1.0"
 shlex = "2.0"
-tempfile = "3.27.0"
+tempfile.workspace = true
 
 [build-dependencies]
 shadow-rs = "2.0.0"

@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 use anyhow::Context as _;
 use bumpalo::Bump;
@@ -10,7 +12,7 @@ use clap::{Args, Subcommand};
 use lender::FallibleLender;
 use okane_core::report::query;
 use okane_core::syntax::Separation;
-use okane_core::syntax::display::DisplayContext;
+use okane_core::syntax::display::{CommodityDisplayOption, DisplayContext, DisplayContextBuilder};
 use okane_core::syntax::plain::LedgerEntry;
 use okane_core::{load, report};
 
@@ -36,7 +38,7 @@ impl Cli {
         self.command.validate()
     }
 
-    pub fn run<W>(self, w: &mut W) -> anyhow::Result<()>
+    pub fn run<W>(self, w: &mut W) -> anyhow::Result<ExitCode>
     where
         W: std::io::Write,
     {
@@ -48,7 +50,8 @@ impl Cli {
 pub enum Command {
     /// Import other format into ledger.
     Import(ImportCmd),
-    /// Format the given file (in future it'll work without file arg)
+    /// Format the ledger file and all files it includes, in place.
+    #[command(alias = "fmt")]
     Format(FormatCmd),
     /// List all accounts in the file.
     Accounts(AccountsCmd),
@@ -74,20 +77,23 @@ impl Command {
         }
     }
 
-    pub fn run<W>(self, w: &mut W) -> anyhow::Result<()>
+    pub fn run<W>(self, w: &mut W) -> anyhow::Result<ExitCode>
     where
         W: std::io::Write,
     {
+        // `format --check` is the only command reporting its outcome through the
+        // exit code; everything else fails by returning an error.
         match self {
+            Command::Format(cmd) => return cmd.run(w),
             Command::Import(cmd) => cmd.run(w),
-            Command::Format(cmd) => cmd.run(w),
             Command::Accounts(cmd) => cmd.run(w),
             Command::Tags(cmd) => cmd.run(w),
             Command::Balance(cmd) => cmd.run(w),
             Command::Register(cmd) => cmd.run(w),
             Command::Ui(cmd) => cmd.run(),
             Command::Primitive(cmd) => cmd.run(w),
-        }
+        }?;
+        Ok(ExitCode::SUCCESS)
     }
 }
 
@@ -199,10 +205,90 @@ impl ImportCmd {
 
 #[derive(Args, Debug)]
 pub struct FormatCmd {
+    /// Ledger file to format, together with every file it includes.
     pub source: PathBuf,
+
+    /// Print a unified diff of the needed changes instead of writing them,
+    /// and exit with 1 if any file is not formatted.
+    #[arg(long)]
+    pub check: bool,
 }
 
 impl FormatCmd {
+    pub fn run<W>(&self, w: &mut W) -> anyhow::Result<ExitCode>
+    where
+        W: std::io::Write,
+    {
+        let targets = format::collect_reformatted(&self.source)?;
+        if !self.check {
+            for target in &targets {
+                format::write_back(target)?;
+            }
+            return Ok(ExitCode::SUCCESS);
+        }
+        for target in &targets {
+            format::write_diff(w, target)?;
+        }
+        if targets.is_empty() {
+            Ok(ExitCode::SUCCESS)
+        } else {
+            Ok(ExitCode::FAILURE)
+        }
+    }
+}
+
+#[derive(Args, Debug)]
+pub struct PrimitiveFormatCmd {
+    pub source: std::path::PathBuf,
+
+    /// How to print the amount of a commodity, given as a sample amount,
+    /// e.g. `--commodity-format 'CHF=1,000.00'` prints CHF with a thousands
+    /// separator and two decimals.
+    ///
+    /// Without the `COMMODITY=` prefix the sample applies to every commodity,
+    /// including the amounts written without one. The flag can be repeated, and
+    /// the last sample given for a commodity wins.
+    ///
+    /// Note a sample without decimals, e.g. `CHF=1000`, does drop the trailing
+    /// zeros of the amounts having them.
+    ///
+    /// Unlike `okane format`, this command does not follow `include`, so the
+    /// `commodity ... format` directives declared in another file have no
+    /// effect here and have to be given through this flag.
+    #[arg(long, value_name = "[COMMODITY=]SAMPLE", value_parser = parse_commodity_format)]
+    pub commodity_format: Vec<CommodityFormat>,
+}
+
+/// One `--commodity-format` value, where `commodity` `None` means the default.
+#[derive(Clone, Debug)]
+pub struct CommodityFormat {
+    commodity: Option<String>,
+    option: CommodityDisplayOption,
+}
+
+/// Parses a `[COMMODITY=]SAMPLE` value of the `--commodity-format` flag.
+///
+/// A commodity can't contain `=`, so the first one always separates the two.
+fn parse_commodity_format(value: &str) -> Result<CommodityFormat, String> {
+    let (commodity, sample) = match value.split_once('=') {
+        Some(("", _)) => return Err("commodity must not be empty".to_string()),
+        Some((commodity, sample)) => (Some(commodity.to_string()), sample),
+        None => (None, value),
+    };
+    let sample: pretty_decimal::PrettyDecimal = sample
+        .parse()
+        .map_err(|err| format!("invalid sample amount {:?}: {}", sample, err))?;
+    Ok(CommodityFormat {
+        commodity,
+        option: CommodityDisplayOption {
+            format: sample.format,
+            // Decimal caps the scale at 28, so the conversion can't fail.
+            min_scale: Some(sample.scale().try_into().unwrap_or(u8::MAX)),
+        },
+    })
+}
+
+impl PrimitiveFormatCmd {
     pub fn run<W>(&self, w: &mut W) -> anyhow::Result<()>
     where
         W: std::io::Write,
@@ -211,8 +297,32 @@ impl FormatCmd {
             File::open(&self.source)
                 .with_context(|| format!("failed to open {}", self.source.display()))?,
         );
-        format::format(&mut r, w)?;
+        format::format(&self.format_options(), &mut r, w)?;
         Ok(())
+    }
+
+    /// Returns the options out of the `--commodity-format` flags alone.
+    ///
+    /// Deliberately no scan pass here: this command works on the given file
+    /// only, so the caller is the one to know the commodity formats.
+    fn format_options(&self) -> okane_core::format::FormatOptions {
+        // A later flag overrides the earlier one for the same commodity,
+        // instead of the two being combined as the directives would be.
+        let mut base = CommodityDisplayOption::default();
+        let mut given_formats = HashMap::new();
+        for given in &self.commodity_format {
+            match &given.commodity {
+                None => base = given.option,
+                Some(commodity) => {
+                    given_formats.insert(commodity.as_str(), given.option);
+                }
+            }
+        }
+        let mut builder = DisplayContextBuilder::new().with_base(base);
+        for (commodity, option) in given_formats {
+            builder.declare(commodity, option);
+        }
+        okane_core::format::FormatOptions::new().with_display_context(builder.build())
     }
 }
 
@@ -234,7 +344,7 @@ impl Primitives {
 #[derive(Subcommand, Debug)]
 enum PrimitiveCmd {
     /// Format the given one ledger file, to stdout.
-    Format(FormatCmd),
+    Format(PrimitiveFormatCmd),
     /// Read the given one ledger file, recursively resolves include directives and print to stdout.
     Flatten(FlattenCmd),
     /// Evaluates the given value under given condition.
@@ -275,7 +385,8 @@ impl FlattenCmd {
             Write(#[from] std::io::Error),
         }
 
-        // TODO: Pick DisplayContext from load results.
+        // TODO: Derive the DisplayContext with Loader::scan_files and
+        // DisplayContextBuilder, the way crate::format does.
         let ctx = DisplayContext::default();
         let mut prev_path: Option<PathBuf> = None;
         load::new_loader(self.source).load(
