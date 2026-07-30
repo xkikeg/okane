@@ -4,7 +4,7 @@ use std::borrow::Borrow;
 use std::collections::BTreeSet;
 
 use crate::load;
-use crate::syntax::{self, plain::LedgerEntry};
+use crate::syntax::{self, plain::LedgerStatement};
 
 use super::error::ReportError;
 
@@ -58,11 +58,11 @@ where
 {
     let mut collected: BTreeSet<Tag> = BTreeSet::new();
     loader.borrow().load(|_path, _pctx, entry| {
-        match entry {
-            LedgerEntry::ApplyTag(apply) => {
+        match &entry.statement {
+            LedgerStatement::ApplyTag(apply) => {
                 insert(&mut collected, query, &apply.key, apply.value.as_ref())
             }
-            LedgerEntry::Txn(txn) => {
+            LedgerStatement::Txn(txn) => {
                 for metadata in &txn.metadata {
                     collect_metadata(&mut collected, query, metadata);
                 }

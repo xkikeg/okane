@@ -109,8 +109,8 @@ impl<F: FileSystem> Loader<F> {
         for parsed in parse::parse_ledger(parse_options, &content) {
             let (ctx, entry) =
                 parsed.map_err(|e| LoadError::Parse(e, path.clone().into_owned()))?;
-            match entry {
-                syntax::LedgerEntry::Include(p) => {
+            match &entry.statement {
+                syntax::LedgerStatement::Include(p) => {
                     let include_path: PathBuf = p.0.as_ref().into();
                     let target: String = path
                         .as_ref()
@@ -274,15 +274,29 @@ mod tests {
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
 
+    /// Parses the expected entries, given as a fragment per contiguous run of
+    /// entries the loader reports from one file.
+    ///
+    /// A fragment starts wherever the preceding `include` directive was, so its
+    /// first entry's [`syntax::Separation`] cannot be derived from the fragment
+    /// itself and is given explicitly.
     fn parse_static_ledger_entry(
-        input: &[(&Path, &'static str)],
+        input: &[(&Path, syntax::Separation, &'static str)],
     ) -> Result<Vec<(PathBuf, syntax::plain::LedgerEntry<'static>)>, parse::ParseError> {
         let opts = parse::ParseOptions::default();
         input
             .iter()
-            .flat_map(|(p, content)| {
+            .flat_map(|(p, first_separation, content)| {
                 parse::parse_ledger(&opts, content)
-                    .map(|elem| elem.map(|(_ctx, entry)| (p.to_path_buf(), entry)))
+                    .enumerate()
+                    .map(|(i, elem)| {
+                        elem.map(|(_ctx, mut entry)| {
+                            if i == 0 {
+                                entry.separation = *first_separation;
+                            }
+                            (p.to_path_buf(), entry)
+                        })
+                    })
             })
             .collect()
     }
@@ -320,6 +334,7 @@ mod tests {
         let want = parse_static_ledger_entry(&[
             (
                 &root,
+                syntax::Separation::Immediate,
                 indoc! {"
             ; Demonstrates include feature including glob, parent dir, ...
 
@@ -335,6 +350,7 @@ mod tests {
             ),
             (
                 &child2,
+                syntax::Separation::Immediate,
                 indoc! {"
             2024/01/01 * Complicated salary
                 Income:Salary                          -3,000.00 CHF
@@ -346,6 +362,7 @@ mod tests {
             ),
             (
                 &child3,
+                syntax::Separation::Immediate,
                 indoc! {"
             2024/03/01 * SBB CFF FFS
                 Assets:Bank:ZKB                            -5.60 CHF
@@ -354,6 +371,8 @@ mod tests {
             ),
             (
                 &child2,
+                // Follows a blank line after `include ../child3.ledger`.
+                syntax::Separation::BlankLine,
                 indoc! {"
             2024/01/25 ! RSU
                 ; TODO: FMV not determined
@@ -364,6 +383,7 @@ mod tests {
             ),
             (
                 &child4,
+                syntax::Separation::Immediate,
                 indoc! {"
             2024/7/1 * Send money
                 Assets:Bank:ZKB                         -1000.00 CHF
@@ -372,6 +392,8 @@ mod tests {
             ),
             (
                 &child1,
+                // Follows a blank line after `include sub/child*.ledger`.
+                syntax::Separation::BlankLine,
                 indoc! {"
             2024/05/01 * Migros
                 Expenses:Grocery                          -10.00 CHF
@@ -404,6 +426,7 @@ mod tests {
 
         let want = parse_static_ledger_entry(&[(
             Path::new("path/to/sub/child3.ledger"),
+            syntax::Separation::Immediate,
             indoc! {"
             ; comment here
             "},

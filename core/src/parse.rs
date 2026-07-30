@@ -35,11 +35,33 @@ pub fn parse_ledger<'i, Deco: 'i + Decoration>(
     options: &ParseOptions,
     input: &'i str,
 ) -> impl Iterator<Item = Result<(ParsedContext<'i>, syntax::LedgerEntry<'i, Deco>), ParseError>> {
-    options.parse_repeated(parse_ledger_entry, character::newlines.void(), input)
+    options
+        .parse_repeated(parse_ledger_statement, character::newlines.void(), input)
+        .enumerate()
+        .map(|(i, parsed)| {
+            parsed.map(|(ctx, statement)| {
+                // The first entry never gets a blank line before it, regardless
+                // of the leading newlines the file may have.
+                let separation = if i > 0 && ctx.has_blank_line_before() {
+                    syntax::Separation::BlankLine
+                } else {
+                    syntax::Separation::Immediate
+                };
+                (
+                    ctx,
+                    syntax::LedgerEntry {
+                        separation,
+                        statement,
+                    },
+                )
+            })
+        })
 }
 
-/// Parses given `input` into [syntax::LedgerEntry].
-fn parse_ledger_entry<'i, I, Deco>(input: &mut I) -> ModalResult<syntax::LedgerEntry<'i, Deco>>
+/// Parses given `input` into [syntax::LedgerStatement].
+fn parse_ledger_statement<'i, I, Deco>(
+    input: &mut I,
+) -> ModalResult<syntax::LedgerStatement<'i, Deco>>
 where
     I: Stream<Token = char, Slice = &'i str>
         + StreamIsPartial
@@ -50,25 +72,25 @@ where
     Deco: Decoration + 'static,
 {
     trace(
-        "parse_ledger_entry",
+        "parse_ledger_statement",
         dispatch! {peek(any);
             'a' => alt((
                 preceded(
                     peek(literal("account")),
-                    cut_err(directive::account_declaration.map(syntax::LedgerEntry::Account)),
+                    cut_err(directive::account_declaration.map(syntax::LedgerStatement::Account)),
                 ),
                 preceded(
                     peek(literal("apply")),
-                    cut_err(directive::apply_tag.map(syntax::LedgerEntry::ApplyTag)),
+                    cut_err(directive::apply_tag.map(syntax::LedgerStatement::ApplyTag)),
                 ),
             )),
-            'c' => directive::commodity_declaration.map(syntax::LedgerEntry::Commodity),
-            'e' => directive::end_apply_tag.map(|_| syntax::LedgerEntry::EndApplyTag),
-            'i' => directive::include.map(syntax::LedgerEntry::Include),
+            'c' => directive::commodity_declaration.map(syntax::LedgerStatement::Commodity),
+            'e' => directive::end_apply_tag.map(|_| syntax::LedgerStatement::EndApplyTag),
+            'i' => directive::include.map(syntax::LedgerStatement::Include),
             c if directive::is_comment_prefix(c) => {
-                directive::top_comment.map(syntax::LedgerEntry::Comment)
+                directive::top_comment.map(syntax::LedgerStatement::Comment)
             },
-            c if c.is_ascii_digit() => transaction::transaction.map(syntax::LedgerEntry::Txn),
+            c if c.is_ascii_digit() => transaction::transaction.map(syntax::LedgerStatement::Txn),
             _ => fail.context(StrContext::Label("no matching syntax")),
         },
     )
@@ -84,6 +106,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use syntax::plain::LedgerEntry;
+    use syntax::{LedgerStatement, Separation};
 
     fn parse_ledger_into(input: &'_ str) -> Vec<(ParsedContext<'_>, LedgerEntry<'_>)> {
         let r: Result<Vec<(ParsedContext, LedgerEntry)>, ParseError> =
@@ -92,6 +115,14 @@ mod tests {
             Ok(x) => x,
             Err(e) => panic!("failed to parse:\n{}", e),
         }
+    }
+
+    /// Returns the [`Separation`] of every parsed entry.
+    fn parse_ledger_separations(input: &str) -> Vec<Separation> {
+        parse_ledger_into(input)
+            .iter()
+            .map(|(_, entry)| entry.separation)
+            .collect()
     }
 
     #[test]
@@ -103,12 +134,17 @@ mod tests {
             vec![(
                 ParsedContext {
                     initial: input,
-                    span: 2..13
+                    span: 2..13,
+                    separator: 0..2,
                 },
-                syntax::LedgerEntry::Txn(syntax::Transaction::new(
-                    NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(),
-                    ""
-                ))
+                LedgerEntry {
+                    // Leading newlines must not turn into a leading blank line.
+                    separation: Separation::Immediate,
+                    statement: LedgerStatement::Txn(syntax::Transaction::new(
+                        NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(),
+                        ""
+                    )),
+                }
             )]
         );
     }
@@ -128,30 +164,69 @@ mod tests {
                 (
                     ParsedContext {
                         initial: input,
-                        span: 0..38
+                        span: 0..38,
+                        separator: 0..0,
                     },
-                    syntax::LedgerEntry::Txn(syntax::Transaction {
-                        posts: vec![syntax::Posting::new_untracked("Expenses:Grocery")],
-                        ..syntax::Transaction::new(
-                            NaiveDate::from_ymd_opt(2024, 4, 10).unwrap(),
-                            "Migros",
-                        )
-                    })
+                    LedgerEntry {
+                        separation: Separation::Immediate,
+                        statement: LedgerStatement::Txn(syntax::Transaction {
+                            posts: vec![syntax::Posting::new_untracked("Expenses:Grocery")],
+                            ..syntax::Transaction::new(
+                                NaiveDate::from_ymd_opt(2024, 4, 10).unwrap(),
+                                "Migros",
+                            )
+                        }),
+                    }
                 ),
                 (
                     ParsedContext {
                         initial: input,
-                        span: 38..74
+                        span: 38..74,
+                        separator: 38..38,
                     },
-                    syntax::LedgerEntry::Txn(syntax::Transaction {
-                        posts: vec![syntax::Posting::new_untracked("Expenses:Grocery")],
-                        ..syntax::Transaction::new(
-                            NaiveDate::from_ymd_opt(2024, 4, 20).unwrap(),
-                            "Coop"
-                        )
-                    })
+                    LedgerEntry {
+                        separation: Separation::Immediate,
+                        statement: LedgerStatement::Txn(syntax::Transaction {
+                            posts: vec![syntax::Posting::new_untracked("Expenses:Grocery")],
+                            ..syntax::Transaction::new(
+                                NaiveDate::from_ymd_opt(2024, 4, 20).unwrap(),
+                                "Coop"
+                            )
+                        }),
+                    }
                 )
             ]
         )
+    }
+
+    #[test]
+    fn parse_ledger_tracks_separation() {
+        let input = indoc! {"
+            ; comment right above the transaction
+            2024/4/10 Migros
+                Expenses:Grocery
+
+            include other.ledger
+            include another.ledger
+
+
+
+            end apply tag
+        "};
+
+        assert_eq!(
+            parse_ledger_separations(input),
+            vec![
+                // Leading comment, first entry of the file.
+                Separation::Immediate,
+                // Transaction glued to the comment above it.
+                Separation::Immediate,
+                Separation::BlankLine,
+                // Consecutive include directives stay grouped.
+                Separation::Immediate,
+                // Several blank lines are still just one separation.
+                Separation::BlankLine,
+            ]
+        );
     }
 }

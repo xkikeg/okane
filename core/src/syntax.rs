@@ -17,9 +17,56 @@ use bounded_static::ToBoundedStatic;
 
 use decoration::Decoration;
 
-/// Top-level entry of the LedgerFile.
+/// How an entry is separated from the preceding entry.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Separation {
+    /// The entry immediately follows the previous entry, without a blank line.
+    Immediate,
+    /// The entry is separated from the previous entry by a blank line.
+    BlankLine,
+}
+
+/// Top-level entry of the LedgerFile, a [`LedgerStatement`] with its layout context.
 #[derive_where(Debug, PartialEq, Eq)]
-pub enum LedgerEntry<'i, Deco: Decoration> {
+pub struct LedgerEntry<'i, Deco: Decoration> {
+    /// How the entry is separated from the previous entry.
+    pub separation: Separation,
+    /// The statement itself.
+    pub statement: LedgerStatement<'i, Deco>,
+}
+
+impl<'i, Deco: Decoration> LedgerEntry<'i, Deco> {
+    /// Creates an entry separated from the previous entry by a blank line,
+    /// which is the usual way to write a Ledger file.
+    pub fn new(statement: LedgerStatement<'i, Deco>) -> Self {
+        Self {
+            separation: Separation::BlankLine,
+            statement,
+        }
+    }
+
+    /// Marks the entry as immediately following the previous entry.
+    pub fn immediate(self) -> Self {
+        Self {
+            separation: Separation::Immediate,
+            ..self
+        }
+    }
+}
+
+impl LedgerEntry<'_, plain::Ident> {
+    #[cfg(test)]
+    pub(crate) fn to_static(&self) -> LedgerEntry<'static, plain::Ident> {
+        LedgerEntry {
+            separation: self.separation,
+            statement: self.statement.to_static(),
+        }
+    }
+}
+
+/// Top-level statement of the LedgerFile.
+#[derive_where(Debug, PartialEq, Eq)]
+pub enum LedgerStatement<'i, Deco: Decoration> {
     /// Transaction
     Txn(Transaction<'i, Deco>),
     /// Comment, not limited to one-line oppose to `Metadata`.
@@ -36,17 +83,17 @@ pub enum LedgerEntry<'i, Deco: Decoration> {
     Commodity(CommodityDeclaration<'i>),
 }
 
-impl LedgerEntry<'_, plain::Ident> {
+impl LedgerStatement<'_, plain::Ident> {
     #[cfg(test)]
-    pub(crate) fn to_static(&self) -> LedgerEntry<'static, plain::Ident> {
+    pub(crate) fn to_static(&self) -> LedgerStatement<'static, plain::Ident> {
         match self {
-            LedgerEntry::Txn(v) => LedgerEntry::Txn(v.to_static()),
-            LedgerEntry::Comment(v) => LedgerEntry::Comment(v.to_static()),
-            LedgerEntry::ApplyTag(v) => LedgerEntry::ApplyTag(v.to_static()),
-            LedgerEntry::EndApplyTag => LedgerEntry::EndApplyTag,
-            LedgerEntry::Include(v) => LedgerEntry::Include(v.to_static()),
-            LedgerEntry::Account(v) => LedgerEntry::Account(v.to_static()),
-            LedgerEntry::Commodity(v) => LedgerEntry::Commodity(v.to_static()),
+            LedgerStatement::Txn(v) => LedgerStatement::Txn(v.to_static()),
+            LedgerStatement::Comment(v) => LedgerStatement::Comment(v.to_static()),
+            LedgerStatement::ApplyTag(v) => LedgerStatement::ApplyTag(v.to_static()),
+            LedgerStatement::EndApplyTag => LedgerStatement::EndApplyTag,
+            LedgerStatement::Include(v) => LedgerStatement::Include(v.to_static()),
+            LedgerStatement::Account(v) => LedgerStatement::Account(v.to_static()),
+            LedgerStatement::Commodity(v) => LedgerStatement::Commodity(v.to_static()),
         }
     }
 }

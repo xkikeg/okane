@@ -9,6 +9,13 @@
 ### Changed
 
 * CLI: `ui` reload errors are now shown in color instead of plain text (https://github.com/xkikeg/okane/issues/489).
+* Core: `syntax::LedgerEntry` is now a struct pairing a `syntax::Separation` with the new
+  `syntax::LedgerStatement` enum, which holds the variants `LedgerEntry` used to have.
+  `Separation` records whether a blank line preceded the entry in the source
+  (https://github.com/xkikeg/okane/pull/525).
+* Core/CLI: formatting now reproduces the blank lines of the source instead of putting one between
+  every entry. A comment written directly above a transaction stays attached to it, runs of
+  `apply tag` / `include` directives stay grouped, and the spurious blank line at end of file is gone.
 * CLI: import config is now parsed with [`ya`](https://crates.io/crates/ya) instead of the
   unmaintained `serde_yaml`, dropping the `unsafe-libyaml` dependency. Config errors now point at
   the offending source line, and config files must be valid UTF-8 (a leading BOM is still

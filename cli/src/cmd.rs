@@ -9,6 +9,7 @@ use clap::{Args, Subcommand};
 
 use lender::FallibleLender;
 use okane_core::report::query;
+use okane_core::syntax::Separation;
 use okane_core::syntax::display::DisplayContext;
 use okane_core::syntax::plain::LedgerEntry;
 use okane_core::{load, report};
@@ -93,7 +94,7 @@ impl Command {
 #[derive(Args, Debug)]
 pub struct ImportCmd {
     #[arg(short, long, value_name = "FILE")]
-    pub config: std::path::PathBuf,
+    pub config: PathBuf,
 
     /// Review the imported transactions in an interactive TUI before writing.
     #[arg(long)]
@@ -101,13 +102,13 @@ pub struct ImportCmd {
 
     /// Ledger file whose accounts feed the autocomplete (interactive only).
     #[arg(long, value_name = "FILE", requires = "interactive")]
-    pub ledger: Option<std::path::PathBuf>,
+    pub ledger: Option<PathBuf>,
 
     /// Ledger file the reviewed transactions are appended to (interactive only).
     #[arg(short = 'o', long, value_name = "FILE", requires = "interactive")]
-    pub output: Option<std::path::PathBuf>,
+    pub output: Option<PathBuf>,
 
-    pub source: std::path::PathBuf,
+    pub source: PathBuf,
 }
 
 impl ImportCmd {
@@ -198,7 +199,7 @@ impl ImportCmd {
 
 #[derive(Args, Debug)]
 pub struct FormatCmd {
-    pub source: std::path::PathBuf,
+    pub source: PathBuf,
 }
 
 impl FormatCmd {
@@ -255,7 +256,7 @@ impl PrimitiveCmd {
 
 #[derive(Args, Debug)]
 struct FlattenCmd {
-    pub source: std::path::PathBuf,
+    pub source: PathBuf,
 }
 
 impl FlattenCmd {
@@ -276,9 +277,19 @@ impl FlattenCmd {
 
         // TODO: Pick DisplayContext from load results.
         let ctx = DisplayContext::default();
+        let mut prev_path: Option<PathBuf> = None;
         load::new_loader(self.source).load(
-            |_path, _ctx, entry: &LedgerEntry| -> Result<(), FlattenError> {
-                writeln!(w, "{}", ctx.as_display(entry))?;
+            |path, _ctx, entry: &LedgerEntry| -> Result<(), FlattenError> {
+                let file_changed = prev_path.as_deref().is_some_and(|prev| prev != path);
+                if file_changed {
+                    prev_path = Some(path.to_owned());
+                    // The first entry of every file is `Separation::Immediate`, so without this
+                    // the last entry of one file would run into the first entry of the next.
+                    if entry.separation == Separation::Immediate {
+                        writeln!(w)?;
+                    }
+                }
+                write!(w, "{}", ctx.as_display(entry))?;
                 Ok(())
             },
         )?;
@@ -297,7 +308,7 @@ struct EvalCmd {
 
     /// source of the Ledger file.
     #[arg(short = 'f', long = "file")]
-    pub source: std::path::PathBuf,
+    pub source: PathBuf,
 
     /// expression to evaluate.
     pub expression: Vec<String>,
@@ -336,7 +347,7 @@ impl EvalCmd {
 
 #[derive(Args, Debug)]
 pub struct AccountsCmd {
-    pub source: std::path::PathBuf,
+    pub source: PathBuf,
 }
 
 impl AccountsCmd {
@@ -357,7 +368,7 @@ impl AccountsCmd {
 #[derive(Args, Debug)]
 pub struct TagsCmd {
     /// Path to the Ledger file.
-    pub source: std::path::PathBuf,
+    pub source: PathBuf,
 
     /// Print each tag as `key: value`, instead of the key alone.
     ///
@@ -394,7 +405,7 @@ pub struct BalanceCmd {
     eval_options: EvalOptions,
 
     /// Path to the Ledger file.
-    source: std::path::PathBuf,
+    source: PathBuf,
 
     /// [Optional] Accounts to report the balance.
     ///
@@ -450,7 +461,7 @@ pub struct UiCmd {
     eval_options: EvalOptions,
 
     /// Path to the Ledger file.
-    source: std::path::PathBuf,
+    source: PathBuf,
 }
 
 impl UiCmd {
@@ -507,7 +518,7 @@ pub struct RegisterCmd {
     sort: SortKey,
 
     /// Path to the Ledger file.
-    source: std::path::PathBuf,
+    source: PathBuf,
 
     /// [Optional] Accounts to get register.
     ///
