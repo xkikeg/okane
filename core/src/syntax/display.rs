@@ -167,7 +167,7 @@ impl<Deco: Decoration> fmt::Display for WithContext<'_, Transaction<'_, Deco>> {
         }
         writeln!(f, "{}", xact.payee)?;
         for m in &xact.metadata {
-            writeln!(f, "    ; {}", m)?;
+            m.fmt(f)?;
         }
         for post in &xact.posts {
             write!(f, "{}", self.context.as_display(post.as_undecorated()))?;
@@ -176,17 +176,24 @@ impl<Deco: Decoration> fmt::Display for WithContext<'_, Transaction<'_, Deco>> {
     }
 }
 
+const METADATA_PREFIX: &str = "    ; ";
+
 impl fmt::Display for Metadata<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Metadata::WordTags(tags) => {
-                write!(f, ":")?;
+                f.write_str(METADATA_PREFIX)?;
+                f.write_str(":")?;
                 for tag in tags {
                     write!(f, "{}:", tag)?;
                 }
+                f.write_str("\n")?
             }
-            Metadata::KeyValueTag { key, value } => write!(f, "{}{}", key, value)?,
-            Metadata::Comment(s) => write!(f, "{}", s)?,
+            Metadata::KeyValueTag { key, value } => {
+                f.write_str(METADATA_PREFIX)?;
+                writeln!(f, "{}{}", key, value)?
+            }
+            Metadata::Comment(s) => LineWrapStr::wrap(METADATA_PREFIX, s).fmt(f)?,
         };
         Ok(())
     }
@@ -251,7 +258,7 @@ impl<Deco: Decoration> fmt::Display for WithContext<'_, Posting<'_, Deco>> {
         }
         writeln!(f)?;
         for m in &post.metadata {
-            writeln!(f, "    ; {}", m)?;
+            m.fmt(f)?;
         }
         Ok(())
     }
@@ -502,14 +509,23 @@ mod tests {
                         lot: Lot::default(),
                     }),
                     balance: None,
-                    metadata: Vec::new(),
+                    metadata: vec![Metadata::Comment("single-line".into()),],
                 }],
-                metadata: Vec::new(),
+                metadata: vec![
+                    Metadata::Comment("multi\nline\ntext\n".into()),
+                    Metadata::Comment("works\nfine".into()),
+                ],
             }))
         );
         let want = concat!(
             "2022/12/23 Example Grocery\n",
+            "    ; multi\n",
+            "    ; line\n",
+            "    ; text\n",
+            "    ; works\n",
+            "    ; fine\n",
             "    Assets                                    123.45 USD\n",
+            "    ; single-line\n"
         );
         assert_eq!(want, got);
     }
