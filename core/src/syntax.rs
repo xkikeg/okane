@@ -239,6 +239,8 @@ pub enum ClearState {
 #[derive(Debug, PartialEq, Eq, ToStatic)]
 pub enum Metadata<'i> {
     /// Comment, which covers just one line (without the suceeding new line).
+    /// If users wrongly construct this `Comment` with multi-line text,
+    /// That will be rendered properly as multi-line.
     Comment(Cow<'i, str>),
     /// Tags of word, in a format :tag1:tag2:tag3:, each tag can't contain white spaces.
     WordTags(Vec<Cow<'i, str>>),
