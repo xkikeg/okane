@@ -61,14 +61,23 @@ impl<'a, T> WithContext<'a, T> {
 
 impl<Deco: Decoration> fmt::Display for WithContext<'_, LedgerEntry<'_, Deco>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.value.separation == Separation::BlankLine {
+            writeln!(f)?;
+        }
+        self.pass_context(&self.value.statement).fmt(f)
+    }
+}
+
+impl<Deco: Decoration> fmt::Display for WithContext<'_, LedgerStatement<'_, Deco>> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.value {
-            LedgerEntry::Txn(txn) => self.pass_context(txn).fmt(f),
-            LedgerEntry::Comment(v) => v.fmt(f),
-            LedgerEntry::ApplyTag(v) => v.fmt(f),
-            LedgerEntry::EndApplyTag => writeln!(f, "end apply tag"),
-            LedgerEntry::Include(v) => v.fmt(f),
-            LedgerEntry::Account(v) => v.fmt(f),
-            LedgerEntry::Commodity(v) => self.pass_context(v).fmt(f),
+            LedgerStatement::Txn(txn) => self.pass_context(txn).fmt(f),
+            LedgerStatement::Comment(v) => v.fmt(f),
+            LedgerStatement::ApplyTag(v) => v.fmt(f),
+            LedgerStatement::EndApplyTag => writeln!(f, "end apply tag"),
+            LedgerStatement::Include(v) => v.fmt(f),
+            LedgerStatement::Account(v) => v.fmt(f),
+            LedgerStatement::Commodity(v) => self.pass_context(v).fmt(f),
         }
     }
 }
@@ -449,7 +458,7 @@ mod tests {
             concat!(";this\n", ";is\n", ";a pen pineapple apple pen.\n"),
             format!(
                 "{}",
-                ctx.as_display(&plain::LedgerEntry::Comment(TopLevelComment(
+                ctx.as_display(&plain::LedgerStatement::Comment(TopLevelComment(
                     Cow::Borrowed("this\nis\na pen pineapple apple pen."),
                 )))
             )
@@ -458,7 +467,7 @@ mod tests {
             "apply tag foo\n",
             format!(
                 "{}",
-                ctx.as_display(&tracked::LedgerEntry::ApplyTag(ApplyTag {
+                ctx.as_display(&tracked::LedgerStatement::ApplyTag(ApplyTag {
                     key: Cow::Borrowed("foo"),
                     value: None
                 })),
@@ -468,7 +477,7 @@ mod tests {
             "apply tag foo: bar\n",
             format!(
                 "{}",
-                ctx.as_display(&plain::LedgerEntry::ApplyTag(ApplyTag {
+                ctx.as_display(&plain::LedgerStatement::ApplyTag(ApplyTag {
                     key: Cow::Borrowed("foo"),
                     value: Some(MetadataValue::Text(Cow::Borrowed("bar")))
                 }))
@@ -478,7 +487,7 @@ mod tests {
             "apply tag foo:: 100\n",
             format!(
                 "{}",
-                ctx.as_display(&tracked::LedgerEntry::ApplyTag(ApplyTag {
+                ctx.as_display(&tracked::LedgerStatement::ApplyTag(ApplyTag {
                     key: Cow::Borrowed("foo"),
                     value: Some(MetadataValue::Expr(Cow::Borrowed("100")))
                 }))
@@ -486,7 +495,24 @@ mod tests {
         );
         assert_eq!(
             "end apply tag\n",
-            format!("{}", ctx.as_display(&plain::LedgerEntry::EndApplyTag))
+            format!("{}", ctx.as_display(&plain::LedgerStatement::EndApplyTag))
+        );
+    }
+
+    #[test]
+    fn display_ledger_entry_emits_blank_line_on_separation() {
+        let ctx = DisplayContext::default();
+        let entry = |separation| plain::LedgerEntry {
+            separation,
+            statement: plain::LedgerStatement::EndApplyTag,
+        };
+        assert_eq!(
+            "end apply tag\n",
+            format!("{}", ctx.as_display(&entry(Separation::Immediate)))
+        );
+        assert_eq!(
+            "\nend apply tag\n",
+            format!("{}", ctx.as_display(&entry(Separation::BlankLine)))
         );
     }
 
@@ -494,7 +520,7 @@ mod tests {
     fn display_txn() {
         let got = format!(
             "{}",
-            DisplayContext::default().as_display(&LedgerEntry::Txn(plain::Transaction {
+            DisplayContext::default().as_display(&LedgerStatement::Txn(plain::Transaction {
                 date: NaiveDate::from_ymd_opt(2022, 12, 23).unwrap(),
                 effective_date: None,
                 clear_state: ClearState::Uncleared,

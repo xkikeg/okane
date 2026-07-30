@@ -79,8 +79,8 @@ impl<'ctx> ProcessAccumulator<'ctx> {
         ctx: &mut ReportContext<'ctx>,
         entry: &syntax::tracked::LedgerEntry,
     ) -> Result<(), BookKeepError> {
-        match entry {
-            syntax::LedgerEntry::Txn(txn) => {
+        match &entry.statement {
+            syntax::LedgerStatement::Txn(txn) => {
                 self.txns.push(book_keeping::add_transaction(
                     ctx,
                     &mut self.price_repos,
@@ -89,8 +89,8 @@ impl<'ctx> ProcessAccumulator<'ctx> {
                 )?);
                 Ok(())
             }
-            syntax::LedgerEntry::Account(account) => process_account(ctx, account),
-            syntax::LedgerEntry::Commodity(commodity) => process_commodity(ctx, commodity),
+            syntax::LedgerStatement::Account(account) => process_account(ctx, account),
+            syntax::LedgerStatement::Commodity(commodity) => process_commodity(ctx, commodity),
             _ => Ok(()),
         }
     }

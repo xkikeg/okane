@@ -29,7 +29,7 @@ pub use process::{ProcessOptions, process};
 pub use tags::{Tag, TagQuery, TagValue, tags};
 pub use transaction::{Posting, Transaction};
 
-use crate::{load, syntax::plain::LedgerEntry};
+use crate::{load, syntax::plain::LedgerStatement};
 
 /// Returns all accounts for the given LedgerEntry.
 /// Returned accounts should be sorted as `str`.
@@ -43,8 +43,8 @@ where
     F: load::FileSystem,
 {
     loader.borrow().load(|path, pctx, entry| {
-        match entry {
-            LedgerEntry::Account(account) => {
+        match &entry.statement {
+            LedgerStatement::Account(account) => {
                 process::process_account(ctx, account).map_err(|berr| {
                     ReportError::BookKeep(
                         berr,
@@ -56,7 +56,7 @@ where
                     )
                 })?
             }
-            LedgerEntry::Txn(txn) => {
+            LedgerStatement::Txn(txn) => {
                 for posting in &txn.posts {
                     ctx.accounts.ensure(&posting.account);
                 }

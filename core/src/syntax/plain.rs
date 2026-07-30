@@ -26,6 +26,7 @@ impl Decoration for Ident {
 }
 
 pub type LedgerEntry<'i> = super::LedgerEntry<'i, Ident>;
+pub type LedgerStatement<'i> = super::LedgerStatement<'i, Ident>;
 pub type Transaction<'i> = super::Transaction<'i, Ident>;
 pub type Posting<'i> = super::Posting<'i, Ident>;
 pub type PostingAmount<'i> = super::PostingAmount<'i, Ident>;

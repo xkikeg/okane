@@ -50,7 +50,14 @@ impl ParseOptions {
                 start,
                 e.into_inner(),
             )),
-            Ok((entry, span)) => Ok((ParsedContext { initial, span }, entry)),
+            Ok((entry, span)) => Ok((
+                ParsedContext {
+                    initial,
+                    span,
+                    separator: 0..0,
+                },
+                entry,
+            )),
         }
     }
 
@@ -82,11 +89,23 @@ impl ParseOptions {
 /// Context information carrying the metadata of the entry.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ParsedContext<'i> {
+    /// Initial input.
     pub(super) initial: &'i str,
+    /// Span of the separator consumed right before the entry, may be empty.
+    pub(super) separator: Range<usize>,
+    /// Span of the parsed [`LedgerStatement`].
     pub(super) span: Range<usize>,
 }
 
 impl ParsedContext<'_> {
+    /// Returns `true` if a blank line preceded the entry.
+    ///
+    /// Every statement parser consumes its own trailing line ending, so any
+    /// separator left to consume in between means at least one blank line.
+    pub(super) fn has_blank_line_before(&self) -> bool {
+        !self.separator.is_empty()
+    }
+
     /// Computes the starting line number from this context.
     /// Note this function is O(N), not a cheap function.
     pub fn compute_line_start(&self) -> usize {
@@ -168,7 +187,7 @@ where
     E: winnow::error::ParserError<&'i str> + 'i,
 {
     fn next_impl(&mut self) -> Result<Option<(ParsedContext<'i>, Out)>, E> {
-        self.separator.parse_next(&mut self.input)?;
+        let separator = self.separator.by_ref().span().parse_next(&mut self.input)?;
         if self.input.is_empty() {
             return Ok(None);
         }
@@ -181,6 +200,7 @@ where
             ParsedContext {
                 initial: self.initial,
                 span,
+                separator,
             },
             entry,
         )))

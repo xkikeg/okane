@@ -55,7 +55,7 @@ impl FormatOptions {
         let ctx = DisplayContext::default();
         for parsed in parse_ledger(&ParseOptions::default(), &buf) {
             let (_, entry): (_, syntax::plain::LedgerEntry) = parsed?;
-            writeln!(w, "{}", ctx.as_display(&entry))?;
+            write!(w, "{}", ctx.as_display(&entry))?;
         }
         Ok(())
     }
@@ -67,6 +67,72 @@ mod tests {
 
     use indoc::indoc;
     use pretty_assertions::assert_eq;
+
+    fn format_str(input: &str) -> String {
+        let mut output = Vec::new();
+        FormatOptions::new()
+            .format(&mut input.as_bytes(), &mut output)
+            .expect("format() should succeeds");
+        String::from_utf8(output).expect("output should be valid UTF-8")
+    }
+
+    #[test]
+    fn format_keeps_comment_attached_to_the_next_entry() {
+        let input = indoc! {"
+            ; Explains the transaction below.
+            2021/03/12 Opening Balance
+                Assets:Bank                                          = 1000 CHF
+                Equity
+            ; Explains the transaction above.
+
+            ; Standalone comment, separated by blank lines.
+
+            2021/03/13 Grocery
+                Expenses:Grocery                              10 CHF
+                Assets:Bank
+        "};
+
+        assert_eq!(input, format_str(input));
+    }
+
+    #[test]
+    fn format_collapses_consecutive_blank_lines() {
+        let input = indoc! {"
+            include a.ledger
+
+
+
+            include b.ledger
+        "};
+        let want = indoc! {"
+            include a.ledger
+
+            include b.ledger
+        "};
+
+        assert_eq!(want, format_str(input));
+    }
+
+    #[test]
+    fn format_is_idempotent() {
+        let input = indoc! {"
+            ; Top
+            #comment
+
+            account  Foo\t
+             alias Bar
+
+            apply    tag   foo
+            end  apply   tag
+
+            2021/05/14 !(#txn-1) My Grocery
+                Expenses:Grocery\t10 CHF
+                Assets:Bank  -10 CHF
+        "};
+
+        let once = format_str(input);
+        assert_eq!(once, format_str(&once));
+    }
 
     #[test]
     fn format_succeeds_transaction_without_lot_price() {
@@ -90,10 +156,12 @@ mod tests {
              \talias $\t
 
             apply    tag   foo
+
             apply tag key: value
             apply tag key:: 10 USD
 
             end  apply   tag
+            ; key:: 10 USD
 
             end apply tag
             end apply tag
@@ -139,13 +207,12 @@ mod tests {
             apply tag foo
 
             apply tag key: value
-
             apply tag key:: 10 USD
 
             end apply tag
+            ; key:: 10 USD
 
             end apply tag
-
             end apply tag
 
             include path/to/other.ledger
@@ -166,7 +233,6 @@ mod tests {
                 Assets:Complex                        (-10 * 2.1 $) @ (1 $ + 1 $) = 2.5 $
                 Assets:Broker                                 -2 SPINX {100 USD} [2010/12/23] (bought before Xmas) @ 10000 USD
                 Liabilities:Comma                       5,678.00 CHF @ 1,000,000 JPYRIN = -123,456.12 CHF
-
         "};
         let mut output = Vec::new();
         let mut r = input.as_bytes();

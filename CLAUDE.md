@@ -55,7 +55,7 @@ For import: external formats (CSV, ISO Camt053, Viseca) → `cli/src/import/` �
 
 ### `core/src/syntax/`
 
-The AST. Top-level type is `LedgerEntry<'i, Deco>`, parameterized over a lifetime `'i` (zero-copy string slices into the original file) and a `Decoration` type.
+The AST. Top-level type is `LedgerEntry<'i, Deco>`, parameterized over a lifetime `'i` (zero-copy string slices into the original file) and a `Decoration` type. It is a thin struct pairing a `LedgerStatement` (the enum of transactions, directives and standalone comments) with a `Separation`, which records whether a blank line preceded the entry in the source so formatting can reproduce the author's grouping.
 
 - **`decoration.rs`** — `Decoration` trait controls what extra data is attached to each AST node. Two implementations exist: `plain` (bare identity, used for most processing) and `tracked` (carries source span info, used during parsing when location is needed).
 - **`expr.rs`** — Numeric expression types (`Amount`, `ValueExpr`).

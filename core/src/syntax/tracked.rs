@@ -29,6 +29,7 @@ impl Decoration for Tracking {
 }
 
 pub type LedgerEntry<'i> = super::LedgerEntry<'i, Tracking>;
+pub type LedgerStatement<'i> = super::LedgerStatement<'i, Tracking>;
 pub type Transaction<'i> = super::Transaction<'i, Tracking>;
 pub type Posting<'i> = super::Posting<'i, Tracking>;
 pub type PostingAmount<'i> = super::PostingAmount<'i, Tracking>;

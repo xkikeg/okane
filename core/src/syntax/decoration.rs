@@ -38,6 +38,7 @@ macro_rules! define_as_undecorated {
 define_as_undecorated!(['i], Cow<'i, str>);
 define_as_undecorated!(['i], &'i str);
 define_as_undecorated!(['i, Deco: Decoration], super::LedgerEntry<'i, Deco>);
+define_as_undecorated!(['i, Deco: Decoration], super::LedgerStatement<'i, Deco>);
 define_as_undecorated!(['i, Deco: Decoration], super::Transaction<'i, Deco>);
 define_as_undecorated!(['i, Deco: Decoration], super::Posting<'i, Deco>);
 define_as_undecorated!(['i, Deco: Decoration], super::PostingAmount<'i, Deco>);
