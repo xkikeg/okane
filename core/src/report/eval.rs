@@ -17,84 +17,90 @@ pub use evaluated::Evaluated;
 pub(super) use posting_amount::PostingAmount;
 pub use single_amount::SingleAmount;
 
+use std::marker::PhantomData;
+
 use super::context::ReportContext;
-use crate::syntax::expr;
+use crate::syntax::expr::{self, ExprVisitor, Visitable};
 
-/// Provides syntax tree evaluation.
-pub(crate) trait Evaluable {
-    /// Visitor for AST.
-    /// Argument `evaluator` is a call operator to evaluate the given syntax amount to [`Evaluated`].
-    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError<'ctx>>>(
-        &self,
-        evaluator: &mut F,
-    ) -> Result<Evaluated<'ctx>, EvalError<'ctx>>;
-
+/// Provides syntax tree evaluation, on top of [`EvalExpr`].
+pub(crate) trait Evaluable<'i>: Visitable<'i> {
     /// Evaluate the self with mutable `ctx`, which allows unknown commodities in the expressions to be registered.
     fn eval_mut<'ctx>(
         &self,
         ctx: &mut ReportContext<'ctx>,
     ) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
-        self.eval_visit(&mut |amount| Ok(Evaluated::from_expr_amount_mut(ctx, amount)))
+        self.accept(&mut EvalExpr::new(RegisterCommodity(ctx)))
     }
 
     /// Evaluate the self with immutable `ctx`, which raises error on unknown commodities.
     fn eval<'ctx>(&self, ctx: &ReportContext<'ctx>) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
-        self.eval_visit(&mut |amount| Evaluated::from_expr_amount(ctx, amount))
+        self.accept(&mut EvalExpr::new(ResolveCommodity(ctx)))
     }
 }
 
-impl Evaluable for expr::ValueExpr<'_> {
-    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError<'ctx>>>(
-        &self,
-        evaluator: &mut F,
-    ) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
-        match self {
-            expr::ValueExpr::Paren(x) => x.eval_visit(evaluator),
-            expr::ValueExpr::Amount(x) => evaluator(x),
-        }
+impl<'i, T: Visitable<'i> + ?Sized> Evaluable<'i> for T {}
+
+/// [`ExprVisitor`] evaluating an expression into [`Evaluated`].
+///
+/// Handling of the leaf is delegated to `A`, which decides whether an unknown commodity gets
+/// registered ([`Evaluable::eval_mut`]) or rejected ([`Evaluable::eval`]).
+struct EvalExpr<'ctx, A>(A, PhantomData<ReportContext<'ctx>>);
+
+impl<'ctx, A: EvalAmount<'ctx>> EvalExpr<'ctx, A> {
+    fn new(eval_amount: A) -> Self {
+        EvalExpr(eval_amount, PhantomData)
     }
 }
 
-impl Evaluable for expr::Expr<'_> {
-    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError<'ctx>>>(
-        &self,
-        evaluator: &mut F,
-    ) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
-        match self {
-            expr::Expr::Unary(e) => e.eval_visit(evaluator),
-            expr::Expr::Binary(e) => e.eval_visit(evaluator),
-            expr::Expr::Value(e) => e.eval_visit(evaluator),
-        }
-    }
-}
+impl<'i, 'ctx, A: EvalAmount<'ctx>> ExprVisitor<'i> for EvalExpr<'ctx, A> {
+    type Output = Evaluated<'ctx>;
+    type Error = EvalError<'ctx>;
 
-impl Evaluable for expr::UnaryOpExpr<'_> {
-    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError<'ctx>>>(
-        &self,
-        evaluator: &mut F,
-    ) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
-        match self.op {
+    fn visit_amount(&mut self, amount: &expr::Amount<'i>) -> Result<Self::Output, Self::Error> {
+        self.0.eval_amount(amount)
+    }
+
+    fn visit_unary(&mut self, expr: &expr::UnaryOpExpr<'i>) -> Result<Self::Output, Self::Error> {
+        match expr.op {
             expr::UnaryOp::Negate => {
-                let val = self.expr.eval_visit(evaluator)?;
+                let val = self.visit_expr(&expr.expr)?;
                 Ok(val.negate())
             }
         }
     }
-}
 
-impl Evaluable for expr::BinaryOpExpr<'_> {
-    fn eval_visit<'ctx, F: FnMut(&expr::Amount) -> Result<Evaluated<'ctx>, EvalError<'ctx>>>(
-        &self,
-        evaluator: &mut F,
-    ) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
-        let lhs = self.lhs.eval_visit(evaluator)?;
-        let rhs = self.rhs.eval_visit(evaluator)?;
-        match self.op {
+    fn visit_binary(&mut self, expr: &expr::BinaryOpExpr<'i>) -> Result<Self::Output, Self::Error> {
+        let lhs = self.visit_expr(&expr.lhs)?;
+        let rhs = self.visit_expr(&expr.rhs)?;
+        match expr.op {
             expr::BinaryOp::Add => lhs.check_add(rhs),
             expr::BinaryOp::Sub => lhs.check_sub(rhs),
             expr::BinaryOp::Mul => lhs.check_mul(rhs),
             expr::BinaryOp::Div => lhs.check_div(rhs),
         }
+    }
+}
+
+/// Evaluation of the leaf amount, which is the only part [`EvalExpr`] varies on.
+trait EvalAmount<'ctx> {
+    fn eval_amount(&mut self, amount: &expr::Amount) -> Result<Evaluated<'ctx>, EvalError<'ctx>>;
+}
+
+/// [`EvalAmount`] registering the unknown commodities into the context.
+struct RegisterCommodity<'a, 'ctx>(&'a mut ReportContext<'ctx>);
+
+impl<'ctx> EvalAmount<'ctx> for RegisterCommodity<'_, 'ctx> {
+    fn eval_amount(&mut self, amount: &expr::Amount) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
+        Ok(Evaluated::from_expr_amount_mut(self.0, amount))
+    }
+}
+
+/// [`EvalAmount`] raising an error on the unknown commodities.
+struct ResolveCommodity<'a, 'ctx>(&'a ReportContext<'ctx>);
+
+impl<'ctx> EvalAmount<'ctx> for ResolveCommodity<'_, 'ctx> {
+    fn eval_amount(&mut self, amount: &expr::Amount) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
+        Evaluated::from_expr_amount(self.0, amount)
     }
 }
 
