@@ -14,29 +14,36 @@ pub enum FormatError {
     IO(#[from] std::io::Error),
     #[error("failed to parse the file")]
     Parse(#[from] ParseError),
-    // TODO: Remove this once supported.
-    #[error("recursive format isn't supported yet")]
-    UnsupportedRecursiveFormat,
 }
 
 /// Options to control format functionalities.
+///
+/// This formats one file at a time. To format a whole tree of files, walk
+/// [`load::Loader::scan_files()`][crate::load::Loader::scan_files], feeding the
+/// entries into a [`DisplayContextBuilder`][builder], and format each file with
+/// the resulting context.
+///
+/// [builder]: crate::syntax::display::DisplayContextBuilder
 #[derive(Debug, Default)]
 pub struct FormatOptions {
-    recursive: bool,
+    context: DisplayContext,
 }
 
 impl FormatOptions {
     /// Create a default FormatOptions instance.
-    /// All options are initially set to `false`.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Sets `recursive` option to given value.
-    /// If `recursive` is set to `true`, it'll try to follow `include` directive.
-    pub fn recursive(&mut self, recursive: bool) -> &mut Self {
-        self.recursive = recursive;
-        self
+    /// Sets how the amount of each commodity is rendered.
+    ///
+    /// Without this, every amount is printed the way it was written, as the
+    /// commodity settings can't be known from one file alone. Usually the
+    /// context comes from a
+    /// [`DisplayContextBuilder`][crate::syntax::display::DisplayContextBuilder]
+    /// fed with every entry of the ledger.
+    pub fn with_display_context(self, context: DisplayContext) -> Self {
+        Self { context }
     }
 
     /// Formats given `Read` instance and write it back to `Write`.
@@ -45,17 +52,11 @@ impl FormatOptions {
         R: Read,
         W: Write,
     {
-        // TODO: Implement recursive formatting.
-        if self.recursive {
-            return Err(FormatError::UnsupportedRecursiveFormat);
-        }
         let mut buf = String::new();
         r.read_to_string(&mut buf)?;
-        // TODO: Grab DisplayContext externally, or from LedgerEntry.
-        let ctx = DisplayContext::default();
         for parsed in parse_ledger(&ParseOptions::default(), &buf) {
             let (_, entry): (_, syntax::plain::LedgerEntry) = parsed?;
-            write!(w, "{}", ctx.as_display(&entry))?;
+            write!(w, "{}", self.context.as_display(&entry))?;
         }
         Ok(())
     }
@@ -69,11 +70,29 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     fn format_str(input: &str) -> String {
+        format_with(&FormatOptions::new(), input)
+    }
+
+    fn format_with(options: &FormatOptions, input: &str) -> String {
         let mut output = Vec::new();
-        FormatOptions::new()
+        options
             .format(&mut input.as_bytes(), &mut output)
             .expect("format() should succeeds");
         String::from_utf8(output).expect("output should be valid UTF-8")
+    }
+
+    /// Formats the input with the context derived from the input itself,
+    /// the way the formatter does over a whole tree of files.
+    fn format_with_inferred_context(input: &str) -> String {
+        let mut builder = syntax::display::DisplayContextBuilder::new();
+        for parsed in parse_ledger::<syntax::plain::Ident>(&ParseOptions::default(), input) {
+            let (_, entry) = parsed.expect("input should be parsed");
+            builder.observe(&entry);
+        }
+        format_with(
+            &FormatOptions::new().with_display_context(builder.build()),
+            input,
+        )
     }
 
     #[test]
@@ -120,18 +139,100 @@ mod tests {
             #comment
 
             account  Foo\t
+             ; a comment about Foo
              alias Bar
+
+            commodity USD
+             ; a comment about USD
+             alias $
 
             apply    tag   foo
             end  apply   tag
 
             2021/05/14 !(#txn-1) My Grocery
+                ; a comment about the transaction
                 Expenses:Grocery\t10 CHF
                 Assets:Bank  -10 CHF
         "};
 
         let once = format_str(input);
-        assert_eq!(once, format_str(&once));
+        assert_eq!(once, format_str(&once), "formatting must be idempotent");
+        // The comment prefixes must not accumulate spaces across runs.
+        assert!(
+            once.contains("    ; a comment about Foo\n"),
+            "got:\n{}",
+            once
+        );
+        assert!(
+            once.contains("    ; a comment about USD\n"),
+            "got:\n{}",
+            once
+        );
+    }
+
+    #[test]
+    fn format_applies_the_display_context() {
+        let input = indoc! {"
+            2021/05/14 My Grocery
+                Expenses:Grocery                       1234.5 CHF
+                Assets:Bank                           -1234.5 CHF
+        "};
+        let mut builder = syntax::display::DisplayContextBuilder::new();
+        builder.declare(
+            "CHF",
+            syntax::display::CommodityDisplayOption {
+                format: Some(pretty_decimal::Format::Comma3Dot),
+                min_scale: Some(2),
+            },
+        );
+        let want = indoc! {"
+            2021/05/14 My Grocery
+                Expenses:Grocery                        1,234.50 CHF
+                Assets:Bank                            -1,234.50 CHF
+        "};
+
+        assert_eq!(
+            want,
+            format_with(
+                &FormatOptions::new().with_display_context(builder.build()),
+                input
+            )
+        );
+    }
+
+    #[test]
+    fn format_with_inferred_context_is_a_fixed_point() {
+        let input = indoc! {"
+            commodity JPY
+                format 1,000 JPY
+
+            2021/05/14 My Grocery
+                Expenses:Grocery       1234 JPY
+                Expenses:Household     12.30 CHF
+                Expenses:Commissions   1,000 CHF
+                Assets:Broker          2 SPINX {1.23456 CHF} @ 1.23456 CHF
+                Assets:Complex         (-10 * 2.1 CHF) = 0
+                Assets:Bank            -5678.9 CHF
+        "};
+
+        let once = format_with_inferred_context(input);
+        assert_eq!(
+            once,
+            format_with_inferred_context(&once),
+            "formatting must be a fixed point"
+        );
+        // The declared format applies, even though the amount has no comma.
+        assert!(once.contains("1,234 JPY"), "got:\n{}", once);
+        // The widest CHF amount decides the scale, and the comma spreads.
+        assert!(once.contains("1,000.00 CHF"), "got:\n{}", once);
+        assert!(once.contains("-5,678.90 CHF"), "got:\n{}", once);
+        // The cost keeps its own precision, and the bare number is untouched.
+        assert!(
+            once.contains("{1.23456 CHF} @ 1.23456 CHF"),
+            "got:\n{}",
+            once
+        );
+        assert!(once.contains("= 0\n"), "got:\n{}", once);
     }
 
     #[test]

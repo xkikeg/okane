@@ -2,6 +2,9 @@
 
 use super::*;
 
+use std::collections::HashMap;
+use std::convert::Infallible;
+
 use decoration::AsUndecorated;
 use expr::Visitable;
 
@@ -16,7 +19,7 @@ pub struct DisplayContext {
     pub commodity: utility::ConfigResolver<String, CommodityDisplayOption>,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct CommodityDisplayOption {
     pub format: Option<pretty_decimal::Format>,
     pub min_scale: Option<u8>,
@@ -43,6 +46,230 @@ impl DisplayContext {
             context: self,
         }
     }
+}
+
+/// Derives a [`DisplayContext`] out of the Ledger itself.
+///
+/// How an amount should be printed is a property of its commodity, not of the
+/// particular literal, and the commodity may well be declared in another file
+/// than the one being printed. So a formatter has to walk the whole tree first,
+/// feeding every entry into this builder, and only then start printing.
+///
+/// Two sources are combined, and the declared one wins per field:
+///
+/// 1. `commodity ... format` directives, an explicit statement of intent.
+/// 2. The amounts actually written in the files, for the commodities without
+///    such a directive. Precision only ever grows: the widest literal wins,
+///    and the "most formatted" style wins, so the result doesn't depend on
+///    which file happened to be read first.
+///
+/// Costs (`@` / `@@`) and lot prices are deliberately *not* observed, as an
+/// exchange rate routinely carries more digits than the commodity's own
+/// precision, which would otherwise inflate every amount of that commodity.
+#[derive(Debug, Default, Clone)]
+pub struct DisplayContextBuilder {
+    base: CommodityDisplayOption,
+    commodities: HashMap<String, CommodityEstimate>,
+}
+
+/// What we know about one commodity, before deciding which source wins.
+#[derive(Debug, Default, Clone, Copy)]
+struct CommodityEstimate {
+    /// Taken from a `commodity ... format` directive, or given by the caller.
+    declared: CommodityDisplayOption,
+    /// Inferred from the amount literals.
+    observed: CommodityDisplayOption,
+}
+
+impl DisplayContextBuilder {
+    /// Creates an empty builder.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the fallback used for the commodities the builder never saw.
+    ///
+    /// Note this also applies to the amounts without a commodity, so leave it
+    /// alone unless the caller really means to touch those.
+    pub fn with_base(self, base: CommodityDisplayOption) -> Self {
+        Self { base, ..self }
+    }
+
+    /// Declares the `commodity` format explicitly, as a `commodity ... format`
+    /// directive would do.
+    pub fn declare<T>(&mut self, commodity: T, option: CommodityDisplayOption)
+    where
+        T: Into<String>,
+    {
+        let declared = &mut self
+            .commodities
+            .entry(commodity.into())
+            .or_default()
+            .declared;
+        *declared = join_option(*declared, option);
+    }
+
+    /// Records the `commodity` directives and the amounts within the `entry`.
+    pub fn observe<Deco: Decoration>(&mut self, entry: &LedgerEntry<'_, Deco>) {
+        match &entry.statement {
+            LedgerStatement::Txn(txn) => {
+                for posting in &txn.posts {
+                    self.observe_posting(posting.as_undecorated());
+                }
+            }
+            LedgerStatement::Commodity(declaration) => {
+                for detail in &declaration.details {
+                    if let CommodityDetail::Format(amount) = detail {
+                        self.declare_amount(&declaration.name, amount);
+                    }
+                }
+            }
+            // `apply tag` may hold an amount, but only as an unparsed string.
+            LedgerStatement::Comment(_)
+            | LedgerStatement::ApplyTag(_)
+            | LedgerStatement::EndApplyTag
+            | LedgerStatement::Include(_)
+            | LedgerStatement::Account(_) => {}
+        }
+    }
+
+    /// Returns the [`DisplayContext`] out of everything observed so far.
+    pub fn build(self) -> DisplayContext {
+        DisplayContext {
+            commodity: utility::ConfigResolver::new(
+                self.base,
+                self.commodities
+                    .into_iter()
+                    .map(|(commodity, estimate)| {
+                        (
+                            commodity,
+                            CommodityDisplayOption {
+                                format: estimate.declared.format.or(estimate.observed.format),
+                                min_scale: estimate
+                                    .declared
+                                    .min_scale
+                                    .or(estimate.observed.min_scale),
+                            },
+                        )
+                    })
+                    .collect(),
+            ),
+        }
+    }
+
+    fn observe_posting<Deco: Decoration>(&mut self, posting: &Posting<'_, Deco>) {
+        if let Some(posting_amount) = &posting.amount {
+            // Note the cost and the lot price are not observed on purpose,
+            // see the type level comment.
+            self.observe_value_expr(posting_amount.amount.as_undecorated());
+        }
+        if let Some(balance) = &posting.balance {
+            self.observe_value_expr(balance.as_undecorated());
+        }
+    }
+
+    /// Records every amount literal within the `value` expression.
+    fn observe_value_expr(&mut self, value: &expr::ValueExpr<'_>) {
+        match value.accept(self) {
+            Ok(()) => (),
+        }
+    }
+
+    /// Declares the format given as a `commodity ... format` sample amount.
+    ///
+    /// The sample carries its own commodity, and that is what the declaration
+    /// applies to: the `format` line is printed through the very same context,
+    /// so keying it on anything else would make the file grow on every format.
+    fn declare_amount(&mut self, declared_name: &str, sample: &expr::Amount<'_>) {
+        let commodity = if sample.commodity.is_empty() {
+            declared_name
+        } else {
+            sample.commodity.as_ref()
+        };
+        let option = as_display_option(&sample.value);
+        if let Some(previous) = self.commodities.get(commodity).map(|x| x.declared)
+            && (previous.format.is_some() && previous.format != option.format
+                || previous.min_scale.is_some() && previous.min_scale != option.min_scale)
+        {
+            log::warn!(
+                "conflicting format declared for the commodity {}: {:?} and {:?}",
+                commodity,
+                previous,
+                option
+            );
+        }
+        self.declare(commodity, option);
+    }
+}
+
+/// Collects the amount literals out of an expression, ignoring the operators.
+///
+/// Only [`ExprVisitor::visit_amount`] carries information here, so the operator
+/// nodes just recurse and the dispatching nodes keep their default.
+impl<'i> expr::ExprVisitor<'i> for DisplayContextBuilder {
+    type Output = ();
+    type Error = Infallible;
+
+    fn visit_amount(&mut self, amount: &expr::Amount<'i>) -> Result<(), Infallible> {
+        // An amount without a commodity is a plain number, `= 0` or an operand
+        // in an expression. Formatting those after some unrelated commodity
+        // would be nonsense.
+        if amount.commodity.is_empty() {
+            return Ok(());
+        }
+        let observed = &mut self
+            .commodities
+            .entry(amount.commodity.as_ref().to_owned())
+            .or_default()
+            .observed;
+        *observed = join_option(*observed, as_display_option(&amount.value));
+        Ok(())
+    }
+
+    fn visit_unary(&mut self, expr: &expr::UnaryOpExpr<'i>) -> Result<(), Infallible> {
+        self.visit_expr(&expr.expr)
+    }
+
+    fn visit_binary(&mut self, expr: &expr::BinaryOpExpr<'i>) -> Result<(), Infallible> {
+        self.visit_expr(&expr.lhs)?;
+        self.visit_expr(&expr.rhs)
+    }
+}
+
+/// Returns the display option the given literal implies.
+fn as_display_option(value: &PrettyDecimal) -> CommodityDisplayOption {
+    CommodityDisplayOption {
+        format: value.format,
+        // Decimal caps the scale at 28, so the conversion can't fail.
+        min_scale: Some(value.scale().try_into().unwrap_or(u8::MAX)),
+    }
+}
+
+/// Combines the two options so that the result never renders less than either.
+fn join_option(x: CommodityDisplayOption, y: CommodityDisplayOption) -> CommodityDisplayOption {
+    CommodityDisplayOption {
+        format: join_format(x.format, y.format),
+        min_scale: std::cmp::max(x.min_scale, y.min_scale),
+    }
+}
+
+/// Combines the two formats, preferring the one carrying more information.
+///
+/// `pretty_decimal::Format` is `non_exhaustive`, so an unknown variant is
+/// assumed to be more specific than the ones we know.
+fn join_format(
+    x: Option<pretty_decimal::Format>,
+    y: Option<pretty_decimal::Format>,
+) -> Option<pretty_decimal::Format> {
+    fn rank(format: Option<pretty_decimal::Format>) -> u8 {
+        match format {
+            None => 0,
+            Some(pretty_decimal::Format::Plain) => 1,
+            Some(pretty_decimal::Format::Comma3Dot) => 2,
+            Some(_) => 3,
+        }
+    }
+    if rank(y) > rank(x) { y } else { x }
 }
 
 /// Object combined with the `DisplayContext`.
@@ -138,7 +365,10 @@ impl fmt::Display for AccountDeclaration<'_> {
 impl fmt::Display for AccountDetail<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AccountDetail::Comment(v) => LineWrapStr::wrap("    ; ", v).fmt(f),
+            // The parser keeps the space after the comment prefix as part of the
+            // content, so the prefix must not add one back (that would grow by a
+            // space on every format).
+            AccountDetail::Comment(v) => LineWrapStr::wrap("    ;", v).fmt(f),
             AccountDetail::Note(v) => LineWrapStr::wrap("    note ", v).fmt(f),
             AccountDetail::Alias(v) => writeln!(f, "    alias {}", v),
         }
@@ -157,7 +387,7 @@ impl fmt::Display for WithContext<'_, CommodityDeclaration<'_>> {
 impl fmt::Display for WithContext<'_, CommodityDetail<'_>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.value {
-            CommodityDetail::Comment(v) => LineWrapStr::wrap("    ; ", v).fmt(f),
+            CommodityDetail::Comment(v) => LineWrapStr::wrap("    ;", v).fmt(f),
             CommodityDetail::Note(v) => LineWrapStr::wrap("    note ", v).fmt(f),
             CommodityDetail::Alias(v) => writeln!(f, "    alias {}", v),
             CommodityDetail::Format(v) => writeln!(f, "    format {}", self.pass_context(v)),
@@ -805,5 +1035,184 @@ mod tests {
             .unwrap();
         assert_eq!("((1.20 + 2.67) * 3.1 USD + 5 USD)", got.as_str());
         assert_eq!(Alignment::Complete(20), alignment);
+    }
+}
+
+#[cfg(test)]
+mod display_context_builder_tests {
+    use super::*;
+
+    use crate::parse::{self, ParseOptions};
+
+    use pretty_assertions::assert_eq;
+
+    /// Returns the context derived out of the given Ledger content.
+    fn context_of(input: &str) -> DisplayContext {
+        let mut builder = DisplayContextBuilder::new();
+        for parsed in parse::parse_ledger::<plain::Ident>(&ParseOptions::default(), input) {
+            let (_, entry) = parsed.expect("test input must be parsed");
+            builder.observe(&entry);
+        }
+        builder.build()
+    }
+
+    /// Returns the option resolved for the `commodity`.
+    fn option_of(context: &DisplayContext, commodity: &str) -> CommodityDisplayOption {
+        CommodityDisplayOption {
+            format: context.commodity.get_opt(commodity, |x| x.format),
+            min_scale: context.commodity.get_opt(commodity, |x| x.min_scale),
+        }
+    }
+
+    fn option(format: Option<pretty_decimal::Format>, min_scale: u8) -> CommodityDisplayOption {
+        CommodityDisplayOption {
+            format,
+            min_scale: Some(min_scale),
+        }
+    }
+
+    #[test]
+    fn observe_takes_the_widest_scale_of_the_literals() {
+        let context = context_of(indoc::indoc! {"
+            2024/01/01 Widen
+                Expenses:Grocery       1 CHF
+                Expenses:Household     2.345 CHF
+                Assets:Bank           -3.34 CHF
+        "});
+
+        assert_eq!(option(None, 3), option_of(&context, "CHF"));
+    }
+
+    #[test]
+    fn observe_prefers_the_style_carrying_more_information() {
+        let context = context_of(indoc::indoc! {"
+            2024/01/01 Mixed
+                Expenses:Grocery       1234.00 CHF
+                Expenses:Household     5,678.00 CHF
+                Assets:Bank           -6912.00 CHF
+        "});
+
+        assert_eq!(
+            option(Some(pretty_decimal::Format::Comma3Dot), 2),
+            option_of(&context, "CHF")
+        );
+    }
+
+    #[test]
+    fn observe_skips_the_amount_without_commodity() {
+        let context = context_of(indoc::indoc! {"
+            2024/01/01 No commodity
+                Expenses:Grocery       (-10 * 2.100)
+                Assets:Bank            = 0
+        "});
+
+        assert_eq!(CommodityDisplayOption::default(), option_of(&context, ""));
+        assert_eq!(
+            CommodityDisplayOption::default(),
+            option_of(&context, "CHF")
+        );
+    }
+
+    #[test]
+    fn observe_takes_the_balance_but_not_the_cost_nor_the_lot_price() {
+        let context = context_of(indoc::indoc! {"
+            2024/01/01 Exchange
+                Assets:Broker          2 SPINX {1.2345 USD} @ 1.6789 USD
+                Assets:Bank           -3.3 USD = 1234.56 USD
+        "});
+
+        // Neither the lot price nor the cost widens USD beyond the balance.
+        assert_eq!(
+            option(Some(pretty_decimal::Format::Plain), 2),
+            option_of(&context, "USD")
+        );
+        assert_eq!(option(None, 0), option_of(&context, "SPINX"));
+    }
+
+    #[test]
+    fn observe_walks_into_the_expressions() {
+        let context = context_of(indoc::indoc! {"
+            2024/01/01 Expression
+                Expenses:Grocery       (-(1.20 EUR) + 2.6700 EUR * 2)
+                Assets:Bank            -4.14 EUR
+        "});
+
+        assert_eq!(option(None, 4), option_of(&context, "EUR"));
+    }
+
+    #[test]
+    fn observe_prefers_the_declared_format_over_the_observed_one() {
+        let context = context_of(indoc::indoc! {"
+            commodity CHF
+                format 1,000.00 CHF
+
+            2024/01/01 Precise
+                Expenses:Grocery       1.23456 CHF
+                Assets:Bank           -1.23456 CHF
+        "});
+
+        assert_eq!(
+            option(Some(pretty_decimal::Format::Comma3Dot), 2),
+            option_of(&context, "CHF")
+        );
+    }
+
+    #[test]
+    fn observe_binds_the_declaration_to_the_sample_commodity() {
+        // A weird declaration, but the `format` line is printed through the
+        // very same context, so it must be keyed on the sample's commodity.
+        let context = context_of(indoc::indoc! {"
+            commodity CHF
+                format 1,000.00 USD
+        "});
+
+        assert_eq!(
+            option(Some(pretty_decimal::Format::Comma3Dot), 2),
+            option_of(&context, "USD")
+        );
+        assert_eq!(
+            CommodityDisplayOption::default(),
+            option_of(&context, "CHF")
+        );
+    }
+
+    #[test]
+    fn observe_joins_the_declarations_regardless_of_the_order() {
+        let plain_first = context_of(indoc::indoc! {"
+            commodity CHF
+                format 1000.00 CHF
+
+            commodity CHF
+                format 1,000.000 CHF
+        "});
+        let comma_first = context_of(indoc::indoc! {"
+            commodity CHF
+                format 1,000.000 CHF
+
+            commodity CHF
+                format 1000.00 CHF
+        "});
+
+        let want = option(Some(pretty_decimal::Format::Comma3Dot), 3);
+        assert_eq!(want, option_of(&plain_first, "CHF"));
+        assert_eq!(want, option_of(&comma_first, "CHF"));
+    }
+
+    #[test]
+    fn declare_overrides_what_is_observed() {
+        let mut builder = DisplayContextBuilder::new();
+        for parsed in parse::parse_ledger::<plain::Ident>(
+            &ParseOptions::default(),
+            "2024/01/01 Observed\n    Assets:Bank  1.234 JPY\n",
+        ) {
+            let (_, entry) = parsed.expect("test input must be parsed");
+            builder.observe(&entry);
+        }
+        builder.declare("JPY", option(Some(pretty_decimal::Format::Comma3Dot), 0));
+
+        assert_eq!(
+            option(Some(pretty_decimal::Format::Comma3Dot), 0),
+            option_of(&builder.build(), "JPY")
+        );
     }
 }

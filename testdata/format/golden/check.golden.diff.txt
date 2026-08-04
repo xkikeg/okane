@@ -1,0 +1,70 @@
+--- main.ledger
++++ main.ledger
+@@ -1,23 +1,22 @@
+ ; Explains the account below.
+ account Assets:Bank:ZKB
+- ; ZKB is a bank in Zürich.
+- alias  Bank
++    ; ZKB is a bank in Zürich.
++    alias Bank
+ 
+-include  sub/*.ledger
++include sub/*.ledger
+ 
+-apply tag  foo
+-apply tag  bar:  baz
+-end  apply  tag
++apply tag foo
++apply tag bar: baz
++end apply tag
+ end apply tag
+-
+ 
+-2024/1/2 Grocery
+-  Expenses:Grocery   12.30 CHF
+-  Assets:Bank:ZKB
++2024/01/02 Grocery
++    Expenses:Grocery                           12.30 CHF
++    Assets:Bank:ZKB
+ ; Explains the transaction above.
+ 
+-2024/1/3 Cross-file formats
+-  Expenses:Grocery   1234 JPY
+-  Expenses:Books  2 OKANE
+-  Expenses:Travel   1,234.56 USD
+-  Assets:Bank:ZKB   = 0
++2024/01/03 Cross-file formats
++    Expenses:Grocery                           1,234 JPY
++    Expenses:Books                            2.0000 OKANE
++    Expenses:Travel                         1,234.56 USD
++    Assets:Bank:ZKB                                  = 0
+--- sub/child.ledger
++++ sub/child.ledger
+@@ -1,12 +1,12 @@
+ commodity CHF
+- ; Swiss franc.
+- alias  Fr.
++    ; Swiss franc.
++    alias Fr.
+ 
+-2024/2/3 * Salary
+-    Income:Salary    -1,000.00 CHF
+-    Assets:Bank:ZKB   1,000.00 CHF
++2024/02/03 * Salary
++    Income:Salary                          -1,000.00 CHF
++    Assets:Bank:ZKB                         1,000.00 CHF
+ 
+-2024/2/4 Precision
+-    Expenses:Books     1.2345 OKANE
+-    Expenses:Travel   12345.67 USD
++2024/02/04 Precision
++    Expenses:Books                            1.2345 OKANE
++    Expenses:Travel                        12,345.67 USD
+     Assets:Bank:ZKB
+--- sub/commodities.ledger
++++ sub/commodities.ledger
+@@ -1,2 +1,2 @@
+-commodity  JPY
+-   format   1,000 JPY
++commodity JPY
++    format 1,000 JPY

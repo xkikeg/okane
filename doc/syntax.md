@@ -137,6 +137,15 @@ commodity-note ::= sp+ "note" sp+ no-new-line* new-line
 ; Declares alias of the commodity.
 commodity-alias ::= sp+ "alias" sp+ commodity new-line
 
+; Declares how the amount of the commodity is printed,
+; given as a sample amount such as `format 1,000.00 CHF`.
+; The sample tells the number of the decimals, and whether
+; the thousands are separated with a comma.
+; `okane format` prints the amounts of the commodity that way,
+; keeping the ones having more decimals as they are.
+; The report commands use the decimals to round the balance.
+commodity-format ::= sp+ "format" sp+ amount new-line
+
 ; Comment is pure no-op comment.
 commodity-comment ::= sp+ comment-prefix no-new-line* new-line
 ```

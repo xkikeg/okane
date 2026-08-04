@@ -6,6 +6,20 @@
 
 * CLI: Added `tags` command, listing all tags in the file, sorted and deduped (https://github.com/xkikeg/okane/pull/523). Pass `--values` to print `key: value` pairs instead of the keys alone.
 
+* CLI: `okane format` (alias `fmt`) now formats recursively and in place, following `include`
+  directives. With `--check` it prints a unified diff instead of writing and exits with 1 if any
+  file is not formatted, so it can be used as a Git hook or a CI check. The previous
+  single-file-to-stdout behaviour is available as `okane primitive format`.
+* CLI: `okane primitive format` takes `--commodity-format '[COMMODITY=]SAMPLE'`, e.g.
+  `--commodity-format 'CHF=1,000.00'`, to say how an amount is printed. It does not follow
+  `include`, so the `commodity ... format` directives written elsewhere have to be given this way.
+* Core: added `load::Loader::list_files()`, returning every file reachable from the source through
+  `include`, deduplicated and in load order, and `load::Loader::scan_files()`, doing the same while
+  reporting every parsed entry on the way.
+* Core: added `syntax::display::DisplayContextBuilder`, deriving a `DisplayContext` out of the
+  `commodity ... format` directives and the amounts of the Ledger itself, and
+  `format::FormatOptions::with_display_context()` to format with it.
+
 ### Changed
 
 * CLI: `ui` reload errors are now shown in color instead of plain text (https://github.com/xkikeg/okane/issues/489).
@@ -20,8 +34,26 @@
   unmaintained `serde_yaml`, dropping the `unsafe-libyaml` dependency. Config errors now point at
   the offending source line, and config files must be valid UTF-8 (a leading BOM is still
   accepted).
+* Core: removed `format::FormatOptions::recursive()` and `format::FormatError::UnsupportedRecursiveFormat`.
+  `FormatOptions` formats one file; recursion belongs to the caller walking `Loader::list_files()`.
+* CLI: `okane format` decides how to print an amount per commodity, looking at the whole tree of
+  files first. Expect a large one-off diff on the first run.
+    * `commodity ... format` directives now take effect, wherever they are declared. They were
+      silently ignored before.
+    * A commodity without such a directive follows the amounts written for it: the widest scale
+      wins, so `1.5 CHF` becomes `1.50 CHF` if some other CHF amount has two decimals, and one
+      `1,234.00 CHF` anywhere makes every CHF amount over a thousand comma separated.
+    * Only the posting amounts and the balance assertions are looked at that way. The costs (`@`,
+      `@@`) and the lot prices are printed with the resulting format but do not decide it, as an
+      exchange rate routinely carries more digits than the commodity itself.
+    * The amounts without a commodity, e.g. `= 0`, are left alone.
+    * Consequently `okane format` and `okane primitive format` may print the same file differently,
+      which is what `--commodity-format` is for.
 
 ### Fixed
+
+* Core: comments under an `account` or `commodity` directive no longer gain a space on every format,
+  which kept formatting from being idempotent.
 
 ## [0.20.0] - 2026-06-24
 
