@@ -3,6 +3,7 @@
 use super::*;
 
 use decoration::AsUndecorated;
+use expr::Visitable;
 
 use crate::utility;
 
@@ -291,16 +292,30 @@ impl<Deco: Decoration> fmt::Display for WithContext<'_, Lot<'_, Deco>> {
     }
 }
 
-/// Alignment of the expression.
-#[derive(Debug, PartialEq, Copy, Clone)]
+/// Represents a width that should come to the **left** part of each posting.
+///
+/// Examples:
+/// ```text
+/// ----*----| <- alignment point
+///          v
+///         0           // 1
+///   (1 + 1)           // 7
+///         2 USD       // 1
+///        (1 USD * 2)  // 2
+///    (2 * 1 USD)      // 6
+/// ```
+#[derive(Debug, PartialEq, Clone, Copy)]
 enum Alignment {
     /// Still alignment wasn't found.
+    /// Equivalent to the fact that no commodity is used.
     Partial(usize),
     /// Already alignment was found.
+    /// Equivalent to the fact that commodity is used at least once.
     Complete(usize),
 }
 
 impl Alignment {
+    /// Takes out the width regardless of the alignment type.
     fn absolute(self) -> usize {
         match self {
             Alignment::Complete(x) => x,
@@ -308,6 +323,7 @@ impl Alignment {
         }
     }
 
+    /// Adds up prefix / suffix lengths.
     fn plus(self, prefix_length: usize, suffix_length: usize) -> Alignment {
         match self {
             Alignment::Partial(x) => Alignment::Partial(prefix_length + x + suffix_length),
@@ -329,63 +345,74 @@ where
     }
 }
 
-/// Prints expression under the context, and also returns the length until the alignment.
-/// Example:
-/// - `0` -> returns 1.
-/// - `(1 + 1)` -> returns 7.
-/// - `2 USD` -> returns 1.
-/// - `(1 USD * 2)` -> returns 2.
-/// - `(2 * 1 USD)` -> returns 6.
-impl DisplayWithAlignment for WithContext<'_, expr::ValueExpr<'_>> {
-    fn fmt_with_alignment<W: fmt::Write>(&self, f: &mut W) -> Result<Alignment, fmt::Error> {
-        match self.value {
-            expr::ValueExpr::Amount(a) => self.pass_context(a).fmt_with_alignment(f),
-            expr::ValueExpr::Paren(expr) => {
-                write!(f, "(")?;
-                let alignment = self.pass_context(expr).fmt_with_alignment(f)?;
-                write!(f, ")")?;
+/// [`expr::ExprVisitor`] printing the expression, and returning the length until the alignment.
+struct ExprFormatter<'a, W> {
+    writer: &'a mut W,
+    context: &'a DisplayContext,
+}
+
+impl<'i, W: fmt::Write> expr::ExprVisitor<'i> for ExprFormatter<'_, W> {
+    type Output = Alignment;
+    type Error = fmt::Error;
+
+    fn visit_amount(&mut self, amount: &expr::Amount<'i>) -> Result<Alignment, fmt::Error> {
+        let amount_str = rescale(amount, self.context).to_string();
+        // TODO: Implement prefix-amount.
+        if amount.commodity.is_empty() {
+            write!(self.writer, "{}", amount_str)?;
+            return Ok(Alignment::Partial(amount_str.as_str().len()));
+        }
+        write!(self.writer, "{} {}", amount_str, amount.commodity)?;
+        // Given the amount is only [0-9.], it's ok to count bytes.
+        Ok(Alignment::Complete(amount_str.as_str().len()))
+    }
+
+    fn visit_value_expr(&mut self, expr: &expr::ValueExpr<'i>) -> Result<Alignment, fmt::Error> {
+        match expr {
+            expr::ValueExpr::Amount(a) => self.visit_amount(a),
+            expr::ValueExpr::Paren(inner) => {
+                self.writer.write_char('(')?;
+                let alignment = self.visit_expr(inner)?;
+                self.writer.write_char(')')?;
                 Ok(alignment.plus(1, 1))
             }
         }
     }
+
+    fn visit_unary(&mut self, expr: &expr::UnaryOpExpr<'i>) -> Result<Alignment, fmt::Error> {
+        write!(self.writer, "{}", expr.op)?;
+        self.visit_expr(&expr.expr).map(|x| x.plus(1, 0))
+    }
+
+    fn visit_binary(&mut self, expr: &expr::BinaryOpExpr<'i>) -> Result<Alignment, fmt::Error> {
+        let a1 = self.visit_expr(&expr.lhs)?;
+        write!(self.writer, " {} ", expr.op)?;
+        let a2 = self.visit_expr(&expr.rhs)?;
+        Ok(match a1.plus(0, 3) {
+            Alignment::Complete(x) => Alignment::Complete(x),
+            Alignment::Partial(x) => a2.plus(x, 0),
+        })
+    }
 }
 
-impl DisplayWithAlignment for WithContext<'_, expr::Expr<'_>> {
-    fn fmt_with_alignment<W: fmt::Write>(&self, f: &mut W) -> Result<Alignment, fmt::Error> {
-        match self.value {
-            expr::Expr::Unary(e) => {
-                write!(f, "{}", e.op)?;
-                self.pass_context(e.expr.as_ref())
-                    .fmt_with_alignment(f)
-                    .map(|x| x.plus(1, 0))
-            }
-            expr::Expr::Binary(e) => {
-                let a1 = self.pass_context(e.lhs.as_ref()).fmt_with_alignment(f)?;
-                write!(f, " {} ", e.op)?;
-                let a2 = self.pass_context(e.rhs.as_ref()).fmt_with_alignment(f)?;
-                Ok(match a1.plus(0, 3) {
-                    Alignment::Complete(x) => Alignment::Complete(x),
-                    Alignment::Partial(x) => a2.plus(x, 0),
+macro_rules! display_with_alignment_by_visitor {
+    ($t:ty) => {
+        impl DisplayWithAlignment for WithContext<'_, $t> {
+            fn fmt_with_alignment<W: fmt::Write>(
+                &self,
+                f: &mut W,
+            ) -> Result<Alignment, fmt::Error> {
+                self.value.accept(&mut ExprFormatter {
+                    writer: f,
+                    context: self.context,
                 })
             }
-            expr::Expr::Value(e) => self.pass_context(e.as_ref()).fmt_with_alignment(f),
         }
-    }
+    };
 }
 
-impl DisplayWithAlignment for WithContext<'_, expr::Amount<'_>> {
-    fn fmt_with_alignment<W: fmt::Write>(&self, f: &mut W) -> Result<Alignment, fmt::Error> {
-        let amount_str = rescale(self.value, self.context).to_string();
-        // TODO: Implement prefix-amount.
-        if self.value.commodity.is_empty() {
-            write!(f, "{}", amount_str)?;
-            return Ok(Alignment::Partial(amount_str.as_str().len()));
-        }
-        write!(f, "{} {}", amount_str, self.value.commodity)?;
-        // Given the amount is only [0-9.], it's ok to count bytes.
-        Ok(Alignment::Complete(amount_str.as_str().len()))
-    }
-}
+display_with_alignment_by_visitor!(expr::ValueExpr<'_>);
+display_with_alignment_by_visitor!(expr::Amount<'_>);
 
 /// Returns column shift size so that the string will be located at `colsize`.
 /// At least `padding` is guaranteed to be spaced.
