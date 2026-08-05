@@ -120,6 +120,7 @@ pub(crate) trait ExprVisitor<'i> {
     fn visit_binary(&mut self, expr: &BinaryOpExpr<'i>) -> Result<Self::Output, Self::Error>;
 
     /// Visits a value expression, dispatching to [`Self::visit_expr`] or [`Self::visit_amount`].
+    #[inline]
     fn visit_value_expr(&mut self, expr: &ValueExpr<'i>) -> Result<Self::Output, Self::Error> {
         match expr {
             ValueExpr::Paren(x) => self.visit_expr(x),
@@ -128,6 +129,7 @@ pub(crate) trait ExprVisitor<'i> {
     }
 
     /// Visits a generic expression, dispatching on the node kind.
+    #[inline]
     fn visit_expr(&mut self, expr: &Expr<'i>) -> Result<Self::Output, Self::Error> {
         match expr {
             Expr::Unary(e) => self.visit_unary(e),
@@ -144,30 +146,35 @@ pub(crate) trait Visitable<'i> {
 }
 
 impl<'i> Visitable<'i> for Amount<'i> {
+    #[inline]
     fn accept<V: ExprVisitor<'i> + ?Sized>(&self, visitor: &mut V) -> Result<V::Output, V::Error> {
         visitor.visit_amount(self)
     }
 }
 
 impl<'i> Visitable<'i> for ValueExpr<'i> {
+    #[inline]
     fn accept<V: ExprVisitor<'i> + ?Sized>(&self, visitor: &mut V) -> Result<V::Output, V::Error> {
         visitor.visit_value_expr(self)
     }
 }
 
 impl<'i> Visitable<'i> for Expr<'i> {
+    #[inline]
     fn accept<V: ExprVisitor<'i> + ?Sized>(&self, visitor: &mut V) -> Result<V::Output, V::Error> {
         visitor.visit_expr(self)
     }
 }
 
 impl<'i> Visitable<'i> for UnaryOpExpr<'i> {
+    #[inline]
     fn accept<V: ExprVisitor<'i> + ?Sized>(&self, visitor: &mut V) -> Result<V::Output, V::Error> {
         visitor.visit_unary(self)
     }
 }
 
 impl<'i> Visitable<'i> for BinaryOpExpr<'i> {
+    #[inline]
     fn accept<V: ExprVisitor<'i> + ?Sized>(&self, visitor: &mut V) -> Result<V::Output, V::Error> {
         visitor.visit_binary(self)
     }
