@@ -92,7 +92,7 @@ impl<'ctx> SingleAmount<'ctx> {
 
     /// Rounds the Amount with the given context provided precision.
     pub fn round(self, ctx: &ReportContext) -> Self {
-        match ctx.commodities.get_decimal_point(self.commodity) {
+        match ctx.commodities.scale(self.commodity) {
             None => self,
             Some(dp) => Self {
                 value: self.value.round_dp_with_strategy(

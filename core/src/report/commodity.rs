@@ -168,9 +168,9 @@ impl<'arena> CommodityStore<'arena> {
         self.intern.register_alias(Commodity(value), canonical.0)
     }
 
-    /// Returns the precision of the `commodity` if specified.
+    /// Returns the scale (the number of digits under decimal point) of the `commodity` if specified.
     #[inline]
-    pub(super) fn get_decimal_point(&self, commodity: CommodityTag<'arena>) -> Option<u32> {
+    pub(super) fn scale(&self, commodity: CommodityTag<'arena>) -> Option<u32> {
         self.formatting.get(commodity).map(|x| x.scale())
     }
 
@@ -291,21 +291,21 @@ mod tests {
     }
 
     #[test]
-    fn get_decimal_point_returns_none_if_unspecified() {
+    fn scale_returns_none_if_unspecified() {
         let arena = Bump::new();
         let mut commodities = CommodityStore::new(&arena);
         let jpy = commodities.insert("JPY").unwrap();
 
-        assert_eq!(None, commodities.get_decimal_point(jpy));
+        assert_eq!(None, commodities.scale(jpy));
     }
 
     #[test]
-    fn get_decimal_point_returns_some_if_set() {
+    fn scale_returns_some_if_set() {
         let arena = Bump::new();
         let mut commodities = CommodityStore::new(&arena);
         let jpy = commodities.insert("JPY").unwrap();
         commodities.set_format(jpy, PrettyDecimal::comma3dot(dec!(1.234)));
 
-        assert_eq!(Some(3), commodities.get_decimal_point(jpy));
+        assert_eq!(Some(3), commodities.scale(jpy));
     }
 }

@@ -4,11 +4,8 @@ use chrono::NaiveDate;
 use pretty_decimal::PrettyDecimal;
 use rust_decimal::Decimal;
 
-use okane_core::{
-    report::{self, ReportContext},
-    syntax,
-    utility::ConfigResolver,
-};
+use okane_core::report::{self, ReportContext};
+use okane_core::syntax::{self, display::DisplayContext};
 
 use super::amount::{AmountRef, BorrowedAmount, OwnedAmount};
 use super::config::{HiddenFee, HiddenFeeCondition, HiddenFeeRate};
@@ -81,8 +78,8 @@ pub struct Options {
     /// Renames the commodity in the key into the corresponding value.
     pub commodity_rename: HashMap<String, String>,
 
-    /// Defines the commodity format
-    pub commodity_format: ConfigResolver<String, syntax::display::CommodityDisplayOption>,
+    /// Context to print transacitons.
+    pub display_context: DisplayContext,
 }
 
 impl Options {
@@ -96,9 +93,7 @@ impl Options {
 
     /// Scale of the corresponding commodity.
     fn scale(&self, commodity: &str) -> Option<u32> {
-        self.commodity_format
-            .get(commodity, |o| o.min_scale)
-            .map(Into::into)
+        self.display_context.min_scale(commodity).map(Into::into)
     }
 
     /// Rounds the given amount to comply with the options.
@@ -957,7 +952,7 @@ mod tests {
             let opts = Options {
                 operator: None,
                 charge_account: None,
-                commodity_format: ConfigResolver::default(),
+                display_context: DisplayContext::default(),
                 commodity_rename: HashMap::new(),
             };
             let mut txn = Txn::new(
@@ -992,7 +987,7 @@ mod tests {
             let opts = Options {
                 operator: Some("Okane bank".to_string()),
                 charge_account: None,
-                commodity_format: ConfigResolver::default(),
+                display_context: DisplayContext::default(),
                 commodity_rename: HashMap::new(),
             };
             let mut txn = Txn::new(
@@ -1021,7 +1016,7 @@ mod tests {
             let opts = Options {
                 operator: Some("Okane bank".to_string()),
                 charge_account: Some("Assets:Points".to_string()),
-                commodity_format: ConfigResolver::default(),
+                display_context: DisplayContext::default(),
                 commodity_rename: HashMap::new(),
             };
             let mut txn = Txn::new(
@@ -1094,7 +1089,7 @@ mod tests {
                     "米ドル".to_string() => "USD".to_string(),
                     "日本円".to_string() => "JPY".to_string(),
                 },
-                commodity_format: ConfigResolver::default(),
+                display_context: DisplayContext::default(),
             };
 
             assert_eq!(
