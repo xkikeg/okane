@@ -52,3 +52,10 @@ lto = "thin"
 
 [profile.bench]
 debug = "limited"
+# `cargo bench` builds with this profile, which inherits `lto = "thin"` from
+# release. With the default 16 codegen units the measurements become a function
+# of CGU partitioning: an edit in one module can repartition the units and
+# change whether a hot loop in an unrelated module still gets its callees
+# inlined. Pinning to 1 removes that variable, so a CI alert means a real
+# change. See #537.
+codegen-units = 1
