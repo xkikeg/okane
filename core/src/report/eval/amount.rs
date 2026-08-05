@@ -342,6 +342,7 @@ impl Add for Amount<'_> {
 }
 
 impl<'ctx> AddAssign<&'_ Amount<'ctx>> for Amount<'ctx> {
+    #[inline]
     fn add_assign(&mut self, rhs: &Amount<'ctx>) {
         for (&c, &v2) in &rhs.values {
             *self.values.entry(c).or_insert(Decimal::ZERO) += v2;

@@ -56,6 +56,7 @@ impl<'i, 'ctx, A: EvalAmount<'ctx>> ExprVisitor<'i> for EvalExpr<'ctx, A> {
     type Output = Evaluated<'ctx>;
     type Error = EvalError<'ctx>;
 
+    #[inline]
     fn visit_amount(&mut self, amount: &expr::Amount<'i>) -> Result<Self::Output, Self::Error> {
         self.0.eval_amount(amount)
     }
@@ -90,6 +91,7 @@ trait EvalAmount<'ctx> {
 struct RegisterCommodity<'a, 'ctx>(&'a mut ReportContext<'ctx>);
 
 impl<'ctx> EvalAmount<'ctx> for RegisterCommodity<'_, 'ctx> {
+    #[inline]
     fn eval_amount(&mut self, amount: &expr::Amount) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
         Ok(Evaluated::from_expr_amount_mut(self.0, amount))
     }
@@ -99,6 +101,7 @@ impl<'ctx> EvalAmount<'ctx> for RegisterCommodity<'_, 'ctx> {
 struct ResolveCommodity<'a, 'ctx>(&'a ReportContext<'ctx>);
 
 impl<'ctx> EvalAmount<'ctx> for ResolveCommodity<'_, 'ctx> {
+    #[inline]
     fn eval_amount(&mut self, amount: &expr::Amount) -> Result<Evaluated<'ctx>, EvalError<'ctx>> {
         Evaluated::from_expr_amount(self.0, amount)
     }

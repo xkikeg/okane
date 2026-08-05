@@ -148,6 +148,7 @@ impl DateRange {
         self.start.is_none() && self.end.is_none()
     }
 
+    #[inline]
     fn contains(&self, date: NaiveDate) -> bool {
         match (self.start, self.end) {
             (Some(start), _) if date < start => false,
@@ -699,6 +700,7 @@ impl<'ctx> AccountFilter<'ctx> {
     }
 
     /// Returns `true` if the given account matches this filter.
+    #[inline]
     fn is_match(&self, account: &Account<'ctx>) -> bool {
         match self {
             AccountFilter::All => true,
