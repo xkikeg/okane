@@ -49,6 +49,13 @@ rust_decimal_macros = "1.40"
 
 [profile.release]
 lto = "thin"
+# Released binaries are built once and run many times, so trade build time for
+# codegen quality. This also makes `cargo bench` reproducible: `[profile.bench]`
+# inherits from here, and with the default 16 codegen units the benchmark
+# numbers become a function of CGU partitioning — an edit in one module can
+# repartition the units and change whether a hot loop in an unrelated module
+# still gets its callees inlined. See #537.
+codegen-units = 1
 
 [profile.bench]
 debug = "limited"
