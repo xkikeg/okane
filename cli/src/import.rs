@@ -66,14 +66,12 @@ impl Importer {
             Format::IsoCamt053 => iso_camt053::import(decoded, &config),
             Format::Viseca => viseca::import(decoded, &config),
         }?;
-        let display_context = DisplayContext {
-            commodity: config.output.commodity.into(),
-        };
+        let display_context: DisplayContext = config.output.commodity.into();
         let options = single_entry::Options {
             operator: config.operator.clone(),
             charge_account: config.charge_account.clone(),
             commodity_rename: config.commodity.rename.clone(),
-            commodity_format: display_context.commodity.clone(),
+            display_context: display_context.clone(),
         };
         Ok((
             ImportHeader {

@@ -8,7 +8,6 @@ pub mod parse;
 pub mod report;
 pub mod syntax;
 pub(crate) mod testing;
-pub mod utility;
 
 #[cfg(test)]
 #[ctor::ctor(unsafe)]

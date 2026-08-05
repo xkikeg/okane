@@ -2,10 +2,10 @@
 
 use super::*;
 
+use std::collections::HashMap;
+
 use decoration::AsUndecorated;
 use expr::Visitable;
-
-use crate::utility;
 
 use pretty_decimal::PrettyDecimal;
 use unicode_width::UnicodeWidthStr;
@@ -13,26 +13,22 @@ use unicode_width::UnicodeWidthStr;
 /// Context information to control the formatting of the transaction.
 #[derive(Debug, Default, Clone)]
 pub struct DisplayContext {
-    pub commodity: utility::ConfigResolver<String, CommodityDisplayOption>,
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct CommodityDisplayOption {
-    pub format: Option<pretty_decimal::Format>,
-    pub min_scale: Option<u8>,
-}
-
-impl CommodityDisplayOption {
-    fn get_format(&self) -> Option<pretty_decimal::Format> {
-        self.format
-    }
-
-    fn get_min_scale(&self) -> Option<u8> {
-        self.min_scale
-    }
+    default_commodity: CommodityDisplayOption,
+    commodity_overrides: HashMap<String, CommodityDisplayOption>,
 }
 
 impl DisplayContext {
+    /// Creates a new [`DisplayContext`].
+    pub fn new(
+        default_commodity: CommodityDisplayOption,
+        commodity_overrides: HashMap<String, CommodityDisplayOption>,
+    ) -> Self {
+        Self {
+            default_commodity,
+            commodity_overrides,
+        }
+    }
+
     /// Returns given object reference wrapped with a context for `fmt::Display`.
     pub fn as_display<'a, T>(&'a self, value: &'a T) -> WithContext<'a, T>
     where
@@ -43,6 +39,28 @@ impl DisplayContext {
             context: self,
         }
     }
+
+    /// Returns decimal format for the `commodity`.
+    pub fn decimal_format(&self, commodity: &str) -> Option<pretty_decimal::Format> {
+        self.commodity_overrides
+            .get(commodity)
+            .and_then(|o| o.format)
+            .or(self.default_commodity.format)
+    }
+
+    /// Returns the minimum scale of the amount for the `commodity`.
+    pub fn min_scale(&self, commodity: &str) -> Option<u8> {
+        self.commodity_overrides
+            .get(commodity)
+            .and_then(|o| o.min_scale)
+            .or(self.default_commodity.min_scale)
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct CommodityDisplayOption {
+    pub format: Option<pretty_decimal::Format>,
+    pub min_scale: Option<u8>,
 }
 
 /// Object combined with the `DisplayContext`.
@@ -426,17 +444,11 @@ fn get_column(colsize: usize, left: usize, padding: usize) -> usize {
 
 fn rescale(x: &expr::Amount, context: &DisplayContext) -> PrettyDecimal {
     let mut v = x.value;
-    if let Some(min_scale) = context
-        .commodity
-        .get_opt(x.commodity.as_ref(), CommodityDisplayOption::get_min_scale)
-    {
+    if let Some(min_scale) = context.min_scale(x.commodity.as_ref()) {
         v.as_mut().normalize_assign();
         v.rescale(std::cmp::max(min_scale.into(), v.scale()));
     }
-    match context
-        .commodity
-        .get_opt(x.commodity.as_ref(), CommodityDisplayOption::get_format)
-    {
+    match context.decimal_format(x.commodity.as_ref()) {
         Some(format) => PrettyDecimal::with_format(v.value, Some(format)),
         None => v,
     }
@@ -659,12 +671,10 @@ mod tests {
         );
 
         // overrides only
-        let ctx = DisplayContext {
-            commodity: utility::ConfigResolver::new(
-                CommodityDisplayOption::default(),
-                hashmap! {"USD".to_string() => CommodityDisplayOption {format: Some(pretty_decimal::Format::Comma3Dot), min_scale: Some(4)}},
-            ),
-        };
+        let ctx = DisplayContext::new(
+            CommodityDisplayOption::default(),
+            hashmap! {"USD".to_string() => CommodityDisplayOption {format: Some(pretty_decimal::Format::Comma3Dot), min_scale: Some(4)}},
+        );
         assert_eq!(
             concat!(
                 //       10        20        30        40        50        60        70
@@ -748,15 +758,13 @@ mod tests {
 
         // min_scale
         buffer.clear();
-        let alignment = DisplayContext {
-            commodity: utility::ConfigResolver::new(
-                CommodityDisplayOption {
-                    format: None,
-                    min_scale: Some(2),
-                },
-                HashMap::new(),
-            ),
-        }
+        let alignment = DisplayContext::new(
+            CommodityDisplayOption {
+                format: None,
+                min_scale: Some(2),
+            },
+            HashMap::new(),
+        )
         .as_display(&usd1234)
         .fmt_with_alignment(&mut buffer)
         .unwrap();
@@ -764,15 +772,13 @@ mod tests {
         assert_eq!(Alignment::Complete(7), alignment);
 
         buffer.clear();
-        let alignment = DisplayContext {
-            commodity: utility::ConfigResolver::new(
-                CommodityDisplayOption {
-                    format: Some(pretty_decimal::Format::Comma3Dot),
-                    min_scale: Some(2),
-                },
-                HashMap::new(),
-            ),
-        }
+        let alignment = DisplayContext::new(
+            CommodityDisplayOption {
+                format: Some(pretty_decimal::Format::Comma3Dot),
+                min_scale: Some(2),
+            },
+            HashMap::new(),
+        )
         .as_display(&usd1234)
         .fmt_with_alignment(&mut buffer)
         .unwrap();

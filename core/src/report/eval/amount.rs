@@ -207,7 +207,7 @@ impl<'ctx> Amount<'ctx> {
     /// Rounds the Amount in-place with the given context provided precision.
     pub fn round_mut(&mut self, ctx: &ReportContext) {
         for (k, v) in self.values.iter_mut() {
-            match ctx.commodities.get_decimal_point(*k) {
+            match ctx.commodities.scale(*k) {
                 None => (),
                 Some(dp) => {
                     let updated = v.round_dp_with_strategy(

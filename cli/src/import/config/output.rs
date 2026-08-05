@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use okane_core::syntax::display::DisplayContext;
+
 use super::merge::Merge;
 
 /// Spec to describe the output formatting.
@@ -38,12 +40,7 @@ impl Merge for OutputCommoditySpec {
     }
 }
 
-impl From<OutputCommoditySpec>
-    for okane_core::utility::ConfigResolver<
-        String,
-        okane_core::syntax::display::CommodityDisplayOption,
-    >
-{
+impl From<OutputCommoditySpec> for DisplayContext {
     fn from(value: OutputCommoditySpec) -> Self {
         Self::new(
             value.default.into(),
