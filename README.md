@@ -8,6 +8,7 @@ Okane is a plain text accounting software developed with Rust, influenced by [le
 This tool supports various commands:
 * `balance` to get the current balance of the accounts.
 * `register` to get the history of the accounts.
+* `ui` to browse the balance and the register in an interactive terminal UI.
 * `accounts` to list all accounts in the file.
 * `tags` to list all tags in the file.
 * `format` to format given Ledger file into organized format.
@@ -47,6 +48,33 @@ $ okane balance /path/to/file.ledger
 $ okane registry /path/to/file.ledger [optional account]
 ```
 
+### Browse the file interactively
+
+`okane ui` opens the balance report in a terminal UI, so you can explore the
+accounts instead of re-running queries.
+
+```shell
+$ okane ui /path/to/file.ledger
+```
+
+[![okane ui demo](https://asciinema.org/a/tqcqRCXYuTNYGmC5.svg)](https://asciinema.org/a/tqcqRCXYuTNYGmC5)
+
+The balance screen starts with a flat balance view. `t` switches to a tree of
+accounts, where `space` folds the selected subtree and `x` folds everything.
+`/` searches the account names in Vim style (`n` / `N` walk the matches) while
+`C-s`, `C-r` is Emacs style search., `Enter` opens the register of the
+selected account, and `r` reloads the file from disk so you can keep the UI open
+while editing. `q` quits. `?` lists every key binding of the screen you are on.
+
+It takes the same evaluation flags as `balance` and `register`, so the amounts
+can be converted into a single commodity, or filtered by the time range:
+
+```shell
+$ okane ui --price-db ~/ledger/prices.db -X CHF /path/to/file.ledger
+$ okane ui --price-db ~/ledger/prices.db -X CHF --historical /path/to/file.ledger
+$ okane ui --start 2024-01-01 --end 2025-01-01 /path/to/file.ledger
+```
+
 ### Format the file
 
 ```shell
@@ -59,7 +87,8 @@ In future in-place format would be provided, also to emit diffs to be used as Gi
 ### Import CSV or ISO Camt053 XML files
 
 First you need to write YAML file to control import behavior. We'll assume those are placed under `~/ledger/`.
-The format of YAML is (sorry) not documented, but you can see `tests/testdata` directory as example configurations.
+See the [import](doc/import.ja.md) page (Japanese only, sorry) for the format,
+and the `testdata/import/` directory for example configurations.
 
 Then run the `okane import` command with logging and redirecting to `/dev/null`. This way you can dry-run and check its output.
 
@@ -74,6 +103,26 @@ $ RUST_LOG=info okane import --config ~/ledger/import.yml ~/ledger/input_file.cs
 ```
 
 Tips: You probably don't want to handle all the entries, rather should aim to cover 80-90% of entries initially.
+
+#### Reviewing the import interactively
+
+Since the rewrite rules never cover everything, `--interactive` lets you review
+the transactions before they are written.
+
+```shell
+$ okane import --config ~/ledger/import.yml --interactive \
+    --ledger ~/ledger/account.ledger -o ~/ledger/account.ledger ~/ledger/input_file.csv
+```
+
+Note that it requires both `--ledger` and `--output` options.
+
+[![okane import --interactive demo](https://asciinema.org/a/UbMyEIDPO4eMjNzY.svg)](https://asciinema.org/a/UbMyEIDPO4eMjNzY)
+
+Every transaction is listed with the account the rules picked for it, and the
+one under the cursor is rendered in the preview pane. `a` accepts it as-is,
+`e` opens an account completion dialog over the accounts of `--ledger`,
+and `s` skips it. `w` appends everything you accepted to `--output`; `q` aborts
+without writing anything.
 
 ## License
 
