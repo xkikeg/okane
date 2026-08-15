@@ -9,6 +9,13 @@
 ### Changed
 
 * CLI: `ui` reload errors are now shown in color instead of plain text (https://github.com/xkikeg/okane/issues/489).
+* CLI: `ui` balance and register tables now draw one table row per amount line, so a
+  multi-commodity account is never clipped and every one of its lines can be scrolled to
+  (https://github.com/xkikeg/okane/issues/513). `↑`/`↓` walk lines and the new `J`/`K` jump a whole
+  account or register entry. An account whose name has scrolled off the top of the body has it
+  redrawn on the top line in color, and one cut by either edge says how much is hidden with
+  `+N above` / `+N more`. A terminal too short to hold a single row now says so instead of showing
+  an empty table.
 * Core: `syntax::LedgerEntry` is now a struct pairing a `syntax::Separation` with the new
   `syntax::LedgerStatement` enum, which holds the variants `LedgerEntry` used to have.
   `Separation` records whether a blank line preceded the entry in the source

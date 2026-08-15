@@ -348,7 +348,7 @@ mod tests {
                 account_names(&app),
                 ["Assets:Bank", "Assets:Cash", "Equity", "Expenses:Food"]
             );
-            app.balance.nav.select(3); // Expenses:Food
+            app.balance.nav.select_item(3); // Expenses:Food
             app.snapshot()
         };
         arena.reset();
@@ -368,7 +368,7 @@ mod tests {
             ]
         );
         // The selection followed Expenses:Food to its new index.
-        assert_eq!(app.balance.nav.table_state.selected(), Some(4));
+        assert_eq!(app.balance.nav.selected_item(), Some(4));
     }
 
     /// The reason reload rebuilds from scratch: interned entries of the
@@ -416,7 +416,7 @@ mod tests {
         };
         assert_eq!(view.title(), "Assets:Bank");
         assert_eq!(view.rows.len(), 1);
-        assert_eq!(view.nav.table_state.selected(), Some(0));
+        assert_eq!(view.nav.selected_item(), Some(0));
     }
 
     #[test]

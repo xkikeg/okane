@@ -261,18 +261,18 @@ impl ReviewApp {
         }
 
         match msg {
-            Message::MoveUp => self.nav.move_selection(-1),
-            Message::MoveDown => self.nav.move_selection(1),
+            Message::MoveUp => self.nav.move_rows(-1),
+            Message::MoveDown => self.nav.move_rows(1),
             Message::PageUp => {
                 let delta = -(self.nav.page_size() as isize);
-                self.nav.move_selection(delta);
+                self.nav.move_rows(delta);
             }
             Message::PageDown => {
                 let delta = self.nav.page_size() as isize;
-                self.nav.move_selection(delta);
+                self.nav.move_rows(delta);
             }
-            Message::SelectFirst => self.nav.select_first(),
-            Message::SelectLast => self.nav.select_last(),
+            Message::SelectFirst => self.nav.select_first_row(),
+            Message::SelectLast => self.nav.select_last_row(),
             Message::Accept => {
                 if let Some(index) = self.selected_index() {
                     match self.items[index].kind {
@@ -282,7 +282,7 @@ impl ReviewApp {
                         // Re-accepting (e.g. after a skip) needs no mutation.
                         ReviewKind::Auto => {
                             self.items[index].status = Status::Accepted;
-                            self.nav.move_selection(1);
+                            self.nav.move_rows(1);
                         }
                         // An unknown transaction needs an account first.
                         ReviewKind::Unknown => {}
@@ -297,7 +297,7 @@ impl ReviewApp {
             Message::Skip => {
                 if let Some(index) = self.selected_index() {
                     self.items[index].status = Status::Skipped;
-                    self.nav.move_selection(1);
+                    self.nav.move_rows(1);
                 }
             }
             Message::RequestWrite => {
@@ -370,7 +370,7 @@ impl ReviewApp {
         item.status = Status::Accepted;
         item.preview = preview;
         if self.nav.table_state.selected() == Some(index) {
-            self.nav.move_selection(1);
+            self.nav.move_rows(1);
         }
     }
 }

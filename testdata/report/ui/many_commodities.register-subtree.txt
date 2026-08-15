@@ -1,24 +1,24 @@
  okane ui — many_commodities.ledger — register: Assets                          
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │Date       Payee                                 Amount         Total         │
-│2024-01-27 ATM abroad                               -200.00 USD     992000 JPY│
-│                                                                   5000.00 CHF│
-│                                                                   9800.00 USD│
-│                                                                   8000.00 EUR│
-│                                                                   3000.00 AUD│
-│                                                                 195000.00 TWD│
-│                                                                     10 STOCKA│
-│                                                                     10 STOCKB│
-│                                                                     10 STOCKC│
-│                                                                     10 STOCKD│
-│                                                                     10 STOCKE│
-│                                                                     10 STOCKF│
-│                                                                     10 STOCKG│
-│                                                                     10 STOCKH│
+│2024-01-27 ATM abroad                                                +14 above│
 │                                                                     10 STOCKI│
 │                                                                     10 STOCKJ│
 │                                                                     10 STOCKK│
 │                                                                     10 STOCKL│
 │                                                                     10 STOCKM│
+│                                                                     10 STOCKN│
+│                                                                     10 STOCKO│
+│                                                                     10 STOCKP│
+│                                                                     10 STOCKQ│
+│                                                                     10 STOCKR│
+│                                                                     10 STOCKS│
+│                                                                     10 STOCKT│
+│                                                                     10 STOCKU│
+│                                                                     10 STOCKV│
+│                                                                     10 STOCKW│
+│                                                                     10 STOCKX│
+│                                                                     10 STOCKY│
+│                                                                     10 STOCKZ│
 └──────────────────────────────────────────────────────────────────────────────┘
- ↑/↓ scroll · PgUp/PgDn page · g/G home/end · r reload · q/Esc back             
+ ↑/↓ line · J/K entry · PgUp/PgDn page · g/G home/end · r reload · q/Esc back   

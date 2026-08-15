@@ -216,8 +216,8 @@ impl<'ctx> App<'ctx> {
     }
 
     /// Like [`Self::show_register`], but restores a previous cursor position
-    /// (clamped to the new row count) instead of jumping to the last entry.
-    /// Used when re-entering the register after a reload.
+    /// (an entry index, clamped to the new entry count) instead of jumping to
+    /// the last entry. Used when re-entering the register after a reload.
     pub fn show_register_at(
         &mut self,
         scope: RegisterScope<'ctx>,
@@ -225,8 +225,8 @@ impl<'ctx> App<'ctx> {
         index: usize,
     ) {
         let mut view = RegisterView::new(scope, rows);
-        if let Some(last) = view.nav.row_count.checked_sub(1) {
-            view.nav.select(min(index, last));
+        if let Some(last) = view.nav.item_count().checked_sub(1) {
+            view.nav.select_item(min(index, last));
         }
         self.screen = Screen::Register(view);
     }
@@ -321,8 +321,11 @@ mod tests {
         "Liabilities:Card", // 4
     ];
 
+    /// The selected *account* (an index into `app.balance.rows`), which is
+    /// what every test below means — the table itself has one row per
+    /// commodity line.
     fn selected(app: &App<'_>) -> Option<usize> {
-        app.balance.nav.table_state.selected()
+        app.balance.nav.selected_item()
     }
 
     #[test]
@@ -376,7 +379,7 @@ mod tests {
         app.balance.nav = TableNav::new(3);
         app.update(Message::RequestQuit);
         app.update(Message::Balance(BalanceMessage::Nav(NavCommand::Down)));
-        assert_eq!(app.balance.nav.table_state.selected(), Some(0));
+        assert_eq!(app.balance.nav.selected_row(), 0);
     }
 
     fn popup(lines: usize, viewport_height: u16) -> ErrorPopup {
@@ -496,7 +499,7 @@ mod tests {
     fn restore_follows_selected_account() {
         let arena = Bump::new();
         let (ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
-        app.balance.nav.select(2); // Expenses:Food
+        app.balance.nav.select_item(2); // Expenses:Food
         let snapshot = app.snapshot();
 
         let mut app = next_app(
@@ -517,7 +520,7 @@ mod tests {
     fn restore_vanished_account_selects_closest() {
         let arena = Bump::new();
         let (ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
-        app.balance.nav.select(2); // Expenses:Food
+        app.balance.nav.select_item(2); // Expenses:Food
         let snapshot = app.snapshot();
 
         let mut app = next_app(
@@ -575,7 +578,7 @@ mod tests {
         let (ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
         let account = ctx.account("Assets:Cash").unwrap();
         let mut nav = TableNav::new(5);
-        nav.select(3);
+        nav.select_item(3);
         app.screen = register_screen(account, nav);
         let snapshot = app.snapshot();
 
@@ -622,13 +625,13 @@ mod tests {
         let Screen::Register(view) = &app.screen else {
             panic!("expected register screen");
         };
-        assert_eq!(view.nav.table_state.selected(), Some(2));
+        assert_eq!(view.nav.selected_item(), Some(2));
 
         app.show_register_at(scope, rows, 1);
         let Screen::Register(view) = &app.screen else {
             panic!("expected register screen");
         };
-        assert_eq!(view.nav.table_state.selected(), Some(1));
+        assert_eq!(view.nav.selected_item(), Some(1));
     }
 
     #[test]

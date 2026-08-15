@@ -19,6 +19,6 @@
 │                                                                     10 STOCKJ│
 │                                                                     10 STOCKK│
 │                                                                     10 STOCKL│
-│                                                                     10 STOCKM│
+│                                                                      +14 more│
 └──────────────────────────────────────────────────────────────────────────────┘
- ↑/↓ scroll · Enter register · t tree · space fold · x fold-all · / search · r r
+ ↑/↓ line · J/K account · Enter register · t tree · space fold · x fold-all · / 

@@ -18,12 +18,13 @@ pub enum ScrollDelta {
 
 /// The error popup reuses the table navigation keys for scrolling: a row step
 /// scrolls one line, a page step scrolls a page, and first/last jump to the
-/// ends.
+/// ends. An error report is one flat run of lines with no items in it, so the
+/// item steps (`J`/`K`) scroll a line like their lowercase siblings.
 impl From<NavCommand> for ScrollDelta {
     fn from(cmd: NavCommand) -> Self {
         match cmd {
-            NavCommand::Up => ScrollDelta::Lines(-1),
-            NavCommand::Down => ScrollDelta::Lines(1),
+            NavCommand::Up | NavCommand::PrevItem => ScrollDelta::Lines(-1),
+            NavCommand::Down | NavCommand::NextItem => ScrollDelta::Lines(1),
             NavCommand::PageUp => ScrollDelta::Pages(-1),
             NavCommand::PageDown => ScrollDelta::Pages(1),
             NavCommand::First => ScrollDelta::Top,
