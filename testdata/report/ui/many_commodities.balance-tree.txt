@@ -1,24 +1,24 @@
  okane ui — many_commodities.ledger                                             
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │Account                                                        Amount         │
+│▼ Assets                                                             +21 above│
+│                                                                     10 STOCKP│
+│                                                                     10 STOCKQ│
+│                                                                     10 STOCKR│
+│                                                                     10 STOCKS│
+│                                                                     10 STOCKT│
+│                                                                     10 STOCKU│
+│                                                                     10 STOCKV│
+│                                                                     10 STOCKW│
+│                                                                     10 STOCKX│
+│                                                                     10 STOCKY│
+│                                                                     10 STOCKZ│
 │  ▼ Banks                                                           992000 JPY│
 │                                                                   5000.00 CHF│
 │                                                                   9800.00 USD│
 │                                                                   8000.00 EUR│
 │                                                                   3000.00 AUD│
 │                                                                 195000.00 TWD│
-│      Foo                                                           992000 JPY│
-│                                                                   5000.00 CHF│
-│                                                                   9800.00 USD│
-│                                                                   8000.00 EUR│
-│                                                                   3000.00 AUD│
-│                                                                 195000.00 TWD│
-│  ▼ Brokers                                                          10 STOCKA│
-│                                                                     10 STOCKB│
-│                                                                     10 STOCKC│
-│                                                                     10 STOCKD│
-│                                                                     10 STOCKE│
-│                                                                     10 STOCKF│
-│                                                                     10 STOCKG│
+│      Foo                                                              +6 more│
 └──────────────────────────────────────────────────────────────────────────────┘
- ↑/↓ scroll · Enter register · t tree · space fold · x fold-all · / search · r r
+ ↑/↓ line · J/K account · Enter register · t tree · space fold · x fold-all · / 

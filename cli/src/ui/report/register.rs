@@ -9,7 +9,7 @@ use okane_core::report::{Account, AccountAggregate, Amount};
 
 use crate::ui::table::{NavCommand, TableNav, key_to_nav};
 
-use super::balance::amount_line_count;
+use super::render::amount_line_count;
 
 /// What a register drill-in from the balance screen should match.
 #[derive(Debug, Clone, Copy)]
@@ -75,7 +75,8 @@ pub struct RegisterRow<'ctx> {
 }
 
 impl RegisterRow<'_> {
-    /// Number of rendered lines this row occupies (>= 1).
+    /// Number of table rows this entry occupies (>= 1) — the taller of its two
+    /// amount columns, since each contributes one line per commodity.
     pub fn line_count(&self) -> u16 {
         max(
             amount_line_count(&self.amount),
@@ -109,9 +110,12 @@ pub struct RegisterView<'ctx> {
 
 impl<'ctx> RegisterView<'ctx> {
     pub fn new(scope: RegisterScope<'ctx>, rows: Vec<RegisterRow<'ctx>>) -> Self {
-        let mut nav = TableNav::new(rows.len());
-        // Most recent entry is the most useful starting point.
-        nav.select_last();
+        let mut nav = TableNav::with_lines(rows.iter().map(RegisterRow::line_count));
+        // Most recent entry is the most useful starting point — its *last* row,
+        // so the running total it carries is on screen whole. Landing on its
+        // first row would pin that row to the bottom edge and cut the rest of
+        // the entry off below it.
+        nav.select_last_row();
         Self {
             scope,
             rows,
@@ -172,7 +176,9 @@ pub struct RegisterSnapshot {
     /// What the register was filtered to (single account or subtree), owned so
     /// it survives the arena reset.
     pub(super) scope: OwnedRegisterScope,
-    /// Selected cursor index.
+    /// Index of the selected entry — an index into
+    /// [`RegisterView::rows`], not a table row, so it survives an entry
+    /// whose line count changes with the data.
     pub(super) cursor: usize,
 }
 
@@ -181,7 +187,7 @@ impl RegisterSnapshot {
     pub(super) fn capture(view: &RegisterView<'_>) -> Self {
         Self {
             scope: view.scope.as_owned_scope(),
-            cursor: view.nav.table_state.selected().unwrap_or(0),
+            cursor: view.nav.selected_item().unwrap_or(0),
         }
     }
 
@@ -225,11 +231,11 @@ mod tests {
     }
 
     #[test]
-    fn new_selects_last_row() {
+    fn new_selects_last_entry() {
         let arena = Bump::new();
         let (_ctx, account) = make_account(&arena, "Assets:A");
         let view = register_view(account, 3);
-        assert_eq!(view.nav.table_state.selected(), Some(2));
+        assert_eq!(view.nav.selected_item(), Some(2));
     }
 
     #[test]
@@ -238,13 +244,13 @@ mod tests {
         let (_ctx, account) = make_account(&arena, "Assets:A");
         let mut view = register_view(account, 3);
         view.update(RegisterMessage::Nav(NavCommand::First));
-        assert_eq!(view.nav.table_state.selected(), Some(0));
+        assert_eq!(view.nav.selected_row(), 0);
         assert_eq!(view.update(RegisterMessage::Nav(NavCommand::Up)), None);
-        assert_eq!(view.nav.table_state.selected(), Some(0));
+        assert_eq!(view.nav.selected_row(), 0);
         view.update(RegisterMessage::Nav(NavCommand::Down));
-        assert_eq!(view.nav.table_state.selected(), Some(1));
+        assert_eq!(view.nav.selected_row(), 1);
         view.update(RegisterMessage::Nav(NavCommand::Last));
-        assert_eq!(view.nav.table_state.selected(), Some(2));
+        assert_eq!(view.nav.selected_row(), 2);
     }
 
     #[test]

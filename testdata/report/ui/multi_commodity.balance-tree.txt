@@ -19,6 +19,6 @@
 │  ▼ Wire                                                                     0│
 │      US Broker                                                              0│
 │▼ Equity                                                         -48000.00 CHF│
-│                                                                    900000 JPY│
+│                                                                       +2 more│
 └──────────────────────────────────────────────────────────────────────────────┘
- ↑/↓ scroll · Enter register · t tree · space fold · x fold-all · / search · r r
+ ↑/↓ line · J/K account · Enter register · t tree · space fold · x fold-all · / 

@@ -1,6 +1,10 @@
  okane ui — multi_commodity.ledger — register: Assets                           
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │Date       Payee                               Amount          Total          │
+│2024-02-09 Sell stock                                                 +2 above│
+│                                                                  11570.00 USD│
+│                                                                410.0000 OKANE│
+│                                                                   12.300 GOLD│
 │2024-02-09 Sell stock                              1700.00 USD    37518.47 CHF│
 │                                                                    100000 JPY│
 │                                                                  13270.00 USD│
@@ -16,9 +20,5 @@
 │                                                                  13270.00 USD│
 │                                                                390.0000 OKANE│
 │                                                                   12.300 GOLD│
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
- ↑/↓ scroll · PgUp/PgDn page · g/G home/end · r reload · q/Esc back             
+ ↑/↓ line · J/K entry · PgUp/PgDn page · g/G home/end · r reload · q/Esc back   

@@ -1,5 +1,25 @@
 //! Pure rendering functions for the TUI.
 //!
+//! Both report tables draw **one row per line**: an account whose balance spans
+//! six commodities occupies six table rows rather than one six-line row. That
+//! is what makes every line reachable — a row taller than the body used to be
+//! clipped silently, with no way to scroll to what it hid — and
+//! [`crate::ui::table::LineIndex`] translates those rows back into the accounts
+//! and entries the rest of the UI reasons about.
+//!
+//! Exploding the rows moves the account label onto the first row of its block,
+//! which leaves two things to say. Both are applied by [`build_body`], which
+//! knows the exact window it drew:
+//!
+//! - **Sticky account.** When the body's top row is a continuation, the account
+//!   it belongs to has scrolled off; its label is redrawn there in
+//!   [`STICKY_COLOR`]. Colour alone, with no prefix, so the text still sits in
+//!   the column it belongs to — the register's date column is exactly
+//!   `YYYY-MM-DD` wide and a prefix would push the date out of it.
+//! - **`+N more`.** An account cut by the top or bottom edge of the body says
+//!   how many of its lines the reader cannot see, in place of the amount on the
+//!   edge row itself — which is one of them, since the marker takes its place.
+//!
 //! The popup pattern follows
 //! <https://ratatui.rs/recipes/layout/center-a-widget/>:
 //! render a `Clear` widget over a centered rect, then render the popup
@@ -17,17 +37,21 @@ use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Table
 use unicode_width::UnicodeWidthStr;
 
 use super::app::{App, Screen};
-use super::balance::{BalanceRow, DisplayMode};
+use super::balance::{BalanceRow, BalanceView, DisplayMode};
 use super::overlay::{ErrorPopup, Overlay};
-use super::register::{RegisterRow, RegisterView};
-use super::search::{Search, SearchDirection, SearchMatch, SearchMode, SearchPhase};
+use super::register::RegisterView;
+use super::search::{Search, SearchDirection, SearchMode, SearchPhase};
 use crate::ui::table::TableNav;
 
-const FOOTER_HINT_BALANCE: &str = " ↑/↓ scroll · Enter register · t tree · space fold · x fold-all · / search · r reload · q quit ";
+const FOOTER_HINT_BALANCE: &str = " ↑/↓ line · J/K account · Enter register · t tree · space fold · x fold-all · / search · r reload · q quit ";
 const FOOTER_HINT_REGISTER: &str =
-    " ↑/↓ scroll · PgUp/PgDn page · g/G home/end · r reload · q/Esc back ";
+    " ↑/↓ line · J/K entry · PgUp/PgDn page · g/G home/end · r reload · q/Esc back ";
 const ERROR_POPUP_HINT: &str =
     " ↑/↓ scroll · PgUp/PgDn page · g/G top/end · r reload · Esc/Enter close · q quit ";
+
+/// Colour that marks a redrawn (sticky) account label, so it never reads as a
+/// label the row itself owns.
+const STICKY_COLOR: Color = Color::Cyan;
 
 /// Renders a frame for the given app state.
 pub fn draw<'ctx>(frame: &mut Frame, app: &mut App<'ctx>, ctx: &ReportContext<'ctx>) {
@@ -42,21 +66,7 @@ pub fn draw<'ctx>(frame: &mut Frame, app: &mut App<'ctx>, ctx: &ReportContext<'c
     draw_title(frame, layout[0], app);
     match &mut app.screen {
         Screen::Balance => {
-            let matches = app
-                .balance
-                .search
-                .as_ref()
-                .and_then(|s| s.matches.as_ref())
-                .and_then(|r| r.as_ref().ok());
-            draw_balance_body(
-                frame,
-                layout[1],
-                &app.balance.rows,
-                &mut app.balance.nav,
-                matches,
-                ctx,
-                app.balance.mode,
-            );
+            draw_balance_body(frame, layout[1], &mut app.balance, ctx);
             match (&app.error_toast, &app.balance.search) {
                 (Some(msg), _) => draw_error(frame, layout[2], msg),
                 (None, Some(search)) => draw_search_bar(frame, layout[2], search),
@@ -93,59 +103,228 @@ fn draw_title(frame: &mut Frame, area: Rect, app: &App<'_>) {
     frame.render_widget(paragraph, area);
 }
 
-fn draw_balance_body<'ctx>(
+/// One physical table row — exactly one terminal line.
+#[derive(Debug, PartialEq, Eq)]
+struct LineRow {
+    /// Leading columns: the account, or the date and payee. Blank on a
+    /// continuation line, except where the sticky overlay refills them.
+    head: Vec<String>,
+    /// One entry per amount column: the text on this line, or `None` where the
+    /// column has no line here — a register entry's Amount is one line however
+    /// tall its Total is, and marking the shorter one would be a lie.
+    cells: Vec<Option<String>>,
+    /// This row carries a search-matched account's own label.
+    is_match: bool,
+    /// [`Self::head`] was refilled by the sticky overlay rather than owned.
+    sticky: bool,
+}
+
+/// The visible rows of a table body, with the sticky account label and the
+/// `+N more` cut markers already applied.
+struct Body {
+    rows: Vec<LineRow>,
+    /// The selection, as an index into [`Self::rows`].
+    selected: usize,
+}
+
+/// Builds the table rows for `nav`'s current window.
+///
+/// `head_of` and `columns_of` are called once per *item* in the window rather
+/// than once per row, so a multi-commodity account formats its amounts once
+/// however many lines it spans. Neither is called for anything off screen,
+/// which is what keeps per-frame work proportional to the viewport rather than
+/// to the row count.
+fn build_body(
+    nav: &mut TableNav,
+    head_of: impl Fn(usize) -> Vec<String>,
+    columns_of: impl Fn(usize) -> Vec<Vec<String>>,
+    is_match: impl Fn(usize) -> bool,
+) -> Body {
+    let (offset, end) = nav.visible_window();
+    let mut rows: Vec<LineRow> = Vec::with_capacity(end - offset);
+    // Set only when the top item's own first row is above the window: its head,
+    // which the sticky overlay redraws on the body's top line, and the lines it
+    // hides up there.
+    let mut cut_above: Option<(Vec<String>, u16)> = None;
+    // The bottom item's line at the bottom edge, with how many lines each of
+    // its columns holds — between them, what it hides below.
+    let mut bottom_edge: Option<(u16, Vec<usize>)> = None;
+
+    for (nth, (item, window)) in nav.lines().items_in(offset..end).enumerate() {
+        let head = head_of(item);
+        let columns = columns_of(item);
+        let matched = is_match(item);
+        if nth == 0 && window.start > 0 {
+            // This item's own label went off screen with the lines above it.
+            cut_above = Some((head.clone(), window.start));
+        }
+        bottom_edge = Some((window.end - 1, columns.iter().map(Vec::len).collect()));
+        for line in window {
+            rows.push(LineRow {
+                head: match line {
+                    0 => head.clone(),
+                    // A continuation line owns no label; the sticky overlay
+                    // below refills the top one when the item's own is gone.
+                    _ => vec![String::new(); head.len()],
+                },
+                cells: columns
+                    .iter()
+                    .map(|col| col.get(usize::from(line)).cloned())
+                    .collect(),
+                is_match: matched && line == 0,
+                sticky: false,
+            });
+        }
+    }
+
+    // No *row* is ever clipped now, but an item's block still runs past the top
+    // and bottom of the body, which is the same news the marker has always
+    // carried. Above the top row every column that reaches it hid the same
+    // lines; below the bottom one each column ran out where it ran out.
+    if let Some((head, above)) = cut_above
+        && let Some(top) = rows.first_mut()
+    {
+        top.head = head;
+        top.sticky = true;
+        mark_cut(top, |_| usize::from(above), "above");
+    }
+    if let Some((edge, lengths)) = bottom_edge
+        && let Some(bottom) = rows.last_mut()
+    {
+        let below = usize::from(edge) + 1;
+        mark_cut(
+            bottom,
+            |column| lengths[column].saturating_sub(below),
+            "more",
+        );
+    }
+
+    Body {
+        selected: nav.selected_row().saturating_sub(offset),
+        rows,
+    }
+}
+
+/// Replaces the amounts on a cut edge row with `+{n} {suffix}`, asking `beyond`
+/// per column how many of that column's lines lie past the edge: how much a
+/// column hides is its own business — a register entry's Amount is one line
+/// however far past the edge its Total runs — and a column that ends on the
+/// edge keeps its value, since there is nothing past it to warn about.
+///
+/// The count is `beyond + 1`, because the marker also spends the line it is
+/// written on: the value that was there is one the reader cannot see either.
+/// Spending the edge line rather than adding one keeps the body exactly as tall
+/// as the viewport, which is what lets the marker be decided after the window
+/// is fixed rather than as part of choosing it.
+fn mark_cut(row: &mut LineRow, beyond: impl Fn(usize) -> usize, suffix: &str) {
+    for (column, cell) in row.cells.iter_mut().enumerate() {
+        let beyond = beyond(column);
+        if beyond > 0 && cell.is_some() {
+            *cell = Some(format!("+{} {suffix}", beyond + 1));
+        }
+    }
+}
+
+/// Everything about a table body that is not its data: what to say when there
+/// is none, the header labels, and the column constraints. One per screen,
+/// built where the column widths are known.
+struct TableChrome<'a> {
+    empty_message: &'a str,
+    headers: &'a [&'a str],
+    constraints: Vec<Constraint>,
+}
+
+/// Draws one table body: the bordered block, the window `nav` selects, and the
+/// rows [`build_body`] makes of it.
+///
+/// Both screens differ only in their [`TableChrome`] and in what the three
+/// closures read, so the framing — the empty and too-short notices, the
+/// viewport height the nav needs, and rendering only the chosen window so
+/// ratatui never scrolls on its own — lives here once.
+fn draw_table_body(
     frame: &mut Frame,
     area: Rect,
-    rows: &[BalanceRow<'ctx>],
     nav: &mut TableNav,
-    matches: Option<&SearchMatch>,
-    ctx: &ReportContext<'ctx>,
-    mode: DisplayMode,
+    chrome: TableChrome<'_>,
+    head_of: impl Fn(usize) -> Vec<String>,
+    columns_of: impl Fn(usize) -> Vec<Vec<String>>,
+    is_match: impl Fn(usize) -> bool,
 ) {
     let block = Block::default().borders(Borders::ALL);
     let inner = block.inner(area);
+    // The header takes the first line of the body; the rest is the window.
     nav.viewport_height = inner.height.saturating_sub(1);
 
-    if rows.is_empty() {
-        let msg = Paragraph::new("No balances to display")
+    if nav.is_empty() {
+        let msg = Paragraph::new(chrome.empty_message)
             .alignment(Alignment::Center)
             .block(block);
         frame.render_widget(msg, area);
         return;
     }
+    if draw_body_too_short(frame, area, &block) {
+        return;
+    }
 
-    let header = Row::new(vec![Cell::from("Account"), Cell::from("Amount")])
+    let body = build_body(nav, head_of, columns_of, is_match);
+    let header = Row::new(chrome.headers.iter().copied().map(Cell::from))
         .style(Style::default().add_modifier(Modifier::BOLD));
+    let table = Table::new(body.rows.iter().map(to_table_row), chrome.constraints)
+        .header(header)
+        .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED))
+        .block(block);
 
-    let formatted: Vec<Vec<String>> = rows
-        .iter()
-        .map(|row| format_amount_lines(&row.amount, ctx))
-        .collect();
-    let amount_width = compute_amount_width(&formatted);
-    let table_rows: Vec<Row> = rows
-        .iter()
-        .zip(&formatted)
-        .enumerate()
-        .map(|(i, (row, lines))| {
-            make_balance_row(
-                row,
-                lines,
-                matches.is_some_and(|m| m.contains_row(i)),
-                mode,
-                nav.viewport_height,
-            )
-        })
-        .collect();
+    // The window was already chosen by `TableNav::visible_window`, and the
+    // marker and sticky-label decisions depend on it being the one actually
+    // drawn, so hand ratatui a state that keeps it.
+    let mut state = TableState::default()
+        .with_offset(0)
+        .with_selected(Some(body.selected));
+    frame.render_stateful_widget(table, area, &mut state);
+}
 
-    let table = Table::new(
-        table_rows,
-        [Constraint::Min(10), Constraint::Length(amount_width)],
-    )
-    .header(header)
-    .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED))
-    .block(block);
+fn draw_balance_body<'ctx>(
+    frame: &mut Frame,
+    area: Rect,
+    view: &mut BalanceView<'ctx>,
+    ctx: &ReportContext<'ctx>,
+) {
+    // Split the borrows: the row closures below read `rows` while
+    // `draw_table_body` drives `nav`.
+    let BalanceView {
+        rows,
+        nav,
+        search,
+        mode,
+        amount_width,
+        ..
+    } = view;
+    let (rows, mode) = (&*rows, *mode);
+    let matches = search
+        .as_ref()
+        .and_then(|s| s.matches.as_ref())
+        .and_then(|r| r.as_ref().ok());
 
-    frame.render_stateful_widget(table, area, &mut nav.table_state);
+    // The column is one width for the whole table — the one thing that has to
+    // look at every row — so it is computed once per set of rows and cached;
+    // the rows themselves are built for the visible window only.
+    let amount_width = *amount_width.get_or_insert_with(|| {
+        compute_amount_width(rows.iter().map(|row| format_amount_lines(&row.amount, ctx)))
+    });
+
+    draw_table_body(
+        frame,
+        area,
+        nav,
+        TableChrome {
+            empty_message: "No balances to display",
+            headers: &["Account", "Amount"],
+            constraints: vec![Constraint::Min(10), Constraint::Length(amount_width)],
+        },
+        |i| vec![account_cell_text(&rows[i], mode)],
+        |i| vec![format_amount_lines(&rows[i].amount, ctx)],
+        |i| matches.is_some_and(|m| m.contains_row(i)),
+    );
 }
 
 fn draw_register_body<'ctx>(
@@ -154,89 +333,65 @@ fn draw_register_body<'ctx>(
     view: &mut RegisterView<'ctx>,
     ctx: &ReportContext<'ctx>,
 ) {
-    let block = Block::default().borders(Borders::ALL);
-    let inner = block.inner(area);
-    view.nav.viewport_height = inner.height.saturating_sub(1);
-
-    if view.rows.is_empty() {
-        let msg = Paragraph::new("No register entries to display")
-            .alignment(Alignment::Center)
-            .block(block);
-        frame.render_widget(msg, area);
-        return;
-    }
-
-    let header = Row::new(vec![
-        Cell::from("Date"),
-        Cell::from("Payee"),
-        Cell::from("Amount"),
-        Cell::from("Total"),
-    ])
-    .style(Style::default().add_modifier(Modifier::BOLD));
+    // Split the borrows: the row closures below read `rows` while
+    // `draw_table_body` drives `nav`.
+    let RegisterView {
+        rows,
+        nav,
+        col_widths,
+        ..
+    } = view;
+    let rows = &*rows;
 
     // The amount/total column widths are fixed for the life of the view, so
-    // compute them once (scanning all rows) and cache them. Everything else
-    // below only touches the visible window, keeping per-frame work
-    // proportional to the viewport rather than the (potentially large) row
-    // count of the register.
-    let (amount_width, total_width) = match view.col_widths {
-        Some(t) => t,
-        None => {
-            let amount_width = compute_amount_width(
-                view.rows
-                    .iter()
-                    .map(|row| format_amount_lines(&row.amount, ctx)),
-            );
-            let total_width = compute_amount_width(
-                view.rows
-                    .iter()
-                    .map(|row| format_amount_lines(&row.total, ctx)),
-            );
-            view.col_widths = Some((amount_width, total_width));
-            (amount_width, total_width)
-        }
-    };
+    // compute them once (scanning all rows) and cache them.
+    let (amount_width, total_width) = *col_widths.get_or_insert_with(|| {
+        (
+            compute_amount_width(rows.iter().map(|row| format_amount_lines(&row.amount, ctx))),
+            compute_amount_width(rows.iter().map(|row| format_amount_lines(&row.total, ctx))),
+        )
+    });
 
-    // Virtualize: build widget rows only for the slice that is actually
-    // visible. The absolute selection stays in `nav.table_state`; the local
-    // `TableState` below carries the viewport-relative position for rendering.
-    let (offset, end) = view.nav.visible_window(|i| view.rows[i].line_count());
+    draw_table_body(
+        frame,
+        area,
+        nav,
+        TableChrome {
+            empty_message: "No register entries to display",
+            headers: &["Date", "Payee", "Amount", "Total"],
+            constraints: vec![
+                Constraint::Length(10), // YYYY-MM-DD
+                Constraint::Min(10),    // payee, takes remaining
+                Constraint::Length(amount_width),
+                Constraint::Length(total_width),
+            ],
+        },
+        |i| vec![rows[i].date.to_string(), rows[i].payee.clone()],
+        |i| {
+            vec![
+                format_amount_lines(&rows[i].amount, ctx),
+                format_amount_lines(&rows[i].total, ctx),
+            ]
+        },
+        |_| false,
+    );
+}
 
-    let visible = &view.rows[offset..end];
-    // these are collected as the following register row is borrowing this String.
-    let amount_lines: Vec<Vec<String>> = visible
-        .iter()
-        .map(|row| format_amount_lines(&row.amount, ctx))
-        .collect();
-    let total_lines: Vec<Vec<String>> = visible
-        .iter()
-        .map(|row| format_amount_lines(&row.total, ctx))
-        .collect();
-
-    let table_rows: Vec<Row> = visible
-        .iter()
-        .zip(amount_lines.iter())
-        .zip(total_lines.iter())
-        .map(|((row, amt), tot)| make_register_row(row, amt, tot, view.nav.viewport_height))
-        .collect();
-
-    let table = Table::new(
-        table_rows,
-        [
-            Constraint::Length(10), // YYYY-MM-DD
-            Constraint::Min(10),    // payee, takes remaining
-            Constraint::Length(amount_width),
-            Constraint::Length(total_width),
-        ],
-    )
-    .header(header)
-    .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED))
-    .block(block);
-
-    let mut state = TableState::default()
-        .with_offset(0)
-        .with_selected(Some(view.nav.selected_index() - offset));
-    frame.render_stateful_widget(table, area, &mut state);
+/// A body with no room for a row after its header draws nothing at all, however
+/// short the rows are — and now that no row is ever taller than one line, there
+/// is nothing left to cap. Say so instead of showing an empty box, which reads
+/// as "no data". The border goes too: at this size it *is* the body.
+fn draw_body_too_short(frame: &mut Frame, area: Rect, block: &Block) -> bool {
+    if block.inner(area).height >= 2 {
+        return false;
+    }
+    frame.render_widget(
+        Paragraph::new("terminal too short")
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Red)),
+        area,
+    );
+    true
 }
 
 fn draw_footer(frame: &mut Frame, area: Rect, hint: &str) {
@@ -402,6 +557,8 @@ fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
 
 /// Formats the amount lines for one balance/register cell — one line per
 /// commodity, or a single `"0"` line when the balance is empty.
+///
+/// Must agree with [`amount_line_count`]; see there.
 fn format_amount_lines<'ctx>(amount: &Amount<'ctx>, ctx: &ReportContext<'ctx>) -> Vec<String> {
     let mut lines: Vec<String> = amount
         .iter()
@@ -413,24 +570,40 @@ fn format_amount_lines<'ctx>(amount: &Amount<'ctx>, ctx: &ReportContext<'ctx>) -
     lines
 }
 
-fn make_balance_row<'r>(
-    row: &'r BalanceRow<'_>,
-    lines: &'r [String],
-    is_match: bool,
-    mode: DisplayMode,
-    viewport_height: u16,
-) -> Row<'r> {
-    let height = clip_row_height(row.line_count(), viewport_height);
-    let mut account_cell = Cell::from(account_cell_text(row, mode));
-    if is_match {
-        account_cell = account_cell.style(
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        );
-    }
-    let amount_cell = Cell::from(amount_text(clip_lines(lines, height)));
-    Row::new(vec![account_cell, amount_cell]).height(height)
+/// Lines [`format_amount_lines`] will produce for `amount` (always `>= 1`),
+/// without formatting them.
+///
+/// This is what the screens size their [`LineIndex`](crate::ui::table::LineIndex)
+/// with, so it decides how many table rows an account or entry gets. It lives
+/// next to the function it predicts because the two must agree exactly: were
+/// the count to fall short, the extra lines would get no row and become
+/// unreachable — the very thing exploding the rows set out to fix — and were it
+/// to run over, the table would draw blank rows nothing can fill.
+pub(super) fn amount_line_count(amount: &Amount<'_>) -> u16 {
+    let n = amount.iter().count();
+    n.clamp(1, u16::MAX as usize) as u16
+}
+
+/// Turns one [`LineRow`] into a ratatui row: the head columns as text, the
+/// amount columns right-aligned.
+fn to_table_row(row: &LineRow) -> Row<'_> {
+    let head_style = match (row.sticky, row.is_match) {
+        (true, _) => Style::default().fg(STICKY_COLOR),
+        (false, true) => Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+        (false, false) => Style::default(),
+    };
+    Row::new(
+        row.head
+            .iter()
+            .map(|text| Cell::from(text.as_str()).style(head_style))
+            .chain(
+                row.cells
+                    .iter()
+                    .map(|line| Cell::from(amount_text(line.as_deref()))),
+            ),
+    )
 }
 
 /// Account-column text for a balance row: the full name in flat mode, or the
@@ -450,47 +623,13 @@ fn account_cell_text(row: &BalanceRow<'_>, mode: DisplayMode) -> String {
     }
 }
 
-fn make_register_row<'r>(
-    row: &'r RegisterRow<'_>,
-    amount_lines: &'r [String],
-    total_lines: &'r [String],
-    viewport_height: u16,
-) -> Row<'r> {
-    let height = clip_row_height(row.line_count(), viewport_height);
-    let date_cell = Cell::from(row.date.to_string());
-    let payee_cell = Cell::from(row.payee.as_str());
-    let amount_cell = Cell::from(amount_text(clip_lines(amount_lines, height)));
-    let total_cell = Cell::from(amount_text(clip_lines(total_lines, height)));
-    Row::new(vec![date_cell, payee_cell, amount_cell, total_cell]).height(height)
-}
-
-/// The height a table row may declare, given the height of the table body.
-///
-/// A row taller than the body is not clipped by ratatui's `Table` — it is
-/// dropped outright. `Table::visible_rows` refuses to count it (`height +
-/// item.height > area.height` breaks the fill loop), then its scroll-to-
-/// selection loop admits it and immediately evicts it again to get back under
-/// budget, leaving `start == end` and an empty render range. The whole table
-/// comes out blank. Capping the declared height keeps the row renderable; its
-/// extra lines are cut by [`clip_lines`].
-///
-/// The `max(1)` floor keeps a degenerate zero-height viewport (a terminal too
-/// short for the body) from producing zero-height rows.
-fn clip_row_height(line_count: u16, viewport_height: u16) -> u16 {
-    min(line_count, max(viewport_height, 1))
-}
-
-/// The leading `height` lines of a cell's text — the rest do not fit the row.
-fn clip_lines(lines: &[String], height: u16) -> &[String] {
-    &lines[..min(lines.len(), usize::from(height))]
-}
-
-fn amount_text<'a>(lines: &'a [String]) -> Text<'a> {
-    let lines: Vec<Line<'a>> = lines
-        .iter()
-        .map(|s| Line::from(s.as_str()).alignment(Alignment::Right))
-        .collect();
-    Text::from(lines)
+/// One right-aligned amount line, or nothing where the column has run out of
+/// them.
+fn amount_text(line: Option<&str>) -> Text<'_> {
+    match line {
+        Some(text) => Text::from(Line::from(text).alignment(Alignment::Right)),
+        None => Text::default(),
+    }
 }
 
 /// Returns the display width (in columns) needed for an amount column, given
@@ -561,30 +700,113 @@ mod tests {
         assert_eq!(compute_amount_width(&formatted), 18);
     }
 
-    #[test]
-    fn clip_row_height_leaves_rows_that_fit() {
-        assert_eq!(clip_row_height(1, 19), 1);
-        assert_eq!(clip_row_height(19, 19), 19);
+    /// A one-amount-column body over items of the given line counts, with the
+    /// window sized to `viewport` and the selection on row `selected`. Item `i`
+    /// is headed `item{i}` and its lines read `{i}.{line}`.
+    fn body_of(line_counts: &[u16], viewport: u16, selected: usize) -> Body {
+        let mut nav = TableNav::with_lines(line_counts.iter().copied());
+        nav.viewport_height = viewport;
+        nav.select_row(selected);
+        build_body(
+            &mut nav,
+            |i| vec![format!("item{i}")],
+            |i| vec![(0..line_counts[i]).map(|l| format!("{i}.{l}")).collect()],
+            |_| false,
+        )
+    }
+
+    fn heads(body: &Body) -> Vec<&str> {
+        body.rows.iter().map(|row| row.head[0].as_str()).collect()
+    }
+
+    fn amounts(body: &Body) -> Vec<&str> {
+        body.rows
+            .iter()
+            .map(|row| row.cells[0].as_deref().unwrap_or(""))
+            .collect()
     }
 
     #[test]
-    fn clip_row_height_caps_rows_taller_than_the_body() {
-        assert_eq!(clip_row_height(32, 19), 19);
+    fn build_body_gives_every_amount_line_its_own_row() {
+        let body = body_of(&[1, 3], 10, 0);
+        // Only the first row of an item carries its label.
+        assert_eq!(heads(&body), ["item0", "item1", "", ""]);
+        assert_eq!(amounts(&body), ["0.0", "1.0", "1.1", "1.2"]);
+        assert_eq!(body.selected, 0);
+    }
+
+    /// The marker counts every line the reader cannot see, the one it is
+    /// written over included: of six lines, two are readable and four are not.
+    #[test]
+    fn build_body_marks_the_lines_cut_below() {
+        let body = body_of(&[6], 3, 0);
+        assert_eq!(amounts(&body), ["0.0", "0.1", "+4 more"]);
+        // Nothing is cut above, so the label is the row's own.
+        assert!(!body.rows[0].sticky);
+    }
+
+    /// The follow-up problem: once the top of an account's block is off screen
+    /// its name goes with it, so it is redrawn on the top line — and the same
+    /// line says how many of the account's lines it is standing in front of.
+    #[test]
+    fn build_body_sticks_the_label_of_an_account_cut_above() {
+        let body = body_of(&[1, 6], 3, 6);
+        assert_eq!(heads(&body), ["item1", "", ""]);
+        assert!(body.rows[0].sticky);
+        assert_eq!(amounts(&body), ["+4 above", "1.4", "1.5"]);
+        // The selection is the last row of the window, window-relative.
+        assert_eq!(body.selected, 2);
     }
 
     #[test]
-    fn clip_row_height_never_returns_zero() {
-        // A terminal too short to have a body still gets a one-line row.
-        assert_eq!(clip_row_height(32, 0), 1);
-        assert_eq!(clip_row_height(1, 0), 1);
+    fn build_body_leaves_a_fully_visible_body_unmarked() {
+        let body = body_of(&[2, 2], 4, 0);
+        assert_eq!(heads(&body), ["item0", "", "item1", ""]);
+        assert_eq!(amounts(&body), ["0.0", "0.1", "1.0", "1.1"]);
+        assert!(body.rows.iter().all(|row| !row.sticky));
+    }
+
+    /// A register entry's Amount is one line however tall its Total is, so the
+    /// two columns are cut at different places — or not at all. Marking a
+    /// column that hid nothing would both lie and eat a real value.
+    fn register_shaped_body(amount_lines: usize, viewport: u16) -> Body {
+        let mut nav = TableNav::with_lines([4]);
+        nav.viewport_height = viewport;
+        nav.select_row(0);
+        build_body(
+            &mut nav,
+            |_| vec!["2024-01-01".to_owned(), "payee".to_owned()],
+            |_| {
+                vec![
+                    (0..amount_lines).map(|l| format!("amount{l}")).collect(),
+                    (0..4).map(|l| format!("total{l}")).collect(),
+                ]
+            },
+            |_| false,
+        )
     }
 
     #[test]
-    fn clip_lines_cuts_to_the_row_height() {
-        let lines = vec!["a".to_owned(), "b".to_owned(), "c".to_owned()];
-        assert_eq!(clip_lines(&lines, 2), &lines[..2]);
-        // Fewer lines than the row is tall (the other column is the tall one).
-        assert_eq!(clip_lines(&lines, 10), &lines[..]);
+    fn build_body_leaves_a_column_with_no_line_on_the_edge_alone() {
+        let body = register_shaped_body(1, 2);
+        assert_eq!(
+            body.rows[0].cells,
+            [Some("amount0".to_owned()), Some("total0".to_owned())]
+        );
+        // The Amount column ran out a line ago; only the Total is still cut,
+        // hiding `total1` under the marker and `total2`/`total3` below it.
+        assert_eq!(body.rows[1].cells, [None, Some("+3 more".to_owned())]);
+    }
+
+    #[test]
+    fn build_body_leaves_a_column_that_ends_on_the_edge_alone() {
+        let body = register_shaped_body(2, 2);
+        // `amount1` is the Amount column's last line: nothing is hidden behind
+        // it, so it stays put while the Total says what it is still holding.
+        assert_eq!(
+            body.rows[1].cells,
+            [Some("amount1".to_owned()), Some("+3 more".to_owned())]
+        );
     }
 
     #[test]
@@ -606,6 +828,31 @@ mod tests {
         assert_eq!(lines.len(), 2);
         assert!(lines.iter().any(|s| s == "100 USD"));
         assert!(lines.iter().any(|s| s == "200 EUR"));
+    }
+
+    /// The invariant the exploded rows rest on: the count the `LineIndex` is
+    /// built from is exactly the number of lines the renderer then produces.
+    /// A count that fell short would leave lines with no row to be drawn on —
+    /// unreachable, the bug this all fixes — and one that ran over would draw
+    /// rows nothing fills.
+    #[test]
+    fn amount_line_count_agrees_with_format_amount_lines() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let usd = ctx.commodity_store_mut().ensure("USD");
+        let eur = ctx.commodity_store_mut().ensure("EUR");
+        let chf = ctx.commodity_store_mut().ensure("CHF");
+
+        let one = Amount::from_value(usd, dec!(100));
+        let three =
+            one.clone() + Amount::from_value(eur, dec!(200)) + Amount::from_value(chf, dec!(3));
+        for amount in [Amount::zero(), one, three] {
+            assert_eq!(
+                usize::from(amount_line_count(&amount)),
+                format_amount_lines(&amount, &ctx).len(),
+                "line count and rendered lines disagree for {amount:?}"
+            );
+        }
     }
 
     #[test]
@@ -962,34 +1209,108 @@ mod tests {
         golden(&golden_name(&input, "register-subtree")).assert(&render(&mut app, &ctx));
     }
 
-    /// A balance row taller than the table body must still be drawn, clipped.
-    ///
-    /// ratatui's `Table` drops such a row outright rather than clipping it, and
-    /// its scroll-to-selection pass then renders some *other* row — so before
-    /// [`clip_row_height`] this showed `Equity:Initial` with the selected
-    /// account nowhere on screen. `Assets:Brokers:Bar` holds all 26 stock lots,
-    /// against a 19-line body on an 80×24 terminal.
-    ///
-    /// The `many_commodities` goldens only cover the initial selection (row 0),
-    /// where the tall row happens to survive as ratatui's trailing partial row,
-    /// so this needs its own test.
-    #[test]
-    fn balance_row_taller_than_the_body_is_clipped_not_dropped() {
-        let arena = Bump::new();
+    /// The `many_commodities` balance: `Assets:Banks:Foo` holds 6 commodities
+    /// and `Assets:Brokers:Bar` all 26 stock lots, against a 19-line body on an
+    /// 80×24 terminal — more lines than one screen can hold.
+    fn many_commodities_balance<'ctx>(arena: &'ctx Bump) -> (ReportContext<'ctx>, App<'ctx>) {
         let input = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../testdata/report/many_commodities.ledger");
-        let (ctx, mut app) = balance_app(&arena, &input);
-        // Row 0 is Assets:Banks:Foo (6 lines); row 1 is the tall broker account.
+        balance_app(arena, &input)
+    }
+
+    /// `↓` walks one commodity line; the account stays put until its lines run
+    /// out. `J` skips the rest of them.
+    #[test]
+    fn item_step_moves_a_whole_account_at_a_time() {
+        let arena = Bump::new();
+        let (ctx, mut app) = many_commodities_balance(&arena);
+        render(&mut app, &ctx); // the first frame teaches the nav its viewport
+
+        assert_eq!(app.balance.nav.selected_item(), Some(0));
         app.update(Message::Balance(BalanceMessage::Nav(NavCommand::Down)));
+        // Assets:Banks:Foo has six commodities; one line down is still inside it.
+        assert_eq!(app.balance.nav.selected_item(), Some(0));
+
+        app.update(Message::Balance(BalanceMessage::Nav(NavCommand::NextItem)));
+        assert_eq!(app.balance.nav.selected_item(), Some(1));
+        // …and lands on the account's own first line, not partway into it.
+        let nav = &app.balance.nav;
+        assert_eq!(nav.lines().first_row(1), Some(nav.selected_row()));
+
+        app.update(Message::Balance(BalanceMessage::Nav(NavCommand::PrevItem)));
+        assert_eq!(app.balance.nav.selected_item(), Some(0));
+    }
+
+    /// An account taller than the body is reachable line by line, and the two
+    /// things that used to be lost when it was — its name and the fact that
+    /// there is more — are on screen.
+    #[test]
+    fn scrolling_into_a_tall_account_keeps_its_name_and_reports_the_cut() {
+        let arena = Bump::new();
+        let (ctx, mut app) = many_commodities_balance(&arena);
+        render(&mut app, &ctx);
+
+        // Into the broker account, then down to its 26th and last lot — far
+        // enough past the top of the body that its label has scrolled off.
+        app.update(Message::Balance(BalanceMessage::Nav(NavCommand::NextItem)));
+        for _ in 0..25 {
+            app.update(Message::Balance(BalanceMessage::Nav(NavCommand::Down)));
+        }
         let out = render(&mut app, &ctx);
+        assert_eq!(app.balance.nav.selected_item(), Some(1));
+        assert!(
+            out.contains("10 STOCKZ"),
+            "the last lot should be reachable:\n{out}"
+        );
         assert!(
             out.contains("Assets:Brokers:Bar"),
-            "the selected row should be on screen:\n{out}"
+            "the account label should be redrawn on the top line:\n{out}"
         );
         assert!(
-            out.contains("10 STOCKA"),
-            "its commodity lines should be on screen:\n{out}"
+            out.contains("above"),
+            "the top line should say how much is cut off above it:\n{out}"
         );
+    }
+
+    /// The sticky label is marked by colour alone — no prefix, so the text
+    /// stays in the column it belongs to.
+    #[test]
+    fn sticky_account_label_is_drawn_in_its_own_color() {
+        let arena = Bump::new();
+        let (ctx, mut app) = many_commodities_balance(&arena);
+        render(&mut app, &ctx);
+        app.update(Message::Balance(BalanceMessage::Nav(NavCommand::NextItem)));
+        for _ in 0..25 {
+            app.update(Message::Balance(BalanceMessage::Nav(NavCommand::Down)));
+        }
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app, &ctx)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+
+        // The body's first line: inside the border, below the header.
+        let sticky: String = (1..79)
+            .map(|x| buf[Position { x, y: 3 }].symbol())
+            .collect();
+        assert!(
+            sticky.trim_end().ends_with("Assets:Brokers:Bar")
+                || sticky.trim_start().starts_with("Assets:Brokers:Bar"),
+            "expected the cut account's label on the top body line: {sticky:?}"
+        );
+        assert_eq!(buf[Position { x: 1, y: 3 }].fg, STICKY_COLOR);
+    }
+
+    /// A body with no room for a row after its header draws nothing at all, so
+    /// it says why rather than showing an empty box.
+    #[test]
+    fn a_terminal_too_short_for_a_body_says_so() {
+        let arena = Bump::new();
+        let (ctx, mut app) = many_commodities_balance(&arena);
+        // 1 title + 1 footer leaves 3 lines: two borders and the header, with
+        // no room for a row.
+        let out = render_sized(&mut app, &ctx, 40, 5);
+        assert!(out.contains("terminal too short"), "{out}");
     }
 
     /// Renders `app` into a `width`×`height` headless terminal, plain text.

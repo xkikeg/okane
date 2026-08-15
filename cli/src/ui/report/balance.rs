@@ -20,6 +20,7 @@ use crate::ui::keys::is_ctrl;
 use crate::ui::table::{NavCommand, TableNav, key_to_nav};
 
 use super::register::{OwnedRegisterScope, RegisterScope};
+use super::render::amount_line_count;
 use super::search::{Search, SearchDirection, SearchIntent, SearchMatch, SearchMode, SearchPhase};
 
 /// Whether the balance screen shows a flat account list or the account tree.
@@ -102,12 +103,6 @@ pub fn account_full_label<'ctx>(account: &AccountTreeKey<'ctx>) -> &'ctx str {
     }
 }
 
-/// Number of lines an [`Amount`] would render as in a table.
-pub(super) fn amount_line_count(amount: &Amount<'_>) -> u16 {
-    let n = amount.iter().count();
-    n.clamp(1, u16::MAX as usize) as u16
-}
-
 /// Balance-screen state that survives a reload, captured by
 /// [`BalanceView::snapshot`] and re-applied by [`BalanceView::restore`].
 /// Everything is plain owned data — arena references would dangle across the
@@ -186,6 +181,12 @@ pub struct BalanceView<'ctx> {
     /// [`Self::rebuild_rows`].
     pub rows: Vec<BalanceRow<'ctx>>,
     pub nav: TableNav,
+    /// Width of the Amount column, cached because deciding it means formatting
+    /// every row's amount — the one thing a frame cannot do per viewport, and
+    /// the event loop redraws on a timer as well as on every key. Cleared by
+    /// [`Self::rebuild_rows`], the only thing that changes what is measured;
+    /// the display context it is measured against outlives the whole view.
+    pub amount_width: Option<u16>,
     /// Active account search on the balance screen, if any.
     pub search: Option<Search>,
     /// Most recently used search pattern, recalled by an empty interactive
@@ -205,6 +206,7 @@ impl<'ctx> BalanceView<'ctx> {
             folded: HashSet::new(),
             rows: Vec::new(),
             nav: TableNav::new(0),
+            amount_width: None,
             search: None,
             last_search: String::new(),
         };
@@ -217,13 +219,14 @@ impl<'ctx> BalanceView<'ctx> {
     /// goes through [`Self::new`] with a real tree.
     #[cfg(test)]
     pub fn with_rows(rows: Vec<BalanceRow<'ctx>>) -> Self {
-        let nav = TableNav::new(rows.len());
+        let nav = TableNav::with_lines(rows.iter().map(BalanceRow::line_count));
         Self {
             tree: Vec::new(),
             mode: DisplayMode::Flat,
             folded: HashSet::new(),
             rows,
             nav,
+            amount_width: None,
             search: None,
             last_search: String::new(),
         }
@@ -231,8 +234,7 @@ impl<'ctx> BalanceView<'ctx> {
 
     /// The currently-selected balance row, if any.
     fn selected_row(&self) -> Option<&BalanceRow<'ctx>> {
-        let idx = self.nav.table_state.selected()?;
-        self.rows.get(idx)
+        self.rows.get(self.nav.selected_item()?)
     }
 
     /// Full name of the currently-selected account, if any.
@@ -361,8 +363,10 @@ impl<'ctx> BalanceView<'ctx> {
             DisplayMode::Flat => self.build_flat_rows(),
             DisplayMode::Tree => self.build_tree_rows(),
         };
-        self.nav = TableNav::new(self.rows.len());
+        self.nav = TableNav::with_lines(self.rows.iter().map(BalanceRow::line_count));
         self.nav.viewport_height = viewport_height;
+        // Different rows, so a different widest amount.
+        self.amount_width = None;
         if let Some(name) = prev {
             self.select_by_name(name);
         }
@@ -435,7 +439,7 @@ impl<'ctx> BalanceView<'ctx> {
     /// exists.
     fn select_by_name(&mut self, name: &str) {
         if let Some(idx) = self.rows.iter().position(|r| r.full_name() == name) {
-            self.nav.select(idx);
+            self.nav.select_item(idx);
             return;
         }
         let mut best: Option<usize> = None;
@@ -451,7 +455,7 @@ impl<'ctx> BalanceView<'ctx> {
             }
         }
         if let Some(idx) = best {
-            self.nav.select(idx);
+            self.nav.select_item(idx);
         }
     }
 
@@ -602,7 +606,7 @@ impl<'ctx> BalanceView<'ctx> {
         if let Some(prev) = &snapshot.selected_account
             && let Some(idx) = restore_index(prev, &self.rows)
         {
-            self.nav.select(idx);
+            self.nav.select_item(idx);
         }
 
         self.last_search = snapshot.last_search.clone();
@@ -617,7 +621,7 @@ impl<'ctx> BalanceView<'ctx> {
     /// Opens a search of the given style, recording the current selection as
     /// the origin.
     fn start_search(&mut self, mode: SearchMode, dir: SearchDirection) {
-        let origin = self.nav.table_state.selected().unwrap_or(0);
+        let origin = self.nav.selected_item().unwrap_or(0);
         self.search = Some(Search {
             intent: SearchIntent {
                 mode,
@@ -670,7 +674,7 @@ impl<'ctx> BalanceView<'ctx> {
     fn search_cancel(&mut self) {
         if let Some(search) = self.search.take() {
             // on cancel, search query won't be saved.
-            self.nav.select(search.intent.origin);
+            self.nav.select_item(search.intent.origin);
         }
     }
 
@@ -747,11 +751,11 @@ impl<'ctx> BalanceView<'ctx> {
         let Some(Ok(m)) = search.matches.as_ref() else {
             return;
         };
-        let current = self.nav.table_state.selected().unwrap_or(0);
+        let current = self.nav.selected_item().unwrap_or(0);
         let Some(next) = m.step(current, search.intent.dir) else {
             return;
         };
-        self.nav.select(next);
+        self.nav.select_item(next);
     }
 
     /// Recompiles the search pattern, recollects matching balance-row indices,
@@ -768,7 +772,7 @@ impl<'ctx> BalanceView<'ctx> {
         let origin = intent.origin;
         let reference = match intent.mode {
             SearchMode::Modal(_) => origin,
-            SearchMode::Interactive => self.nav.table_state.selected().unwrap_or(origin),
+            SearchMode::Interactive => self.nav.selected_item().unwrap_or(origin),
         };
         let matches = SearchMatch::compute(&intent.input, &self.rows);
         let jump = match &matches {
@@ -777,7 +781,7 @@ impl<'ctx> BalanceView<'ctx> {
         };
         search.matches = matches;
         if let Some(idx) = jump {
-            self.nav.select(idx);
+            self.nav.select_item(idx);
         }
     }
 }
@@ -868,8 +872,10 @@ mod tests {
         (ctx, view)
     }
 
+    /// The selected *account* (an index into `view.rows`), which is what every
+    /// test below means — the table itself has one row per commodity line.
     fn selected(view: &BalanceView<'_>) -> Option<usize> {
-        view.nav.table_state.selected()
+        view.nav.selected_item()
     }
 
     fn full_names(view: &BalanceView<'_>) -> Vec<String> {
@@ -1292,14 +1298,14 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
         view.update(BalanceMessage::ToggleTree);
-        view.nav.select(0); // Assets
+        view.nav.select_item(0); // Assets
         view.update(BalanceMessage::ToggleFold);
         assert_eq!(
             full_names(&view),
             ["Assets", "Equity", "Expenses", "Expenses:Food"]
         );
         assert!(view.rows[0].folded);
-        assert_eq!(view.nav.table_state.selected(), Some(0));
+        assert_eq!(selected(&view), Some(0));
         view.update(BalanceMessage::ToggleFold);
         assert!(!view.rows[0].folded);
         assert_eq!(view.rows.len(), 7);
@@ -1321,7 +1327,7 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
         view.update(BalanceMessage::ToggleTree);
-        view.nav.select(0); // Assets
+        view.nav.select_item(0); // Assets
         let action = view.update(BalanceMessage::OpenRegister);
         assert_matches!(
             action,
@@ -1333,7 +1339,7 @@ mod tests {
     fn flat_open_register_drills_into_single_account() {
         let arena = Bump::new();
         let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
-        view.nav.select(1); // Assets:Cash
+        view.nav.select_item(1); // Assets:Cash
         let action = view.update(BalanceMessage::OpenRegister);
         assert_matches!(
             action,
@@ -1353,7 +1359,7 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
         view.update(BalanceMessage::ToggleTree);
-        view.nav.select(0); // Assets
+        view.nav.select_item(0); // Assets
         view.update(BalanceMessage::ToggleFold); // fold Assets
         let snapshot = view.snapshot();
 

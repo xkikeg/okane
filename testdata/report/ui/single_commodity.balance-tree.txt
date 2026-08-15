@@ -21,4 +21,4 @@
 │      Card X                                                                 0│
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
- ↑/↓ scroll · Enter register · t tree · space fold · x fold-all · / search · r r
+ ↑/↓ line · J/K account · Enter register · t tree · space fold · x fold-all · / 
