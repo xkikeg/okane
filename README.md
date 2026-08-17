@@ -92,7 +92,7 @@ In future in-place format would be provided, also to emit diffs to be used as Gi
 ### Import CSV or ISO Camt053 XML files
 
 First you need to write YAML file to control import behavior. We'll assume those are placed under `~/ledger/`.
-See the [import](doc/import.ja.md) page (Japanese only, sorry) for the format,
+See the [import](doc/import.md) page for the format,
 and the `testdata/import/` directory for example configurations.
 
 Then run the `okane import` command with logging and redirecting to `/dev/null`. This way you can dry-run and check its output.
