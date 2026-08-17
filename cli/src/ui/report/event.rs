@@ -141,6 +141,7 @@ pub fn load_register<'ctx>(
     let account = match scope {
         RegisterScope::Single(account) => AccountFilter::single(account),
         RegisterScope::Subtree(aggregate) => AccountFilter::descendants_of(ctx, aggregate),
+        RegisterScope::All => AccountFilter::All,
     };
     let query = RegisterQuery {
         account,

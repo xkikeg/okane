@@ -346,9 +346,15 @@ mod tests {
             let SessionData { mut app, .. } = build(&mut ctx, V1, None).unwrap();
             assert_eq!(
                 account_names(&app),
-                ["Assets:Bank", "Assets:Cash", "Equity", "Expenses:Food"]
+                [
+                    "(total)",
+                    "Assets:Bank",
+                    "Assets:Cash",
+                    "Equity",
+                    "Expenses:Food"
+                ]
             );
-            app.balance.nav.select_item(3); // Expenses:Food
+            app.balance.nav.select_item(4); // Expenses:Food
             app.snapshot()
         };
         arena.reset();
@@ -360,6 +366,7 @@ mod tests {
         assert_eq!(
             account_names(&app),
             [
+                "(total)",
                 "Assets:Aaa",
                 "Assets:Bank",
                 "Assets:Cash",
@@ -368,7 +375,7 @@ mod tests {
             ]
         );
         // The selection followed Expenses:Food to its new index.
-        assert_eq!(app.balance.nav.selected_item(), Some(4));
+        assert_eq!(app.balance.nav.selected_item(), Some(5));
     }
 
     /// The reason reload rebuilds from scratch: interned entries of the
@@ -444,7 +451,7 @@ mod tests {
         assert_matches!(&app.error_toast, Some(_));
         assert_eq!(
             account_names(&app),
-            ["Assets:Bank", "Assets:Cash", "Equity"]
+            ["(total)", "Assets:Bank", "Assets:Cash", "Equity"]
         );
     }
 

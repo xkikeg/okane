@@ -24,6 +24,10 @@ use super::render::amount_line_count;
 use super::search::{Search, SearchDirection, SearchIntent, SearchMatch, SearchMode, SearchPhase};
 
 /// Whether the balance screen shows a flat account list or the account tree.
+///
+/// Both modes open with the [total row](BalanceView::total_row): in
+/// [`Self::Tree`] it is the tree's root, and a flat list is that same root
+/// followed by its accounts rather than its children.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DisplayMode {
     /// Every posted account, alphabetically, showing its own amount.
@@ -31,6 +35,10 @@ pub enum DisplayMode {
     /// The account hierarchy, indented and foldable, showing subtree totals.
     Tree,
 }
+
+/// Label of the total row — the whole ledger's balance, which is the tree's
+/// synthetic root rather than an account, so it is named rather than addressed.
+pub const TOTAL_LABEL: &str = "(total)";
 
 /// One visible row of the balance table.
 ///
@@ -47,13 +55,13 @@ pub struct BalanceRow<'ctx> {
     /// Used for search, snapshot and reload restore.
     pub account: AccountTreeKey<'ctx>,
     /// Display label: the full path in [`DisplayMode::Flat`], the leaf segment
-    /// in [`DisplayMode::Tree`].
+    /// in [`DisplayMode::Tree`], and [`TOTAL_LABEL`] for the total row.
     pub label: &'ctx str,
-    /// Depth in the account tree (`1` for a top-level account). Drives the
-    /// tree-view indentation.
+    /// Depth in the account tree (`1` for a top-level account, `0` for the
+    /// total row). Drives the tree-view indentation.
     pub depth: u16,
     /// Amount to display: the node's own amount in flat view, its subtree
-    /// total in tree view.
+    /// total in tree view — and, for the total row, the whole ledger's.
     pub amount: Amount<'ctx>,
     /// Whether the backing node has children (shows a fold marker in tree view).
     pub has_children: bool,
@@ -98,7 +106,7 @@ impl<'ctx> BalanceRow<'ctx> {
 /// Printable full label of the AccountTeeKey.
 pub fn account_full_label<'ctx>(account: &AccountTreeKey<'ctx>) -> &'ctx str {
     match account {
-        AccountTreeKey::Root => "(total)",
+        AccountTreeKey::Root => TOTAL_LABEL,
         AccountTreeKey::Descendant(account) => account.as_str(),
     }
 }
@@ -372,38 +380,64 @@ impl<'ctx> BalanceView<'ctx> {
         }
     }
 
-    /// Flat rows: every posted account (non-zero own amount), full name, own
-    /// amount. Ancestor-only nodes have a zero own amount and are skipped.
-    fn build_flat_rows(&self) -> Vec<BalanceRow<'ctx>> {
-        self.tree
-            .iter()
-            .enumerate()
-            .filter_map(|(i, node)| {
-                let account = match node.account.as_aggregate()? {
-                    AccountAggregate::Account(account) => account,
-                    AccountAggregate::Ancestor(_) => return None,
-                };
-                Some(BalanceRow {
-                    node: i,
-                    account: account.into(),
-                    label: account.as_str(),
-                    depth: node.depth,
-                    amount: node.self_amount.clone(),
-                    // it's flat and impossible to have children.
-                    has_children: false,
-                    folded: false,
-                    scope: RegisterScope::Single(account),
-                })
-            })
-            .collect()
+    /// The whole ledger's balance as a row, from the tree's synthetic root:
+    /// the first row of either mode, so the number every account row is a part
+    /// of is read before them rather than hunted for at the end.
+    ///
+    /// Unlike a parent row it is never foldable — folding it would hide every
+    /// account behind the one row that cannot be scrolled away from — and it
+    /// drills into the register of every account ([`RegisterScope::All`]), the
+    /// same relationship a tree row has with its subtree.
+    ///
+    /// `None` for a ledger with no accounts, where a lone zero would say less
+    /// than the "no balances" notice it would replace.
+    fn total_row(&self) -> Option<BalanceRow<'ctx>> {
+        let root = self.tree.first()?;
+        if !root.has_children() {
+            return None;
+        }
+        Some(BalanceRow {
+            node: 0,
+            account: AccountTreeKey::Root,
+            label: TOTAL_LABEL,
+            depth: 0,
+            amount: root.subtree_amount.clone(),
+            has_children: false,
+            folded: false,
+            scope: RegisterScope::All,
+        })
     }
 
-    /// Tree rows: a pre-order walk that skips the root and jumps over a folded
-    /// node's whole (contiguous) subtree. Each row shows the leaf label,
-    /// indented by depth, and the subtree total.
+    /// Flat rows: the total, then every posted account (non-zero own amount),
+    /// full name, own amount. Ancestor-only nodes have a zero own amount and
+    /// are skipped.
+    fn build_flat_rows(&self) -> Vec<BalanceRow<'ctx>> {
+        let accounts = self.tree.iter().enumerate().filter_map(|(i, node)| {
+            let account = match node.account.as_aggregate()? {
+                AccountAggregate::Account(account) => account,
+                AccountAggregate::Ancestor(_) => return None,
+            };
+            Some(BalanceRow {
+                node: i,
+                account: account.into(),
+                label: account.as_str(),
+                depth: node.depth,
+                amount: node.self_amount.clone(),
+                // it's flat and impossible to have children.
+                has_children: false,
+                folded: false,
+                scope: RegisterScope::Single(account),
+            })
+        });
+        self.total_row().into_iter().chain(accounts).collect()
+    }
+
+    /// Tree rows: the root as the total row, then a pre-order walk of its
+    /// descendants that jumps over a folded node's whole (contiguous) subtree.
+    /// Each row shows the leaf label, indented by depth, and the subtree total.
     fn build_tree_rows(&self) -> Vec<BalanceRow<'ctx>> {
-        let mut rows = Vec::new();
-        let mut i = 1; // index 0 is the synthetic root, never shown.
+        let mut rows: Vec<BalanceRow<'ctx>> = self.total_row().into_iter().collect();
+        let mut i = 1; // index 0 is the synthetic root, drawn as the total row.
         while i < self.tree.len() {
             let node = &self.tree[i];
             let Some(aggregate) = node.account.as_aggregate() else {
@@ -411,10 +445,7 @@ impl<'ctx> BalanceView<'ctx> {
                 continue;
             };
             let folded = self.folded.contains(&i);
-            let label = match node.account {
-                AccountTreeKey::Root => "(total)",
-                AccountTreeKey::Descendant(account) => account.last_segment(),
-            };
+            let label = aggregate.last_segment();
             rows.push(BalanceRow {
                 node: i,
                 account: aggregate.into(),
@@ -558,6 +589,10 @@ impl<'ctx> BalanceView<'ctx> {
     /// Falls back to a matching visible row when there is no backing tree (the
     /// state-machine tests), where a row still carries a usable scope.
     pub(super) fn resolve_scope(&self, scope: &OwnedRegisterScope) -> Option<RegisterScope<'ctx>> {
+        // The total names no account, so there is nothing to lose to a reload.
+        if matches!(scope, OwnedRegisterScope::All) {
+            return Some(RegisterScope::All);
+        }
         let name = scope.name();
         if let Some(aggregate) = self
             .tree
@@ -571,6 +606,8 @@ impl<'ctx> BalanceView<'ctx> {
                     AccountAggregate::Ancestor(_) => None,
                 },
                 OwnedRegisterScope::Subtree(_) => Some(RegisterScope::Subtree(aggregate)),
+                // Handled above, before any account lookup.
+                OwnedRegisterScope::All => Some(RegisterScope::All),
             };
         }
         self.rows
@@ -791,7 +828,8 @@ impl<'ctx> BalanceView<'ctx> {
 /// to the end). `None` when `rows` is empty.
 ///
 /// Relies on `rows` being sorted by account name, which is the order
-/// `Balance::into_vec` produces.
+/// `Balance::into_vec` produces — and which the leading [`TOTAL_LABEL`] row
+/// keeps, `(` sorting ahead of the letters an account name starts with.
 pub(super) fn restore_index(prev_name: &str, rows: &[BalanceRow<'_>]) -> Option<usize> {
     let last = rows.len().checked_sub(1)?;
     let idx = rows
@@ -1243,12 +1281,13 @@ mod tests {
     // --- tree / fold (BalanceView::update) ---
 
     #[test]
-    fn flat_mode_shows_only_posted_accounts() {
+    fn flat_mode_shows_the_total_then_posted_accounts() {
         let arena = Bump::new();
         let (_ctx, view) = tree_view(&arena, TREE_LEDGER);
         assert_eq!(
             full_names(&view),
             [
+                "(total)",
                 "Assets:Bank:Checking",
                 "Assets:Cash",
                 "Equity",
@@ -1257,17 +1296,80 @@ mod tests {
         );
     }
 
+    /// The total row is the tree's root in either mode: the sum of every
+    /// account, first, and drilling into it opens the whole ledger's register.
+    #[test]
+    fn total_row_sums_every_account_in_both_modes() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
+        let mut sum: Amount<'_> = view.rows[1..]
+            .iter()
+            .fold(Amount::zero(), |acc, row| acc + row.amount.clone());
+        // The tree drops commodities that net out; the plain sum keeps them.
+        sum.remove_zero_entries();
+
+        for mode in [DisplayMode::Flat, DisplayMode::Tree] {
+            if view.mode != mode {
+                view.update(BalanceMessage::ToggleTree);
+            }
+            let total = &view.rows[0];
+            assert_eq!(total.full_name(), "(total)");
+            assert_eq!(total.label, "(total)");
+            assert_eq!(total.depth, 0);
+            assert_eq!(total.amount, sum, "in {mode:?}");
+            // Never foldable: it would hide every row behind the one row that
+            // is always on screen.
+            assert!(!total.has_children);
+        }
+    }
+
+    /// `space` on the total row does nothing — the whole tree would vanish.
+    #[test]
+    fn total_row_does_not_fold() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
+        view.update(BalanceMessage::ToggleTree);
+        view.nav.select_item(0); // (total)
+        view.update(BalanceMessage::ToggleFold);
+        assert!(view.folded.is_empty());
+        assert_eq!(view.rows.len(), 8);
+    }
+
+    #[test]
+    fn total_open_register_drills_into_every_account() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
+        view.nav.select_item(0); // (total)
+        let action = view.update(BalanceMessage::OpenRegister);
+        assert_matches!(
+            action,
+            Some(BalanceAction::OpenRegister {
+                scope: RegisterScope::All
+            })
+        );
+    }
+
+    /// A ledger with no accounts has no total to show either: a lone zero row
+    /// would displace the "no balances" notice with less information.
+    #[test]
+    fn no_accounts_means_no_total_row() {
+        let arena = Bump::new();
+        let (_ctx, view) = tree_view(&arena, "");
+        assert!(view.rows.is_empty());
+    }
+
     #[test]
     fn toggle_tree_shows_hierarchy_with_leaf_labels() {
         let arena = Bump::new();
         let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
-        let checking = view.rows[0].amount.clone();
-        let cash = view.rows[1].amount.clone();
+        let checking = view.rows[1].amount.clone();
+        let cash = view.rows[2].amount.clone();
         view.update(BalanceMessage::ToggleTree);
         assert_eq!(view.mode, DisplayMode::Tree);
         assert_eq!(
             full_names(&view),
             [
+                "(total)",
                 "Assets",
                 "Assets:Bank",
                 "Assets:Bank:Checking",
@@ -1280,17 +1382,17 @@ mod tests {
         assert_eq!(
             row_labels(&view),
             [
-                "Assets", "Bank", "Checking", "Cash", "Equity", "Expenses", "Food"
+                "(total)", "Assets", "Bank", "Checking", "Cash", "Equity", "Expenses", "Food"
             ]
         );
-        assert_eq!(view.rows[0].depth, 1);
-        assert!(view.rows[0].has_children);
-        assert_eq!(view.rows[2].depth, 3);
-        assert!(!view.rows[2].has_children);
-        assert_eq!(view.rows[0].amount, checking + cash);
+        assert_eq!(view.rows[1].depth, 1);
+        assert!(view.rows[1].has_children);
+        assert_eq!(view.rows[3].depth, 3);
+        assert!(!view.rows[3].has_children);
+        assert_eq!(view.rows[1].amount, checking + cash);
         view.update(BalanceMessage::ToggleTree);
         assert_eq!(view.mode, DisplayMode::Flat);
-        assert_eq!(view.rows.len(), 4);
+        assert_eq!(view.rows.len(), 5);
     }
 
     #[test]
@@ -1298,17 +1400,17 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
         view.update(BalanceMessage::ToggleTree);
-        view.nav.select_item(0); // Assets
+        view.nav.select_item(1); // Assets
         view.update(BalanceMessage::ToggleFold);
         assert_eq!(
             full_names(&view),
-            ["Assets", "Equity", "Expenses", "Expenses:Food"]
+            ["(total)", "Assets", "Equity", "Expenses", "Expenses:Food"]
         );
-        assert!(view.rows[0].folded);
-        assert_eq!(selected(&view), Some(0));
+        assert!(view.rows[1].folded);
+        assert_eq!(selected(&view), Some(1));
         view.update(BalanceMessage::ToggleFold);
-        assert!(!view.rows[0].folded);
-        assert_eq!(view.rows.len(), 7);
+        assert!(!view.rows[1].folded);
+        assert_eq!(view.rows.len(), 8);
     }
 
     #[test]
@@ -1317,9 +1419,13 @@ mod tests {
         let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
         view.update(BalanceMessage::ToggleTree);
         view.update(BalanceMessage::ToggleFoldAll);
-        assert_eq!(full_names(&view), ["Assets", "Equity", "Expenses"]);
+        // The total survives fold-all: it is not one of the foldable nodes.
+        assert_eq!(
+            full_names(&view),
+            ["(total)", "Assets", "Equity", "Expenses"]
+        );
         view.update(BalanceMessage::ToggleFoldAll);
-        assert_eq!(view.rows.len(), 7);
+        assert_eq!(view.rows.len(), 8);
     }
 
     #[test]
@@ -1327,7 +1433,7 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
         view.update(BalanceMessage::ToggleTree);
-        view.nav.select_item(0); // Assets
+        view.nav.select_item(1); // Assets
         let action = view.update(BalanceMessage::OpenRegister);
         assert_matches!(
             action,
@@ -1339,7 +1445,7 @@ mod tests {
     fn flat_open_register_drills_into_single_account() {
         let arena = Bump::new();
         let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
-        view.nav.select_item(1); // Assets:Cash
+        view.nav.select_item(2); // Assets:Cash
         let action = view.update(BalanceMessage::OpenRegister);
         assert_matches!(
             action,
@@ -1359,7 +1465,7 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, mut view) = tree_view(&arena, TREE_LEDGER);
         view.update(BalanceMessage::ToggleTree);
-        view.nav.select_item(0); // Assets
+        view.nav.select_item(1); // Assets
         view.update(BalanceMessage::ToggleFold); // fold Assets
         let snapshot = view.snapshot();
 
@@ -1368,9 +1474,22 @@ mod tests {
         assert_eq!(view2.mode, DisplayMode::Tree);
         assert_eq!(
             full_names(&view2),
-            ["Assets", "Equity", "Expenses", "Expenses:Food"]
+            ["(total)", "Assets", "Equity", "Expenses", "Expenses:Food"]
         );
-        assert!(view2.rows[0].folded);
+        assert!(view2.rows[1].folded);
+    }
+
+    /// The total row's scope names no account, so a reload can never lose it.
+    #[test]
+    fn total_scope_survives_snapshot_restore() {
+        let arena = Bump::new();
+        let (_ctx, view) = tree_view(&arena, TREE_LEDGER);
+        let owned = view.rows[0].scope.as_owned_scope();
+        assert_matches!(
+            view.resolve_scope(&owned),
+            Some(RegisterScope::All),
+            "the total row should resolve without an account to look up"
+        );
     }
 
     // --- key mapping (BalanceView::key_to_message) ---

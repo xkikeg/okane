@@ -1226,19 +1226,21 @@ mod tests {
         let (ctx, mut app) = many_commodities_balance(&arena);
         render(&mut app, &ctx); // the first frame teaches the nav its viewport
 
-        assert_eq!(app.balance.nav.selected_item(), Some(0));
-        app.update(Message::Balance(BalanceMessage::Nav(NavCommand::Down)));
-        // Assets:Banks:Foo has six commodities; one line down is still inside it.
-        assert_eq!(app.balance.nav.selected_item(), Some(0));
-
+        // Row 0 is the total; the first account is one item down.
         app.update(Message::Balance(BalanceMessage::Nav(NavCommand::NextItem)));
         assert_eq!(app.balance.nav.selected_item(), Some(1));
+        app.update(Message::Balance(BalanceMessage::Nav(NavCommand::Down)));
+        // Assets:Banks:Foo has six commodities; one line down is still inside it.
+        assert_eq!(app.balance.nav.selected_item(), Some(1));
+
+        app.update(Message::Balance(BalanceMessage::Nav(NavCommand::NextItem)));
+        assert_eq!(app.balance.nav.selected_item(), Some(2));
         // …and lands on the account's own first line, not partway into it.
         let nav = &app.balance.nav;
-        assert_eq!(nav.lines().first_row(1), Some(nav.selected_row()));
+        assert_eq!(nav.lines().first_row(2), Some(nav.selected_row()));
 
         app.update(Message::Balance(BalanceMessage::Nav(NavCommand::PrevItem)));
-        assert_eq!(app.balance.nav.selected_item(), Some(0));
+        assert_eq!(app.balance.nav.selected_item(), Some(1));
     }
 
     /// An account taller than the body is reachable line by line, and the two
@@ -1250,14 +1252,17 @@ mod tests {
         let (ctx, mut app) = many_commodities_balance(&arena);
         render(&mut app, &ctx);
 
-        // Into the broker account, then down to its 26th and last lot — far
-        // enough past the top of the body that its label has scrolled off.
-        app.update(Message::Balance(BalanceMessage::Nav(NavCommand::NextItem)));
+        // Past the total and the bank account into the broker one, then down to
+        // its 26th and last lot — far enough past the top of the body that its
+        // label has scrolled off.
+        for _ in 0..2 {
+            app.update(Message::Balance(BalanceMessage::Nav(NavCommand::NextItem)));
+        }
         for _ in 0..25 {
             app.update(Message::Balance(BalanceMessage::Nav(NavCommand::Down)));
         }
         let out = render(&mut app, &ctx);
-        assert_eq!(app.balance.nav.selected_item(), Some(1));
+        assert_eq!(app.balance.nav.selected_item(), Some(2));
         assert!(
             out.contains("10 STOCKZ"),
             "the last lot should be reachable:\n{out}"
@@ -1279,7 +1284,10 @@ mod tests {
         let arena = Bump::new();
         let (ctx, mut app) = many_commodities_balance(&arena);
         render(&mut app, &ctx);
-        app.update(Message::Balance(BalanceMessage::Nav(NavCommand::NextItem)));
+        // Past the total and the bank account, then deep into the broker one.
+        for _ in 0..2 {
+            app.update(Message::Balance(BalanceMessage::Nav(NavCommand::NextItem)));
+        }
         for _ in 0..25 {
             app.update(Message::Balance(BalanceMessage::Nav(NavCommand::Down)));
         }
