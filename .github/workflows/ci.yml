@@ -80,6 +80,16 @@ jobs:
           toolchain: stable
           target: x86_64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Discard restored criterion baselines
+        # rust-cache prunes target/ before saving it, and since v2.9.2 that
+        # leaves target/criterion as a tree of empty directories. criterion
+        # then finds an existing base/ directory without base/sample.json,
+        # fails to compare against it, and prints "Criterion.rs ERROR: ..." on
+        # stdout in the middle of the bencher output, so
+        # github-action-benchmark cannot parse output.txt anymore. The local
+        # baselines are useless to us anyway: the benchmark history lives on
+        # the gh-pages branch.
+        run: rm -rf target/criterion
       - name: Run benchmark
         run: cargo bench --bench decimal_bench --bench report_bench -- --output-format bencher | tee output.txt
       - name: Store benchmark result
