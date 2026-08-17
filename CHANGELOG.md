@@ -12,6 +12,10 @@
 
 ### Changed
 
+* CLI: `ui` no longer spends its bottom line listing every key. `?` (or `F1`) opens a scrollable
+  help popup with the bindings of the screen you are on, and the bottom line now says where the
+  selection is — `Account 3/57` on balance, `Register 12/40` on the register — with a dim `? help`
+  at its far end. `Esc`, `Enter`, `q` or `?` close the help.
 * CLI: `ui` reload errors are now shown in color instead of plain text (https://github.com/xkikeg/okane/issues/489).
 * CLI: `ui` balance and register tables now draw one table row per amount line, so a
   multi-commodity account is never clipped and every one of its lines can be scrolled to

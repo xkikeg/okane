@@ -21,4 +21,4 @@
 │                                                                              │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
- ↑/↓ line · J/K entry · PgUp/PgDn page · g/G home/end · r reload · q/Esc back   
+ Register 5/5                                                            ? help 

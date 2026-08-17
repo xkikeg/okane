@@ -21,4 +21,4 @@
 │                                                                     10 STOCKQ│
 │                                                                       +9 more│
 └──────────────────────────────────────────────────────────────────────────────┘
- ↑/↓ line · J/K account · Enter register · t tree · space fold · x fold-all · / 
+ Account 1/9                                                             ? help 

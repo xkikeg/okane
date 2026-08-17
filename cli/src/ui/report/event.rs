@@ -68,7 +68,7 @@ pub(super) fn run<'ctx>(
 
 /// Pure: translate a raw `KeyEvent` into a [`Message`] given the current
 /// screen and overlay. Returns `None` when the key is unmapped.
-fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
+pub(super) fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
     // crossterm on Windows emits both Press and Release; act on Press
     // (and `Repeat`, treated like Press) to avoid double handling.
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
@@ -107,6 +107,21 @@ fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
                 _ => None,
             };
         }
+        // The help scrolls the same way, but every way out of it closes it —
+        // `q` included: it is read and dismissed, never a place to quit from.
+        Some(Overlay::Help(_)) => {
+            if let Some(cmd) = key_to_nav(key) {
+                return Some(Message::OverlayScroll(cmd.into()));
+            }
+            return match key.code {
+                KeyCode::Esc
+                | KeyCode::Enter
+                | KeyCode::Char('q')
+                | KeyCode::Char('?')
+                | KeyCode::F(1) => Some(Message::DismissOverlay),
+                _ => None,
+            };
+        }
         None => {}
     }
 
@@ -126,6 +141,7 @@ fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
     match key.code {
         KeyCode::Char('q') | KeyCode::Esc => Some(Message::RequestQuit),
         KeyCode::Char('r') | KeyCode::F(5) => Some(Message::Reload),
+        KeyCode::Char('?') | KeyCode::F(1) => Some(Message::ShowHelp),
         _ => None,
     }
 }
@@ -174,7 +190,7 @@ mod tests {
     use crate::ui::table::{NavCommand, TableNav};
 
     use super::super::balance::BalanceMessage;
-    use super::super::overlay::{ErrorPopup, ScrollDelta};
+    use super::super::overlay::{ScrollDelta, TextPopup};
     use super::super::register::{RegisterMessage, RegisterView};
     use super::super::search::{
         Search, SearchDirection, SearchIntent, SearchMatch, SearchMode, SearchPhase,
@@ -324,7 +340,7 @@ mod tests {
 
     fn app_with_error_modal<'ctx>() -> App<'ctx> {
         let mut app = app();
-        app.overlay = Some(Overlay::Error(ErrorPopup::new(
+        app.overlay = Some(Overlay::Error(TextPopup::new(
             "failed to load test.ledger".to_owned(),
             vec!["boom".to_owned()],
         )));
@@ -461,6 +477,99 @@ mod tests {
         assert_eq!(
             key_to_message(&app, key(KeyCode::Char('r'))),
             Some(Message::Reload)
+        );
+    }
+
+    #[test]
+    fn question_mark_and_f1_show_the_help_on_both_screens() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
+        let mut app = app();
+        for key in [key(KeyCode::Char('?')), key(KeyCode::F(1))] {
+            assert_eq!(
+                key_to_message(&app, key),
+                Some(Message::ShowHelp),
+                "{key:?}"
+            );
+        }
+        app.screen = register_screen(account);
+        for key in [key(KeyCode::Char('?')), key(KeyCode::F(1))] {
+            assert_eq!(
+                key_to_message(&app, key),
+                Some(Message::ShowHelp),
+                "{key:?}"
+            );
+        }
+    }
+
+    /// Typing `?` into a search is typing a `?`, not asking for help.
+    #[test]
+    fn question_mark_during_an_incremental_search_is_typed() {
+        let mut app = app();
+        app.update(Message::Balance(BalanceMessage::StartModalSearch));
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('?'))),
+            Some(Message::Balance(BalanceMessage::SearchPush('?')))
+        );
+    }
+
+    fn app_with_help<'ctx>() -> App<'ctx> {
+        let mut app = app();
+        app.update(Message::ShowHelp);
+        app
+    }
+
+    #[test]
+    fn help_overlay_scrolls_with_the_navigation_keys() {
+        let app = app_with_help();
+        for (k, delta) in [
+            (key(KeyCode::Char('j')), ScrollDelta::Lines(1)),
+            (key(KeyCode::PageDown), ScrollDelta::Pages(1)),
+            (key(KeyCode::Char('G')), ScrollDelta::Bottom),
+            (key(KeyCode::Char('g')), ScrollDelta::Top),
+        ] {
+            assert_eq!(
+                key_to_message(&app, k),
+                Some(Message::OverlayScroll(delta)),
+                "{k:?}"
+            );
+        }
+    }
+
+    /// Unlike the error modal, `q` here closes the help rather than quitting:
+    /// it is a page to read and leave, never a place to quit from.
+    #[test]
+    fn every_way_out_of_the_help_closes_it() {
+        let app = app_with_help();
+        for k in [
+            key(KeyCode::Esc),
+            key(KeyCode::Enter),
+            key(KeyCode::Char('q')),
+            key(KeyCode::Char('?')),
+            key(KeyCode::F(1)),
+        ] {
+            assert_eq!(
+                key_to_message(&app, k),
+                Some(Message::DismissOverlay),
+                "{k:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn help_overlay_swallows_other_keys() {
+        let app = app_with_help();
+        assert_eq!(key_to_message(&app, key(KeyCode::Char('/'))), None);
+        assert_eq!(key_to_message(&app, key(KeyCode::Char('t'))), None);
+        assert_eq!(key_to_message(&app, key(KeyCode::Char('r'))), None);
+    }
+
+    #[test]
+    fn ctrl_c_quits_through_the_help() {
+        let app = app_with_help();
+        assert_eq!(
+            key_to_message(&app, ctrl_key('c')),
+            Some(Message::QuitImmediate)
         );
     }
 

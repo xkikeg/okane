@@ -38,16 +38,17 @@ use unicode_width::UnicodeWidthStr;
 
 use super::app::{App, Screen};
 use super::balance::{BalanceRow, BalanceView, DisplayMode};
-use super::overlay::{ErrorPopup, Overlay};
+use super::overlay::{Overlay, TextPopup};
 use super::register::RegisterView;
 use super::search::{Search, SearchDirection, SearchMode, SearchPhase};
 use crate::ui::table::TableNav;
 
-const FOOTER_HINT_BALANCE: &str = " ↑/↓ line · J/K account · Enter register · t tree · space fold · x fold-all · / search · r reload · q quit ";
-const FOOTER_HINT_REGISTER: &str =
-    " ↑/↓ line · J/K entry · PgUp/PgDn page · g/G home/end · r reload · q/Esc back ";
+/// The one binding the status bar still spells out: the whole point of the
+/// help popup is that the rest of them no longer have to fit on this line.
+const STATUS_HELP_HINT: &str = " ? help ";
 const ERROR_POPUP_HINT: &str =
     " ↑/↓ scroll · PgUp/PgDn page · g/G top/end · r reload · Esc/Enter close · q quit ";
+const HELP_POPUP_HINT: &str = " ↑/↓ scroll · PgUp/PgDn page · Esc/q close ";
 
 /// Colour that marks a redrawn (sticky) account label, so it never reads as a
 /// label the row itself owns.
@@ -64,27 +65,29 @@ pub fn draw<'ctx>(frame: &mut Frame, app: &mut App<'ctx>, ctx: &ReportContext<'c
     .split(area);
 
     draw_title(frame, layout[0], app);
+    let status = status_text(app);
     match &mut app.screen {
         Screen::Balance => {
             draw_balance_body(frame, layout[1], &mut app.balance, ctx);
             match (&app.error_toast, &app.balance.search) {
                 (Some(msg), _) => draw_error(frame, layout[2], msg),
                 (None, Some(search)) => draw_search_bar(frame, layout[2], search),
-                (None, None) => draw_footer(frame, layout[2], FOOTER_HINT_BALANCE),
+                (None, None) => draw_status(frame, layout[2], &status),
             }
         }
         Screen::Register(view) => {
             draw_register_body(frame, layout[1], view, ctx);
             match &app.error_toast {
                 Some(msg) => draw_error(frame, layout[2], msg),
-                None => draw_footer(frame, layout[2], FOOTER_HINT_REGISTER),
+                None => draw_status(frame, layout[2], &status),
             }
         }
     }
 
     match &mut app.overlay {
         Some(Overlay::QuitConfirm) => draw_quit_confirm(frame, area),
-        Some(Overlay::Error(popup)) => draw_error_popup(frame, area, popup),
+        Some(Overlay::Error(popup)) => draw_text_popup(frame, area, popup, PopupKind::Error),
+        Some(Overlay::Help(popup)) => draw_text_popup(frame, area, popup, PopupKind::Help),
         None => {}
     }
 }
@@ -394,9 +397,32 @@ fn draw_body_too_short(frame: &mut Frame, area: Rect, block: &Block) -> bool {
     true
 }
 
-fn draw_footer(frame: &mut Frame, area: Rect, hint: &str) {
-    let footer = Paragraph::new(hint).style(Style::default().add_modifier(Modifier::DIM));
-    frame.render_widget(footer, area);
+/// Where the selection sits in the screen's items — `Account 3/57`, or
+/// `Register 12/40` — counted in accounts and register entries rather than in
+/// the table rows a multi-commodity one spans, which is what the reader is
+/// moving through with `J`/`K`.
+fn status_text(app: &App<'_>) -> String {
+    let (label, nav) = match &app.screen {
+        Screen::Balance => ("Account", &app.balance.nav),
+        Screen::Register(view) => ("Register", &view.nav),
+    };
+    // The position is 1-based; an empty table has no position at all and says
+    // so with a `0/0` rather than pretending to sit on a first item.
+    let position = nav.selected_item().map_or(0, |item| item + 1);
+    format!(" {label} {position}/{} ", nav.item_count())
+}
+
+/// The status bar: where the selection is, and — at the far end, where it
+/// survives a narrow terminal least — the one key that shows all the others.
+fn draw_status(frame: &mut Frame, area: Rect, status: &str) {
+    let dim = Style::default().add_modifier(Modifier::DIM);
+    let layout = Layout::horizontal([
+        Constraint::Min(0),
+        Constraint::Length(saturating_u16(layout_width(STATUS_HELP_HINT))),
+    ])
+    .split(area);
+    frame.render_widget(Paragraph::new(status), layout[0]);
+    frame.render_widget(Paragraph::new(STATUS_HELP_HINT).style(dim), layout[1]);
 }
 
 /// Renders a transient error notice (e.g. a failed reload) in the footer
@@ -481,23 +507,62 @@ fn draw_quit_confirm(frame: &mut Frame, area: Rect) {
     frame.render_widget(body, popup);
 }
 
-/// Near-full-screen modal showing a failure in full, e.g. a reload that could
-/// not parse the ledger.
+/// What a [`TextPopup`] is showing: it decides the frame color and the hint
+/// under the body, and nothing else — the two scroll and clip alike.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PopupKind {
+    /// A failure the user must acknowledge, e.g. a reload that could not parse
+    /// the ledger.
+    Error,
+    /// The key bindings of the screen underneath.
+    Help,
+}
+
+impl PopupKind {
+    fn style(self) -> Style {
+        let bold = Style::default().add_modifier(Modifier::BOLD);
+        match self {
+            PopupKind::Error => bold.fg(Color::Red),
+            PopupKind::Help => bold,
+        }
+    }
+
+    fn hint(self) -> &'static str {
+        match self {
+            PopupKind::Error => ERROR_POPUP_HINT,
+            PopupKind::Help => HELP_POPUP_HINT,
+        }
+    }
+
+    /// Where the modal goes. An error report is text of any size, so it takes
+    /// a fixed slice of the screen; the help is a list of known length, and a
+    /// frame bigger than it holds is only more of the screen hidden for
+    /// nothing.
+    fn rect(self, area: Rect, popup: &TextPopup) -> Rect {
+        match self {
+            PopupKind::Error => popup_rect(area),
+            PopupKind::Help => content_rect(area, popup, self.hint()),
+        }
+    }
+}
+
+/// Near-full-screen modal showing a body of text in full.
 ///
 /// The body is deliberately *not* wrapped: annotate-snippets output aligns a
 /// line-number gutter, the source line and a caret row by column, and soft
-/// wrapping would move the carets away from what they point at. Long lines are
-/// clipped instead. That also keeps `lines.len()` the rendered line count, so
-/// [`ErrorPopup::scroll`] can clamp exactly.
-fn draw_error_popup(frame: &mut Frame, area: Rect, popup: &mut ErrorPopup) {
-    let rect = error_popup_rect(area);
+/// wrapping would move the carets away from what they point at (the help's key
+/// column is aligned the same way). Long lines are clipped instead. That also
+/// keeps `lines.len()` the rendered line count, so [`TextPopup::scroll`] can
+/// clamp exactly.
+fn draw_text_popup(frame: &mut Frame, area: Rect, popup: &mut TextPopup, kind: PopupKind) {
+    let rect = kind.rect(area, popup);
     // Clear first so the popup paints over the table cleanly.
     frame.render_widget(Clear, rect);
 
     let block = Block::default()
         .borders(Borders::ALL)
         .title(popup.title.as_str())
-        .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD));
+        .style(kind.style());
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
 
@@ -529,13 +594,36 @@ fn draw_error_popup(frame: &mut Frame, area: Rect, popup: &mut ErrorPopup) {
         Constraint::Length(display_width(&position) as u16),
     ])
     .split(layout[1]);
-    frame.render_widget(Paragraph::new(ERROR_POPUP_HINT).style(dim), footer[0]);
+    frame.render_widget(Paragraph::new(kind.hint()).style(dim), footer[0]);
     frame.render_widget(Paragraph::new(position).style(dim), footer[1]);
+}
+
+/// Columns kept for the position counter beside the hint, enough for
+/// ` 99/99 ` — the widest one a help of any plausible length produces.
+const POSITION_WIDTH: usize = 8;
+
+/// A popup exactly as big as the text it holds — its widest line, or its
+/// footer where that is wider — clamped to the screen, which is where a body
+/// too tall to fit starts scrolling instead.
+fn content_rect(area: Rect, popup: &TextPopup, hint: &str) -> Rect {
+    let body = popup
+        .lines
+        .iter()
+        .map(|line| layout_width(line))
+        .max()
+        .unwrap_or(0);
+    let width = max(body, layout_width(hint) + POSITION_WIDTH) + 2; // borders
+    let height = popup.lines.len() + 3; // borders + the hint line
+    centered_rect(area, saturating_u16(width), saturating_u16(height))
+}
+
+fn saturating_u16(n: usize) -> u16 {
+    u16::try_from(n).unwrap_or(u16::MAX)
 }
 
 /// Four fifths of the screen, with a floor so tiny terminals still show
 /// something usable.
-fn error_popup_rect(area: Rect) -> Rect {
+fn popup_rect(area: Rect) -> Rect {
     let width = (u32::from(area.width) * 4 / 5) as u16;
     let height = (u32::from(area.height) * 4 / 5) as u16;
     centered_rect(area, max(width, 20), max(height, 5))
@@ -657,6 +745,14 @@ fn display_width(s: &str) -> usize {
     UnicodeWidthStr::width_cjk(s)
 }
 
+/// Plain (non-CJK) width: what ratatui itself lays glyphs out with, and so the
+/// measure popup geometry has to use — [`display_width`] deliberately differs,
+/// since an amount column is sized for the terminals that draw East-Asian
+/// *ambiguous* glyphs wide.
+fn layout_width(s: &str) -> usize {
+    UnicodeWidthStr::width(s)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -698,6 +794,52 @@ mod tests {
     fn amount_width_considers_all_commodity_lines() {
         let formatted = vec![vec!["1 USD".to_string(), "12,345,678.90 EUR".to_string()]];
         assert_eq!(compute_amount_width(&formatted), 18);
+    }
+
+    /// The status bar counts *accounts*, not the table rows a multi-commodity
+    /// account spans: walking a line down inside one leaves the count alone,
+    /// while stepping to the next account advances it.
+    #[test]
+    fn status_counts_accounts_rather_than_rows() {
+        let arena = Bump::new();
+        let (ctx, mut app) = many_commodities_balance(&arena);
+        render(&mut app, &ctx); // the first frame teaches the nav its viewport
+        let total = app.balance.nav.item_count();
+
+        assert_eq!(status_text(&app), format!(" Account 1/{total} "));
+        app.update(Message::Balance(BalanceMessage::Nav(NavCommand::Down)));
+        assert_eq!(status_text(&app), format!(" Account 1/{total} "));
+        app.update(Message::Balance(BalanceMessage::Nav(NavCommand::NextItem)));
+        assert_eq!(status_text(&app), format!(" Account 2/{total} "));
+    }
+
+    #[test]
+    fn status_of_an_empty_screen_has_no_position() {
+        let app = App::new("test.ledger".to_owned(), Vec::new(), template());
+        assert_eq!(status_text(&app), " Account 0/0 ");
+    }
+
+    /// The register screen says which register entry it is on instead.
+    #[test]
+    fn status_on_the_register_counts_entries() {
+        let arena = Bump::new();
+        let (ctx, mut app) = register_app_with_rows(&arena, 50);
+        render(&mut app, &ctx);
+        // The register opens pinned to its last entry.
+        assert_eq!(status_text(&app), " Register 50/50 ");
+        app.update(Message::Register(RegisterMessage::Nav(NavCommand::First)));
+        assert_eq!(status_text(&app), " Register 1/50 ");
+    }
+
+    /// The help hint is the one binding the status bar still spells out.
+    #[test]
+    fn status_bar_keeps_the_help_hint() {
+        let arena = Bump::new();
+        let (ctx, mut app) = many_commodities_balance(&arena);
+        let out = render(&mut app, &ctx);
+        let status = out.lines().last().expect("a status line");
+        assert!(status.starts_with(" Account 1/"), "{status:?}");
+        assert!(status.trim_end().ends_with("? help"), "{status:?}");
     }
 
     /// A one-amount-column body over items of the given line counts, with the
@@ -891,7 +1033,7 @@ mod tests {
             width: 100,
             height: 30,
         };
-        let r = error_popup_rect(area);
+        let r = popup_rect(area);
         assert_eq!(r.width, 80);
         assert_eq!(r.height, 24);
     }
@@ -905,7 +1047,7 @@ mod tests {
             height: 4,
         };
         // The floor exceeds the area, so it clamps back to the whole screen.
-        let r = error_popup_rect(area);
+        let r = popup_rect(area);
         assert_eq!(r.width, 12);
         assert_eq!(r.height, 4);
     }
@@ -954,7 +1096,7 @@ mod tests {
             },
         );
         let lines = (0..40).map(|i| format!("error line {i}")).collect();
-        app.overlay = Some(Overlay::Error(ErrorPopup::new(
+        app.overlay = Some(Overlay::Error(TextPopup::new(
             " failed to load test.ledger ".to_owned(),
             lines,
         )));
@@ -967,6 +1109,50 @@ mod tests {
         let ctx = ReportContext::new(&arena);
         let mut app = app_with_error_modal();
         golden("render_error_modal").assert(&render(&mut app, &ctx));
+    }
+
+    /// The help popup over each screen: what `?` shows, and — since the status
+    /// bar is what sends the reader here — that the two are drawn together.
+    #[rstest]
+    #[case::balance("many_commodities.ledger", false)]
+    #[case::register("many_commodities.ledger", true)]
+    fn render_help_popup(#[case] fixture: &str, #[case] register: bool) {
+        let arena = Bump::new();
+        let input = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../testdata/report")
+            .join(fixture);
+        let (ctx, mut app) = if register {
+            register_app(&arena, &input)
+        } else {
+            balance_app(&arena, &input)
+        };
+        app.update(Message::ShowHelp);
+        let name = if register {
+            "render_help_register"
+        } else {
+            "render_help_balance"
+        };
+        golden(name).assert(&render(&mut app, &ctx));
+    }
+
+    /// The help is drawn without wrapping, so a description longer than the
+    /// screen is silently cut. The popup sizes itself to its text, which means
+    /// the check is that the text still fits a plain 80-column terminal.
+    #[test]
+    fn help_fits_an_eighty_column_terminal() {
+        let mut app = App::new("test.ledger".to_owned(), Vec::new(), template());
+        app.update(Message::ShowHelp);
+        let Some(Overlay::Help(popup)) = &app.overlay else {
+            panic!("expected the help overlay");
+        };
+        let screen = Rect::new(0, 0, 80, 24);
+        let rect = content_rect(screen, popup, HELP_POPUP_HINT);
+        assert!(
+            rect.width < screen.width,
+            "the help wants {} columns, more than an 80-column terminal has: {:#?}",
+            rect.width,
+            popup.lines
+        );
     }
 
     #[test]
@@ -995,7 +1181,7 @@ mod tests {
                 date_range: DateRange::default(),
             },
         );
-        app.overlay = Some(Overlay::Error(ErrorPopup::new(
+        app.overlay = Some(Overlay::Error(TextPopup::new(
             " failed to load test.ledger ".to_owned(),
             vec!["\u{1b}[32mgreen\u{1b}[0m plain".to_owned()],
         )));

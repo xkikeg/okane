@@ -16,6 +16,7 @@
 mod app;
 mod balance;
 mod event;
+mod help;
 mod overlay;
 mod register;
 mod render;
@@ -35,7 +36,7 @@ use okane_core::report::{self, OwnedCommodity, ProcessOptions, ReportContext};
 use ratatui::DefaultTerminal;
 
 use app::UiSnapshot;
-use overlay::{ErrorPopup, Overlay};
+use overlay::{Overlay, TextPopup};
 
 /// Everything needed to build (and rebuild) a session: the loader re-reads
 /// the source from disk on every `load` call, and the options carry the CLI
@@ -234,7 +235,7 @@ fn first_line(s: &str) -> String {
 /// parse or book-keeping failure the useful part — the annotate-snippets
 /// source excerpt — lives entirely past the first line, and
 /// `ReportError::BookKeep` has no `source()` at all, so its snippet *is* the
-/// whole message. Returned pre-split into display lines for [`ErrorPopup`].
+/// whole message. Returned pre-split into display lines for [`TextPopup`].
 fn error_detail(err: &(dyn std::error::Error + 'static)) -> Vec<String> {
     let mut lines = Vec::new();
     let mut current = Some(err);
@@ -261,7 +262,7 @@ fn error_overlay(source_display: &str, err: &(dyn std::error::Error + 'static)) 
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(source_display);
-    Overlay::Error(ErrorPopup::new(
+    Overlay::Error(TextPopup::new(
         format!(" failed to load {name} "),
         error_detail(err),
     ))
