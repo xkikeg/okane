@@ -5,6 +5,10 @@
 ### Added
 
 * CLI: Added `tags` command, listing all tags in the file, sorted and deduped (https://github.com/xkikeg/okane/pull/523). Pass `--values` to print `key: value` pairs instead of the keys alone.
+* CLI: `ui` balance now opens with a `(total)` row holding the balance of every account combined
+  (https://github.com/xkikeg/okane/pull/549). It is the first row of both views — in the tree it is
+  the tree's own root, above the top-level accounts — and `Enter` on it drills into the register of
+  the whole ledger. It is never foldable, so the total stays on screen.
 
 ### Changed
 

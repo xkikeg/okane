@@ -9,6 +9,7 @@ use okane_core::report::{Account, AccountAggregate, Amount};
 
 use crate::ui::table::{NavCommand, TableNav, key_to_nav};
 
+use super::balance::TOTAL_LABEL;
 use super::render::amount_line_count;
 
 /// What a register drill-in from the balance screen should match.
@@ -18,6 +19,10 @@ pub enum RegisterScope<'ctx> {
     Single(Account<'ctx>),
     /// An account and all of its descendants (tree-view drill-in).
     Subtree(AccountAggregate<'ctx>),
+    /// Every account — the drill-in of the balance screen's total row, which
+    /// stands for the whole ledger the same way a parent row stands for its
+    /// subtree.
+    All,
 }
 
 impl<'ctx> RegisterScope<'ctx> {
@@ -26,6 +31,7 @@ impl<'ctx> RegisterScope<'ctx> {
         match self {
             RegisterScope::Single(account) => account.as_str(),
             RegisterScope::Subtree(aggregate) => aggregate.as_str(),
+            RegisterScope::All => TOTAL_LABEL,
         }
     }
 
@@ -38,6 +44,7 @@ impl<'ctx> RegisterScope<'ctx> {
             RegisterScope::Subtree(aggregate) => {
                 OwnedRegisterScope::Subtree(aggregate.as_str().to_owned())
             }
+            RegisterScope::All => OwnedRegisterScope::All,
         }
     }
 }
@@ -51,6 +58,8 @@ pub enum OwnedRegisterScope {
     Single(String),
     /// An account and all its descendants, by full name.
     Subtree(String),
+    /// Every account; nothing to re-resolve, so it always survives a reload.
+    All,
 }
 
 impl OwnedRegisterScope {
@@ -58,6 +67,7 @@ impl OwnedRegisterScope {
     pub(super) fn name(&self) -> &str {
         match self {
             OwnedRegisterScope::Single(name) | OwnedRegisterScope::Subtree(name) => name,
+            OwnedRegisterScope::All => TOTAL_LABEL,
         }
     }
 }

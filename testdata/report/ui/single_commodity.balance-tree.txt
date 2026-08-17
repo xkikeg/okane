@@ -1,6 +1,7 @@
  okane ui — single_commodity.ledger                                             
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │Account                                                           Amount      │
+│  (total)                                                                    0│
 │▼ Assets                                                            306000 JPY│
 │  ▼ Banks                                                           306000 JPY│
 │      Foo                                                            -1000 JPY│
@@ -19,6 +20,5 @@
 │▼ Liabilities                                                                0│
 │  ▼ Cards                                                                    0│
 │      Card X                                                                 0│
-│                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
  ↑/↓ line · J/K account · Enter register · t tree · space fold · x fold-all · / 

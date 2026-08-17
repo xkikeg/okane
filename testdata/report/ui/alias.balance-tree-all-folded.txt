@@ -1,9 +1,9 @@
  okane ui — alias.ledger                                                        
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │Account                                                             Amount    │
+│  (total)                                                                    0│
 │▶ Equity                                                              -100 JPY│
 │▶ Expenses                                                             100 JPY│
-│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │

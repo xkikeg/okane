@@ -1,12 +1,7 @@
  okane ui — many_commodities.ledger                                             
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │Account                                                        Amount         │
-│▶ Assets                                                            992000 JPY│
-│                                                                   5000.00 CHF│
-│                                                                   9800.00 USD│
-│                                                                   8000.00 EUR│
-│                                                                   3000.00 AUD│
-│                                                                 195000.00 TWD│
+│  (total)                                                        -29250.00 USD│
 │                                                                     10 STOCKA│
 │                                                                     10 STOCKB│
 │                                                                     10 STOCKC│
@@ -19,6 +14,11 @@
 │                                                                     10 STOCKJ│
 │                                                                     10 STOCKK│
 │                                                                     10 STOCKL│
-│                                                                      +14 more│
+│                                                                     10 STOCKM│
+│                                                                     10 STOCKN│
+│                                                                     10 STOCKO│
+│                                                                     10 STOCKP│
+│                                                                     10 STOCKQ│
+│                                                                       +9 more│
 └──────────────────────────────────────────────────────────────────────────────┘
  ↑/↓ line · J/K account · Enter register · t tree · space fold · x fold-all · / 
