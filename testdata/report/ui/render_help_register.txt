@@ -12,12 +12,12 @@
 │          │                                                       │5000.00 CHF│
 │          │ Session                                               │0000.00 USD│
 │          │   r, F5                    reload the ledger from disk│8000.00 EUR│
-│          │   ?, F1                    this help                  │3000.00 AUD│
-│          │   q, Esc                   back to the balance screen │5000.00 TWD│
-│2024-01-27│   C-c                      quit immediately           │ 992000 JPY│
-│          │ ↑/↓ scroll · PgUp/PgDn page · Esc/q close        1/12 │5000.00 CHF│
-│          └───────────────────────────────────────────────────────┘9800.00 USD│
-│                                                                   8000.00 EUR│
+│          │   .                        change the query options   │3000.00 AUD│
+│          │   ?, F1                    this help                  │5000.00 TWD│
+│2024-01-27│   q, Esc                   back to the balance screen │ 992000 JPY│
+│          │   C-c                      quit immediately           │5000.00 CHF│
+│          │ ↑/↓ scroll · PgUp/PgDn page · Esc/q close        1/13 │9800.00 USD│
+│          └───────────────────────────────────────────────────────┘8000.00 EUR│
 │                                                                   3000.00 AUD│
 │                                                                 195000.00 TWD│
 └──────────────────────────────────────────────────────────────────────────────┘

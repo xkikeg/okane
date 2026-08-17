@@ -59,13 +59,15 @@ $ okane ui /path/to/file.ledger
 
 最初の画面はフラットなアカウントごとの残高リストです。`t` でアカウントの親子関係を考慮したツリー表示に切り替わり、`space` で選択中のサブツリーを、`x` で全体を折りたたみます。`/`, `C-s`, `C-r` でアカウント名を検索でき (それぞれ Vim 風、Emacs 風になっています)、`Enter` で選択したアカウントの仕訳帳を開きます。`r` でファイルを読み込み直すので、UIを開いたままファイルを編集できます。終了は `q` です。`?` で各種操作を確認できます。
 
-`balance` や `register` と同じ評価用オプションが使えるので、通貨換算や日付指定も可能です。将来的にはこれも対話的に変更できるようにする予定です。
+`balance` や `register` と同じ評価用オプションが使えるので、通貨換算や日付指定も可能です。
 
 ```shell
 $ okane ui --price-db ~/ledger/prices.db -X CHF /path/to/file.ledger
 $ okane ui --price-db ~/ledger/prices.db -X CHF --historical /path/to/file.ledger
 $ okane ui --start 2024-01-01 --end 2025-01-01 /path/to/file.ledger
 ```
+
+同じオプションは `.` で開くフォームから対話的に変更できます。換算先の通貨、日付範囲、価格DBを書き換えるとレポートが再計算され、選択位置などの状態はそのまま保たれます。現在有効なオプションはステータスバーに表示されます。
 
 ### format
 

@@ -72,6 +72,7 @@ fn balance_sections() -> Vec<Section> {
             title: "Session",
             bindings: vec![
                 binding("r, F5", "reload the ledger from disk"),
+                binding(".", "change the query options"),
                 binding("?, F1", "this help"),
                 binding("q", "quit (asks to confirm)"),
                 binding("C-c", "quit immediately"),
@@ -87,6 +88,7 @@ fn register_sections() -> Vec<Section> {
             title: "Session",
             bindings: vec![
                 binding("r, F5", "reload the ledger from disk"),
+                binding(".", "change the query options"),
                 binding("?, F1", "this help"),
                 binding("q, Esc", "back to the balance screen"),
                 binding("C-c", "quit immediately"),
@@ -150,7 +152,7 @@ mod tests {
     use super::super::event::key_to_message;
     use super::super::register::RegisterScope;
     use super::super::search::{Search, SearchIntent, SearchMatch, SearchMode, SearchPhase};
-    use super::super::testing::{make_account, template};
+    use super::super::testing::{make_account, query_state};
 
     #[test]
     fn balance_help_lists_the_balance_only_keys() {
@@ -165,7 +167,7 @@ mod tests {
     fn register_help_omits_the_balance_only_keys() {
         let arena = Bump::new();
         let (_ctx, account) = make_account(&arena, "Assets:Cash");
-        let mut app = App::new("test".to_owned(), Vec::new(), template());
+        let mut app = App::new("test".to_owned(), Vec::new(), query_state());
         app.show_register(RegisterScope::Single(account), Vec::new());
 
         let text = popup(&app.screen).lines.join("\n");
@@ -204,9 +206,9 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, account) = make_account(&arena, "Assets:Cash");
 
-        let mut balance = App::new("test".to_owned(), Vec::new(), template());
+        let mut balance = App::new("test".to_owned(), Vec::new(), query_state());
         balance.balance.search = Some(fixed_search());
-        let mut register = App::new("test".to_owned(), Vec::new(), template());
+        let mut register = App::new("test".to_owned(), Vec::new(), query_state());
         register.show_register(RegisterScope::Single(account), Vec::new());
 
         for (app, sections) in [

@@ -17,11 +17,12 @@ use std::cmp::min;
 use okane_core::report::BalanceTreeNode;
 
 use super::balance::{BalanceAction, BalanceMessage, BalanceSnapshot, BalanceView};
+use super::form::{FormAction, FormMessage, OptionsForm};
 use super::help;
+use super::options::{QueryOptions, QueryState};
 use super::overlay::{Overlay, ScrollDelta};
 use super::register::{
-    RegisterAction, RegisterMessage, RegisterQueryTemplate, RegisterRow, RegisterScope,
-    RegisterSnapshot, RegisterView,
+    RegisterAction, RegisterMessage, RegisterRow, RegisterScope, RegisterSnapshot, RegisterView,
 };
 
 /// Top-level screen the user is currently looking at.
@@ -42,6 +43,8 @@ pub enum Message {
     Balance(BalanceMessage),
     /// A message routed to the active register screen.
     Register(RegisterMessage),
+    /// A message routed to the open query-options form.
+    Form(FormMessage),
     /// User asked to quit from balance — show the confirmation overlay.
     RequestQuit,
     /// Confirm quit from the overlay.
@@ -50,6 +53,8 @@ pub enum Message {
     DismissOverlay,
     /// Show the key help for the focused screen (`?` / `F1`).
     ShowHelp,
+    /// Open the query-options form (`.`).
+    ShowOptions,
     /// Scroll the body of a scrollable overlay.
     OverlayScroll(ScrollDelta),
     /// Unconditional quit (Ctrl-C).
@@ -59,14 +64,17 @@ pub enum Message {
 }
 
 /// Effect requested by [`App::update`] that requires resources the pure
-/// state machine does not own (here: `&mut Ledger` to compute a register).
-#[derive(Debug, Clone, Copy)]
+/// state machine does not own (here: `&mut Ledger` to compute a register or a
+/// balance). Fulfilled by [`super::fulfill`].
+#[derive(Debug, Clone)]
 pub enum Command<'ctx> {
     LoadRegister {
         scope: RegisterScope<'ctx>,
     },
     /// Re-run the whole load/process pipeline and swap the data in.
     Reload,
+    /// Re-run the report under the options just applied in the `.` form.
+    ApplyOptions(QueryOptions),
 }
 
 /// UI state that survives a reload, captured by [`App::snapshot`] and
@@ -95,7 +103,10 @@ pub struct App<'ctx> {
     /// press. Failures worth reading in full go to [`Overlay::Error`] instead,
     /// which is dismissed explicitly.
     pub error_toast: Option<String>,
-    pub register_template: RegisterQueryTemplate<'ctx>,
+    /// The query the shown report was computed with: the options as stated, and
+    /// the resolved parameters every register lookup reuses. Replaced whole
+    /// whenever the report is recomputed, so the two never drift.
+    pub query: QueryState<'ctx>,
     pub should_quit: bool,
 }
 
@@ -106,7 +117,7 @@ impl<'ctx> App<'ctx> {
     pub fn new(
         source_display: String,
         tree: Vec<BalanceTreeNode<'ctx>>,
-        register_template: RegisterQueryTemplate<'ctx>,
+        query: QueryState<'ctx>,
     ) -> Self {
         Self {
             source_display,
@@ -114,7 +125,7 @@ impl<'ctx> App<'ctx> {
             screen: Screen::Balance,
             overlay: None,
             error_toast: None,
-            register_template,
+            query,
             should_quit: false,
         }
     }
@@ -126,7 +137,7 @@ impl<'ctx> App<'ctx> {
     pub fn with_rows(
         source_display: String,
         balance_rows: Vec<super::balance::BalanceRow<'ctx>>,
-        register_template: RegisterQueryTemplate<'ctx>,
+        query: QueryState<'ctx>,
     ) -> Self {
         Self {
             source_display,
@@ -134,7 +145,7 @@ impl<'ctx> App<'ctx> {
             screen: Screen::Balance,
             overlay: None,
             error_toast: None,
-            register_template,
+            query,
             should_quit: false,
         }
     }
@@ -153,6 +164,9 @@ impl<'ctx> App<'ctx> {
 
         if self.overlay.is_some() {
             match msg {
+                // The form is the one overlay that is interacted with rather
+                // than read, so it takes its messages while it is up.
+                Message::Form(form_msg) => return self.update_form(form_msg),
                 Message::ConfirmQuit => self.should_quit = true,
                 Message::DismissOverlay => self.overlay = None,
                 Message::OverlayScroll(delta) => {
@@ -204,11 +218,32 @@ impl<'ctx> App<'ctx> {
             }
             Message::Reload => return Some(Command::Reload),
             Message::ShowHelp => self.overlay = Some(Overlay::Help(help::popup(&self.screen))),
+            Message::ShowOptions => {
+                self.overlay = Some(Overlay::Options(OptionsForm::new(&self.query.options)));
+            }
             // Already handled above, or only meaningful while an overlay is up.
             Message::QuitImmediate
             | Message::ConfirmQuit
             | Message::DismissOverlay
+            | Message::Form(_)
             | Message::OverlayScroll(_) => {}
+        }
+        None
+    }
+
+    /// Routes a message to the open query-options form and acts on what it
+    /// asks for. Applying closes the form and hands the new options to the
+    /// event loop, which is where the ledger they are queried against lives.
+    fn update_form(&mut self, msg: FormMessage) -> Option<Command<'ctx>> {
+        let Some(Overlay::Options(form)) = self.overlay.as_mut() else {
+            return None;
+        };
+        match form.update(msg)? {
+            FormAction::Cancel => self.overlay = None,
+            FormAction::Apply(options) => {
+                self.overlay = None;
+                return Some(Command::ApplyOptions(options));
+            }
         }
         None
     }
@@ -286,14 +321,14 @@ mod tests {
 
     use super::super::balance::BalanceRow;
     use super::super::overlay::TextPopup;
-    use super::super::testing::{make_account, process, template};
+    use super::super::testing::{make_account, process, query_state};
 
     /// Build an `App` with no balance rows — sufficient for testing the
     /// pure state machine. (Constructing a `BalanceRow` requires an
     /// `Account<'ctx>`, whose interner has no public constructor outside
     /// `okane_core`, so we side-step it.)
     fn app_no_rows<'ctx>() -> App<'ctx> {
-        App::new("test".to_owned(), Vec::new(), template())
+        App::new("test".to_owned(), Vec::new(), query_state())
     }
 
     /// Process a ledger containing `names` and return the context plus an
@@ -313,7 +348,7 @@ mod tests {
             .iter()
             .map(|n| BalanceRow::flat(ctx.account(n).unwrap(), Amount::zero()))
             .collect();
-        let app = App::with_rows("test".to_owned(), rows, template());
+        let app = App::with_rows("test".to_owned(), rows, query_state());
         (ctx, app)
     }
 
@@ -476,6 +511,77 @@ mod tests {
         assert_eq!(app.overlay, None);
     }
 
+    /// The form opens on the query the report was computed with, so what it
+    /// shows is what is in effect rather than a blank slate.
+    #[test]
+    fn show_options_opens_the_form_on_the_current_query() {
+        let mut app = app_no_rows();
+        app.query.options.exchange = Some("CHF".to_owned());
+        app.update(Message::ShowOptions);
+        assert_matches!(&app.overlay, Some(Overlay::Options(form)) => {
+            assert_eq!(form.fields()[0].text(), "CHF");
+        });
+    }
+
+    /// Applying closes the form and hands the options to the event loop, which
+    /// is the only place that can run them against the ledger.
+    #[test]
+    fn applying_the_form_closes_it_and_asks_for_the_query() {
+        let mut app = app_no_rows();
+        app.update(Message::ShowOptions);
+        for c in "CHF".chars() {
+            app.update(Message::Form(FormMessage::Push(c)));
+        }
+        assert_matches!(
+            app.update(Message::Form(FormMessage::Submit)),
+            Some(Command::ApplyOptions(options)) => {
+                assert_eq!(options.exchange.as_deref(), Some("CHF"));
+            }
+        );
+        assert_eq!(app.overlay, None);
+        // Nothing is in effect until the command has been fulfilled.
+        assert_eq!(app.query.options.exchange, None);
+    }
+
+    #[test]
+    fn cancelling_the_form_closes_it_without_a_command() {
+        let mut app = app_no_rows();
+        app.update(Message::ShowOptions);
+        app.update(Message::Form(FormMessage::Push('X')));
+        assert!(app.update(Message::Form(FormMessage::Cancel)).is_none());
+        assert_eq!(app.overlay, None);
+        assert_eq!(app.query.options.exchange, None);
+    }
+
+    /// A refused submit leaves the form up with the reason, and asks for
+    /// nothing.
+    #[test]
+    fn a_form_that_does_not_parse_stays_open() {
+        let mut app = app_no_rows();
+        app.update(Message::ShowOptions);
+        app.update(Message::Form(FormMessage::FocusNext)); // --historical
+        app.update(Message::Form(FormMessage::FocusNext)); // --start
+        for c in "yesterday".chars() {
+            app.update(Message::Form(FormMessage::Push(c)));
+        }
+        assert!(app.update(Message::Form(FormMessage::Submit)).is_none());
+        assert_matches!(&app.overlay, Some(Overlay::Options(form)) => {
+            assert!(form.error().is_some());
+        });
+    }
+
+    /// Like the help, the form takes the screen's keys away while it is up —
+    /// it has to, since they are text in it.
+    #[test]
+    fn form_swallows_the_screen_underneath() {
+        let mut app = app_no_rows();
+        app.balance.nav = TableNav::new(3);
+        app.update(Message::ShowOptions);
+        app.update(Message::Balance(BalanceMessage::Nav(NavCommand::Down)));
+        assert_eq!(app.balance.nav.selected_row(), 0);
+        assert_matches!(app.overlay, Some(Overlay::Options(_)));
+    }
+
     #[test]
     fn reload_through_error_modal_returns_command() {
         let mut app = app_with_error_modal();
@@ -537,7 +643,7 @@ mod tests {
 
     /// A fresh `App` over `names`, as if built for the next session.
     fn next_app<'ctx>(ctx: &ReportContext<'ctx>, names: &[&str]) -> App<'ctx> {
-        App::with_rows("test".to_owned(), rows_of(ctx, names), template())
+        App::with_rows("test".to_owned(), rows_of(ctx, names), query_state())
     }
 
     #[test]

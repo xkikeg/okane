@@ -34,10 +34,11 @@ use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState};
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::app::{App, Screen};
 use super::balance::{BalanceRow, BalanceView, DisplayMode};
+use super::form::{Field, OptionsForm};
 use super::overlay::{Overlay, TextPopup};
 use super::register::RegisterView;
 use super::search::{Search, SearchDirection, SearchMode, SearchPhase};
@@ -49,6 +50,13 @@ const STATUS_HELP_HINT: &str = " ? help ";
 const ERROR_POPUP_HINT: &str =
     " ↑/↓ scroll · PgUp/PgDn page · g/G top/end · r reload · Esc/Enter close · q quit ";
 const HELP_POPUP_HINT: &str = " ↑/↓ scroll · PgUp/PgDn page · Esc/q close ";
+const OPTIONS_POPUP_HINT: &str =
+    " Tab/↑↓ field · space toggle · C-u clear · Enter apply · Esc cancel ";
+
+/// Columns the form keeps for a value, wide enough for a date, a commodity and
+/// a short path — and, being fixed, wide enough that the highlighted row reads
+/// as the input box it is even when what is typed into it is short.
+const OPTIONS_VALUE_WIDTH: usize = 30;
 
 /// Colour that marks a redrawn (sticky) account label, so it never reads as a
 /// label the row itself owns.
@@ -88,6 +96,7 @@ pub fn draw<'ctx>(frame: &mut Frame, app: &mut App<'ctx>, ctx: &ReportContext<'c
         Some(Overlay::QuitConfirm) => draw_quit_confirm(frame, area),
         Some(Overlay::Error(popup)) => draw_text_popup(frame, area, popup, PopupKind::Error),
         Some(Overlay::Help(popup)) => draw_text_popup(frame, area, popup, PopupKind::Help),
+        Some(Overlay::Options(form)) => draw_options_form(frame, area, form),
         None => {}
     }
 }
@@ -401,6 +410,11 @@ fn draw_body_too_short(frame: &mut Frame, area: Rect, block: &Block) -> bool {
 /// `Register 12/40` — counted in accounts and register entries rather than in
 /// the table rows a multi-commodity one spans, which is what the reader is
 /// moving through with `J`/`K`.
+///
+/// Followed by the query the numbers were computed under, where it is not the
+/// plain one: a converted or date-bounded report looks exactly like a full one,
+/// and `.` can change it mid-session, so the line that says where you are also
+/// says what you are looking at.
 fn status_text(app: &App<'_>) -> String {
     let (label, nav) = match &app.screen {
         Screen::Balance => ("Account", &app.balance.nav),
@@ -409,7 +423,11 @@ fn status_text(app: &App<'_>) -> String {
     // The position is 1-based; an empty table has no position at all and says
     // so with a `0/0` rather than pretending to sit on a first item.
     let position = nav.selected_item().map_or(0, |item| item + 1);
-    format!(" {label} {position}/{} ", nav.item_count())
+    let count = nav.item_count();
+    match app.query.options.summary() {
+        Some(query) => format!(" {label} {position}/{count} · {query} "),
+        None => format!(" {label} {position}/{count} "),
+    }
 }
 
 /// The status bar: where the selection is, and — at the far end, where it
@@ -505,6 +523,117 @@ fn draw_quit_confirm(frame: &mut Frame, area: Rect) {
     ])
     .block(block);
     frame.render_widget(body, popup);
+}
+
+/// The query-options form (`.`): one row per option, the focused one drawn as
+/// the input box it is, and — where the last submit was refused — the reason
+/// under them in place of the key hint.
+///
+/// Unlike the text popups this is sized to its content in both directions and
+/// never scrolls: it has five rows, and a terminal too small for five rows is
+/// too small for the report behind them.
+fn draw_options_form(frame: &mut Frame, area: Rect, form: &OptionsForm) {
+    let label_width = form
+        .fields()
+        .iter()
+        .map(|field| layout_width(field.label()))
+        .max()
+        .unwrap_or(0);
+    // The rows are two columns and their gutters; the footer is one long line.
+    let body_width = label_width + OPTIONS_VALUE_WIDTH + 4;
+    let width = max(body_width, layout_width(OPTIONS_POPUP_HINT)) + 2; // borders
+    let height = form.fields().len() + 3; // borders + the footer line
+    let rect = centered_rect(area, saturating_u16(width), saturating_u16(height));
+    // Clear first so the popup paints over the table cleanly.
+    frame.render_widget(Clear, rect);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Query options ")
+        .style(Style::default().add_modifier(Modifier::BOLD));
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+
+    let layout = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(inner);
+    let rows: Vec<Line> = form
+        .fields()
+        .iter()
+        .enumerate()
+        .map(|(i, field)| options_row(field, label_width, i == form.focus()))
+        .collect();
+    frame.render_widget(
+        Paragraph::new(rows).style(Style::default().remove_modifier(Modifier::BOLD)),
+        layout[0],
+    );
+
+    let footer = match form.error() {
+        Some(err) => Paragraph::new(format!(" {err} ")).style(Style::default().fg(Color::Red)),
+        None => {
+            Paragraph::new(OPTIONS_POPUP_HINT).style(Style::default().add_modifier(Modifier::DIM))
+        }
+    };
+    frame.render_widget(footer, layout[1]);
+
+    // The cursor sits after the last typed character of the focused row, which
+    // is also what tells a value apart from the placeholder standing in for it.
+    // A value too long for the box is scrolled, so the cursor stops at its end.
+    let field = &form.fields()[form.focus()];
+    if field.is_text() {
+        let typed = min(layout_width(field.text()), options_value_columns());
+        let x = layout[0].x + saturating_u16(label_width + 3 + typed);
+        let x = min(x, layout[0].x + layout[0].width.saturating_sub(1));
+        frame.set_cursor_position((x, layout[0].y + saturating_u16(form.focus())));
+    }
+}
+
+/// Columns of text the value box holds, inside its one-space padding.
+fn options_value_columns() -> usize {
+    OPTIONS_VALUE_WIDTH.saturating_sub(2)
+}
+
+/// One row of the form: `--flag   value`, with the value drawn as a
+/// fixed-width box so the focused row's highlight has a shape, and an unset
+/// value replaced by its dim placeholder.
+fn options_row(field: &Field, label_width: usize, focused: bool) -> Line<'static> {
+    let label = format!(
+        " {}{}  ",
+        field.label(),
+        " ".repeat(label_width.saturating_sub(layout_width(field.label())))
+    );
+    let (text, dim) = match field.text() {
+        "" => (field.placeholder(), true),
+        text => (text, false),
+    };
+    // A path longer than the box scrolls: the tail is where the typing is
+    // happening, and clipping it at the border would hide exactly that.
+    let text = tail(text, options_value_columns());
+    let value = format!(
+        " {text}{} ",
+        " ".repeat(options_value_columns().saturating_sub(layout_width(text)))
+    );
+    let mut value_style = Style::default();
+    if dim {
+        value_style = value_style.add_modifier(Modifier::DIM);
+    }
+    if focused {
+        value_style = value_style.add_modifier(Modifier::REVERSED);
+    }
+    Line::from(vec![Span::raw(label), Span::styled(value, value_style)])
+}
+
+/// The last `columns` display columns of `text`, cut on a character boundary.
+/// The whole of it when it already fits.
+fn tail(text: &str, columns: usize) -> &str {
+    let mut width = 0;
+    let mut start = text.len();
+    for (i, c) in text.char_indices().rev() {
+        width += UnicodeWidthChar::width(c).unwrap_or(0);
+        if width > columns {
+            break;
+        }
+        start = i;
+    }
+    &text[start..]
 }
 
 /// What a [`TextPopup`] is showing: it decides the frame color and the hint
@@ -770,9 +899,10 @@ mod tests {
 
     use super::super::app::Message;
     use super::super::balance::BalanceMessage;
+    use super::super::form::FormMessage;
     use super::super::overlay::ScrollDelta;
     use super::super::register::{RegisterMessage, RegisterQueryTemplate};
-    use super::super::testing::template;
+    use super::super::testing::{query_state, template};
     use crate::ui::table::NavCommand;
 
     #[test]
@@ -815,7 +945,7 @@ mod tests {
 
     #[test]
     fn status_of_an_empty_screen_has_no_position() {
-        let app = App::new("test.ledger".to_owned(), Vec::new(), template());
+        let app = App::new("test.ledger".to_owned(), Vec::new(), query_state());
         assert_eq!(status_text(&app), " Account 0/0 ");
     }
 
@@ -997,6 +1127,17 @@ mod tests {
         }
     }
 
+    /// A value longer than the form's box shows its end: that is where the
+    /// cursor is and what was just typed.
+    #[test]
+    fn tail_keeps_the_end_of_a_long_value() {
+        assert_eq!(tail("short", 10), "short");
+        assert_eq!(tail("/home/user/ledger/prices.db", 10), "/prices.db");
+        // Cut on a character boundary, never inside one.
+        assert_eq!(tail("ドルの価格", 4), "価格");
+        assert_eq!(tail("", 10), "");
+    }
+
     #[test]
     fn centered_rect_sits_in_the_middle() {
         let area = Rect {
@@ -1087,14 +1228,7 @@ mod tests {
 
     /// The state a failed reload leaves behind: no rows, error modal up.
     fn app_with_error_modal<'ctx>() -> App<'ctx> {
-        let mut app = App::new(
-            "test.ledger".to_owned(),
-            Vec::new(),
-            RegisterQueryTemplate {
-                conversion: None,
-                date_range: DateRange::default(),
-            },
-        );
+        let mut app = App::new("test.ledger".to_owned(), Vec::new(), query_state());
         let lines = (0..40).map(|i| format!("error line {i}")).collect();
         app.overlay = Some(Overlay::Error(TextPopup::new(
             " failed to load test.ledger ".to_owned(),
@@ -1135,12 +1269,57 @@ mod tests {
         golden(name).assert(&render(&mut app, &ctx));
     }
 
+    /// The query-options form over the balance screen: every option on its own
+    /// row, the focused one as an input box, and the placeholders standing in
+    /// for what is unset.
+    #[test]
+    fn render_options_form() {
+        let arena = Bump::new();
+        let (ctx, mut app) = many_commodities_balance(&arena);
+        app.update(Message::ShowOptions);
+        golden("render_options_form").assert(&render(&mut app, &ctx));
+    }
+
+    /// A refused submit keeps the form up and replaces the key hint with the
+    /// reason, so the row that is wrong is still on screen next to it.
+    #[test]
+    fn render_options_form_with_a_bad_date() {
+        let arena = Bump::new();
+        let (ctx, mut app) = many_commodities_balance(&arena);
+        app.update(Message::ShowOptions);
+        app.update(Message::Form(FormMessage::FocusNext)); // --historical
+        app.update(Message::Form(FormMessage::FocusNext)); // --start
+        for c in "last week".chars() {
+            app.update(Message::Form(FormMessage::Push(c)));
+        }
+        app.update(Message::Form(FormMessage::Submit));
+        golden("render_options_form_error").assert(&render(&mut app, &ctx));
+    }
+
+    /// A converted, date-bounded report looks exactly like a plain one, so the
+    /// status bar says which one it is.
+    #[test]
+    fn status_bar_names_a_non_default_query() {
+        let arena = Bump::new();
+        let (ctx, mut app) = many_commodities_balance(&arena);
+        assert!(!status_text(&app).contains('·'), "{}", status_text(&app));
+
+        app.query.options.exchange = Some("CHF".to_owned());
+        app.query.options.start = Some(chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap());
+        let out = render(&mut app, &ctx);
+        let status = out.lines().last().expect("a status line");
+        assert!(status.contains("-X CHF"), "{status:?}");
+        assert!(status.contains("2024-01-01.."), "{status:?}");
+        // The help hint keeps its place at the far end.
+        assert!(status.trim_end().ends_with("? help"), "{status:?}");
+    }
+
     /// The help is drawn without wrapping, so a description longer than the
     /// screen is silently cut. The popup sizes itself to its text, which means
     /// the check is that the text still fits a plain 80-column terminal.
     #[test]
     fn help_fits_an_eighty_column_terminal() {
-        let mut app = App::new("test.ledger".to_owned(), Vec::new(), template());
+        let mut app = App::new("test.ledger".to_owned(), Vec::new(), query_state());
         app.update(Message::ShowHelp);
         let Some(Overlay::Help(popup)) = &app.overlay else {
             panic!("expected the help overlay");
@@ -1173,14 +1352,7 @@ mod tests {
     fn render_error_modal_parses_ansi_colors() {
         let arena = Bump::new();
         let ctx = ReportContext::new(&arena);
-        let mut app = App::new(
-            "test.ledger".to_owned(),
-            Vec::new(),
-            RegisterQueryTemplate {
-                conversion: None,
-                date_range: DateRange::default(),
-            },
-        );
+        let mut app = App::new("test.ledger".to_owned(), Vec::new(), query_state());
         app.overlay = Some(Overlay::Error(TextPopup::new(
             " failed to load test.ledger ".to_owned(),
             vec!["\u{1b}[32mgreen\u{1b}[0m plain".to_owned()],
@@ -1254,7 +1426,7 @@ mod tests {
         };
         let balance = ledger.balance(&ctx, &query).unwrap().into_owned();
         let tree = BalanceTree::create(&ctx, balance).unwrap().into_nodes();
-        let app = App::new(source_display(input), tree, template());
+        let app = App::new(source_display(input), tree, query_state());
         (ctx, app)
     }
 
@@ -1282,8 +1454,8 @@ mod tests {
             .expect("fixture ledger has at least one account");
         let scope = RegisterScope::Single(account);
         let rows =
-            super::super::event::load_register(&mut ledger, &ctx, &template(), scope).unwrap();
-        let mut app = App::new(source_display(input), Vec::new(), template());
+            super::super::fulfill::load_register(&mut ledger, &ctx, &template(), scope).unwrap();
+        let mut app = App::new(source_display(input), Vec::new(), query_state());
         app.show_register(scope, rows);
         (ctx, app)
     }
@@ -1307,7 +1479,7 @@ mod tests {
         };
         let balance = ledger.balance(&ctx, &query).unwrap().into_owned();
         let tree = BalanceTree::create(&ctx, balance).unwrap().into_nodes();
-        let mut app = App::new(source_display(input), tree, template());
+        let mut app = App::new(source_display(input), tree, query_state());
         // Tree view is what turns balance rows into `RegisterScope::Subtree`.
         app.update(Message::Balance(BalanceMessage::ToggleTree));
         // The first parent row (a real ancestor) exercises `descendants_of`
@@ -1320,7 +1492,7 @@ mod tests {
             .map(|r| r.scope)
             .expect("fixture has at least one parent account");
         let rows =
-            super::super::event::load_register(&mut ledger, &ctx, &template(), scope).unwrap();
+            super::super::fulfill::load_register(&mut ledger, &ctx, &template(), scope).unwrap();
         app.show_register(scope, rows);
         (ctx, app)
     }
@@ -1564,9 +1736,10 @@ mod tests {
             date_range: DateRange::default(),
         };
         let scope = super::super::register::RegisterScope::Single(account);
-        let rows = super::super::event::load_register(&mut ledger, &ctx, &template, scope).unwrap();
+        let rows =
+            super::super::fulfill::load_register(&mut ledger, &ctx, &template, scope).unwrap();
         assert_eq!(rows.len(), n);
-        let mut app = App::new("test.ledger".to_owned(), Vec::new(), template);
+        let mut app = App::new("test.ledger".to_owned(), Vec::new(), query_state());
         app.show_register(scope, rows);
         (ctx, app)
     }

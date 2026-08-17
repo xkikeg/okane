@@ -20,5 +20,5 @@
 │       │                                                              │ STOCKP│
 │       │ Session                                                      │ STOCKQ│
 │       │   r, F5                    reload the ledger from disk       │+9 more│
-└───────│ ↑/↓ scroll · PgUp/PgDn page · Esc/q close               1/24 │───────┘
+└───────│ ↑/↓ scroll · PgUp/PgDn page · Esc/q close               1/25 │───────┘
  Account└──────────────────────────────────────────────────────────────┘ ? help 

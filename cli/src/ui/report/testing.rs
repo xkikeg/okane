@@ -7,11 +7,13 @@
 use std::path::PathBuf;
 
 use bumpalo::Bump;
+use chrono::NaiveDate;
 use maplit::hashmap;
 use okane_core::load;
 use okane_core::report::query::{DateRange, Ledger};
 use okane_core::report::{self, Account, ReportContext};
 
+use super::options::{QueryOptions, QueryState};
 use super::register::RegisterQueryTemplate;
 
 /// A register query template with no conversion over the full date range.
@@ -20,6 +22,24 @@ pub(super) fn template<'ctx>() -> RegisterQueryTemplate<'ctx> {
         conversion: None,
         date_range: DateRange::default(),
     }
+}
+
+/// The plain query — no conversion, no date bounds — dated at a fixed day, so
+/// nothing that renders it depends on when the test runs.
+pub(super) fn options() -> QueryOptions {
+    QueryOptions {
+        price_db: None,
+        exchange: None,
+        historical: false,
+        today: NaiveDate::from_ymd_opt(2024, 6, 1).expect("a valid date"),
+        start: None,
+        end: None,
+    }
+}
+
+/// [`options`] as the state an [`super::app::App`] is built with.
+pub(super) fn query_state<'ctx>() -> QueryState<'ctx> {
+    QueryState::unresolved(&options())
 }
 
 /// A [`load::Loader`] over a single in-memory `test.ledger` holding `content`.

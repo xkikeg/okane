@@ -9,6 +9,14 @@
   crate linked into the binary of that archive. This makes the archives redistributable on their
   own, without having to reconstruct the dependency licenses from the source tree.
 * CLI: Added `tags` command, listing all tags in the file, sorted and deduped (https://github.com/xkikeg/okane/pull/523). Pass `--values` to print `key: value` pairs instead of the keys alone.
+* CLI: `ui` can now change the query options without leaving the session
+  (https://github.com/xkikeg/okane/issues/551). `.` opens a form over `-X` / `--exchange`,
+  `--historical`, `--start`, `--end` and `--price-db`; `Enter` applies it and the report is
+  recomputed with your selection, tree state, search and open register kept. Changing only the
+  query re-runs it against the data already in memory; a new `--price-db` re-reads the file, since
+  the rates are read while book-keeping. Whichever options are in effect are named in the status
+  bar, and options that cannot be run (a commodity the file never mentions, a date that does not
+  parse) are refused without disturbing the report on screen.
 * CLI: `ui` balance now opens with a `(total)` row holding the balance of every account combined
   (https://github.com/xkikeg/okane/pull/549). It is the first row of both views — in the tree it is
   the tree's own root, above the top-level accounts — and `Enter` on it drills into the register of
@@ -41,6 +49,11 @@
   accepted).
 
 ### Fixed
+
+* CLI: `ui` no longer exits when a register cannot be loaded — `-X` without `--historical` is
+  unsupported for the register query (https://github.com/xkikeg/okane/issues/313), and pressing
+  `Enter` under it used to take the whole session down. It is now a footer notice, like every other
+  failure that leaves the report intact.
 
 ## [0.20.0] - 2026-06-24
 
