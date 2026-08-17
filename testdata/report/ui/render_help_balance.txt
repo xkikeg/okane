@@ -1,0 +1,24 @@
+ okane u┌ Key bindings — balance ──────────────────────────────────────┐        
+┌───────│ Moving                                                       │───────┐
+│Account│   ↑ / k, C-p               up one line                       │       │
+│(total)│   ↓ / j, C-n               down one line                     │.00 USD│
+│       │   K, J                     previous / next account           │ STOCKA│
+│       │   PgUp / PgDn, C-b / C-f   up / down one page                │ STOCKB│
+│       │   g / Home, G / End        first / last line                 │ STOCKC│
+│       │                                                              │ STOCKD│
+│       │ View                                                         │ STOCKE│
+│       │   t                        toggle the flat / tree view       │ STOCKF│
+│       │   space                    fold / unfold the account (tree)  │ STOCKG│
+│       │   x                        fold / unfold every account (tree)│ STOCKH│
+│       │   Enter                    open the register of the selection│ STOCKI│
+│       │                                                              │ STOCKJ│
+│       │ Search                                                       │ STOCKK│
+│       │   /                        search accounts by regex          │ STOCKL│
+│       │   n, N                     next / previous match, once fixed │ STOCKM│
+│       │   C-s, C-r                 incremental search forward / back │ STOCKN│
+│       │   Esc                      leave the search                  │ STOCKO│
+│       │                                                              │ STOCKP│
+│       │ Session                                                      │ STOCKQ│
+│       │   r, F5                    reload the ledger from disk       │+9 more│
+└───────│ ↑/↓ scroll · PgUp/PgDn page · Esc/q close               1/24 │───────┘
+ Account└──────────────────────────────────────────────────────────────┘ ? help 

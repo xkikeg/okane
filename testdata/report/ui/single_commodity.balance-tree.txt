@@ -21,4 +21,4 @@
 │  ▼ Cards                                                                    0│
 │      Card X                                                                 0│
 └──────────────────────────────────────────────────────────────────────────────┘
- ↑/↓ line · J/K account · Enter register · t tree · space fold · x fold-all · / 
+ Account 1/19                                                            ? help 

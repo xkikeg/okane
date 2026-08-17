@@ -17,6 +17,7 @@ use std::cmp::min;
 use okane_core::report::BalanceTreeNode;
 
 use super::balance::{BalanceAction, BalanceMessage, BalanceSnapshot, BalanceView};
+use super::help;
 use super::overlay::{Overlay, ScrollDelta};
 use super::register::{
     RegisterAction, RegisterMessage, RegisterQueryTemplate, RegisterRow, RegisterScope,
@@ -47,6 +48,8 @@ pub enum Message {
     ConfirmQuit,
     /// Dismiss the current overlay.
     DismissOverlay,
+    /// Show the key help for the focused screen (`?` / `F1`).
+    ShowHelp,
     /// Scroll the body of a scrollable overlay.
     OverlayScroll(ScrollDelta),
     /// Unconditional quit (Ctrl-C).
@@ -153,7 +156,7 @@ impl<'ctx> App<'ctx> {
                 Message::ConfirmQuit => self.should_quit = true,
                 Message::DismissOverlay => self.overlay = None,
                 Message::OverlayScroll(delta) => {
-                    if let Some(Overlay::Error(popup)) = self.overlay.as_mut() {
+                    if let Some(popup) = self.overlay.as_mut().and_then(Overlay::scrollable_mut) {
                         popup.scroll(delta);
                     }
                 }
@@ -200,6 +203,7 @@ impl<'ctx> App<'ctx> {
                 }
             }
             Message::Reload => return Some(Command::Reload),
+            Message::ShowHelp => self.overlay = Some(Overlay::Help(help::popup(&self.screen))),
             // Already handled above, or only meaningful while an overlay is up.
             Message::QuitImmediate
             | Message::ConfirmQuit
@@ -281,7 +285,7 @@ mod tests {
     use crate::ui::table::{NavCommand, TableNav};
 
     use super::super::balance::BalanceRow;
-    use super::super::overlay::ErrorPopup;
+    use super::super::overlay::TextPopup;
     use super::super::testing::{make_account, process, template};
 
     /// Build an `App` with no balance rows — sufficient for testing the
@@ -382,8 +386,8 @@ mod tests {
         assert_eq!(app.balance.nav.selected_row(), 0);
     }
 
-    fn popup(lines: usize, viewport_height: u16) -> ErrorPopup {
-        let mut popup = ErrorPopup::new(
+    fn popup(lines: usize, viewport_height: u16) -> TextPopup {
+        let mut popup = TextPopup::new(
             "failed to load test.ledger".to_owned(),
             (0..lines).map(|i| format!("line {i}")).collect(),
         );
@@ -422,6 +426,47 @@ mod tests {
         app.update(Message::RequestQuit);
         assert_eq!(app.overlay, Some(Overlay::QuitConfirm));
         assert!(!app.should_quit);
+    }
+
+    /// The help is built for the screen it was opened from, so the register's
+    /// lists the register's keys.
+    #[test]
+    fn show_help_opens_the_help_of_the_focused_screen() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:Cash");
+        let mut app = app_no_rows();
+
+        app.update(Message::ShowHelp);
+        assert_matches!(&app.overlay, Some(Overlay::Help(p)) if p.title.contains("balance"));
+
+        app.update(Message::DismissOverlay);
+        app.screen = register_screen(account, TableNav::new(0));
+        app.update(Message::ShowHelp);
+        assert_matches!(&app.overlay, Some(Overlay::Help(p)) if p.title.contains("register"));
+    }
+
+    #[test]
+    fn help_scrolls_on_overlay_scroll() {
+        let mut app = app_no_rows();
+        app.update(Message::ShowHelp);
+        let Some(Overlay::Help(popup)) = app.overlay.as_mut() else {
+            panic!("expected the help overlay");
+        };
+        popup.viewport_height = 4;
+        app.update(Message::OverlayScroll(ScrollDelta::Bottom));
+        assert_matches!(&app.overlay, Some(Overlay::Help(p)) if p.scroll > 0);
+    }
+
+    /// The help is a read-and-leave page: while it is up, the keys underneath
+    /// it do nothing.
+    #[test]
+    fn help_swallows_the_screen_underneath() {
+        let mut app = app_no_rows();
+        app.balance.nav = TableNav::new(3);
+        app.update(Message::ShowHelp);
+        app.update(Message::Balance(BalanceMessage::Nav(NavCommand::Down)));
+        assert_eq!(app.balance.nav.selected_row(), 0);
+        assert_matches!(app.overlay, Some(Overlay::Help(_)));
     }
 
     #[test]

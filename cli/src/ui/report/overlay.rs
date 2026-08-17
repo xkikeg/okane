@@ -1,7 +1,8 @@
 //! Modal overlays drawn on top of the report screens.
 //!
-//! [`Overlay`] is either the quit-confirmation prompt or a scrollable
-//! [`ErrorPopup`] showing a full error report.
+//! [`Overlay`] is the quit-confirmation prompt, or a scrollable [`TextPopup`]
+//! holding either the key help or a full error report — two bodies of text the
+//! user reads and dismisses, which is all the popup itself knows about them.
 
 use std::cmp::{max, min};
 
@@ -16,10 +17,10 @@ pub enum ScrollDelta {
     Bottom,
 }
 
-/// The error popup reuses the table navigation keys for scrolling: a row step
+/// The text popups reuse the table navigation keys for scrolling: a row step
 /// scrolls one line, a page step scrolls a page, and first/last jump to the
-/// ends. An error report is one flat run of lines with no items in it, so the
-/// item steps (`J`/`K`) scroll a line like their lowercase siblings.
+/// ends. Their text is one flat run of lines with no items in it, so the item
+/// steps (`J`/`K`) scroll a line like their lowercase siblings.
 impl From<NavCommand> for ScrollDelta {
     fn from(cmd: NavCommand) -> Self {
         match cmd {
@@ -33,18 +34,20 @@ impl From<NavCommand> for ScrollDelta {
     }
 }
 
-/// Body of the error modal: a full error report the user scrolls through.
+/// Body of a text modal — the key help, or a full error report — that the user
+/// scrolls through.
 ///
-/// The message is pre-split into display lines, and the renderer does not
-/// re-wrap them (annotate-snippets output is column-aligned — soft wrapping
-/// would move the carets away from what they point at). That keeps
-/// `lines.len()` the exact rendered line count, so the scroll bound is
-/// computable — and testable — without a terminal.
+/// The text is pre-split into display lines, and the renderer does not re-wrap
+/// them (annotate-snippets output is column-aligned — soft wrapping would move
+/// the carets away from what they point at, and the help's key column is
+/// aligned the same way). That keeps `lines.len()` the exact rendered line
+/// count, so the scroll bound is computable — and testable — without a
+/// terminal.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ErrorPopup {
+pub struct TextPopup {
     /// Modal title, e.g. `failed to load main.ledger`.
     pub title: String,
-    /// The error report, one entry per display line.
+    /// The text, one entry per display line.
     pub lines: Vec<String>,
     /// Index of the first visible line.
     pub scroll: u16,
@@ -53,7 +56,7 @@ pub struct ErrorPopup {
     pub viewport_height: u16,
 }
 
-impl ErrorPopup {
+impl TextPopup {
     pub fn new(title: String, lines: Vec<String>) -> Self {
         Self {
             title,
@@ -95,15 +98,27 @@ pub enum Overlay {
     /// "Quit? y/n" prompt shown when leaving the balance screen.
     QuitConfirm,
     /// A failure the user must acknowledge, shown in full.
-    Error(ErrorPopup),
+    Error(TextPopup),
+    /// The key bindings of the screen it was opened from.
+    Help(TextPopup),
+}
+
+impl Overlay {
+    /// The scrollable body of this overlay, if it has one.
+    pub fn scrollable_mut(&mut self) -> Option<&mut TextPopup> {
+        match self {
+            Overlay::Error(popup) | Overlay::Help(popup) => Some(popup),
+            Overlay::QuitConfirm => None,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn popup(lines: usize, viewport_height: u16) -> ErrorPopup {
-        let mut popup = ErrorPopup::new(
+    fn popup(lines: usize, viewport_height: u16) -> TextPopup {
+        let mut popup = TextPopup::new(
             "failed to load test.ledger".to_owned(),
             (0..lines).map(|i| format!("line {i}")).collect(),
         );
