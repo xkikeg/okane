@@ -4,25 +4,25 @@
 //! <https://ratatui.rs/concepts/application-patterns/the-elm-architecture/>):
 //! key events are translated into [`Message`]s by [`key_to_message`] (a pure
 //! function that consults the current screen/overlay), [`App::update`] applies
-//! them, and any returned [`Command`] is fulfilled here — the single place
-//! that owns the mutable resources (the `Ledger`) the pure state machine
-//! cannot touch.
+//! them, and any returned [`Command`] is handed to [`super::fulfill`] — the
+//! single place that owns the mutable resources (the `Ledger`) the pure state
+//! machine cannot touch. What is left here is the select: draw, read a key,
+//! route it.
 
 use std::time::Duration;
 
-use anyhow::Context;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
-use lender::FallibleLender;
 use okane_core::report::ReportContext;
-use okane_core::report::query::{AccountFilter, Ledger, RegisterQuery, Sort};
+use okane_core::report::query::Ledger;
 use ratatui::DefaultTerminal;
 
 use crate::ui::keys::is_ctrl;
 use crate::ui::table::key_to_nav;
 
-use super::app::{App, Command, Message, Screen};
+use super::app::{App, Message, Screen};
+use super::fulfill::{self, Fulfilled};
 use super::overlay::Overlay;
-use super::register::{RegisterQueryTemplate, RegisterRow, RegisterScope, RegisterView};
+use super::register::RegisterView;
 use super::render;
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(250);
@@ -50,17 +50,9 @@ pub(super) fn run<'ctx>(
             && let Event::Key(key) = event::read()?
             && let Some(msg) = key_to_message(app, key)
             && let Some(cmd) = app.update(msg)
+            && fulfill::fulfill(cmd, app, ledger, ctx) == Fulfilled::Reload
         {
-            match cmd {
-                Command::Reload => return Ok(RunOutcome::Reload),
-                Command::LoadRegister { scope } => {
-                    let rows = load_register(ledger, ctx, &app.register_template, scope)
-                        .with_context(|| {
-                            format!("failed to load register for {}", scope.display_name())
-                        })?;
-                    app.show_register(scope, rows);
-                }
-            }
+            return Ok(RunOutcome::Reload);
         }
     }
     Ok(RunOutcome::Quit)
@@ -122,6 +114,9 @@ pub(super) fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
                 _ => None,
             };
         }
+        // The form is typed into, so it takes every key it can use — including
+        // the letters that navigate the screen underneath.
+        Some(Overlay::Options(form)) => return form.key_to_message(key).map(Message::Form),
         None => {}
     }
 
@@ -142,40 +137,9 @@ pub(super) fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
         KeyCode::Char('q') | KeyCode::Esc => Some(Message::RequestQuit),
         KeyCode::Char('r') | KeyCode::F(5) => Some(Message::Reload),
         KeyCode::Char('?') | KeyCode::F(1) => Some(Message::ShowHelp),
+        KeyCode::Char('.') => Some(Message::ShowOptions),
         _ => None,
     }
-}
-
-/// Collects the register rows for `account` into owned [`RegisterRow`]s so
-/// they can be displayed without keeping the `FallibleLender` alive.
-pub fn load_register<'ctx>(
-    ledger: &mut Ledger<'ctx>,
-    ctx: &ReportContext<'ctx>,
-    template: &RegisterQueryTemplate<'ctx>,
-    scope: RegisterScope<'ctx>,
-) -> anyhow::Result<Vec<RegisterRow<'ctx>>> {
-    let account = match scope {
-        RegisterScope::Single(account) => AccountFilter::single(account),
-        RegisterScope::Subtree(aggregate) => AccountFilter::descendants_of(ctx, aggregate),
-        RegisterScope::All => AccountFilter::All,
-    };
-    let query = RegisterQuery {
-        account,
-        date_range: template.date_range,
-        conversion: template.conversion,
-        sort: Sort::Date,
-    };
-    let mut entries = ledger.register_entries(ctx, &query)?;
-    let mut rows = Vec::new();
-    while let Some(entry) = entries.next()? {
-        rows.push(RegisterRow {
-            date: entry.date,
-            payee: entry.payee.to_owned(),
-            amount: entry.amount.clone(),
-            total: entry.total.clone(),
-        });
-    }
-    Ok(rows)
 }
 
 #[cfg(test)]
@@ -190,12 +154,13 @@ mod tests {
     use crate::ui::table::{NavCommand, TableNav};
 
     use super::super::balance::BalanceMessage;
+    use super::super::form::FormMessage;
     use super::super::overlay::{ScrollDelta, TextPopup};
-    use super::super::register::{RegisterMessage, RegisterView};
+    use super::super::register::{RegisterMessage, RegisterScope, RegisterView};
     use super::super::search::{
         Search, SearchDirection, SearchIntent, SearchMatch, SearchMode, SearchPhase,
     };
-    use super::super::testing::{make_account, template};
+    use super::super::testing::{make_account, query_state};
 
     /// A single-account register screen for `account`, empty rows.
     fn register_screen<'ctx>(account: Account<'ctx>) -> Screen<'ctx> {
@@ -216,7 +181,7 @@ mod tests {
     }
 
     fn app<'ctx>() -> App<'ctx> {
-        App::new("test".to_owned(), Vec::new(), template())
+        App::new("test".to_owned(), Vec::new(), query_state())
     }
 
     #[test]
@@ -500,6 +465,77 @@ mod tests {
                 "{key:?}"
             );
         }
+    }
+
+    #[test]
+    fn dot_opens_the_query_options_on_both_screens() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
+        let mut app = app();
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('.'))),
+            Some(Message::ShowOptions)
+        );
+        app.screen = register_screen(account);
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('.'))),
+            Some(Message::ShowOptions)
+        );
+    }
+
+    /// A `.` typed into a search is a `.` — the search owns every key while it
+    /// is being edited, the same way the options form does.
+    #[test]
+    fn dot_during_an_incremental_search_is_typed() {
+        let mut app = app();
+        app.update(Message::Balance(BalanceMessage::StartModalSearch));
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Char('.'))),
+            Some(Message::Balance(BalanceMessage::SearchPush('.')))
+        );
+    }
+
+    fn app_with_options_form<'ctx>() -> App<'ctx> {
+        let mut app = app();
+        app.update(Message::ShowOptions);
+        app
+    }
+
+    /// The form is typed into, so the keys that navigate and quit the screen
+    /// under it become text — which is why it has to take them all.
+    #[test]
+    fn options_form_takes_the_screen_keys_as_text() {
+        let app = app_with_options_form();
+        for c in ['j', 'k', 'q', 'r', 't', '/', '.'] {
+            assert_eq!(
+                key_to_message(&app, key(KeyCode::Char(c))),
+                Some(Message::Form(FormMessage::Push(c))),
+                "{c:?}"
+            );
+        }
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Tab)),
+            Some(Message::Form(FormMessage::FocusNext))
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Enter)),
+            Some(Message::Form(FormMessage::Submit))
+        );
+        assert_eq!(
+            key_to_message(&app, key(KeyCode::Esc)),
+            Some(Message::Form(FormMessage::Cancel))
+        );
+    }
+
+    /// The one key that still gets through: the session is quittable from
+    /// anywhere.
+    #[test]
+    fn ctrl_c_quits_through_the_options_form() {
+        let app = app_with_options_form();
+        assert_eq!(
+            key_to_message(&app, ctrl_key('c')),
+            Some(Message::QuitImmediate)
+        );
     }
 
     /// Typing `?` into a search is typing a `?`, not asking for help.

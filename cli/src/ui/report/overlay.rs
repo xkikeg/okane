@@ -1,12 +1,15 @@
 //! Modal overlays drawn on top of the report screens.
 //!
-//! [`Overlay`] is the quit-confirmation prompt, or a scrollable [`TextPopup`]
-//! holding either the key help or a full error report — two bodies of text the
-//! user reads and dismisses, which is all the popup itself knows about them.
+//! [`Overlay`] is the quit-confirmation prompt, the query-options form, or a
+//! scrollable [`TextPopup`] holding either the key help or a full error report
+//! — two bodies of text the user reads and dismisses, which is all the popup
+//! itself knows about them.
 
 use std::cmp::{max, min};
 
 use crate::ui::table::NavCommand;
+
+use super::form::OptionsForm;
 
 /// A scroll request against a scrollable overlay body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,6 +104,8 @@ pub enum Overlay {
     Error(TextPopup),
     /// The key bindings of the screen it was opened from.
     Help(TextPopup),
+    /// The query options (`.`), open for editing.
+    Options(OptionsForm),
 }
 
 impl Overlay {
@@ -108,7 +113,7 @@ impl Overlay {
     pub fn scrollable_mut(&mut self) -> Option<&mut TextPopup> {
         match self {
             Overlay::Error(popup) | Overlay::Help(popup) => Some(popup),
-            Overlay::QuitConfirm => None,
+            Overlay::QuitConfirm | Overlay::Options(_) => None,
         }
     }
 }

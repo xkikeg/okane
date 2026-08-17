@@ -16,7 +16,10 @@
 mod app;
 mod balance;
 mod event;
+mod form;
+mod fulfill;
 mod help;
+mod options;
 mod overlay;
 mod register;
 mod render;
@@ -25,17 +28,16 @@ mod search;
 mod testing;
 
 pub use app::App;
-pub use register::RegisterQueryTemplate;
+pub use options::QueryOptions;
 
 use bumpalo::Bump;
 use okane_core::load;
-use okane_core::report::query::{
-    AccountFilter, BalanceQuery, Conversion, ConversionStrategy, DateRange, Ledger, QueryError,
-};
-use okane_core::report::{self, OwnedCommodity, ProcessOptions, ReportContext};
+use okane_core::report::query::Ledger;
+use okane_core::report::{self, ReportContext};
 use ratatui::DefaultTerminal;
 
 use app::UiSnapshot;
+use options::QueryState;
 use overlay::{Overlay, TextPopup};
 
 /// Everything needed to build (and rebuild) a session: the loader re-reads
@@ -48,46 +50,16 @@ pub struct SessionConfig<F: load::FileSystem> {
     /// errors from a reload are shown in the TUI's error modal, which
     /// renders the (styled) ANSI output via `ansi-to-tui`.
     loader: load::Loader<F>,
-    process_options: ProcessOptions,
-    /// `--exchange` conversion as owned data, re-resolved against each
-    /// session's fresh [`ReportContext`].
-    conversion: Option<ConversionSpec>,
-    date_range: DateRange,
+    /// The query the session opens with. Only the *initial* one: the `.` form
+    /// replaces it for the rest of the session, so the loop below tracks the
+    /// current options separately.
+    options: QueryOptions,
 }
 
 impl<F: load::FileSystem> SessionConfig<F> {
-    /// Wraps a loader for the source plus the query configuration.
-    pub fn new(
-        loader: load::Loader<F>,
-        process_options: ProcessOptions,
-        conversion: Option<ConversionSpec>,
-        date_range: DateRange,
-    ) -> Self {
-        Self {
-            loader,
-            process_options,
-            conversion,
-            date_range,
-        }
-    }
-}
-
-/// Owned form of [`Conversion`]: unlike the latter, it holds no arena
-/// reference, so it can be resolved against every session's context anew.
-pub struct ConversionSpec {
-    pub commodity: String,
-    pub strategy: ConversionStrategy,
-}
-
-impl ConversionSpec {
-    fn resolve<'ctx>(&self, ctx: &ReportContext<'ctx>) -> Result<Conversion<'ctx>, QueryError> {
-        let target = ctx.commodity(&self.commodity).ok_or_else(|| {
-            QueryError::CommodityNotFound(OwnedCommodity::from_string(self.commodity.clone()))
-        })?;
-        Ok(Conversion {
-            strategy: self.strategy,
-            target,
-        })
+    /// Wraps a loader for the source plus the query the session opens with.
+    pub fn new(loader: load::Loader<F>, options: QueryOptions) -> Self {
+        Self { loader, options }
     }
 }
 
@@ -122,26 +94,37 @@ fn session_loop<F: load::FileSystem>(
     terminal: &mut Option<DefaultTerminal>,
 ) -> anyhow::Result<()> {
     let mut snapshot: Option<UiSnapshot> = None;
+    // The query in effect. It starts as the CLI's and is replaced by the `.`
+    // form; like the snapshot, it is owned data that crosses the arena reset.
+    let mut options = config.options.clone();
     let mut first = true;
     loop {
         if !first {
             arena.reset();
         }
         let mut ctx = ReportContext::new(arena);
-        let built = build_session(&mut ctx, config, source_display, snapshot.as_ref());
+        let built = build_session(
+            &mut ctx,
+            config,
+            &options,
+            source_display,
+            snapshot.as_ref(),
+        );
         let (mut ledger, mut app, has_data) = match built {
             Ok(SessionData { ledger, app }) => (ledger, app, true),
             // A startup failure aborts before the terminal is set up.
             Err(err) if first => return Err(err),
             // A failed reload shows an empty session with the error in a modal;
             // `r` retries from there. The last snapshot is kept so a later
-            // successful reload still restores the pre-error UI state.
+            // successful reload still restores the pre-error UI state, and the
+            // options are kept as stated so the form opens on the ones that
+            // failed — which is how a bad `--price-db` gets corrected.
             Err(err) => {
-                let template = RegisterQueryTemplate {
-                    conversion: None,
-                    date_range: config.date_range,
-                };
-                let mut app = App::new(source_display.to_owned(), Vec::new(), template);
+                let mut app = App::new(
+                    source_display.to_owned(),
+                    Vec::new(),
+                    QueryState::unresolved(&options),
+                );
                 app.overlay = Some(error_overlay(source_display, err.as_ref()));
                 (Ledger::empty(&ctx), app, false)
             }
@@ -154,6 +137,9 @@ fn session_loop<F: load::FileSystem>(
                 if has_data {
                     snapshot = Some(app.snapshot());
                 }
+                // A reload asked for from the options form carries the new
+                // options on the app; a plain `r` leaves them as they were.
+                options = app.query.options.clone();
             }
         }
     }
@@ -171,44 +157,50 @@ struct SessionData<'ctx> {
 fn build_session<'ctx, F: load::FileSystem>(
     ctx: &mut ReportContext<'ctx>,
     config: &SessionConfig<F>,
+    options: &QueryOptions,
     source_display: &str,
     snapshot: Option<&UiSnapshot>,
 ) -> anyhow::Result<SessionData<'ctx>> {
-    let mut ledger = report::process(ctx, &config.loader, &config.process_options)?;
-    let conversion = config
-        .conversion
-        .as_ref()
-        .map(|spec| spec.resolve(ctx))
-        .transpose()?;
-    let query = BalanceQuery {
-        account: AccountFilter::All,
-        conversion,
-        date_range: config.date_range,
-    };
-    let balance = ledger.balance(ctx, &query)?.into_owned();
+    let mut ledger = report::process(ctx, &config.loader, &options.to_process_options())?;
+    let app = build_app(ctx, &mut ledger, options, source_display, snapshot)?;
+    Ok(SessionData { ledger, app })
+}
+
+/// Builds the whole UI state for `options` over an already-processed `ledger`,
+/// restoring `snapshot` when given.
+///
+/// This is the step a session build and an options change have in common: the
+/// balance is queried, turned into the account tree the screen is drawn from,
+/// and the previous UI state (selection, fold state, search, open register) is
+/// re-applied to it. The two differ only in whether the source was just read
+/// from disk, which is what makes changing a query option cheap — see
+/// [`fulfill`].
+///
+/// Fails without touching anything when the options cannot be run (an
+/// `--exchange` commodity the file never mentions), so the caller can keep the
+/// report it already has.
+fn build_app<'ctx>(
+    ctx: &ReportContext<'ctx>,
+    ledger: &mut Ledger<'ctx>,
+    options: &QueryOptions,
+    source_display: &str,
+    snapshot: Option<&UiSnapshot>,
+) -> anyhow::Result<App<'ctx>> {
+    let query = options.resolve(ctx)?;
+    let balance = ledger.balance(ctx, &query.balance_query())?.into_owned();
     let tree = report::BalanceTree::create(ctx, balance)?.into_nodes();
-    let template = RegisterQueryTemplate {
-        conversion,
-        date_range: config.date_range,
-    };
-    let mut app = App::new(source_display.to_owned(), tree, template);
+    let mut app = App::new(source_display.to_owned(), tree, query);
     if let Some(snapshot) = snapshot
         && let Some((scope, index)) = app.restore(snapshot)
     {
         // The snapshot had the register screen open; re-query its rows
         // against the fresh data.
-        match event::load_register(&mut ledger, ctx, &app.register_template, scope) {
+        match fulfill::load_register(ledger, ctx, &app.query.template, scope) {
             Ok(rows) => app.show_register_at(scope, rows, index),
-            Err(err) => {
-                app.error_toast = Some(format!(
-                    "failed to load register for {}: {}",
-                    scope.display_name(),
-                    error_summary(err.as_ref())
-                ));
-            }
+            Err(err) => app.error_toast = Some(fulfill::register_error(scope, err.as_ref())),
         }
     }
-    Ok(SessionData { ledger, app })
+    Ok(app)
 }
 
 /// One-line summary of an error chain, suitable for the TUI footer. Each
@@ -313,12 +305,7 @@ mod tests {
     "};
 
     fn session_config(content: &str) -> SessionConfig<FakeFileSystem> {
-        SessionConfig::new(
-            fake_loader(content),
-            ProcessOptions::default(),
-            None,
-            DateRange::default(),
-        )
+        SessionConfig::new(fake_loader(content), testing::options())
     }
 
     /// Builds one session from `content` the way the session loop does.
@@ -328,7 +315,7 @@ mod tests {
         snapshot: Option<&UiSnapshot>,
     ) -> anyhow::Result<SessionData<'ctx>> {
         let config = session_config(content);
-        build_session(ctx, &config, "test", snapshot)
+        build_session(ctx, &config, &testing::options(), "test", snapshot)
     }
 
     fn account_names(app: &App<'_>) -> Vec<String> {
@@ -409,7 +396,7 @@ mod tests {
             let account = ctx.account("Assets:Bank").unwrap();
             let scope = RegisterScope::Single(account);
             let rows =
-                event::load_register(&mut ledger, &ctx, &app.register_template, scope).unwrap();
+                fulfill::load_register(&mut ledger, &ctx, &app.query.template, scope).unwrap();
             app.show_register(scope, rows);
             app.snapshot()
         };
@@ -439,7 +426,7 @@ mod tests {
             let account = ctx.account("Expenses:Food").unwrap();
             let scope = RegisterScope::Single(account);
             let rows =
-                event::load_register(&mut ledger, &ctx, &app.register_template, scope).unwrap();
+                fulfill::load_register(&mut ledger, &ctx, &app.query.template, scope).unwrap();
             app.show_register(scope, rows);
             app.snapshot()
         };

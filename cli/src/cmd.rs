@@ -476,9 +476,7 @@ impl UiCmd {
         // here borrows it.
         let config = ui::report::SessionConfig::new(
             load::new_loader(self.source.clone()),
-            self.eval_options.to_process_options(),
-            self.eval_options.to_conversion_spec(),
-            self.eval_options.to_date_range()?,
+            self.eval_options.to_query_options()?,
         );
         let mut arena = Bump::new();
         ui::report::run_ui(&mut arena, self.source.display().to_string(), &config)
@@ -692,12 +690,21 @@ impl EvalOptions {
         }))
     }
 
-    /// Owned counterpart of [`Self::to_conversion`] for the UI session
-    /// loop, which re-resolves it against each session's fresh context.
-    fn to_conversion_spec(&self) -> Option<ui::report::ConversionSpec> {
-        self.exchange.as_ref().map(|ex| ui::report::ConversionSpec {
-            commodity: ex.clone(),
-            strategy: self.conversion_strategy(),
+    /// Owned counterpart of [`Self::to_conversion`] for the UI, which
+    /// re-resolves the query against every session's fresh context — and lets
+    /// the user restate it from inside the TUI.
+    ///
+    /// `--current` is resolved here rather than carried along: it is shorthand
+    /// for an end date, and the form shows dates.
+    fn to_query_options(&self) -> anyhow::Result<ui::report::QueryOptions> {
+        let range = self.to_date_range()?;
+        Ok(ui::report::QueryOptions {
+            price_db: self.price_db.clone(),
+            exchange: self.exchange.clone(),
+            historical: self.historical,
+            today: self.today,
+            start: range.start,
+            end: range.end,
         })
     }
 

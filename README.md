@@ -75,6 +75,11 @@ $ okane ui --price-db ~/ledger/prices.db -X CHF --historical /path/to/file.ledge
 $ okane ui --start 2024-01-01 --end 2025-01-01 /path/to/file.ledger
 ```
 
+`.` opens those same options in a form, so you can change them without leaving
+the UI: pick a commodity to convert into, bound the dates, or point at a
+different price DB, and the report is recomputed with your place in it kept.
+Whichever ones are in effect are shown in the status bar.
+
 ### Format the file
 
 ```shell
