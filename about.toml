@@ -1,0 +1,38 @@
+# Configuration for cargo-about, used to collect the license texts of every
+# crate linked into the released `okane` binary.
+# See https://embarkstudios.github.io/cargo-about/ for all options.
+#
+# Run locally with:
+#   cargo about generate -m cli/Cargo.toml --target <triple> \
+#     -o THIRD-PARTY-LICENSES.html about.hbs
+
+# Licenses we are willing to redistribute under. Keep this in sync with the
+# `licenses.allow` list in deny.toml: cargo-deny gates which licenses may enter
+# the dependency tree, and this list decides which ones cargo-about is able to
+# emit a notice for. When a crate is dual-licensed, the first match here wins,
+# so MIT comes before Apache-2.0.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "Unicode-3.0",
+    "Zlib",
+]
+
+# Targets we ship a binary for. Overridden by `--target` in CI so that each
+# archive only lists the crates actually linked into that archive's binary.
+targets = [
+    "x86_64-unknown-linux-musl",
+    "x86_64-pc-windows-msvc",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+
+# Only consider dependencies that are actually reachable from the binary.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+
+# okane's own crates are covered by the LICENSE file shipped next to this
+# notice, so they don't need an entry of their own.
+[private]
+ignore = true

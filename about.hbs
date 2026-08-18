@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>okane — Third Party Licenses</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0 auto;
+        padding: 2rem 1rem 4rem;
+        max-width: 52rem;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        line-height: 1.5;
+      }
+      h1 {
+        margin-bottom: 0.25rem;
+      }
+      .intro {
+        margin-top: 0;
+      }
+      .overview {
+        padding-left: 1.25rem;
+      }
+      .license {
+        margin-top: 2.5rem;
+        border-top: 1px solid rgba(127, 127, 127, 0.4);
+        padding-top: 1rem;
+      }
+      .used-by {
+        padding-left: 1.25rem;
+      }
+      .license-text {
+        padding: 1rem;
+        background: rgba(127, 127, 127, 0.12);
+        border-radius: 4px;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        font-size: 0.85rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Third Party Licenses</h1>
+    <p class="intro">
+      The <a href="https://github.com/xkikeg/okane">okane</a> binary shipped
+      alongside this file statically links the crates listed below, so their
+      license texts are reproduced here in full as required for
+      redistribution. okane's own crates are part of that list; they are
+      licensed under the MIT license, see the accompanying <code>LICENSE</code>
+      file.
+    </p>
+    <h2>Overview</h2>
+    <ul class="overview">
+      {{#each overview}}
+      <li><a href="#{{id}}">{{name}}</a> — {{count}} crate{{#if (ne count 1)}}s{{/if}}</li>
+      {{/each}}
+    </ul>
+    {{#each licenses}}
+    <section class="license">
+      <h2{{#if first_of_kind}} id="{{id}}"{{/if}}>{{name}}</h2>
+      <p>Used by:</p>
+      <ul class="used-by">
+        {{#each used_by}}
+        <li>
+          <a href="{{#if this.crate.repository}}{{this.crate.repository}}{{else}}https://crates.io/crates/{{this.crate.name}}{{/if}}">{{this.crate.name}} {{this.crate.version}}</a>
+        </li>
+        {{/each}}
+      </ul>
+      <pre class="license-text">{{text}}</pre>
+    </section>
+    {{/each}}
+  </body>
+</html>
