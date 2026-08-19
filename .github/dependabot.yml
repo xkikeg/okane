@@ -13,4 +13,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    versioning-strategy: increase-if-necessary
+    # Dependabot no longer accepts increase-if-necessary for cargo -- only
+    # lockfile-only and auto. auto keeps the behaviour we had: the manifest
+    # requirement is widened only when it does not already allow the new
+    # version, otherwise just the lock file moves.
+    versioning-strategy: auto
