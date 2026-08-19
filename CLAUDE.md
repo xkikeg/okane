@@ -66,7 +66,7 @@ Winnow-based recursive-descent parser. `parse::parse_ledger()` is the public ent
 
 ### `core/src/load.rs`
 
-`Loader<F: FileSystem>` reads a file and resolves `include` directives recursively. A `FakeFileSystem` impl is provided for testing (avoids touching real disk). Arena-allocated via `bumpalo`.
+`Loader<F: FileSystem>` reads a file and resolves `include` directives recursively. `load()` reports every entry (swallowing the `include` directives themselves); `list_files()` / `scan_files()` instead report the reachable file paths, which is what `okane format` walks to format a whole tree. A `FakeFileSystem` impl is provided for testing (avoids touching real disk). Arena-allocated via `bumpalo`.
 
 ### `core/src/report/`
 

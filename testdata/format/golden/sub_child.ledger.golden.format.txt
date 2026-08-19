@@ -1,0 +1,12 @@
+commodity CHF
+    ; Swiss franc.
+    alias Fr.
+
+2024/02/03 * Salary
+    Income:Salary                          -1,000.00 CHF
+    Assets:Bank:ZKB                         1,000.00 CHF
+
+2024/02/04 Precision
+    Expenses:Books                            1.2345 OKANE
+    Expenses:Travel                        12,345.67 USD
+    Assets:Bank:ZKB

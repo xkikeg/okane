@@ -28,7 +28,9 @@ log = "0.4"
 pretty_decimal = { version = "0.2.1", features = ["bounded-static"] }
 regex = "1.12"
 rust_decimal = "1.42"
+similar = "2.7"
 strum = { version = "0.28", features = ["derive"] }
+tempfile = "3.27.0"
 thiserror = "2.0"
 unicode-width = "0.2"
 winnow = "1.0"

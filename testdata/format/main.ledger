@@ -1,0 +1,23 @@
+; Explains the account below.
+account Assets:Bank:ZKB
+ ; ZKB is a bank in Zürich.
+ alias  Bank
+
+include  sub/*.ledger
+
+apply tag  foo
+apply tag  bar:  baz
+end  apply  tag
+end apply tag
+
+
+2024/1/2 Grocery
+  Expenses:Grocery   12.30 CHF
+  Assets:Bank:ZKB
+; Explains the transaction above.
+
+2024/1/3 Cross-file formats
+  Expenses:Grocery   1234 JPY
+  Expenses:Books  2 OKANE
+  Expenses:Travel   1,234.56 USD
+  Assets:Bank:ZKB   = 0

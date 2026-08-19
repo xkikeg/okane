@@ -73,9 +73,35 @@ $ okane ui --start 2024-01-01 --end 2025-01-01 /path/to/file.ledger
 
 ```shell
 $ okane format ~/ledger/account.ledger
+$ okane fmt ~/ledger/account.ledger      # 同じ意味です
 ```
 
-現在は整形済みのテキストを標準出力に吐くだけになっています。近々inplaceの置換やdiffモード、recursiveオプションを実装したいと思っています。
+指定したファイルと、そこから `include` で辿れるファイルすべてを、その場で書き換えます。
+
+金額の表示方法は通貨ごとに、ファイル全体を見た上で決まります。`commodity ... format` ディレクティブはどのファイルで宣言されていても効き、宣言のない通貨は実際に書かれている金額に合わせるので、同じ通貨はどこでも同じ見た目になります。
+
+```ledger
+commodity JPY
+    format 1,000 JPY
+```
+
+`--check` を付けると何も書き込まず、代わりに変更内容をunified diff形式で表示し、整形されていないファイルがあれば終了コード `1` を返します。Gitのhookやテストとして使えます。
+
+```shell
+$ okane format --check ~/ledger/account.ledger || echo "okane format を実行してください"
+```
+
+`include` を辿らずに、1ファイルだけ整形して標準出力に吐くには次のようにします。
+
+```shell
+$ okane primitive format ~/ledger/account.ledger
+```
+
+こちらは通貨の設定を一切探さず、金額は書かれたままの形式で出力します。指定したい場合はフラグを使ってください。
+
+```shell
+$ okane primitive format --commodity-format 'CHF=1,000.00' ~/ledger/account.ledger
+```
 
 ### CSV / ISO Camt053 XMLファイルの取り込み
 

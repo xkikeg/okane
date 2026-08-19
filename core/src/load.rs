@@ -9,7 +9,7 @@ pub use annotate_snippets::Renderer;
 
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{self, Path, PathBuf},
 };
 
@@ -111,37 +111,120 @@ impl<F: FileSystem> Loader<F> {
                 parsed.map_err(|e| LoadError::Parse(e, path.clone().into_owned()))?;
             match &entry.statement {
                 syntax::LedgerStatement::Include(p) => {
-                    let include_path: PathBuf = p.0.as_ref().into();
-                    let target: String = path
-                        .as_ref()
-                        .parent()
-                        .ok_or_else(|| LoadError::RootLoadingPath(path.as_ref().to_owned()))?
-                        .join(include_path)
-                        .into_os_string()
-                        .into_string()
-                        .map_err(|x| {
-                            LoadError::InvalidUnicodePath(format!("{}", PathBuf::from(x).display()))
-                        })?;
-                    let mut paths: Vec<PathBuf> = self.filesystem.glob(&target)?;
-                    if paths.is_empty() {
-                        return Err(LoadError::IO(
-                            std::io::Error::new(
-                                std::io::ErrorKind::NotFound,
-                                format!("glob {} does not hit any files", target),
-                            ),
-                            PathBuf::from(target),
-                        )
-                        .into());
-                    }
-                    log::debug!("glob {} hit {} files", target, paths.len());
-                    paths.sort_unstable();
-                    for path in &paths {
-                        self.load_impl(parse_options, path, callback)?;
+                    for included in self.resolve_include(&path, p)? {
+                        self.load_impl(parse_options, &included, callback)?;
                     }
                     Ok(())
                 }
                 _ => callback(&path, &ctx, &entry),
             }?;
+        }
+        Ok(())
+    }
+
+    /// Resolves the `include` directive found in `path` into the files it refers to,
+    /// sorted so that the load order is deterministic.
+    fn resolve_include(
+        &self,
+        path: &Path,
+        include: &syntax::IncludeFile<'_>,
+    ) -> Result<Vec<PathBuf>, LoadError> {
+        let include_path: PathBuf = include.0.as_ref().into();
+        let target: String = path
+            .parent()
+            .ok_or_else(|| LoadError::RootLoadingPath(path.to_owned()))?
+            .join(include_path)
+            .into_os_string()
+            .into_string()
+            .map_err(|x| {
+                LoadError::InvalidUnicodePath(format!("{}", PathBuf::from(x).display()))
+            })?;
+        let mut paths: Vec<PathBuf> = self.filesystem.glob(&target)?;
+        if paths.is_empty() {
+            return Err(LoadError::IO(
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("glob {} does not hit any files", target),
+                ),
+                PathBuf::from(target),
+            ));
+        }
+        log::debug!("glob {} hit {} files", target, paths.len());
+        paths.sort_unstable();
+        Ok(paths)
+    }
+
+    /// Returns every file reachable from the source, in load order.
+    ///
+    /// The source itself comes first, then the files its `include` directives
+    /// refer to, recursively. A file reached more than once (included twice, or
+    /// matched by overlapping globs) appears only once, which also keeps an
+    /// `include` cycle from recursing forever.
+    ///
+    /// Unlike [`Self::load`] this does not report the entries, so it is the way
+    /// to work on the files themselves, e.g. to format them. Use
+    /// [`Self::scan_files`] to look at the entries on the way.
+    pub fn list_files(&self) -> Result<Vec<PathBuf>, LoadError> {
+        self.scan_files(|_, _| ())
+    }
+
+    /// Walks every file reachable from the source in load order, reporting
+    /// every parsed entry to `observer`, and returns the files walked.
+    ///
+    /// This is [`Self::list_files`] with a look at the content: the walk has to
+    /// parse each file anyway to find its `include` directives, so an observer
+    /// gets the entries for free. It is what lets a formatter learn the ledger
+    /// wide settings, e.g. the `commodity` formats, before printing anything.
+    ///
+    /// Two differences against [`Self::load`]: `include` entries are reported
+    /// as well, and a file reached twice is parsed only once, which also
+    /// terminates on an `include` cycle.
+    pub fn scan_files<O>(&self, mut observer: O) -> Result<Vec<PathBuf>, LoadError>
+    where
+        O: FnMut(&Path, &syntax::plain::LedgerEntry<'_>),
+    {
+        let popts = parse::ParseOptions::default().with_error_style(self.error_style.clone());
+        let mut found = Vec::new();
+        let mut visited = HashSet::new();
+        self.scan_files_impl(
+            &popts,
+            &self.source,
+            &mut found,
+            &mut visited,
+            &mut observer,
+        )?;
+        Ok(found)
+    }
+
+    fn scan_files_impl<O>(
+        &self,
+        parse_options: &parse::ParseOptions,
+        path: &Path,
+        found: &mut Vec<PathBuf>,
+        visited: &mut HashSet<PathBuf>,
+        observer: &mut O,
+    ) -> Result<(), LoadError>
+    where
+        O: FnMut(&Path, &syntax::plain::LedgerEntry<'_>),
+    {
+        let path: Cow<'_, Path> = F::canonicalize_path(path);
+        if !visited.insert(path.as_ref().to_owned()) {
+            log::debug!("skipping already visited file {}", path.display());
+            return Ok(());
+        }
+        found.push(path.as_ref().to_owned());
+        let content = self
+            .filesystem
+            .file_content_utf8(&path)
+            .map_err(|err| LoadError::IO(err, path.clone().into_owned()))?;
+        for parsed in parse::parse_ledger::<syntax::plain::Ident>(parse_options, &content) {
+            let (_, entry) = parsed.map_err(|e| LoadError::Parse(e, path.clone().into_owned()))?;
+            observer(&path, &entry);
+            if let syntax::LedgerStatement::Include(p) = &entry.statement {
+                for included in self.resolve_include(&path, p)? {
+                    self.scan_files_impl(parse_options, &included, found, visited, observer)?;
+                }
+            }
         }
         Ok(())
     }
@@ -314,6 +397,176 @@ mod tests {
             Ok::<(), LoadError>(())
         })?;
         Ok(ret)
+    }
+
+    #[test]
+    fn list_files_returns_reachable_files_in_load_order() {
+        let mut testdata_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        assert!(testdata_dir.pop());
+        testdata_dir.push("testdata/load");
+        testdata_dir = dunce::canonicalize(testdata_dir).unwrap();
+        let root = testdata_dir.join("recursive.ledger");
+
+        let got = new_loader(root.clone())
+            .list_files()
+            .expect("list_files must succeed");
+
+        assert_eq!(
+            vec![
+                root,
+                // recursive.ledger includes child1.ledger, which globs sub/child*.ledger.
+                testdata_dir.join("child1.ledger"),
+                testdata_dir.join("sub").join("child2.ledger"),
+                // child2.ledger includes ../child3.ledger.
+                testdata_dir.join("child3.ledger"),
+                testdata_dir.join("sub").join("child4.ledger"),
+            ],
+            got
+        );
+    }
+
+    #[test]
+    fn list_files_visits_a_file_included_twice_only_once() {
+        let fake = hashmap! {
+            PathBuf::from("path/to/root.ledger") => indoc! {"
+                include child.ledger
+                include child.ledger
+            "}.as_bytes().to_vec(),
+            PathBuf::from("path/to/child.ledger") => indoc! {"
+                ; nothing to include
+            "}.as_bytes().to_vec(),
+        };
+
+        let got = Loader::new(
+            PathBuf::from("path/to/root.ledger"),
+            FakeFileSystem::from(fake),
+        )
+        .list_files()
+        .expect("list_files must succeed");
+
+        assert_eq!(
+            vec![
+                PathBuf::from("path/to/root.ledger"),
+                PathBuf::from("path/to/child.ledger"),
+            ],
+            got
+        );
+    }
+
+    #[test]
+    fn list_files_terminates_on_include_cycle() {
+        let fake = hashmap! {
+            PathBuf::from("path/to/root.ledger") => indoc! {"
+                include child.ledger
+            "}.as_bytes().to_vec(),
+            PathBuf::from("path/to/child.ledger") => indoc! {"
+                include root.ledger
+            "}.as_bytes().to_vec(),
+        };
+
+        let got = Loader::new(
+            PathBuf::from("path/to/root.ledger"),
+            FakeFileSystem::from(fake),
+        )
+        .list_files()
+        .expect("list_files must succeed");
+
+        assert_eq!(
+            vec![
+                PathBuf::from("path/to/root.ledger"),
+                PathBuf::from("path/to/child.ledger"),
+            ],
+            got
+        );
+    }
+
+    /// Renders every entry `scan_files` reports, to keep the assertions short.
+    fn scan_into_vec<F>(loader: &Loader<F>) -> Result<Vec<(PathBuf, String)>, LoadError>
+    where
+        F: FileSystem,
+    {
+        let ctx = syntax::display::DisplayContext::default();
+        let mut ret = Vec::new();
+        loader.scan_files(|path, entry| {
+            ret.push((path.to_owned(), ctx.as_display(entry).to_string()));
+        })?;
+        Ok(ret)
+    }
+
+    #[test]
+    fn scan_files_reports_every_entry_including_include() {
+        let fake = hashmap! {
+            PathBuf::from("path/to/root.ledger") => indoc! {"
+                account Expenses:Grocery
+                include child.ledger
+            "}.as_bytes().to_vec(),
+            PathBuf::from("path/to/child.ledger") => indoc! {"
+                commodity CHF
+                    format 1,000.00 CHF
+            "}.as_bytes().to_vec(),
+        };
+        let loader = Loader::new(
+            PathBuf::from("path/to/root.ledger"),
+            FakeFileSystem::from(fake),
+        );
+
+        let got = scan_into_vec(&loader).expect("scan_files must succeed");
+
+        // Unlike load(), the `include` directive is reported as well.
+        assert_eq!(
+            vec![
+                (
+                    PathBuf::from("path/to/root.ledger"),
+                    "account Expenses:Grocery\n".to_string()
+                ),
+                (
+                    PathBuf::from("path/to/root.ledger"),
+                    "include child.ledger\n".to_string()
+                ),
+                (
+                    PathBuf::from("path/to/child.ledger"),
+                    "commodity CHF\n    format 1,000.00 CHF\n".to_string()
+                ),
+            ],
+            got
+        );
+    }
+
+    #[test]
+    fn scan_files_reports_a_file_included_twice_only_once() {
+        let fake = hashmap! {
+            PathBuf::from("path/to/root.ledger") => indoc! {"
+                include child.ledger
+                include child.ledger
+            "}.as_bytes().to_vec(),
+            PathBuf::from("path/to/child.ledger") => indoc! {"
+                account Expenses:Grocery
+            "}.as_bytes().to_vec(),
+        };
+        let loader = Loader::new(
+            PathBuf::from("path/to/root.ledger"),
+            FakeFileSystem::from(fake),
+        );
+
+        let got = scan_into_vec(&loader).expect("scan_files must succeed");
+
+        assert_eq!(
+            vec![
+                (
+                    PathBuf::from("path/to/root.ledger"),
+                    "include child.ledger\n".to_string()
+                ),
+                (
+                    PathBuf::from("path/to/child.ledger"),
+                    "account Expenses:Grocery\n".to_string()
+                ),
+                (
+                    PathBuf::from("path/to/root.ledger"),
+                    "include child.ledger\n".to_string()
+                ),
+            ],
+            got
+        );
     }
 
     #[test]

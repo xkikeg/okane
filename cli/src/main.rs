@@ -19,19 +19,22 @@ shadow!(build);
 
 use clap::Parser as _;
 
-fn main() {
+fn main() -> std::process::ExitCode {
     env_logger::init();
     let cli = cmd::Cli::parse();
     if let Err(err) = cli.validate() {
         eprintln!("{}", err);
         std::process::exit(2);
     }
-    if let Err(err) = cli.run(&mut std::io::stdout().lock()) {
-        eprintln!("{}", err);
-        for cause in err.chain().skip(1) {
-            eprintln!("Caused by {}", cause);
+    match cli.run(&mut std::io::stdout().lock()) {
+        Ok(code) => code,
+        Err(err) => {
+            eprintln!("{}", err);
+            for cause in err.chain().skip(1) {
+                eprintln!("Caused by {}", cause);
+            }
+            std::process::exit(1);
         }
-        std::process::exit(1);
     }
 }
 
