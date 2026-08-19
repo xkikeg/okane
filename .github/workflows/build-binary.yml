@@ -39,6 +39,20 @@ jobs:
           - build: linux-aarch64-musl
             os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
+          # glibc archives ship next to the musl ones because musl's
+          # allocator costs 1.2-1.5x on the report path (#561). musl stays for
+          # Alpine, for distributions older than the runners below, and for
+          # anyone who wants a fully static binary; cargo-binstall picks the
+          # archive matching the host triple, so glibc users get the faster
+          # build without asking for it. Built on the oldest still-supported
+          # runner, since a glibc binary only runs on a glibc at least as new
+          # as the one it was linked against.
+          - build: linux-x86_64-gnu
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - build: linux-aarch64-gnu
+            os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
           - build: windows-x86_64
             os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -56,7 +70,14 @@ jobs:
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
+      # One cache per matrix entry. rust-cache keys on the job id plus
+      # `Linux`/`x64`, which does not tell the runner images apart, so the
+      # 24.04 musl job and the 22.04 glibc job would otherwise share a target/
+      # directory. The host build scripts cached by the newer image then fail
+      # to run on the older one with `GLIBC_2.39 not found`.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: ${{ matrix.build }}
       - name: Install cargo-about
         uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
         with:
