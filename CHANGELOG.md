@@ -4,6 +4,9 @@
 
 ### Added
 
+* Release archives are now built for 64-bit ARM Linux (`aarch64-unknown-linux-musl`) as well, so
+  that Raspberry Pi and arm64 cloud hosts no longer have to build okane from source.
+
 ### Changed
 
 ### Fixed
