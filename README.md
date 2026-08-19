@@ -84,10 +84,43 @@ Whichever ones are in effect are shown in the status bar.
 
 ```shell
 $ okane format ~/ledger/account.ledger
+$ okane fmt ~/ledger/account.ledger      # same thing
 ```
 
-This command currently prints the formatted output into standard output.
-In future in-place format would be provided, also to emit diffs to be used as Git hook.
+This rewrites the given file in place, together with every file it pulls in through
+`include` directives.
+
+How an amount is printed is decided per commodity, over the whole set of files: the
+`commodity ... format` directives are honoured wherever they are declared, and a
+commodity without one follows the amounts written for it, so that the same commodity
+looks the same everywhere.
+
+```ledger
+commodity JPY
+    format 1,000 JPY
+```
+
+With `--check` it writes nothing and instead prints a unified diff of the changes it
+would make, exiting with `1` if any file is not formatted. That makes it usable as a
+Git hook or a CI check:
+
+```shell
+$ okane format --check ~/ledger/account.ledger || echo "run okane format"
+```
+
+To format a single file and print the result to standard output instead, without
+following `include`:
+
+```shell
+$ okane primitive format ~/ledger/account.ledger
+```
+
+That one does not look for the commodity settings at all, and prints every amount the
+way it is written, unless it is told how to:
+
+```shell
+$ okane primitive format --commodity-format 'CHF=1,000.00' ~/ledger/account.ledger
+```
 
 ### Import CSV or ISO Camt053 XML files
 
