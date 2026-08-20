@@ -4,17 +4,23 @@
 
 ### Added
 
-* Release archives are now built for 64-bit ARM Linux (`aarch64-unknown-linux-musl`) as well, so
-  that Raspberry Pi and arm64 cloud hosts no longer have to build okane from source.
-* Release archives are now built against glibc (`x86_64-unknown-linux-gnu`,
-  `aarch64-unknown-linux-gnu`) next to the musl ones. musl's allocator makes the static binaries
-  1.2-1.5x slower on the report path, so glibc users are better served by a glibc archive;
-  `cargo binstall` picks the one matching the host automatically. The musl archives stay for
-  Alpine, for older distributions, and for anyone wanting a fully static binary.
-
 ### Changed
 
 ### Fixed
+
+## [0.21.1] - 2026-08-20
+
+### Added
+
+* Release archives are now built for 64-bit ARM Linux (`aarch64-unknown-linux-musl`) as well, so
+  that Raspberry Pi and arm64 cloud hosts no longer have to build okane from source
+  (https://github.com/xkikeg/okane/pull/559).
+* Release archives are now built against glibc (`x86_64-unknown-linux-gnu`,
+  `aarch64-unknown-linux-gnu`) next to the musl ones (https://github.com/xkikeg/okane/pull/562).
+  musl's allocator makes the static binaries 1.2-1.5x slower on the report path, so glibc users
+  are better served by a glibc archive; `cargo binstall` picks the one matching the host
+  automatically. The musl archives stay for Alpine, for older distributions, and for anyone wanting
+  a fully static binary.
 
 ## [0.21.0] - 2026-08-19
 
