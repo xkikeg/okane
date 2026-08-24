@@ -4,6 +4,14 @@
 
 ### Added
 
+* CLI: `ui` can now search accounts written in Japanese by romaji, through
+  [migemo](https://www.kaoriya.net/software/cmigemo/). Pass the tool as
+  `--migemo='cmigemo -q -d /usr/share/cmigemo/utf-8/migemo-dict'` and `/`, `C-s` and `C-r` expand
+  what you type into the regex matching the Japanese it stands for, so `ginkou` finds `資産:銀行`.
+  The process is spawned once and kept for the whole session (reloads included), so an incremental
+  search does not pay the dictionary load per keystroke. Without the flag the query is used as the
+  regex, as before.
+
 ### Changed
 
 ### Fixed

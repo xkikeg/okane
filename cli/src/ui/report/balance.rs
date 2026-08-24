@@ -10,6 +10,7 @@
 
 use std::cmp::min;
 use std::collections::HashSet;
+use std::rc::Rc;
 
 use crossterm::event::{KeyCode, KeyEvent};
 #[cfg(test)]
@@ -21,7 +22,9 @@ use crate::ui::table::{NavCommand, TableNav, key_to_nav};
 
 use super::register::{OwnedRegisterScope, RegisterScope};
 use super::render::amount_line_count;
-use super::search::{Search, SearchDirection, SearchIntent, SearchMatch, SearchMode, SearchPhase};
+use super::search::{
+    Search, SearchDirection, SearchIntent, SearchMatch, SearchMode, SearchPhase, Translator,
+};
 
 /// Whether the balance screen shows a flat account list or the account tree.
 ///
@@ -201,6 +204,10 @@ pub struct BalanceView<'ctx> {
     /// search via `C-s`/`C-r`. Shared across modal and interactive searches.
     /// Not `Option` because empty string can represent empty state.
     pub last_search: String,
+    /// How a typed pattern becomes the regex the rows are matched against.
+    /// Shared with the session rather than owned, so the migemo process is
+    /// spawned once and survives the reloads that rebuild this view.
+    pub translator: Rc<Translator>,
 }
 
 impl<'ctx> BalanceView<'ctx> {
@@ -217,6 +224,7 @@ impl<'ctx> BalanceView<'ctx> {
             amount_width: None,
             search: None,
             last_search: String::new(),
+            translator: Rc::default(),
         };
         view.rebuild_rows();
         view
@@ -237,6 +245,7 @@ impl<'ctx> BalanceView<'ctx> {
             amount_width: None,
             search: None,
             last_search: String::new(),
+            translator: Rc::default(),
         }
     }
 
@@ -650,7 +659,7 @@ impl<'ctx> BalanceView<'ctx> {
         if let Some(intent) = &snapshot.search {
             let mut intent = intent.clone();
             intent.origin = min(intent.origin, self.rows.len().saturating_sub(1));
-            let matches = SearchMatch::compute(&intent.input, &self.rows);
+            let matches = SearchMatch::compute(&intent.input, &self.rows, &self.translator);
             self.search = Some(Search { intent, matches });
         }
     }
@@ -811,7 +820,7 @@ impl<'ctx> BalanceView<'ctx> {
             SearchMode::Modal(_) => origin,
             SearchMode::Interactive => self.nav.selected_item().unwrap_or(origin),
         };
-        let matches = SearchMatch::compute(&intent.input, &self.rows);
+        let matches = SearchMatch::compute(&intent.input, &self.rows, &self.translator);
         let jump = match &matches {
             Some(Ok(m)) => m.first_match(reference, intent.dir),
             _ => None,

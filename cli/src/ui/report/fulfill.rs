@@ -8,6 +8,8 @@
 //! they leave the shown report exactly as it was and say what happened in the
 //! footer, which is why [`fulfill`] is infallible.
 
+use std::rc::Rc;
+
 use lender::FallibleLender;
 use okane_core::report::ReportContext;
 use okane_core::report::query::{AccountFilter, Ledger, RegisterQuery, Sort};
@@ -67,7 +69,17 @@ fn apply_options<'ctx>(
     // The whole view is rebuilt from the new query and the old UI state, the
     // same way a reload rebuilds it — including re-running an open register.
     let snapshot = app.snapshot();
-    match super::build_app(ctx, ledger, &options, &app.source_display, Some(&snapshot)) {
+    // The migemo process is the session's, not this app's: hand it to the app
+    // that replaces this one.
+    let translator = Rc::clone(&app.balance.translator);
+    match super::build_app(
+        ctx,
+        ledger,
+        &options,
+        &app.source_display,
+        &translator,
+        Some(&snapshot),
+    ) {
         Ok(next) => *app = next,
         // Nothing was swapped in, so the report on screen is still the one its
         // options describe.
@@ -165,7 +177,7 @@ mod tests {
         ledger: &mut Ledger<'ctx>,
         options: &QueryOptions,
     ) -> App<'ctx> {
-        super::super::build_app(ctx, ledger, options, "test.ledger", None).unwrap()
+        super::super::build_app(ctx, ledger, options, "test.ledger", &Rc::default(), None).unwrap()
     }
 
     /// The balance rows as `name: amount` text, which is what an options change

@@ -18,6 +18,7 @@ use crate::build::CLAP_LONG_VERSION;
 use crate::format;
 use crate::import;
 use crate::ui;
+use crate::ui::migemo::{Migemo, MigemoCommand};
 
 #[derive(thiserror::Error, Debug)]
 #[error("invalid flag: {0}")]
@@ -460,6 +461,19 @@ pub struct UiCmd {
     #[command(flatten)]
     eval_options: EvalOptions,
 
+    /// Command running migemo, used to expand the account search query.
+    ///
+    /// Given a migemo command, `/` and `C-s` search take a romaji query and
+    /// match the Japanese it stands for: typing `ginkou` finds `資産:銀行`.
+    /// Without it the query is used as the regex, as typed.
+    ///
+    /// The value is one shell-quoted command line, so quote it as a whole:
+    /// `--migemo='cmigemo -q -d /usr/share/cmigemo/utf-8/migemo-dict'`.
+    /// The command must read a query per line on stdin and write the regex it
+    /// expands to on stdout, which is what `cmigemo` does.
+    #[arg(long, value_name = "COMMAND")]
+    migemo: Option<String>,
+
     /// Path to the Ledger file.
     source: PathBuf,
 }
@@ -474,10 +488,17 @@ impl UiCmd {
         // All report data is built inside `run_ui`: its session loop resets
         // the arena on reload (`r` / `F5`), which requires that nothing out
         // here borrows it.
-        let config = ui::report::SessionConfig::new(
+        let mut config = ui::report::SessionConfig::new(
             load::new_loader(self.source.clone()),
             self.eval_options.to_query_options()?,
         );
+        if let Some(command) = &self.migemo {
+            // Spawned before the terminal is taken over, so a command that
+            // cannot even start says so on the normal terminal.
+            let command = MigemoCommand::parse(command)?;
+            let migemo = Migemo::spawn(command).context("failed to start migemo")?;
+            config = config.with_translator(ui::report::Translator::Migemo(migemo));
+        }
         let mut arena = Bump::new();
         ui::report::run_ui(&mut arena, self.source.display().to_string(), &config)
             .context("failed to run TUI")
