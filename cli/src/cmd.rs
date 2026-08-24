@@ -27,6 +27,7 @@ use okane_core::{load, report};
 use crate::format;
 use crate::import;
 use crate::ui;
+use crate::ui::migemo::{Migemo, MigemoCommand};
 
 #[derive(thiserror::Error, Debug)]
 #[error("invalid flag: {0}")]
@@ -374,6 +375,8 @@ impl BalanceCmd {
 #[derive(Debug)]
 pub struct UiCmd {
     eval_options: EvalOptions,
+    /// Command expanding search queries through migemo, if any.
+    migemo: Option<MigemoCommand>,
     source: PathBuf,
 }
 
@@ -382,10 +385,16 @@ impl UiCmd {
         // All report data is built inside `run_ui`: its session loop resets
         // the arena on reload (`r` / `F5`), which requires that nothing out
         // here borrows it.
-        let config = ui::report::SessionConfig::new(
+        let mut config = ui::report::SessionConfig::new(
             load::new_loader(self.source.clone()),
             self.eval_options.to_query_options(),
         );
+        if let Some(command) = self.migemo {
+            // Spawned before the terminal is taken over, so a command that
+            // cannot even start says so on the normal terminal.
+            let migemo = Migemo::spawn(command).context("failed to start migemo")?;
+            config = config.with_translator(ui::report::Translator::Migemo(migemo));
+        }
         let mut arena = Bump::new();
         ui::report::run_ui(&mut arena, self.source.display().to_string(), &config)
             .context("failed to run TUI")
