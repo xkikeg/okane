@@ -1,7 +1,7 @@
  okane ui — multi_commodity.ledger — register: Assets                           
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │Date       Payee                               Amount          Total          │
-│2024-02-09 Sell stock                                                 +2 above│
+│2024-02-09 Sell stock                                               100000 JPY│
 │                                                                  11570.00 USD│
 │                                                                410.0000 OKANE│
 │                                                                   12.300 GOLD│

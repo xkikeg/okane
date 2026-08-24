@@ -9,12 +9,11 @@ use crate::ui::keys::is_ctrl;
 /// Rows a page turn keeps from the page it leaves: the new window starts two
 /// lines back from where the old one ended (and vice versa going up).
 ///
-/// The overlap is not just for comfort. The top and bottom rows of the body are
-/// where a cut account's `+N above` / `+N more` markers go, replacing the
-/// amounts on those rows — so a strict page turn would land the line hidden
-/// behind one marker straight onto the row holding the other, and its amounts
-/// would never be readable on any page. Two rows of overlap carry that line
-/// back into the body proper.
+/// A strict page turn leaves nothing of the old screen to recognise, which in a
+/// table of amounts — where neighbouring rows look alike — costs the reader
+/// their place. Two rows is what Emacs keeps for the same reason
+/// (`next-screen-context-lines`), and enough to carry a multi-line account's
+/// label or its `…` continuation marker across the turn with it.
 const PAGE_OVERLAP: usize = 2;
 
 /// A navigation command over a table — the vocabulary shared by every table
@@ -127,6 +126,15 @@ impl LineIndex {
     /// One past the last row of `item`.
     fn end_row(&self, item: usize) -> usize {
         self.first_row(item + 1).unwrap_or(self.row_count)
+    }
+
+    /// How many rows `item` occupies — what a clipped window is measured
+    /// against to know whether it cut the item short.
+    pub fn line_count(&self, item: usize) -> usize {
+        match self.first_row(item) {
+            Some(first) => self.end_row(item) - first,
+            None => 0,
+        }
     }
 
     /// The items whose rows intersect `window`, in order, each paired with the
@@ -676,6 +684,16 @@ mod tests {
         assert_eq!(index.first_row(1), Some(1));
         assert_eq!(index.first_row(2), Some(4));
         assert_eq!(index.first_row(3), None);
+    }
+
+    #[test]
+    fn line_index_line_count_is_the_rows_of_an_item() {
+        let index = LineIndex::new([1, 3, 2]);
+        assert_eq!(index.line_count(0), 1);
+        assert_eq!(index.line_count(1), 3);
+        assert_eq!(index.line_count(2), 2);
+        // Past the last item there is nothing to count.
+        assert_eq!(index.line_count(3), 0);
     }
 
     /// A zero-line item would make its rows unreachable; it gets one row.

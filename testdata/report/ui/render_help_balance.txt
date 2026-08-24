@@ -19,6 +19,6 @@
 │       │   Esc                      leave the search                  │ STOCKO│
 │       │                                                              │ STOCKP│
 │       │ Session                                                      │ STOCKQ│
-│       │   r, F5                    reload the ledger from disk       │+9 more│
+│…      │   r, F5                    reload the ledger from disk       │ STOCKR│
 └───────│ ↑/↓ scroll · PgUp/PgDn page · Esc/q close               1/25 │───────┘
  Account└──────────────────────────────────────────────────────────────┘ ? help 
