@@ -6,6 +6,13 @@
 
 ### Changed
 
+* In the TUI, `C-f` / `PgDn` and `C-b` / `PgUp` now turn the page instead of moving the cursor a
+  screenful: paging down shows the next screenful with the cursor on its top line, paging up the
+  previous one with the cursor on its bottom line. Previously the cursor moved a page while the
+  window followed it, so the first press from the top of a screen scrolled a single line. A turn
+  keeps two rows of the page it leaves, so the lines behind the `+N above` / `+N more` cut markers
+  on the top and bottom rows are readable on the next page.
+
 ### Fixed
 
 ## [0.21.1] - 2026-08-20
