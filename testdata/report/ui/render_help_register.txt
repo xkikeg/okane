@@ -1,7 +1,7 @@
  okane ui — many_commodities.ledger — register: Assets:Banks:Foo                
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │Date       Payee                                 Amount         Total         │
-│2024-01-01 Opening balances across currencies                         +6 above│
+│2024-01-01 Opening balances across currencies                    200000.00 TWD│
 │2024-01-18┌ Key bindings — register ──────────────────────────────┐1000000 JPY│
 │          │ Moving                                                │5000.00 CHF│
 │          │   ↑ / k, C-p               up one line                │0000.00 USD│

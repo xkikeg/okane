@@ -10,8 +10,12 @@
   screenful: paging down shows the next screenful with the cursor on its top line, paging up the
   previous one with the cursor on its bottom line. Previously the cursor moved a page while the
   window followed it, so the first press from the top of a screen scrolled a single line. A turn
-  keeps two rows of the page it leaves, so the lines behind the `+N above` / `+N more` cut markers
-  on the top and bottom rows are readable on the next page.
+  keeps two rows of the page it leaves, so there is always something on the new screen to recognise
+  — the same overlap Emacs keeps.
+* The TUI no longer writes `+N more` / `+N above` over the amounts on the top and bottom rows of a
+  table, which cost a real value on every scroll to say something the reader could already see. An
+  account or entry whose lines run past the bottom of the body now says so with a `…` in the
+  account / payee column, in the colour the sticky account label already uses at the other edge.
 
 ### Fixed
 

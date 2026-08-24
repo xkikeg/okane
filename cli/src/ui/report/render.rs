@@ -8,17 +8,25 @@
 //! and entries the rest of the UI reasons about.
 //!
 //! Exploding the rows moves the account label onto the first row of its block,
-//! which leaves two things to say. Both are applied by [`build_body`], which
-//! knows the exact window it drew:
+//! which leaves the two body edges to say where a block runs past them. Both
+//! marks are applied by [`build_body`], which knows the exact window it drew,
+//! and both live in the account/payee column and cost no amount:
 //!
 //! - **Sticky account.** When the body's top row is a continuation, the account
 //!   it belongs to has scrolled off; its label is redrawn there in
 //!   [`STICKY_COLOR`]. Colour alone, with no prefix, so the text still sits in
 //!   the column it belongs to — the register's date column is exactly
-//!   `YYYY-MM-DD` wide and a prefix would push the date out of it.
-//! - **`+N more`.** An account cut by the top or bottom edge of the body says
-//!   how many of its lines the reader cannot see, in place of the amount on the
-//!   edge row itself — which is one of them, since the marker takes its place.
+//!   `YYYY-MM-DD` wide and a prefix would push the date out of it. That the
+//!   label is redrawn at all is what says the block starts above the body, so
+//!   the top edge needs nothing further.
+//! - **[`CONTINUES_MARKER`].** When the bottom row's block runs on below, that
+//!   row's account/payee cell — blank, on a continuation line — gets an
+//!   ellipsis in the same colour.
+//!
+//! Neither one takes a value off the screen. Counting the hidden lines instead,
+//! as `+N more` / `+N above` used to, meant writing the count over the amounts
+//! on the edge rows, so the reader lost a real number on every scroll to learn
+//! something the marker's presence already said.
 //!
 //! The popup pattern follows
 //! <https://ratatui.rs/recipes/layout/center-a-widget/>:
@@ -61,6 +69,12 @@ const OPTIONS_VALUE_WIDTH: usize = 30;
 /// Colour that marks a redrawn (sticky) account label, so it never reads as a
 /// label the row itself owns.
 const STICKY_COLOR: Color = Color::Cyan;
+
+/// Written in the account/payee column of the body's bottom row when the block
+/// it belongs to runs on below. In [`STICKY_COLOR`], like the sticky label at
+/// the other edge: the two say the same thing about the same column, one for
+/// each direction.
+const CONTINUES_MARKER: &str = "…";
 
 /// Renders a frame for the given app state.
 pub fn draw<'ctx>(frame: &mut Frame, app: &mut App<'ctx>, ctx: &ReportContext<'ctx>) {
@@ -129,10 +143,13 @@ struct LineRow {
     is_match: bool,
     /// [`Self::head`] was refilled by the sticky overlay rather than owned.
     sticky: bool,
+    /// This row sits on the bottom edge of the body and its item has more lines
+    /// below it: the account/payee column gets [`CONTINUES_MARKER`].
+    continues: bool,
 }
 
 /// The visible rows of a table body, with the sticky account label and the
-/// `+N more` cut markers already applied.
+/// continuation marker already applied.
 struct Body {
     rows: Vec<LineRow>,
     /// The selection, as an index into [`Self::rows`].
@@ -154,13 +171,11 @@ fn build_body(
 ) -> Body {
     let (offset, end) = nav.visible_window();
     let mut rows: Vec<LineRow> = Vec::with_capacity(end - offset);
-    // Set only when the top item's own first row is above the window: its head,
-    // which the sticky overlay redraws on the body's top line, and the lines it
-    // hides up there.
-    let mut cut_above: Option<(Vec<String>, u16)> = None;
-    // The bottom item's line at the bottom edge, with how many lines each of
-    // its columns holds — between them, what it hides below.
-    let mut bottom_edge: Option<(u16, Vec<usize>)> = None;
+    // Set only when the top item's own first row is above the window: the head
+    // the sticky overlay redraws on the body's top line.
+    let mut cut_above: Option<Vec<String>> = None;
+    // Whether the last item in the window has lines the window left below it.
+    let mut cut_below = false;
 
     for (nth, (item, window)) in nav.lines().items_in(offset..end).enumerate() {
         let head = head_of(item);
@@ -168,9 +183,11 @@ fn build_body(
         let matched = is_match(item);
         if nth == 0 && window.start > 0 {
             // This item's own label went off screen with the lines above it.
-            cut_above = Some((head.clone(), window.start));
+            cut_above = Some(head.clone());
         }
-        bottom_edge = Some((window.end - 1, columns.iter().map(Vec::len).collect()));
+        // Only the last iteration's value survives, which is the one that
+        // matters: the item holding the bottom row.
+        cut_below = usize::from(window.end) < nav.lines().line_count(item);
         for line in window {
             rows.push(LineRow {
                 head: match line {
@@ -185,55 +202,27 @@ fn build_body(
                     .collect(),
                 is_match: matched && line == 0,
                 sticky: false,
+                continues: false,
             });
         }
     }
 
     // No *row* is ever clipped now, but an item's block still runs past the top
-    // and bottom of the body, which is the same news the marker has always
-    // carried. Above the top row every column that reaches it hid the same
-    // lines; below the bottom one each column ran out where it ran out.
-    if let Some((head, above)) = cut_above
+    // and bottom of the body. Above, the redrawn label says so by being there
+    // at all; below, the marker says it.
+    if let Some(head) = cut_above
         && let Some(top) = rows.first_mut()
     {
         top.head = head;
         top.sticky = true;
-        mark_cut(top, |_| usize::from(above), "above");
     }
-    if let Some((edge, lengths)) = bottom_edge
-        && let Some(bottom) = rows.last_mut()
-    {
-        let below = usize::from(edge) + 1;
-        mark_cut(
-            bottom,
-            |column| lengths[column].saturating_sub(below),
-            "more",
-        );
+    if cut_below && let Some(bottom) = rows.last_mut() {
+        bottom.continues = true;
     }
 
     Body {
         selected: nav.selected_row().saturating_sub(offset),
         rows,
-    }
-}
-
-/// Replaces the amounts on a cut edge row with `+{n} {suffix}`, asking `beyond`
-/// per column how many of that column's lines lie past the edge: how much a
-/// column hides is its own business — a register entry's Amount is one line
-/// however far past the edge its Total runs — and a column that ends on the
-/// edge keeps its value, since there is nothing past it to warn about.
-///
-/// The count is `beyond + 1`, because the marker also spends the line it is
-/// written on: the value that was there is one the reader cannot see either.
-/// Spending the edge line rather than adding one keeps the body exactly as tall
-/// as the viewport, which is what lets the marker be decided after the window
-/// is fixed rather than as part of choosing it.
-fn mark_cut(row: &mut LineRow, beyond: impl Fn(usize) -> usize, suffix: &str) {
-    for (column, cell) in row.cells.iter_mut().enumerate() {
-        let beyond = beyond(column);
-        if beyond > 0 && cell.is_some() {
-            *cell = Some(format!("+{} {suffix}", beyond + 1));
-        }
     }
 }
 
@@ -811,16 +800,43 @@ fn to_table_row(row: &LineRow) -> Row<'_> {
             .add_modifier(Modifier::BOLD),
         (false, false) => Style::default(),
     };
+    // The account/payee column is the last head column on both screens, and the
+    // one the continuation marker belongs in: the date column beside it is
+    // exactly as wide as a date.
+    let marked = match row.continues {
+        true => row.head.len().checked_sub(1),
+        false => None,
+    };
     Row::new(
         row.head
             .iter()
-            .map(|text| Cell::from(text.as_str()).style(head_style))
+            .enumerate()
+            .map(|(column, text)| match Some(column) == marked {
+                true => Cell::from(continued_cell(text, head_style)),
+                false => Cell::from(text.as_str()).style(head_style),
+            })
             .chain(
                 row.cells
                     .iter()
                     .map(|line| Cell::from(amount_text(line.as_deref()))),
             ),
     )
+}
+
+/// The account/payee cell of a row whose block runs on below the body: the
+/// marker on its own where the cell is blank — the usual case, the bottom row
+/// being a continuation line — and after the label where the block starts on
+/// that very row.
+fn continued_cell(text: &str, head_style: Style) -> Line<'_> {
+    let marker = Span::styled(CONTINUES_MARKER, Style::default().fg(STICKY_COLOR));
+    match text.is_empty() {
+        true => Line::from(marker),
+        false => Line::from(vec![
+            Span::styled(text, head_style),
+            Span::raw(" "),
+            marker,
+        ]),
+    }
 }
 
 /// Account-column text for a balance row: the full name in flat mode, or the
@@ -1007,27 +1023,42 @@ mod tests {
         assert_eq!(body.selected, 0);
     }
 
-    /// The marker counts every line the reader cannot see, the one it is
-    /// written over included: of six lines, two are readable and four are not.
+    /// The bottom row of a block that runs on below is marked as continuing —
+    /// and keeps its amount, which is the whole point: the marker rides in the
+    /// account column, where nothing is written on a continuation line.
     #[test]
-    fn build_body_marks_the_lines_cut_below() {
+    fn build_body_marks_the_row_a_block_runs_past() {
         let body = body_of(&[6], 3, 0);
-        assert_eq!(amounts(&body), ["0.0", "0.1", "+4 more"]);
+        assert_eq!(amounts(&body), ["0.0", "0.1", "0.2"]);
+        assert!(body.rows.last().expect("a bottom row").continues);
         // Nothing is cut above, so the label is the row's own.
         assert!(!body.rows[0].sticky);
     }
 
-    /// The follow-up problem: once the top of an account's block is off screen
-    /// its name goes with it, so it is redrawn on the top line — and the same
-    /// line says how many of the account's lines it is standing in front of.
+    /// Once the top of an account's block is off screen its name goes with it,
+    /// so it is redrawn on the top line. Being redrawn there is itself what
+    /// says the block starts above the body; the row keeps its amount.
     #[test]
     fn build_body_sticks_the_label_of_an_account_cut_above() {
         let body = body_of(&[1, 6], 3, 6);
         assert_eq!(heads(&body), ["item1", "", ""]);
         assert!(body.rows[0].sticky);
-        assert_eq!(amounts(&body), ["+4 above", "1.4", "1.5"]);
+        assert_eq!(amounts(&body), ["1.3", "1.4", "1.5"]);
+        // The window ends where the block does, so nothing continues below.
+        assert!(!body.rows[2].continues);
         // The selection is the last row of the window, window-relative.
         assert_eq!(body.selected, 2);
+    }
+
+    /// A block whose *first* line is the bottom row still says it runs on, and
+    /// cannot give up its label to say it — that label is the only place the
+    /// reader learns which account the lines below belong to.
+    #[test]
+    fn build_body_marks_a_block_that_starts_on_the_bottom_row() {
+        let body = body_of(&[1, 3], 2, 0);
+        assert_eq!(heads(&body), ["item0", "item1"]);
+        assert_eq!(amounts(&body), ["0.0", "1.0"]);
+        assert!(body.rows[1].continues);
     }
 
     #[test]
@@ -1035,12 +1066,11 @@ mod tests {
         let body = body_of(&[2, 2], 4, 0);
         assert_eq!(heads(&body), ["item0", "", "item1", ""]);
         assert_eq!(amounts(&body), ["0.0", "0.1", "1.0", "1.1"]);
-        assert!(body.rows.iter().all(|row| !row.sticky));
+        assert!(body.rows.iter().all(|row| !row.sticky && !row.continues));
     }
 
     /// A register entry's Amount is one line however tall its Total is, so the
-    /// two columns are cut at different places — or not at all. Marking a
-    /// column that hid nothing would both lie and eat a real value.
+    /// columns of one entry run out at different rows.
     fn register_shaped_body(amount_lines: usize, viewport: u16) -> Body {
         let mut nav = TableNav::with_lines([4]);
         nav.viewport_height = viewport;
@@ -1058,27 +1088,45 @@ mod tests {
         )
     }
 
+    /// Every column keeps every line it has on the edge row: the marker is one
+    /// mark for the whole entry, in a column of its own, so a column that ran
+    /// out early and one still going are both left alone.
     #[test]
-    fn build_body_leaves_a_column_with_no_line_on_the_edge_alone() {
+    fn build_body_keeps_the_amounts_on_the_row_it_marks() {
         let body = register_shaped_body(1, 2);
         assert_eq!(
             body.rows[0].cells,
             [Some("amount0".to_owned()), Some("total0".to_owned())]
         );
-        // The Amount column ran out a line ago; only the Total is still cut,
-        // hiding `total1` under the marker and `total2`/`total3` below it.
-        assert_eq!(body.rows[1].cells, [None, Some("+3 more".to_owned())]);
+        // The Amount column ran out a line ago; the Total still has `total1`,
+        // and `total2`/`total3` are what the marker stands for.
+        assert_eq!(body.rows[1].cells, [None, Some("total1".to_owned())]);
+        assert!(body.rows[1].continues);
     }
 
+    fn cell_text(line: &Line<'_>) -> String {
+        line.spans.iter().map(|span| span.content.as_ref()).collect()
+    }
+
+    /// A continuation line owns no label, so the marker stands alone in the
+    /// column — flush where the account name would be.
     #[test]
-    fn build_body_leaves_a_column_that_ends_on_the_edge_alone() {
-        let body = register_shaped_body(2, 2);
-        // `amount1` is the Amount column's last line: nothing is hidden behind
-        // it, so it stays put while the Total says what it is still holding.
-        assert_eq!(
-            body.rows[1].cells,
-            [Some("amount1".to_owned()), Some("+3 more".to_owned())]
-        );
+    fn continuation_marker_stands_alone_on_a_blank_cell() {
+        let cell = continued_cell("", Style::default());
+        assert_eq!(cell_text(&cell), CONTINUES_MARKER);
+        assert_eq!(cell.spans[0].style.fg, Some(STICKY_COLOR));
+    }
+
+    /// Where the block starts on the bottom row the label stays and the marker
+    /// follows it, rather than taking its place: that label is the only place
+    /// the reader learns what the lines below belong to.
+    #[test]
+    fn continuation_marker_follows_a_label_on_its_own_first_row() {
+        let cell = continued_cell("payee", Style::default());
+        assert_eq!(cell_text(&cell), "payee …");
+        // The label keeps the row's own style; only the marker is coloured.
+        assert_eq!(cell.spans[0].style.fg, None);
+        assert_eq!(cell.spans[2].style.fg, Some(STICKY_COLOR));
     }
 
     #[test]
@@ -1629,9 +1677,30 @@ mod tests {
             out.contains("Assets:Brokers:Bar"),
             "the account label should be redrawn on the top line:\n{out}"
         );
+    }
+
+    /// The bottom of the body says the account runs on below with the marker in
+    /// the account column, and no longer by writing a count over an amount:
+    /// every row on screen still shows its own value.
+    #[test]
+    fn a_block_running_past_the_bottom_is_marked_without_losing_an_amount() {
+        let arena = Bump::new();
+        let (ctx, mut app) = many_commodities_balance(&arena);
+        render(&mut app, &ctx);
+
+        // Onto the broker account, whose 26 lots are far taller than the body.
+        for _ in 0..2 {
+            app.update(Message::Balance(BalanceMessage::Nav(NavCommand::NextItem)));
+        }
+        let out = render(&mut app, &ctx);
+        let body = out.lines().nth_back(2).expect("the last body line");
         assert!(
-            out.contains("above"),
-            "the top line should say how much is cut off above it:\n{out}"
+            body.contains(CONTINUES_MARKER),
+            "the bottom line should say the account runs on below:\n{out}"
+        );
+        assert!(
+            !out.contains("more") && !out.contains("above"),
+            "no counted cut markers should be left:\n{out}"
         );
     }
 
