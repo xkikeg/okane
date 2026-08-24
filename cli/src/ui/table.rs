@@ -6,6 +6,17 @@ use ratatui::widgets::TableState;
 
 use crate::ui::keys::is_ctrl;
 
+/// Rows a page turn keeps from the page it leaves: the new window starts two
+/// lines back from where the old one ended (and vice versa going up).
+///
+/// The overlap is not just for comfort. The top and bottom rows of the body are
+/// where a cut account's `+N above` / `+N more` markers go, replacing the
+/// amounts on those rows — so a strict page turn would land the line hidden
+/// behind one marker straight onto the row holding the other, and its amounts
+/// would never be readable on any page. Two rows of overlap carry that line
+/// back into the body proper.
+const PAGE_OVERLAP: usize = 2;
+
 /// A navigation command over a table — the vocabulary shared by every table
 /// screen. Keeps the key bindings and the [`TableNav`] mutations in one place
 /// so each screen wraps [`NavCommand`] in its own message rather than
@@ -285,19 +296,54 @@ impl TableNav {
         }
     }
 
+    /// Scrolls the viewport by `pages` page turns and parks the selection on
+    /// the edge the movement comes from: the top line when paging down, the
+    /// bottom line when paging up.
+    ///
+    /// Moving the *offset* rather than the selection is what makes each press
+    /// turn one page: with the selection alone, a cursor sitting at the top of
+    /// the window only has to travel to the bottom for the window to stop
+    /// scrolling, so the first press moved one line and only the ones after it
+    /// moved a page. A turn is [`PAGE_OVERLAP`] rows short of the full height,
+    /// so the reader keeps a foothold on the page they came from.
+    ///
+    /// Once the offset is against an end, there is no page left to turn, so the
+    /// key runs the selection to that end instead — the same "always moves the
+    /// way it points" rule [`Self::step_item`] follows.
+    fn scroll_page(&mut self, pages: isize) {
+        let Some(last) = self.last_row() else {
+            return;
+        };
+        let page = self.page_size();
+        // A viewport of one or two rows has no room to overlap and still
+        // advance; it moves a row at a time.
+        let turn = max(page.saturating_sub(PAGE_OVERLAP), 1);
+        let max_offset = self.row_count().saturating_sub(page);
+        let offset = (self.offset as isize + pages * turn as isize).clamp(0, max_offset as isize);
+        let offset = offset as usize;
+        if offset == self.offset {
+            match pages > 0 {
+                true => self.select_last_row(),
+                false => self.select_first_row(),
+            }
+            return;
+        }
+        self.offset = offset;
+        let row = match pages > 0 {
+            true => offset,
+            // The bottom line of the window we just scrolled to.
+            false => offset + page - 1,
+        };
+        self.table_state.select(Some(min(row, last)));
+    }
+
     /// Applies a [`NavCommand`].
     pub fn apply(&mut self, cmd: NavCommand) {
         match cmd {
             NavCommand::Up => self.move_rows(-1),
             NavCommand::Down => self.move_rows(1),
-            NavCommand::PageUp => {
-                let delta = -(self.page_size() as isize);
-                self.move_rows(delta);
-            }
-            NavCommand::PageDown => {
-                let delta = self.page_size() as isize;
-                self.move_rows(delta);
-            }
+            NavCommand::PageUp => self.scroll_page(-1),
+            NavCommand::PageDown => self.scroll_page(1),
             NavCommand::First => self.select_first_row(),
             NavCommand::Last => self.select_last_row(),
             NavCommand::NextItem => self.step_item(1),
@@ -424,16 +470,134 @@ mod tests {
         assert_eq!(n.table_state.selected(), Some(0));
         n.apply(NavCommand::Down);
         assert_eq!(n.table_state.selected(), Some(1));
-        n.apply(NavCommand::PageDown); // +2
-        assert_eq!(n.table_state.selected(), Some(3));
+        // A two-row viewport is all overlap, so a turn is a single row.
+        n.apply(NavCommand::PageDown); // window [0,2) -> [1,3), cursor on top
+        assert_eq!(n.table_state.selected(), Some(1));
         n.apply(NavCommand::Last);
         assert_eq!(n.table_state.selected(), Some(4));
-        n.apply(NavCommand::PageUp); // -2
-        assert_eq!(n.table_state.selected(), Some(2));
+        n.apply(NavCommand::PageUp); // window [1,3) -> [0,2), cursor at bottom
+        assert_eq!(n.table_state.selected(), Some(1));
         n.apply(NavCommand::First);
         assert_eq!(n.table_state.selected(), Some(0));
         n.apply(NavCommand::Up); // clamps at top
         assert_eq!(n.table_state.selected(), Some(0));
+    }
+
+    /// The renderer refreshes the offset every frame; a test that pages more
+    /// than once has to do the same or the second page starts from a stale
+    /// window.
+    fn page(n: &mut TableNav, cmd: NavCommand) -> (usize, usize) {
+        n.apply(cmd);
+        n.visible_window()
+    }
+
+    /// Paging down turns the page under a cursor that stays on the top line, so
+    /// each press shows the next screenful whole — the cursor no longer has to
+    /// walk to the bottom edge before the window moves at all.
+    #[test]
+    fn page_down_turns_the_page_with_the_cursor_on_top() {
+        let mut n = nav(100);
+        n.viewport_height = 10;
+        assert_eq!(n.visible_window(), (0, 10));
+
+        assert_eq!(page(&mut n, NavCommand::PageDown), (8, 18));
+        assert_eq!(n.table_state.selected(), Some(8));
+        assert_eq!(page(&mut n, NavCommand::PageDown), (16, 26));
+        assert_eq!(n.table_state.selected(), Some(16));
+    }
+
+    /// Paging up is the mirror image: the window steps back a page and the
+    /// cursor lands on its bottom line.
+    #[test]
+    fn page_up_turns_the_page_with_the_cursor_at_the_bottom() {
+        let mut n = nav(100);
+        n.viewport_height = 10;
+        n.select_row(55);
+        assert_eq!(n.visible_window(), (46, 56));
+
+        assert_eq!(page(&mut n, NavCommand::PageUp), (38, 48));
+        assert_eq!(n.table_state.selected(), Some(47));
+        assert_eq!(page(&mut n, NavCommand::PageUp), (30, 40));
+        assert_eq!(n.table_state.selected(), Some(39));
+    }
+
+    /// Every row shows up in the body proper — not only as an edge row, where a
+    /// cut account replaces its amounts with a `+N` marker — on some page of a
+    /// paging-down run, which is what the overlap buys.
+    #[test]
+    fn paging_down_leaves_no_row_stuck_on_an_edge() {
+        let mut n = nav(100);
+        n.viewport_height = 10;
+        let mut seen = [false; 100];
+        // The very first and last rows of the table have no page before or
+        // after them, so they are exempt: nothing can pull them inward.
+        seen[0] = true;
+        seen[99] = true;
+        let mut window = n.visible_window();
+        for _ in 0..20 {
+            let (start, end) = window;
+            // Only the rows strictly inside the body count; the two edge rows
+            // are the ones a marker can take over.
+            seen[start + 1..end - 1].fill(true);
+            window = page(&mut n, NavCommand::PageDown);
+        }
+        assert_eq!(seen.iter().position(|s| !s), None);
+    }
+
+    /// With no page left to turn, the key still moves the way it points.
+    #[test]
+    fn page_keys_run_to_the_ends_when_the_window_cannot_move() {
+        let mut n = nav(25);
+        n.viewport_height = 10;
+
+        // Two turns leave the last page showing, cursor on its top line; a
+        // third has nowhere to scroll, so it takes the cursor to the end.
+        assert_eq!(page(&mut n, NavCommand::PageDown), (8, 18));
+        assert_eq!(page(&mut n, NavCommand::PageDown), (15, 25));
+        assert_eq!(n.table_state.selected(), Some(15));
+        assert_eq!(page(&mut n, NavCommand::PageDown), (15, 25));
+        assert_eq!(n.table_state.selected(), Some(24));
+
+        // Same at the top.
+        assert_eq!(page(&mut n, NavCommand::PageUp), (7, 17));
+        assert_eq!(page(&mut n, NavCommand::PageUp), (0, 10));
+        assert_eq!(n.table_state.selected(), Some(9));
+        assert_eq!(page(&mut n, NavCommand::PageUp), (0, 10));
+        assert_eq!(n.table_state.selected(), Some(0));
+    }
+
+    /// A viewport too short to overlap still has to advance, or the key would
+    /// do nothing at all.
+    #[test]
+    fn page_keys_move_a_row_when_the_viewport_is_shorter_than_the_overlap() {
+        let mut n = nav(10);
+        n.viewport_height = 2;
+        assert_eq!(page(&mut n, NavCommand::PageDown), (1, 3));
+        assert_eq!(n.table_state.selected(), Some(1));
+        assert_eq!(page(&mut n, NavCommand::PageDown), (2, 4));
+        assert_eq!(n.table_state.selected(), Some(2));
+        assert_eq!(page(&mut n, NavCommand::PageUp), (1, 3));
+        assert_eq!(n.table_state.selected(), Some(2));
+    }
+
+    /// A table shorter than the viewport has no page to turn at all.
+    #[test]
+    fn page_keys_on_a_table_that_fits_move_to_the_ends() {
+        let mut n = nav(4);
+        n.viewport_height = 10;
+        assert_eq!(page(&mut n, NavCommand::PageDown), (0, 4));
+        assert_eq!(n.table_state.selected(), Some(3));
+        assert_eq!(page(&mut n, NavCommand::PageUp), (0, 4));
+        assert_eq!(n.table_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn page_keys_on_empty_table_are_noop() {
+        let mut n = nav(0);
+        n.viewport_height = 10;
+        n.apply(NavCommand::PageDown);
+        n.apply(NavCommand::PageUp);
+        assert_eq!(n.table_state.selected(), None);
     }
 
     #[test]
