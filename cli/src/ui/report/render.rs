@@ -452,7 +452,7 @@ fn draw_error(frame: &mut Frame, area: Rect, message: &str) {
 }
 
 /// Renders the balance search bar in the footer slot: a prompt + the typed
-/// pattern (red on an invalid regex) plus a dim hint suffix. While editing it
+/// pattern (red when it yields no usable regex) plus a dim hint suffix. While editing it
 /// also places the terminal cursor at the end of the pattern.
 fn draw_search_bar(frame: &mut Frame, area: Rect, search: &Search) {
     let count = search.matched_rows().len();
@@ -476,8 +476,8 @@ fn draw_search_bar(frame: &mut Frame, area: Rect, search: &Search) {
         }
     };
     let alert = match (search.err(), search.intent.no_previous) {
-        (Some(_), _) => Span::styled(
-            "  [invalid regex]".to_string(),
+        (Some(err), _) => Span::styled(
+            format!("  {}", err.label()),
             Style::default().fg(Color::Red),
         ),
         (None, true) => Span::styled(
