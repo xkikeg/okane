@@ -2,5 +2,6 @@
 
 pub mod import;
 mod keys;
+pub mod migemo;
 pub mod report;
 mod table;
