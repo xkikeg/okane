@@ -5,9 +5,57 @@
 //! [`Search`] pairs the two. The orchestration that mutates these against a
 //! live balance view lives on [`super::balance::BalanceView`].
 
+use std::borrow::Cow;
+
 use regex::RegexBuilder;
 
+use crate::ui::migemo::{Migemo, MigemoError};
+
 use super::balance::BalanceRow;
+
+/// How the text typed in the search bar becomes the regex the rows are matched
+/// against.
+///
+/// [`Self::Plain`] is what a session without `--migemo` uses: the pattern is
+/// the regex, exactly as typed. [`Self::Migemo`] runs it through a migemo
+/// process first, so `ginkou` matches the accounts written 銀行 — the typed
+/// text is still in migemo's output as one alternative, so plain ASCII
+/// searching keeps working.
+#[derive(Debug, Default)]
+pub enum Translator {
+    #[default]
+    Plain,
+    Migemo(Migemo),
+}
+
+impl Translator {
+    /// The regex `input` stands for under this translation.
+    fn to_regex<'a>(&self, input: &'a str) -> Result<Cow<'a, str>, SearchError> {
+        match self {
+            Translator::Plain => Ok(Cow::Borrowed(input)),
+            Translator::Migemo(migemo) => Ok(Cow::Owned(migemo.query(input)?)),
+        }
+    }
+}
+
+/// Why the typed pattern produced no matches to show.
+#[derive(thiserror::Error, Debug)]
+pub enum SearchError {
+    #[error("invalid regex: {0}")]
+    Regex(#[from] regex::Error),
+    #[error("migemo failed: {0}")]
+    Migemo(#[from] MigemoError),
+}
+
+impl SearchError {
+    /// Short tag for the search bar, which has one line to say what went wrong.
+    pub(super) fn label(&self) -> &'static str {
+        match self {
+            SearchError::Regex(_) => "[invalid regex]",
+            SearchError::Migemo(err) => err.label(),
+        }
+    }
+}
 
 /// Phase of the modal (`/`) account search.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,26 +138,34 @@ impl SearchMatch {
         Some(rows[idx])
     }
 
-    /// Computes matching row indices for `input` as a case-insensitive regex.
-    /// Returns `None` for empty input, `Err` for an invalid pattern.
-    pub fn compute(input: &str, rows: &[BalanceRow<'_>]) -> Option<Result<Self, regex::Error>> {
+    /// Computes matching row indices for `input`, translated by `translator`
+    /// and compiled as a case-insensitive regex. Returns `None` for empty
+    /// input, `Err` for a pattern that cannot be built.
+    pub fn compute(
+        input: &str,
+        rows: &[BalanceRow<'_>],
+        translator: &Translator,
+    ) -> Option<Result<Self, SearchError>> {
         if input.is_empty() {
             return None;
         }
-        Some(
-            RegexBuilder::new(input)
-                .case_insensitive(true)
-                .build()
-                .map(|re| {
-                    Self(
-                        rows.iter()
-                            .enumerate()
-                            .filter(|(_, row)| re.is_match(row.full_name()))
-                            .map(|(i, _)| i)
-                            .collect(),
-                    )
-                }),
-        )
+        Some(Self::compute_nonempty(input, rows, translator))
+    }
+
+    fn compute_nonempty(
+        input: &str,
+        rows: &[BalanceRow<'_>],
+        translator: &Translator,
+    ) -> Result<Self, SearchError> {
+        let pattern = translator.to_regex(input)?;
+        let re = RegexBuilder::new(&pattern).case_insensitive(true).build()?;
+        Ok(Self(
+            rows.iter()
+                .enumerate()
+                .filter(|(_, row)| re.is_match(row.full_name()))
+                .map(|(i, _)| i)
+                .collect(),
+        ))
     }
 
     /// Row index of the next/previous match relative to `current` (wrapping).
@@ -135,18 +191,18 @@ impl SearchMatch {
 
 /// Account-name search state on the balance screen.
 ///
-/// Not `PartialEq` because `regex::Error` doesn't implement it — tests inspect
+/// Not `PartialEq` because [`SearchError`] doesn't implement it — tests inspect
 /// the individual fields.
 #[derive(Debug)]
 pub struct Search {
     pub intent: SearchIntent,
     /// `None` when `input` is empty; `Ok` with matching row indices; `Err` when
-    /// the pattern fails to compile as a regex.
-    pub matches: Option<Result<SearchMatch, regex::Error>>,
+    /// the pattern cannot be turned into a regex.
+    pub matches: Option<Result<SearchMatch, SearchError>>,
 }
 
 impl Search {
-    pub(super) fn err(&self) -> Option<&regex::Error> {
+    pub(super) fn err(&self) -> Option<&SearchError> {
         self.matches.as_ref()?.as_ref().err()
     }
     pub(super) fn matched_rows(&self) -> &[usize] {
@@ -181,8 +237,12 @@ mod tests {
     #[test]
     fn compute_matches_classifies_input() {
         let rows: &[BalanceRow<'_>] = &[];
-        assert_matches!(SearchMatch::compute("", rows), None);
-        assert_matches!(SearchMatch::compute("assets", rows), Some(Ok(_)));
-        assert_matches!(SearchMatch::compute("[", rows), Some(Err(_)));
+        let plain = Translator::Plain;
+        assert_matches!(SearchMatch::compute("", rows, &plain), None);
+        assert_matches!(SearchMatch::compute("assets", rows, &plain), Some(Ok(_)));
+        assert_matches!(
+            SearchMatch::compute("[", rows, &plain),
+            Some(Err(SearchError::Regex(_)))
+        );
     }
 }

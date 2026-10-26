@@ -13,6 +13,7 @@
 //! the reload snapshot.
 
 use std::cmp::min;
+use std::rc::Rc;
 
 use okane_core::report::BalanceTreeNode;
 
@@ -24,6 +25,7 @@ use super::overlay::{Overlay, ScrollDelta};
 use super::register::{
     RegisterAction, RegisterMessage, RegisterRow, RegisterScope, RegisterSnapshot, RegisterView,
 };
+use super::search::Translator;
 
 /// Top-level screen the user is currently looking at.
 #[derive(Debug)]
@@ -128,6 +130,13 @@ impl<'ctx> App<'ctx> {
             query,
             should_quit: false,
         }
+    }
+
+    /// Points the balance search at `translator`, the shared translation the
+    /// session was configured with (plain regex, or migemo).
+    pub fn with_translator(mut self, translator: Rc<Translator>) -> Self {
+        self.balance.translator = translator;
+        self
     }
 
     /// Builds an app from pre-derived balance rows, with no backing tree.

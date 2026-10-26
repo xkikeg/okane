@@ -59,6 +59,12 @@ $ okane ui /path/to/file.ledger
 
 最初の画面はフラットなアカウントごとの残高リストです。`t` でアカウントの親子関係を考慮したツリー表示に切り替わり、`space` で選択中のサブツリーを、`x` で全体を折りたたみます。`/`, `C-s`, `C-r` でアカウント名を検索でき (それぞれ Vim 風、Emacs 風になっています)、`Enter` で選択したアカウントの仕訳帳を開きます。`r` でファイルを読み込み直すので、UIを開いたままファイルを編集できます。終了は `q` です。`?` で各種操作を確認できます。
 
+`--migemo` に [cmigemo](https://www.kaoriya.net/software/cmigemo/) のコマンドを渡すと、日本語のアカウント名をローマ字で検索できます。入力した文字列は cmigemo が正規表現に展開するので、`ginkou` で `資産:銀行` が見つかります。コマンドライン全体で1つの値なので、次のように引用符でくくって渡します。
+
+```shell
+$ okane ui --migemo='cmigemo -q -d /usr/share/cmigemo/utf-8/migemo-dict' /path/to/file.ledger
+```
+
 `balance` や `register` と同じ評価用オプションが使えるので、通貨換算や日付指定も可能です。
 
 ```shell

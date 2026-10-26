@@ -66,6 +66,16 @@ accounts, where `space` folds the selected subtree and `x` folds everything.
 selected account, and `r` reloads the file from disk so you can keep the UI open
 while editing. `q` quits. `?` lists every key binding of the screen you are on.
 
+Accounts written in Japanese can be searched by romaji with `--migemo`, which
+points at a [cmigemo](https://www.kaoriya.net/software/cmigemo/) command: what
+you type is expanded into the regex matching the Japanese it stands for, so
+`ginkou` finds `資産:銀行`. The whole command line is one flag value, so quote
+it:
+
+```shell
+$ okane ui --migemo='cmigemo -q -d /usr/share/cmigemo/utf-8/migemo-dict' /path/to/file.ledger
+```
+
 It takes the same evaluation flags as `balance` and `register`, so the amounts
 can be converted into a single commodity, or filtered by the time range:
 

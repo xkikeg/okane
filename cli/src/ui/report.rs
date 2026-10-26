@@ -29,6 +29,9 @@ mod testing;
 
 pub use app::App;
 pub use options::QueryOptions;
+pub use search::Translator;
+
+use std::rc::Rc;
 
 use bumpalo::Bump;
 use okane_core::load;
@@ -54,12 +57,26 @@ pub struct SessionConfig<F: load::FileSystem> {
     /// replaces it for the rest of the session, so the loop below tracks the
     /// current options separately.
     options: QueryOptions,
+    /// How the search bar turns what is typed into a regex. Held here, next to
+    /// the loader, because it owns the migemo process: spawning it once per
+    /// session config keeps it alive across the reloads that rebuild the app.
+    translator: Rc<Translator>,
 }
 
 impl<F: load::FileSystem> SessionConfig<F> {
     /// Wraps a loader for the source plus the query the session opens with.
     pub fn new(loader: load::Loader<F>, options: QueryOptions) -> Self {
-        Self { loader, options }
+        Self {
+            loader,
+            options,
+            translator: Rc::default(),
+        }
+    }
+
+    /// Replaces the plain-regex search translation, as `--migemo` does.
+    pub fn with_translator(mut self, translator: Translator) -> Self {
+        self.translator = Rc::new(translator);
+        self
     }
 }
 
@@ -124,7 +141,8 @@ fn session_loop<F: load::FileSystem>(
                     source_display.to_owned(),
                     Vec::new(),
                     QueryState::unresolved(&options),
-                );
+                )
+                .with_translator(Rc::clone(&config.translator));
                 app.overlay = Some(error_overlay(source_display, err.as_ref()));
                 (Ledger::empty(&ctx), app, false)
             }
@@ -162,7 +180,14 @@ fn build_session<'ctx, F: load::FileSystem>(
     snapshot: Option<&UiSnapshot>,
 ) -> anyhow::Result<SessionData<'ctx>> {
     let mut ledger = report::process(ctx, &config.loader, &options.to_process_options())?;
-    let app = build_app(ctx, &mut ledger, options, source_display, snapshot)?;
+    let app = build_app(
+        ctx,
+        &mut ledger,
+        options,
+        source_display,
+        &config.translator,
+        snapshot,
+    )?;
     Ok(SessionData { ledger, app })
 }
 
@@ -184,12 +209,14 @@ fn build_app<'ctx>(
     ledger: &mut Ledger<'ctx>,
     options: &QueryOptions,
     source_display: &str,
+    translator: &Rc<Translator>,
     snapshot: Option<&UiSnapshot>,
 ) -> anyhow::Result<App<'ctx>> {
     let query = options.resolve(ctx)?;
     let balance = ledger.balance(ctx, &query.balance_query())?.into_owned();
     let tree = report::BalanceTree::create(ctx, balance)?.into_nodes();
-    let mut app = App::new(source_display.to_owned(), tree, query);
+    let mut app =
+        App::new(source_display.to_owned(), tree, query).with_translator(Rc::clone(translator));
     if let Some(snapshot) = snapshot
         && let Some((scope, index)) = app.restore(snapshot)
     {
