@@ -39,7 +39,7 @@ jobs:
         with:
           toolchain: stable
           target: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo test --target ${{ matrix.target }}
   coverage:
     runs-on: ubuntu-latest
@@ -55,7 +55,7 @@ jobs:
         uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: cargo-llvm-cov
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo llvm-cov clean --workspace
       - name: Collect coverage on okane-core
         run: |
@@ -79,7 +79,7 @@ jobs:
         with:
           toolchain: stable
           target: x86_64-unknown-linux-gnu
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Discard restored criterion baselines
         # rust-cache prunes target/ before saving it, and since v2.9.2 that
         # leaves target/criterion as a tree of empty directories. criterion
