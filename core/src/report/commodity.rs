@@ -6,6 +6,7 @@ use std::fmt::Display;
 use bumpalo::Bump;
 use bumpalo_intern::dense::{DenseInternStore, InternTag, Interned, Keyed, OccupiedError};
 use pretty_decimal::PrettyDecimal;
+use rust_decimal::Decimal;
 
 /// Interned `&str` for commodities within the `'arena` bounded allocator lifetime.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -172,6 +173,15 @@ impl<'arena> CommodityStore<'arena> {
     #[inline]
     pub(super) fn scale(&self, commodity: CommodityTag<'arena>) -> Option<u32> {
         self.formatting.get(commodity).map(|x| x.scale())
+    }
+
+    /// Returns the formatted amount for the given commodity,
+    /// handling both rescale and PrettyDecimal styling.
+    pub(super) fn format(&self, amount: Decimal, commodity: CommodityTag<'arena>) -> PrettyDecimal {
+        PrettyDecimal::with_format(
+            amount,
+            self.formatting.get(commodity).and_then(|x| x.format),
+        )
     }
 
     /// Sets the format of the `commodity` as [`PrettyDecimal`].

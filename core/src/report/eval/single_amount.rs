@@ -126,7 +126,7 @@ impl Display for SingleAmountDisplay<'_, '_> {
         write!(
             f,
             "{} {}",
-            self.0.value,
+            self.1.commodities.format(self.0.value, self.0.commodity),
             self.0.commodity.to_str_lossy(&self.1.commodities)
         )
     }
