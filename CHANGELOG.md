@@ -8,6 +8,13 @@
   (then `n` / `N`) and `C-s` / `C-r` match the payee or the date as shown, so `/2024-03` jumps to
   March. The register remembers its own last pattern for `C-s` / `C-r`, separately from the balance
   screen's (https://github.com/xkikeg/okane/issues/608).
+* `okane ui` draws amounts in the format each commodity declares in the Ledger file, such as
+  `1,234.50 CHF` for `format 1,000.00 CHF`. `--amount-format=comma3dot|plain` forces one format for
+  every commodity, and the `.` form can switch it during the session. `balance` and `register`
+  output is unchanged (https://github.com/xkikeg/okane/pull/607).
+* `okane-core`: `SingleAmount::as_pretty_display` and `ReportContext::set_pretty_format_override`
+  draw an amount in its commodity's declared format. `as_display` and `as_inline_display` keep
+  printing plain decimals.
 
 ### Changed
 

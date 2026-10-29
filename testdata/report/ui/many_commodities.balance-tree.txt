@@ -1,7 +1,7 @@
  okane ui — many_commodities.ledger                                             
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│Account                                                        Amount         │
-│  (total)                                                        -29250.00 USD│
+│Account                                                       Amount          │
+│  (total)                                                       -29,250.00 USD│
 │                                                                     10 STOCKA│
 │                                                                     10 STOCKB│
 │                                                                     10 STOCKC│

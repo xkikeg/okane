@@ -16,6 +16,7 @@ use okane_core::report::query::{
     AccountFilter, BalanceQuery, Conversion, ConversionStrategy, DateRange, QueryError,
 };
 use okane_core::report::{OwnedCommodity, ProcessOptions, ReportContext};
+use pretty_decimal::Format;
 
 use super::register::RegisterQueryTemplate;
 
@@ -43,6 +44,57 @@ pub struct QueryOptions {
     pub start: Option<NaiveDate>,
     /// End of the date range (exclusive), as `--end`.
     pub end: Option<NaiveDate>,
+    /// How the amounts are drawn, as `--amount-format`. It changes nothing
+    /// about the numbers, so changing it needs neither a reprocess nor, in
+    /// fact, a query; it rides along here because the form edits it with the
+    /// rest, and it must survive reloads just the same.
+    pub amount_format: AmountFormat,
+}
+
+/// Decimal format of the amounts on screen, as `--amount-format`.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum AmountFormat {
+    /// Each commodity as its `format` in the Ledger file declares, and plain
+    /// when there is none.
+    #[default]
+    Ledger,
+    /// Every commodity with `,` between thousands, such as `1,234.5`.
+    Comma3dot,
+    /// Every commodity without separators, such as `1234.5`.
+    Plain,
+}
+
+impl AmountFormat {
+    /// Every value, in the order the form cycles through them.
+    pub(super) const ALL: [AmountFormat; 3] = [
+        AmountFormat::Ledger,
+        AmountFormat::Comma3dot,
+        AmountFormat::Plain,
+    ];
+
+    /// The value as `--amount-format` spells it.
+    pub(super) fn name(self) -> &'static str {
+        match self {
+            AmountFormat::Ledger => "ledger",
+            AmountFormat::Comma3dot => "comma3dot",
+            AmountFormat::Plain => "plain",
+        }
+    }
+
+    /// The value after this one, wrapping.
+    pub(super) fn next(self) -> Self {
+        let i = Self::ALL.iter().position(|&f| f == self).unwrap_or(0);
+        Self::ALL[(i + 1) % Self::ALL.len()]
+    }
+
+    /// The override to set on the session's context.
+    pub(super) fn pretty_format_override(self) -> Option<Format> {
+        match self {
+            AmountFormat::Ledger => None,
+            AmountFormat::Comma3dot => Some(Format::Comma3Dot),
+            AmountFormat::Plain => Some(Format::Plain),
+        }
+    }
 }
 
 impl QueryOptions {
@@ -126,6 +178,9 @@ impl QueryOptions {
                 format_date(self.start),
                 format_date(self.end)
             ));
+        }
+        if self.amount_format != AmountFormat::Ledger {
+            parts.push(format!("amounts: {}", self.amount_format.name()));
         }
         (!parts.is_empty()).then(|| parts.join(" · "))
     }
@@ -261,8 +316,36 @@ mod tests {
         next.end = Some(date(2025, 1, 1));
         assert!(!next.needs_reprocess(&current));
 
+        next.amount_format = AmountFormat::Comma3dot;
+        assert!(!next.needs_reprocess(&current));
+
         next.price_db = Some(PathBuf::from("prices.db"));
         assert!(next.needs_reprocess(&current));
+    }
+
+    #[test]
+    fn amount_format_cycles_and_maps_to_the_override() {
+        assert_eq!(AmountFormat::Ledger.next(), AmountFormat::Comma3dot);
+        assert_eq!(AmountFormat::Comma3dot.next(), AmountFormat::Plain);
+        assert_eq!(AmountFormat::Plain.next(), AmountFormat::Ledger);
+        assert_eq!(AmountFormat::Ledger.pretty_format_override(), None);
+        assert_eq!(
+            AmountFormat::Comma3dot.pretty_format_override(),
+            Some(Format::Comma3Dot)
+        );
+        assert_eq!(
+            AmountFormat::Plain.pretty_format_override(),
+            Some(Format::Plain)
+        );
+    }
+
+    #[test]
+    fn summary_names_a_forced_amount_format() {
+        let mut opts = options();
+        opts.amount_format = AmountFormat::Plain;
+        assert_eq!(opts.summary().as_deref(), Some("amounts: plain"));
+        opts.exchange = Some("CHF".to_owned());
+        assert_eq!(opts.summary().as_deref(), Some("-X CHF · amounts: plain"));
     }
 
     #[test]

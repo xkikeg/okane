@@ -5,7 +5,7 @@ use std::fmt::Display;
 
 use bumpalo::Bump;
 use bumpalo_intern::dense::{DenseInternStore, InternTag, Interned, Keyed, OccupiedError};
-use pretty_decimal::PrettyDecimal;
+use pretty_decimal::{Format, PrettyDecimal};
 
 /// Interned `&str` for commodities within the `'arena` bounded allocator lifetime.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -172,6 +172,13 @@ impl<'arena> CommodityStore<'arena> {
     #[inline]
     pub(super) fn scale(&self, commodity: CommodityTag<'arena>) -> Option<u32> {
         self.formatting.get(commodity).map(|x| x.scale())
+    }
+
+    /// Returns the decimal format the `commodity` is declared with,
+    /// or `None` if the Ledger file declares none.
+    #[inline]
+    pub(super) fn format(&self, commodity: CommodityTag<'arena>) -> Option<Format> {
+        self.formatting.get(commodity).and_then(|x| x.format)
     }
 
     /// Sets the format of the `commodity` as [`PrettyDecimal`].

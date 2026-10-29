@@ -3,6 +3,7 @@ use std::{
     ops::{Mul, Neg},
 };
 
+use pretty_decimal::PrettyDecimal;
 use rust_decimal::Decimal;
 
 use crate::report::{ReportContext, commodity::CommodityTag};
@@ -117,6 +118,23 @@ impl<'ctx> SingleAmount<'ctx> {
     {
         SingleAmountDisplay(self, ctx)
     }
+
+    /// Returns an instance which can be displayed for people to read, in the
+    /// decimal format of its commodity, such as `1,234.5 CHF` for a commodity
+    /// declared with `format 1,000.00 CHF`.
+    ///
+    /// [`ReportContext::set_pretty_format_override`] replaces the format of
+    /// every commodity. Unlike [`Self::as_display`], whose output stays the
+    /// same whatever the Ledger file declares, the output isn't meant to be
+    /// parsed by other tools.
+    ///
+    /// The value is not rescaled: rounding is up to [`Self::round`].
+    pub fn as_pretty_display<'a>(&'a self, ctx: &'a ReportContext<'ctx>) -> impl Display + 'a
+    where
+        'a: 'ctx,
+    {
+        SingleAmountPrettyDisplay(self, ctx)
+    }
 }
 
 struct SingleAmountDisplay<'a, 'ctx>(&'a SingleAmount<'ctx>, &'a ReportContext<'ctx>);
@@ -132,13 +150,28 @@ impl Display for SingleAmountDisplay<'_, '_> {
     }
 }
 
+struct SingleAmountPrettyDisplay<'a, 'ctx>(&'a SingleAmount<'ctx>, &'a ReportContext<'ctx>);
+
+impl Display for SingleAmountPrettyDisplay<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value =
+            PrettyDecimal::with_format(self.0.value, self.1.pretty_format(self.0.commodity));
+        write!(
+            f,
+            "{} {}",
+            value,
+            self.0.commodity.to_str_lossy(&self.1.commodities)
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use bumpalo::Bump;
     use pretty_assertions::assert_eq;
-    use pretty_decimal::PrettyDecimal;
+    use pretty_decimal::Format;
     use rust_decimal_macros::dec;
 
     use crate::report::ReportContext;
@@ -229,6 +262,85 @@ mod tests {
                 .as_display(&ctx)
                 .to_string()
         );
+    }
+
+    /// Sets up JPY without a format, CHF as comma3dot, EUR as plain and USD
+    /// with a format directive lacking the style (`format 123 USD`).
+    fn formatted_ctx(arena: &Bump) -> ReportContext<'_> {
+        let mut ctx = ReportContext::new(arena);
+        ctx.commodities.ensure("JPY");
+        let chf = ctx.commodities.ensure("CHF");
+        let eur = ctx.commodities.ensure("EUR");
+        let usd = ctx.commodities.ensure("USD");
+        ctx.commodities
+            .set_format(chf, PrettyDecimal::comma3dot(dec!(1234.00)));
+        ctx.commodities
+            .set_format(eur, PrettyDecimal::plain(dec!(123.0)));
+        ctx.commodities
+            .set_format(usd, PrettyDecimal::unformatted(dec!(123)));
+        ctx
+    }
+
+    fn show(ctx: &ReportContext<'_>, commodity: &str, pretty: bool) -> String {
+        let amount = SingleAmount::from_value(ctx.commodity(commodity).unwrap(), dec!(-1234567.5));
+        match pretty {
+            true => amount.as_pretty_display(ctx).to_string(),
+            false => amount.as_display(ctx).to_string(),
+        }
+    }
+
+    #[test]
+    fn as_display_ignores_the_declared_format() {
+        let arena = Bump::new();
+        let ctx = formatted_ctx(&arena);
+        for commodity in ["JPY", "CHF", "EUR", "USD"] {
+            assert_eq!(
+                format!("-1234567.5 {commodity}"),
+                show(&ctx, commodity, false)
+            );
+        }
+    }
+
+    #[test]
+    fn as_pretty_display_follows_the_declared_format() {
+        let arena = Bump::new();
+        let ctx = formatted_ctx(&arena);
+        assert_eq!("-1234567.5 JPY", show(&ctx, "JPY", true));
+        assert_eq!("-1,234,567.5 CHF", show(&ctx, "CHF", true));
+        assert_eq!("-1234567.5 EUR", show(&ctx, "EUR", true));
+        assert_eq!("-1234567.5 USD", show(&ctx, "USD", true));
+    }
+
+    #[test]
+    fn pretty_format_override_applies_to_every_commodity() {
+        let arena = Bump::new();
+        let mut ctx = formatted_ctx(&arena);
+
+        ctx.set_pretty_format_override(Some(Format::Comma3Dot));
+        assert_eq!(ctx.pretty_format_override(), Some(Format::Comma3Dot));
+        for commodity in ["JPY", "CHF", "EUR", "USD"] {
+            assert_eq!(
+                format!("-1,234,567.5 {commodity}"),
+                show(&ctx, commodity, true)
+            );
+            // The plain display is never affected.
+            assert_eq!(
+                format!("-1234567.5 {commodity}"),
+                show(&ctx, commodity, false)
+            );
+        }
+
+        ctx.set_pretty_format_override(Some(Format::Plain));
+        for commodity in ["JPY", "CHF", "EUR", "USD"] {
+            assert_eq!(
+                format!("-1234567.5 {commodity}"),
+                show(&ctx, commodity, true)
+            );
+        }
+
+        ctx.set_pretty_format_override(None);
+        assert_eq!("-1,234,567.5 CHF", show(&ctx, "CHF", true));
+        assert_eq!("-1234567.5 JPY", show(&ctx, "JPY", true));
     }
 
     #[test]

@@ -279,6 +279,16 @@ struct UiArgs {
     #[command(flatten)]
     eval_options: EvalOptionsArgs,
 
+    /// How the amounts are drawn.
+    ///
+    /// `ledger` writes each commodity as its `format` in the Ledger file
+    /// declares, such as `1,234.5 CHF` for `format 1,000.00 CHF`.
+    /// `comma3dot` and `plain` write every commodity that way instead.
+    /// Only the UI is affected: `balance` and `register` always print plain
+    /// decimals, so that their output stays easy to process.
+    #[arg(long, value_enum, default_value_t)]
+    amount_format: crate::ui::report::AmountFormat,
+
     /// Path to the Ledger file.
     source: PathBuf,
 }
@@ -287,6 +297,7 @@ impl UiArgs {
     fn build(self) -> Result<UiCmd, InvalidFlagError> {
         Ok(UiCmd {
             eval_options: self.eval_options.build()?,
+            amount_format: self.amount_format,
             source: self.source,
         })
     }

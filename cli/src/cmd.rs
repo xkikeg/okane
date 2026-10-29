@@ -374,6 +374,7 @@ impl BalanceCmd {
 #[derive(Debug)]
 pub struct UiCmd {
     eval_options: EvalOptions,
+    amount_format: ui::report::AmountFormat,
     source: PathBuf,
 }
 
@@ -382,10 +383,11 @@ impl UiCmd {
         // All report data is built inside `run_ui`: its session loop resets
         // the arena on reload (`r` / `F5`), which requires that nothing out
         // here borrows it.
-        let config = ui::report::SessionConfig::new(
-            load::new_loader(self.source.clone()),
-            self.eval_options.to_query_options(),
-        );
+        let options = ui::report::QueryOptions {
+            amount_format: self.amount_format,
+            ..self.eval_options.to_query_options()
+        };
+        let config = ui::report::SessionConfig::new(load::new_loader(self.source.clone()), options);
         let mut arena = Bump::new();
         ui::report::run_ui(&mut arena, self.source.display().to_string(), &config)
             .context("failed to run TUI")
@@ -533,6 +535,7 @@ impl EvalOptions {
             today: self.today,
             start: self.date_range.start,
             end: self.date_range.end,
+            amount_format: ui::report::AmountFormat::default(),
         }
     }
 

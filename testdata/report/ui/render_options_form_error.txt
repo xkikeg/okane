@@ -1,17 +1,17 @@
  okane ui — many_commodities.ledger                                             
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│Account                                                        Amount         │
-│(total)                                                          -29250.00 USD│
+│Account                                                       Amount          │
+│(total)                                                         -29,250.00 USD│
 │                                                                     10 STOCKA│
 │                                                                     10 STOCKB│
 │                                                                     10 STOCKC│
-│                                                                     10 STOCKD│
-│    ┌ Query options ─────────────────────────────────────────────────────┐OCKE│
-│    │ -X, --exchange   (none)                                            │OCKF│
-│    │ --historical     off                                               │OCKG│
-│    │ --start          last week                                         │OCKH│
-│    │ --end            YYYY-MM-DD                                        │OCKI│
-│    │ --price-db       (none)                                            │OCKJ│
+│    ┌ Query options ─────────────────────────────────────────────────────┐OCKD│
+│    │ -X, --exchange    (none)                                           │OCKE│
+│    │ --historical      off                                              │OCKF│
+│    │ --start           last week                                        │OCKG│
+│    │ --end             YYYY-MM-DD                                       │OCKH│
+│    │ --price-db        (none)                                           │OCKI│
+│    │ --amount-format   ledger                                           │OCKJ│
 │    │ --start: expected a date as YYYY-MM-DD, got `last week`            │OCKK│
 │    └────────────────────────────────────────────────────────────────────┘OCKL│
 │                                                                     10 STOCKM│
