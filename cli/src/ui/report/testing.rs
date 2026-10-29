@@ -34,6 +34,7 @@ pub(super) fn options() -> QueryOptions {
         today: NaiveDate::from_ymd_opt(2024, 6, 1).expect("a valid date"),
         start: None,
         end: None,
+        amount_format: Default::default(),
     }
 }
 

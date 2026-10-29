@@ -1,11 +1,11 @@
  okane ui — multi_commodity.ledger — register: Assets:Banks:Swiss Bank          
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│Date       Payee                                  Amount         Total        │
-│2024-01-26 Initial with deduced amount              50000.00 CHF  50000.00 CHF│
-│2024-01-27 payment                                  -2000.00 CHF  48000.00 CHF│
-│2024-02-02 convert to EUR                            -481.53 CHF  47518.47 CHF│
-│2024-02-05 wire                                    -10000.00 CHF  37518.47 CHF│
-│2024-02-25 salary                                    6500.00 CHF  44018.47 CHF│
+│Date       Payee                                Amount          Total         │
+│2024-01-26 Initial with deduced amount            50,000.00 CHF  50,000.00 CHF│
+│2024-01-27 payment                                -2,000.00 CHF  48,000.00 CHF│
+│2024-02-02 convert to EUR                           -481.53 CHF  47,518.47 CHF│
+│2024-02-05 wire                                  -10,000.00 CHF  37,518.47 CHF│
+│2024-02-25 salary                                  6,500.00 CHF  44,018.47 CHF│
 │                                                                              │
 │                                                                              │
 │                                                                              │

@@ -31,7 +31,7 @@ pub(super) fn fulfill<'ctx>(
     cmd: Command<'ctx>,
     app: &mut App<'ctx>,
     ledger: &mut Ledger<'ctx>,
-    ctx: &ReportContext<'ctx>,
+    ctx: &mut ReportContext<'ctx>,
 ) -> Fulfilled {
     match cmd {
         Command::Reload => Fulfilled::Reload,
@@ -58,7 +58,7 @@ fn apply_options<'ctx>(
     options: QueryOptions,
     app: &mut App<'ctx>,
     ledger: &mut Ledger<'ctx>,
-    ctx: &ReportContext<'ctx>,
+    ctx: &mut ReportContext<'ctx>,
 ) -> Fulfilled {
     if options.needs_reprocess(&app.query.options) {
         app.query.options = options;
@@ -68,7 +68,11 @@ fn apply_options<'ctx>(
     // same way a reload rebuilds it — including re-running an open register.
     let snapshot = app.snapshot();
     match super::build_app(ctx, ledger, &options, &app.source_display, Some(&snapshot)) {
-        Ok(next) => *app = next,
+        Ok(next) => {
+            // Only now, so a refused change leaves the amounts as they were drawn.
+            ctx.set_pretty_format_override(options.amount_format.pretty_format_override());
+            *app = next;
+        }
         // Nothing was swapped in, so the report on screen is still the one its
         // options describe.
         Err(err) => {
@@ -135,7 +139,10 @@ mod tests {
     use chrono::NaiveDate;
     use indoc::indoc;
 
+    use pretty_decimal::Format;
+
     use super::super::app::Screen;
+    use super::super::options::AmountFormat;
     use super::super::testing::{options, process};
 
     /// Two years of postings, so a date range has something to cut, in two
@@ -181,7 +188,7 @@ mod tests {
     #[test]
     fn applying_a_date_range_requeries_in_place() {
         let arena = Bump::new();
-        let (ctx, mut ledger) = process(&arena, LEDGER);
+        let (mut ctx, mut ledger) = process(&arena, LEDGER);
         let mut app = app_with(&ctx, &mut ledger, &options());
         assert!(
             rows_of(&app, &ctx)
@@ -198,7 +205,7 @@ mod tests {
                 Command::ApplyOptions(next.clone()),
                 &mut app,
                 &mut ledger,
-                &ctx
+                &mut ctx
             ),
             Fulfilled::Continue
         );
@@ -220,13 +227,13 @@ mod tests {
     #[test]
     fn applying_an_exchange_converts_the_balance() {
         let arena = Bump::new();
-        let (ctx, mut ledger) = process(&arena, LEDGER);
+        let (mut ctx, mut ledger) = process(&arena, LEDGER);
         let mut app = app_with(&ctx, &mut ledger, &options());
 
         let mut next = options();
         next.exchange = Some("USD".to_owned());
         next.historical = true;
-        fulfill(Command::ApplyOptions(next), &mut app, &mut ledger, &ctx);
+        fulfill(Command::ApplyOptions(next), &mut app, &mut ledger, &mut ctx);
 
         assert_eq!(app.error_toast, None);
         let rows = rows_of(&app, &ctx);
@@ -240,7 +247,7 @@ mod tests {
     #[test]
     fn applying_options_keeps_the_ui_state() {
         let arena = Bump::new();
-        let (ctx, mut ledger) = process(&arena, LEDGER);
+        let (mut ctx, mut ledger) = process(&arena, LEDGER);
         let mut app = app_with(&ctx, &mut ledger, &options());
         let scope = app
             .balance
@@ -254,7 +261,7 @@ mod tests {
 
         let mut next = options();
         next.end = Some(date(2025, 1, 1));
-        fulfill(Command::ApplyOptions(next), &mut app, &mut ledger, &ctx);
+        fulfill(Command::ApplyOptions(next), &mut app, &mut ledger, &mut ctx);
 
         assert_eq!(app.error_toast, None);
         assert_matches!(&app.screen, Screen::Register(view) => {
@@ -269,7 +276,7 @@ mod tests {
     #[test]
     fn applying_an_unknown_commodity_keeps_the_old_report() {
         let arena = Bump::new();
-        let (ctx, mut ledger) = process(&arena, LEDGER);
+        let (mut ctx, mut ledger) = process(&arena, LEDGER);
         let before = options();
         let mut app = app_with(&ctx, &mut ledger, &before);
         let rows = rows_of(&app, &ctx);
@@ -277,7 +284,7 @@ mod tests {
         let mut next = options();
         next.exchange = Some("XYZ".to_owned());
         assert_eq!(
-            fulfill(Command::ApplyOptions(next), &mut app, &mut ledger, &ctx),
+            fulfill(Command::ApplyOptions(next), &mut app, &mut ledger, &mut ctx),
             Fulfilled::Continue
         );
 
@@ -287,13 +294,55 @@ mod tests {
         assert_eq!(rows_of(&app, &ctx), rows);
     }
 
+    /// The amount format is how the session's context draws amounts, so
+    /// applying it sets the context's override, keeping the UI state.
+    #[test]
+    fn applying_an_amount_format_sets_the_context_override() {
+        let arena = Bump::new();
+        let (mut ctx, mut ledger) = process(&arena, LEDGER);
+        let mut app = app_with(&ctx, &mut ledger, &options());
+
+        let mut next = options();
+        next.amount_format = AmountFormat::Comma3dot;
+        assert_eq!(
+            fulfill(
+                Command::ApplyOptions(next.clone()),
+                &mut app,
+                &mut ledger,
+                &mut ctx
+            ),
+            Fulfilled::Continue
+        );
+
+        assert_eq!(app.error_toast, None);
+        assert_eq!(app.query.options, next);
+        assert_eq!(ctx.pretty_format_override(), Some(Format::Comma3Dot));
+    }
+
+    /// A refused change leaves the amounts drawn as they were, along with the
+    /// rest of the report.
+    #[test]
+    fn a_refused_change_keeps_the_amount_format() {
+        let arena = Bump::new();
+        let (mut ctx, mut ledger) = process(&arena, LEDGER);
+        let mut app = app_with(&ctx, &mut ledger, &options());
+
+        let mut next = options();
+        next.amount_format = AmountFormat::Plain;
+        next.exchange = Some("XYZ".to_owned());
+        fulfill(Command::ApplyOptions(next), &mut app, &mut ledger, &mut ctx);
+
+        assert!(app.error_toast.is_some());
+        assert_eq!(ctx.pretty_format_override(), None);
+    }
+
     /// The price DB is read while book-keeping, so a new one goes back to the
     /// session loop — with the options attached, since the app is what crosses
     /// that boundary.
     #[test]
     fn applying_a_price_db_asks_for_a_rebuild() {
         let arena = Bump::new();
-        let (ctx, mut ledger) = process(&arena, LEDGER);
+        let (mut ctx, mut ledger) = process(&arena, LEDGER);
         let mut app = app_with(&ctx, &mut ledger, &options());
 
         let mut next = options();
@@ -303,7 +352,7 @@ mod tests {
                 Command::ApplyOptions(next.clone()),
                 &mut app,
                 &mut ledger,
-                &ctx
+                &mut ctx
             ),
             Fulfilled::Reload
         );
@@ -315,7 +364,7 @@ mod tests {
     #[test]
     fn a_register_the_conversion_cannot_express_only_warns() {
         let arena = Bump::new();
-        let (ctx, mut ledger) = process(&arena, LEDGER);
+        let (mut ctx, mut ledger) = process(&arena, LEDGER);
         let mut opts = options();
         opts.exchange = Some("USD".to_owned()); // up-to-date, not historical
         let mut app = app_with(&ctx, &mut ledger, &opts);
@@ -328,7 +377,12 @@ mod tests {
             .expect("the fixture has Assets:Bank");
 
         assert_eq!(
-            fulfill(Command::LoadRegister { scope }, &mut app, &mut ledger, &ctx),
+            fulfill(
+                Command::LoadRegister { scope },
+                &mut app,
+                &mut ledger,
+                &mut ctx
+            ),
             Fulfilled::Continue
         );
         assert_matches!(&app.screen, Screen::Balance);

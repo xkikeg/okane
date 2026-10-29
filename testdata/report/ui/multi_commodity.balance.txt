@@ -1,24 +1,24 @@
  okane ui — multi_commodity.ledger                                              
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│Account                                                       Amount          │
-│(total)                                                          -10481.53 CHF│
-│                                                               -13348.9400 USD│
+│Account                                                      Amount           │
+│(total)                                                         -10,481.53 CHF│
+│                                                              -13,348.9400 USD│
 │                                                                390.0000 OKANE│
 │                                                                   12.300 GOLD│
 │                                                                    518.50 EUR│
-│Assets:Banks:Swiss Bank                                           44018.47 CHF│
-│Assets:Banks:あおによし                                             100000 JPY│
-│Assets:Brokers:US Broker                                          13270.00 USD│
+│Assets:Banks:Swiss Bank                                          44,018.47 CHF│
+│Assets:Banks:あおによし                                            100,000 JPY│
+│Assets:Brokers:US Broker                                         13,270.00 USD│
 │                                                                390.0000 OKANE│
 │                                                                   12.300 GOLD│
 │Assets:Wire:US Broker                                                        0│
-│Equity:Initial                                                   -48000.00 CHF│
-│                                                                    900000 JPY│
-│                                                               -26230.0000 USD│
+│Equity:Initial                                                  -48,000.00 CHF│
+│                                                                   900,000 JPY│
+│                                                              -26,230.0000 USD│
 │Expenses:Cash                                                       511.00 EUR│
 │Expenses:Comissions                                                  11.06 USD│
 │Expenses:Commissions                                                  7.50 EUR│
-│Expenses:Tax:Income                                                2000.00 CHF│
+│Expenses:Tax:Income                                               2,000.00 CHF│
 │Income:Capital Gain                                                -400.00 USD│
 └──────────────────────────────────────────────────────────────────────────────┘
  Account 1/14                                                            ? help 

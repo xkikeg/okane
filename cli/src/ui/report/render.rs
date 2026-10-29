@@ -768,7 +768,7 @@ fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
 fn format_amount_lines<'ctx>(amount: &Amount<'ctx>, ctx: &ReportContext<'ctx>) -> Vec<String> {
     let mut lines: Vec<String> = amount
         .iter()
-        .map(|single| single.as_display(ctx).to_string())
+        .map(|single| single.as_pretty_display(ctx).to_string())
         .collect();
     if lines.is_empty() {
         lines.push("0".to_owned());
