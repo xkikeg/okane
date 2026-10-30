@@ -7,10 +7,7 @@ use std::{
 
 use rust_decimal::Decimal;
 
-use crate::report::{
-    commodity::{CommodityStore, CommodityTag},
-    context::ReportContext,
-};
+use crate::report::{commodity::CommodityTag, context::ReportContext};
 
 use super::{PostingAmount, SingleAmount, error::EvalError};
 
@@ -128,7 +125,7 @@ impl<'ctx> Amount<'ctx> {
     }
 
     /// Returns an iterator over its amount.
-    pub fn iter(&self) -> impl Iterator<Item = SingleAmount<'ctx>> + '_ {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = SingleAmount<'ctx>> + FusedIterator + '_ {
         AmountIter(self.values.iter())
     }
 
@@ -140,7 +137,7 @@ impl<'ctx> Amount<'ctx> {
         'a: 'ctx,
     {
         InlinePrintAmount {
-            commodity_store: &ctx.commodities,
+            ctx: ctx,
             amount: self,
         }
     }
@@ -281,36 +278,39 @@ impl<'ctx> Iterator for AmountIter<'_, 'ctx> {
 
 impl FusedIterator for AmountIter<'_, '_> {}
 
-#[derive(Debug)]
+impl<'ctx> ExactSizeIterator for AmountIter<'_, 'ctx> {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
 struct InlinePrintAmount<'a, 'ctx> {
-    commodity_store: &'a CommodityStore<'ctx>,
+    ctx: &'a ReportContext<'ctx>,
     amount: &'a Amount<'ctx>,
 }
 
 impl Display for InlinePrintAmount<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let vs = &self.amount.values;
+        let mut vs = self.amount.iter();
         if vs.len() <= 1 {
-            return match vs.iter().next() {
-                Some((c, v)) => {
-                    write!(f, "{} {}", v, c.to_str_lossy(self.commodity_store))
-                }
+            return match vs.next() {
+                Some(v) => v.as_display(&self.ctx).fmt(f),
                 None => write!(f, "0"),
             };
         }
         // wrap in () for 2 or more commodities case.
         write!(f, "(")?;
-        for (i, (c, v)) in vs.iter().enumerate() {
-            let mut v = *v;
+        for (i, v) in vs.enumerate() {
+            let mut v = v;
             if i != 0 {
-                if v.is_sign_negative() {
-                    v.set_sign_negative(false);
+                if v.value.is_sign_negative() {
+                    v.value.set_sign_negative(false);
                     write!(f, " - ")?;
                 } else {
                     write!(f, " + ")?;
                 }
             }
-            write!(f, "{} {}", v, c.to_str_lossy(self.commodity_store))?;
+            v.as_display(&self.ctx).fmt(f)?;
         }
         write!(f, ")")
     }
@@ -778,6 +778,38 @@ mod tests {
             Amount::from_iter([(jpy, dec!(-10)), (chf, dec!(-1))])
                 .as_inline_display(&ctx)
                 .to_string()
+        );
+
+        // Set format reaction
+        let eur = ctx.commodities.ensure("EUR");
+        let usd = ctx.commodities.ensure("USD");
+        ctx.commodities
+            .set_format(chf, PrettyDecimal::comma3dot(dec!(1234.00)));
+        ctx.commodities
+            .set_format(eur, PrettyDecimal::plain(dec!(123.0)));
+        ctx.commodities
+            .set_format(usd, PrettyDecimal::unformatted(dec!(123)));
+        // jpy: unset
+        // chf: comma3dot
+        // eur: plain
+        // usd: unformatted
+
+        // Note we're not applying scale in the context.
+        // This is kind of intentional, as process applies `Amount::round()`
+        // to its Amount.
+        // Still questionable if we should still apply round or not.
+        // I chose not to apply given decimal formatting is purely representation,
+        // while rescale changes its meaning under the hood.
+        assert_eq!(
+            "(1234 JPY + 1,234 CHF + 1234 EUR + 1234 USD)",
+            Amount::from_iter([
+                (jpy, dec!(1234)),
+                (chf, dec!(1234)),
+                (eur, dec!(1234)),
+                (usd, dec!(1234))
+            ])
+            .as_inline_display(&ctx)
+            .to_string()
         );
     }
 }
