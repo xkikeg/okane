@@ -513,9 +513,7 @@ mod tests {
     fn help_scrolls_on_overlay_scroll() {
         let mut app = app_no_rows();
         app.update(Message::ShowHelp);
-        let Some(Overlay::Help(popup)) = app.overlay.as_mut() else {
-            panic!("expected the help overlay");
-        };
+        let popup = assert_matches!(app.overlay.as_mut(), Some(Overlay::Help(popup)) => popup);
         popup.viewport_height = 4;
         app.update(Message::OverlayScroll(ScrollDelta::Bottom));
         assert_matches!(&app.overlay, Some(Overlay::Help(p)) if p.scroll > 0);
@@ -894,15 +892,11 @@ mod tests {
         let mut app = app_no_rows();
         let scope = RegisterScope::Single(account);
         app.show_register_at(scope, rows.clone(), &cursor_at(10));
-        let Screen::Register(view) = &app.screen else {
-            panic!("expected register screen");
-        };
+        let view = assert_matches!(&app.screen, Screen::Register(view) => view);
         assert_eq!(view.nav.selected_item(), Some(2));
 
         app.show_register_at(scope, rows, &cursor_at(1));
-        let Screen::Register(view) = &app.screen else {
-            panic!("expected register screen");
-        };
+        let view = assert_matches!(&app.screen, Screen::Register(view) => view);
         assert_eq!(view.nav.selected_item(), Some(1));
     }
 

@@ -406,9 +406,7 @@ mod tests {
         let SessionData { app, .. } = build(&mut ctx, V2, Some(&snapshot)).unwrap();
 
         assert_eq!(app.error_toast, None);
-        let Screen::Register(view) = &app.screen else {
-            panic!("expected register screen");
-        };
+        let view = assert_matches!(&app.screen, Screen::Register(view) => view);
         assert_eq!(view.title(), "Assets:Bank");
         assert_eq!(view.rows.len(), 1);
         assert_eq!(view.nav.selected_item(), Some(0));
