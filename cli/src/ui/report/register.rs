@@ -1,4 +1,5 @@
-//! Register drill-down screen: its rows and the scope it is filtered to.
+//! Register drill-down screen: its rows, the scope it is filtered to, and the
+//! search over its entries.
 
 use std::cmp::max;
 
@@ -6,11 +7,13 @@ use chrono::NaiveDate;
 use crossterm::event::{KeyCode, KeyEvent};
 use okane_core::report::query::{Conversion, DateRange};
 use okane_core::report::{Account, AccountAggregate, Amount};
+use regex::Regex;
 
 use crate::ui::table::{NavCommand, TableNav, key_to_nav};
 
 use super::balance::TOTAL_LABEL;
 use super::render::amount_line_count;
+use super::search::{SearchIntent, SearchKey, SearchMessage, SearchState, Searchable};
 
 /// What a register drill-in from the balance screen should match.
 #[derive(Debug, Clone, Copy)]
@@ -95,6 +98,15 @@ impl RegisterRow<'_> {
     }
 }
 
+impl Searchable for RegisterRow<'_> {
+    /// Register search matches the payee or the date as shown (`YYYY-MM-DD`),
+    /// so `/2024-03` jumps to March. Fields are matched one at a time, so `^`
+    /// and `$` anchor to either field rather than to a joined line.
+    fn is_match(&self, re: &Regex) -> bool {
+        re.is_match(&self.payee) || re.is_match(&self.date.to_string())
+    }
+}
+
 /// Query parameters reused for every register lookup during the session
 /// (built once from the CLI's `EvalOptions`).
 #[derive(Debug, Clone, Copy)]
@@ -116,6 +128,8 @@ pub struct RegisterView<'ctx> {
     /// rows) on first draw and reuses them, keeping per-frame work
     /// proportional to the viewport rather than the row count.
     pub col_widths: Option<(u16, u16)>,
+    /// Payee / date search on this register and its history.
+    pub search: SearchState,
 }
 
 impl<'ctx> RegisterView<'ctx> {
@@ -131,6 +145,7 @@ impl<'ctx> RegisterView<'ctx> {
             rows,
             nav,
             col_widths: None,
+            search: SearchState::default(),
         }
     }
 
@@ -143,19 +158,34 @@ impl<'ctx> RegisterView<'ctx> {
     /// cross-screen transitions the view cannot perform itself.
     pub(super) fn update(&mut self, msg: RegisterMessage) -> Option<RegisterAction> {
         match msg {
-            RegisterMessage::Nav(cmd) => self.nav.apply(cmd),
+            RegisterMessage::Nav(cmd) => {
+                self.search.end_interactive();
+                self.nav.apply(cmd);
+            }
+            RegisterMessage::Search(msg) => self.search.update(msg, &mut self.nav, &self.rows),
+            RegisterMessage::EndSearch => self.search.end_interactive(),
             RegisterMessage::Leave => return Some(RegisterAction::Leave),
         }
         None
     }
 
-    /// Translates a key event into a [`RegisterMessage`]. Global keys (`Ctrl-C`,
-    /// reload) are left for [`super::event`], so `None` lets them fall through.
-    pub(super) fn key_to_message(key: KeyEvent) -> Option<RegisterMessage> {
+    /// Translates a key event into a [`RegisterMessage`]. The editing search
+    /// phases own every key; otherwise navigation and leaving map as usual.
+    /// Global keys (`Ctrl-C`, reload) are left for [`super::event`], so `None`
+    /// lets them fall through.
+    pub(super) fn key_to_message(&self, key: KeyEvent) -> Option<RegisterMessage> {
+        match self.search.key_to_message(key) {
+            SearchKey::Message(msg) => return Some(RegisterMessage::Search(msg)),
+            SearchKey::Swallow => return None,
+            SearchKey::Pass => {}
+        }
         if let Some(cmd) = key_to_nav(key) {
             return Some(RegisterMessage::Nav(cmd));
         }
         match key.code {
+            // RET leaves an interactive search, as it does on the balance
+            // screen; here there is no register to open on top of that.
+            KeyCode::Enter if self.search.is_interactive() => Some(RegisterMessage::EndSearch),
             KeyCode::Char('q') | KeyCode::Esc => Some(RegisterMessage::Leave),
             _ => None,
         }
@@ -167,6 +197,10 @@ impl<'ctx> RegisterView<'ctx> {
 pub enum RegisterMessage {
     /// Move the selection within the register table.
     Nav(NavCommand),
+    /// A message for the payee / date search.
+    Search(SearchMessage),
+    /// End an interactive search, keeping the selection (RET).
+    EndSearch,
     /// Leave the register and return to the balance screen.
     Leave,
 }
@@ -190,6 +224,8 @@ pub struct RegisterSnapshot {
     /// [`RegisterView::rows`], not a table row, so it survives an entry
     /// whose line count changes with the data.
     pub(super) cursor: usize,
+    /// Active search intent; the matches are recomputed on restore.
+    pub(super) search: Option<SearchIntent>,
 }
 
 impl RegisterSnapshot {
@@ -198,6 +234,7 @@ impl RegisterSnapshot {
         Self {
             scope: view.scope.as_owned_scope(),
             cursor: view.nav.selected_item().unwrap_or(0),
+            search: view.search.intent(),
         }
     }
 
@@ -208,6 +245,10 @@ impl RegisterSnapshot {
     pub(super) fn cursor(&self) -> usize {
         self.cursor
     }
+
+    pub(super) fn search(&self) -> Option<&SearchIntent> {
+        self.search.as_ref()
+    }
 }
 
 #[cfg(test)]
@@ -217,6 +258,7 @@ mod tests {
     use bumpalo::Bump;
     use crossterm::event::KeyModifiers;
 
+    use super::super::search::SearchDirection;
     use super::super::testing::make_account;
 
     /// A register view for `account` with `n` one-line rows, cursor on the last.
@@ -276,33 +318,182 @@ mod tests {
 
     #[test]
     fn key_to_message_maps_nav_and_leave() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
+        let view = register_view(account, 1);
         assert_eq!(
-            RegisterView::key_to_message(key(KeyCode::Down)),
+            view.key_to_message(key(KeyCode::Down)),
             Some(RegisterMessage::Nav(NavCommand::Down))
         );
         assert_eq!(
-            RegisterView::key_to_message(key(KeyCode::Char('k'))),
+            view.key_to_message(key(KeyCode::Char('k'))),
             Some(RegisterMessage::Nav(NavCommand::Up))
         );
         assert_eq!(
-            RegisterView::key_to_message(ctrl_key('n')),
+            view.key_to_message(ctrl_key('n')),
             Some(RegisterMessage::Nav(NavCommand::Down))
         );
         assert_eq!(
-            RegisterView::key_to_message(key(KeyCode::Char('q'))),
+            view.key_to_message(key(KeyCode::Char('q'))),
             Some(RegisterMessage::Leave)
         );
         assert_eq!(
-            RegisterView::key_to_message(key(KeyCode::Esc)),
+            view.key_to_message(key(KeyCode::Esc)),
             Some(RegisterMessage::Leave)
         );
     }
 
+    /// While the pattern is being typed, keys the search has no use for are
+    /// eaten rather than reaching navigation.
+    #[test]
+    fn incremental_search_swallows_navigation_keys() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
+        let mut view = view_of(account, ENTRIES);
+        view.update(RegisterMessage::Search(SearchMessage::StartModal));
+        assert_eq!(view.key_to_message(key(KeyCode::Down)), None);
+        assert_eq!(view.key_to_message(key(KeyCode::PageDown)), None);
+    }
+
     #[test]
     fn key_to_message_leaves_global_keys_unmapped() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
+        let view = register_view(account, 1);
         // Enter and reload keys fall through to the event layer.
-        assert_eq!(RegisterView::key_to_message(key(KeyCode::Enter)), None);
-        assert_eq!(RegisterView::key_to_message(key(KeyCode::Char('r'))), None);
-        assert_eq!(RegisterView::key_to_message(key(KeyCode::F(5))), None);
+        assert_eq!(view.key_to_message(key(KeyCode::Enter)), None);
+        assert_eq!(view.key_to_message(key(KeyCode::Char('r'))), None);
+        assert_eq!(view.key_to_message(key(KeyCode::F(5))), None);
+    }
+
+    /// A register view over `(date, payee)` entries, cursor on the last.
+    fn view_of<'ctx>(account: Account<'ctx>, entries: &[(&str, &str)]) -> RegisterView<'ctx> {
+        let rows = entries
+            .iter()
+            .map(|(date, payee)| RegisterRow {
+                date: date.parse().unwrap(),
+                payee: (*payee).to_owned(),
+                amount: Amount::zero(),
+                total: Amount::zero(),
+            })
+            .collect();
+        RegisterView::new(RegisterScope::Single(account), rows)
+    }
+
+    const ENTRIES: &[(&str, &str)] = &[
+        ("2024-01-05", "Grocery store"),
+        ("2024-02-10", "Salary"),
+        ("2024-03-01", "Grocery store"),
+        ("2024-03-15", "Rent"),
+    ];
+
+    /// Types `pattern` into the open search.
+    fn type_in(view: &mut RegisterView<'_>, pattern: &str) {
+        for c in pattern.chars() {
+            view.update(RegisterMessage::Search(SearchMessage::Push(c)));
+        }
+    }
+
+    fn matched(view: &RegisterView<'_>) -> Vec<usize> {
+        view.search.active.as_ref().unwrap().matched_rows().to_vec()
+    }
+
+    #[test]
+    fn search_matches_payee_case_insensitively() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
+        let mut view = view_of(account, ENTRIES);
+        view.update(RegisterMessage::Search(SearchMessage::StartModal));
+        type_in(&mut view, "grocery");
+        assert_eq!(matched(&view), [0, 2]);
+        // Modal search jumps forward from the origin (the last entry), wrapping.
+        assert_eq!(view.nav.selected_item(), Some(0));
+    }
+
+    #[test]
+    fn search_matches_date() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
+        let mut view = view_of(account, ENTRIES);
+        view.update(RegisterMessage::Search(SearchMessage::StartModal));
+        type_in(&mut view, "2024-03");
+        assert_eq!(matched(&view), [2, 3]);
+        // `^` anchors to each field on its own.
+        view.update(RegisterMessage::Search(SearchMessage::Cancel));
+        view.update(RegisterMessage::Search(SearchMessage::StartModal));
+        type_in(&mut view, "^s");
+        assert_eq!(matched(&view), [1]);
+    }
+
+    #[test]
+    fn fixed_search_steps_and_esc_closes_before_leaving() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
+        let mut view = view_of(account, ENTRIES);
+        view.update(RegisterMessage::Search(SearchMessage::StartModal));
+        type_in(&mut view, "grocery");
+        view.update(RegisterMessage::Search(SearchMessage::Submit));
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Char('n'))),
+            Some(RegisterMessage::Search(SearchMessage::Next))
+        );
+        view.update(RegisterMessage::Search(SearchMessage::Next));
+        assert_eq!(view.nav.selected_item(), Some(2));
+        // Esc ends the search first; only the next Esc leaves the register.
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Esc)),
+            Some(RegisterMessage::Search(SearchMessage::Close))
+        );
+        view.update(RegisterMessage::Search(SearchMessage::Close));
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Esc)),
+            Some(RegisterMessage::Leave)
+        );
+        assert_eq!(&view.search.last, "grocery");
+    }
+
+    #[test]
+    fn incremental_search_takes_letters_as_text() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
+        let mut view = view_of(account, ENTRIES);
+        view.update(RegisterMessage::Search(SearchMessage::StartModal));
+        for c in ['q', 'j', 'r'] {
+            assert_eq!(
+                view.key_to_message(key(KeyCode::Char(c))),
+                Some(RegisterMessage::Search(SearchMessage::Push(c)))
+            );
+        }
+    }
+
+    #[test]
+    fn isearch_enter_ends_search_keeping_selection() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
+        let mut view = view_of(account, ENTRIES);
+        view.update(RegisterMessage::Search(SearchMessage::StartInteractive(
+            SearchDirection::Backward,
+        )));
+        type_in(&mut view, "salary");
+        assert_eq!(view.nav.selected_item(), Some(1));
+        assert_eq!(
+            view.key_to_message(key(KeyCode::Enter)),
+            Some(RegisterMessage::EndSearch)
+        );
+        view.update(RegisterMessage::EndSearch);
+        assert!(view.search.active.is_none());
+        assert_eq!(view.nav.selected_item(), Some(1));
+        assert_eq!(&view.search.last, "salary");
+    }
+
+    #[test]
+    fn snapshot_carries_the_active_search() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:A");
+        let mut view = view_of(account, ENTRIES);
+        view.update(RegisterMessage::Search(SearchMessage::StartModal));
+        type_in(&mut view, "rent");
+        let snapshot = RegisterSnapshot::capture(&view);
+        assert_eq!(snapshot.search().map(|i| i.input.as_str()), Some("rent"));
     }
 }

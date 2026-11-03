@@ -47,6 +47,19 @@ fn moving(item_step: &'static str) -> Section {
     }
 }
 
+/// Search keys, shared by both screens except for what `/` looks at.
+fn searching(what: &'static str) -> Section {
+    Section {
+        title: "Search",
+        bindings: vec![
+            binding("/", what),
+            binding("n, N", "next / previous match, once fixed"),
+            binding("C-s, C-r", "incremental search forward / back"),
+            binding("Esc", "leave the search"),
+        ],
+    }
+}
+
 fn balance_sections() -> Vec<Section> {
     vec![
         moving("previous / next account"),
@@ -59,15 +72,7 @@ fn balance_sections() -> Vec<Section> {
                 binding("Enter", "open the register of the selection"),
             ],
         },
-        Section {
-            title: "Search",
-            bindings: vec![
-                binding("/", "search accounts by regex"),
-                binding("n, N", "next / previous match, once fixed"),
-                binding("C-s, C-r", "incremental search forward / back"),
-                binding("Esc", "leave the search"),
-            ],
-        },
+        searching("search accounts by regex"),
         Section {
             title: "Session",
             bindings: vec![
@@ -84,6 +89,7 @@ fn balance_sections() -> Vec<Section> {
 fn register_sections() -> Vec<Section> {
     vec![
         moving("previous / next entry"),
+        searching("search payees and dates by regex"),
         Section {
             title: "Session",
             bindings: vec![
@@ -161,8 +167,8 @@ mod tests {
         assert!(text.contains("open the register"), "{text}");
     }
 
-    /// The register screen has no tree, no search and no quit prompt, so its
-    /// help must not offer them.
+    /// The register screen has no tree and no quit prompt, so its help must not
+    /// offer them; its search looks at payees and dates rather than accounts.
     #[test]
     fn register_help_omits_the_balance_only_keys() {
         let arena = Bump::new();
@@ -172,7 +178,8 @@ mod tests {
 
         let text = popup(&app.screen).lines.join("\n");
         assert!(!text.contains("tree"), "{text}");
-        assert!(!text.contains("search"), "{text}");
+        assert!(!text.contains("search accounts"), "{text}");
+        assert!(text.contains("search payees"), "{text}");
         assert!(text.contains("back to the balance screen"), "{text}");
     }
 
@@ -197,19 +204,21 @@ mod tests {
 
     /// Every key the help names is one the UI actually maps.
     ///
-    /// The balance app carries a fixed search so the `n`/`N` bindings — which
-    /// only mean "next match" once a search has been submitted — are checked in
-    /// the state they belong to; every other balance key falls through that
-    /// phase unchanged.
+    /// Both apps carry a fixed search so the `n`/`N` bindings — which only mean
+    /// "next match" once a search has been submitted — are checked in the state
+    /// they belong to; every other key falls through that phase unchanged.
     #[test]
     fn every_documented_key_is_mapped() {
         let arena = Bump::new();
         let (_ctx, account) = make_account(&arena, "Assets:Cash");
 
         let mut balance = App::new("test".to_owned(), Vec::new(), query_state());
-        balance.balance.search = Some(fixed_search());
+        balance.balance.search.active = Some(fixed_search());
         let mut register = App::new("test".to_owned(), Vec::new(), query_state());
         register.show_register(RegisterScope::Single(account), Vec::new());
+        if let Screen::Register(view) = &mut register.screen {
+            view.search.active = Some(fixed_search());
+        }
 
         for (app, sections) in [
             (&balance, balance_sections()),

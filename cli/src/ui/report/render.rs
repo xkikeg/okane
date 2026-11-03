@@ -91,7 +91,7 @@ pub fn draw<'ctx>(frame: &mut Frame, app: &mut App<'ctx>, ctx: &ReportContext<'c
     match &mut app.screen {
         Screen::Balance => {
             draw_balance_body(frame, layout[1], &mut app.balance, ctx);
-            match (&app.error_toast, &app.balance.search) {
+            match (&app.error_toast, &app.balance.search.active) {
                 (Some(msg), _) => draw_error(frame, layout[2], msg),
                 (None, Some(search)) => draw_search_bar(frame, layout[2], search),
                 (None, None) => draw_status(frame, layout[2], &status),
@@ -99,9 +99,10 @@ pub fn draw<'ctx>(frame: &mut Frame, app: &mut App<'ctx>, ctx: &ReportContext<'c
         }
         Screen::Register(view) => {
             draw_register_body(frame, layout[1], view, ctx);
-            match &app.error_toast {
-                Some(msg) => draw_error(frame, layout[2], msg),
-                None => draw_status(frame, layout[2], &status),
+            match (&app.error_toast, &view.search.active) {
+                (Some(msg), _) => draw_error(frame, layout[2], msg),
+                (None, Some(search)) => draw_search_bar(frame, layout[2], search),
+                (None, None) => draw_status(frame, layout[2], &status),
             }
         }
     }
@@ -301,10 +302,7 @@ fn draw_balance_body<'ctx>(
         ..
     } = view;
     let (rows, mode) = (&*rows, *mode);
-    let matches = search
-        .as_ref()
-        .and_then(|s| s.matches.as_ref())
-        .and_then(|r| r.as_ref().ok());
+    let search = search.active.as_ref();
 
     // The column is one width for the whole table — the one thing that has to
     // look at every row — so it is computed once per set of rows and cached;
@@ -324,7 +322,7 @@ fn draw_balance_body<'ctx>(
         },
         |i| vec![account_cell_text(&rows[i], mode)],
         |i| vec![format_amount_lines(&rows[i].amount, ctx)],
-        |i| matches.is_some_and(|m| m.contains_row(i)),
+        |i| search.is_some_and(|s| s.contains_row(i)),
     );
 }
 
@@ -340,9 +338,11 @@ fn draw_register_body<'ctx>(
         rows,
         nav,
         col_widths,
+        search,
         ..
     } = view;
     let rows = &*rows;
+    let search = search.active.as_ref();
 
     // The amount/total column widths are fixed for the life of the view, so
     // compute them once (scanning all rows) and cache them.
@@ -374,7 +374,7 @@ fn draw_register_body<'ctx>(
                 format_amount_lines(&rows[i].total, ctx),
             ]
         },
-        |_| false,
+        |i| search.is_some_and(|s| s.contains_row(i)),
     );
 }
 
@@ -440,7 +440,7 @@ fn draw_error(frame: &mut Frame, area: Rect, message: &str) {
     frame.render_widget(footer, area);
 }
 
-/// Renders the balance search bar in the footer slot: a prompt + the typed
+/// Renders the search bar in the footer slot: a prompt + the typed
 /// pattern (red on an invalid regex) plus a dim hint suffix. While editing it
 /// also places the terminal cursor at the end of the pattern.
 fn draw_search_bar(frame: &mut Frame, area: Rect, search: &Search) {
@@ -831,11 +831,7 @@ fn continued_cell(text: &str, head_style: Style) -> Line<'_> {
     let marker = Span::styled(CONTINUES_MARKER, Style::default().fg(STICKY_COLOR));
     match text.is_empty() {
         true => Line::from(marker),
-        false => Line::from(vec![
-            Span::styled(text, head_style),
-            Span::raw(" "),
-            marker,
-        ]),
+        false => Line::from(vec![Span::styled(text, head_style), Span::raw(" "), marker]),
     }
 }
 
@@ -1105,7 +1101,10 @@ mod tests {
     }
 
     fn cell_text(line: &Line<'_>) -> String {
-        line.spans.iter().map(|span| span.content.as_ref()).collect()
+        line.spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect()
     }
 
     /// A continuation line owns no label, so the marker stands alone in the
@@ -1837,5 +1836,61 @@ mod tests {
             !top.contains("Payee49"),
             "last entry should be scrolled off:\n{top}"
         );
+    }
+
+    /// A register search shows its bar in the footer and highlights the
+    /// matched entry's date and payee.
+    #[test]
+    fn register_search_shows_the_bar_and_highlights_matches() {
+        use super::super::search::SearchMessage;
+
+        let arena = Bump::new();
+        let (ctx, mut app) = register_app_with_rows(&arena, 5);
+        app.update(Message::Register(RegisterMessage::Search(
+            SearchMessage::StartModal,
+        )));
+        for c in "payee02".chars() {
+            app.update(Message::Register(RegisterMessage::Search(
+                SearchMessage::Push(c),
+            )));
+        }
+
+        let backend = TestBackend::new(80, 12);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app, &ctx)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let line =
+            |y: u16| -> String { (0..80).map(|x| buf[Position { x, y }].symbol()).collect() };
+
+        let footer = line(11);
+        assert!(footer.starts_with("/payee02  [1 matches]"), "{footer:?}");
+        // Body rows start below the title, the top border and the header.
+        let y = (3..11)
+            .find(|&y| line(y).contains("Payee02"))
+            .expect("matched entry is on screen");
+        assert_eq!(buf[Position { x: 1, y }].fg, Color::Yellow);
+        let other = (3..11)
+            .find(|&y| line(y).contains("Payee01"))
+            .expect("other entry is on screen");
+        assert_ne!(buf[Position { x: 1, y: other }].fg, Color::Yellow);
+    }
+
+    /// On the register screen, a footer error notice takes priority over an
+    /// open search bar, as it does on the balance screen.
+    #[test]
+    fn register_error_notice_wins_over_the_search_bar() {
+        use super::super::search::SearchMessage;
+
+        let arena = Bump::new();
+        let (ctx, mut app) = register_app_with_rows(&arena, 3);
+        app.update(Message::Register(RegisterMessage::Search(
+            SearchMessage::StartModal,
+        )));
+        app.error_toast = Some("reload failed".to_owned());
+
+        let out = render_sized(&mut app, &ctx, 80, 10);
+        let footer = out.lines().last().unwrap();
+        assert!(footer.contains("reload failed"), "{footer:?}");
+        assert!(!footer.starts_with("/"), "{footer:?}");
     }
 }

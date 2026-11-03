@@ -4,6 +4,11 @@
 
 ### Added
 
+* The TUI register screen can now be searched, with the same keys as the balance screen: `/`
+  (then `n` / `N`) and `C-s` / `C-r` match the payee or the date as shown, so `/2024-03` jumps to
+  March. The register remembers its own last pattern for `C-s` / `C-r`, separately from the balance
+  screen's (https://github.com/xkikeg/okane/issues/608).
+
 ### Changed
 
 * `okane import` now takes the import rules YAML with `--rules` / `-r`. The old `--config` / `-c`

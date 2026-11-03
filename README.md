@@ -62,9 +62,10 @@ $ okane ui /path/to/file.ledger
 The balance screen starts with a flat balance view. `t` switches to a tree of
 accounts, where `space` folds the selected subtree and `x` folds everything.
 `/` searches the account names in Vim style (`n` / `N` walk the matches) while
-`C-s`, `C-r` is Emacs style search., `Enter` opens the register of the
-selected account, and `r` reloads the file from disk so you can keep the UI open
-while editing. `q` quits. `?` lists every key binding of the screen you are on.
+`C-s`, `C-r` is Emacs style search. `Enter` opens the register of the
+selected account, where the same keys search the payees and dates (e.g.
+`/2024-03` jumps to March). `r` reloads the file from disk so you can keep the
+UI open while editing. `q` quits. `?` lists every key binding of the screen you are on.
 
 It takes the same evaluation flags as `balance` and `register`, so the amounts
 can be converted into a single commodity, or filtered by the time range:

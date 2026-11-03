@@ -191,12 +191,12 @@ fn build_app<'ctx>(
     let tree = report::BalanceTree::create(ctx, balance)?.into_nodes();
     let mut app = App::new(source_display.to_owned(), tree, query);
     if let Some(snapshot) = snapshot
-        && let Some((scope, index)) = app.restore(snapshot)
+        && let Some((scope, register)) = app.restore(snapshot)
     {
         // The snapshot had the register screen open; re-query its rows
         // against the fresh data.
         match fulfill::load_register(ledger, ctx, &app.query.template, scope) {
-            Ok(rows) => app.show_register_at(scope, rows, index),
+            Ok(rows) => app.show_register_at(scope, rows, register),
             Err(err) => app.error_toast = Some(fulfill::register_error(scope, err.as_ref())),
         }
     }
