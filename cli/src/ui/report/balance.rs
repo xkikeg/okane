@@ -15,13 +15,13 @@ use crossterm::event::{KeyCode, KeyEvent};
 #[cfg(test)]
 use okane_core::report::Account;
 use okane_core::report::{AccountAggregate, AccountTreeKey, Amount, BalanceTreeNode};
+use regex::Regex;
 
-use crate::ui::keys::is_ctrl;
 use crate::ui::table::{NavCommand, TableNav, key_to_nav};
 
 use super::register::{OwnedRegisterScope, RegisterScope};
 use super::render::amount_line_count;
-use super::search::{Search, SearchDirection, SearchIntent, SearchMatch, SearchMode, SearchPhase};
+use super::search::{SearchIntent, SearchKey, SearchMessage, SearchState, Searchable};
 
 /// Whether the balance screen shows a flat account list or the account tree.
 ///
@@ -103,6 +103,13 @@ impl<'ctx> BalanceRow<'ctx> {
     }
 }
 
+impl Searchable for BalanceRow<'_> {
+    /// Balance search matches the full account name.
+    fn is_match(&self, re: &Regex) -> bool {
+        re.is_match(self.full_name())
+    }
+}
+
 /// Printable full label of the AccountTeeKey.
 pub fn account_full_label<'ctx>(account: &AccountTreeKey<'ctx>) -> &'ctx str {
     match account {
@@ -144,24 +151,8 @@ pub enum BalanceMessage {
     ToggleFoldAll,
     /// Drill into the selected balance row's register.
     OpenRegister,
-    /// Open the modal (`/`) search bar (incremental phase).
-    StartModalSearch,
-    /// Open an interactive (`C-s`/`C-r`) search in the given direction.
-    StartISearch(SearchDirection),
-    /// Append a character to the search pattern.
-    SearchPush(char),
-    /// Remove the last character from the search pattern.
-    SearchPop,
-    /// Fix the current pattern (modal incremental → fixed); empty pattern exits.
-    SearchSubmit,
-    /// Cancel an editing search: restore the origin selection and exit.
-    SearchCancel,
-    /// Close the search: keep the current selection.
-    SearchClose,
-    /// Next match (modal `n` / interactive `C-s`).
-    SearchNext,
-    /// Previous match (modal `N` / interactive `C-r`).
-    SearchPrev,
+    /// A message for the account search.
+    Search(SearchMessage),
 }
 
 /// Effect a [`BalanceView`] asks the [`App`](super::app::App) to perform;
@@ -195,12 +186,8 @@ pub struct BalanceView<'ctx> {
     /// [`Self::rebuild_rows`], the only thing that changes what is measured;
     /// the display context it is measured against outlives the whole view.
     pub amount_width: Option<u16>,
-    /// Active account search on the balance screen, if any.
-    pub search: Option<Search>,
-    /// Most recently used search pattern, recalled by an empty interactive
-    /// search via `C-s`/`C-r`. Shared across modal and interactive searches.
-    /// Not `Option` because empty string can represent empty state.
-    pub last_search: String,
+    /// Account search on the balance screen and its history.
+    pub search: SearchState,
 }
 
 impl<'ctx> BalanceView<'ctx> {
@@ -215,8 +202,7 @@ impl<'ctx> BalanceView<'ctx> {
             rows: Vec::new(),
             nav: TableNav::new(0),
             amount_width: None,
-            search: None,
-            last_search: String::new(),
+            search: SearchState::default(),
         };
         view.rebuild_rows();
         view
@@ -235,8 +221,7 @@ impl<'ctx> BalanceView<'ctx> {
             rows,
             nav,
             amount_width: None,
-            search: None,
-            last_search: String::new(),
+            search: SearchState::default(),
         }
     }
 
@@ -260,28 +245,17 @@ impl<'ctx> BalanceView<'ctx> {
     pub(super) fn update(&mut self, msg: BalanceMessage) -> Option<BalanceAction<'ctx>> {
         match msg {
             BalanceMessage::Nav(cmd) => {
-                self.end_interactive_search();
+                self.search.end_interactive();
                 self.nav.apply(cmd);
             }
             BalanceMessage::OpenRegister => {
                 if let Some(scope) = self.selected_scope() {
                     // An interactive search terminates on the register view transition.
-                    self.end_interactive_search();
+                    self.search.end_interactive();
                     return Some(BalanceAction::OpenRegister { scope });
                 }
             }
-            BalanceMessage::StartModalSearch => self.start_search(
-                SearchMode::Modal(SearchPhase::Incremental),
-                SearchDirection::Forward,
-            ),
-            BalanceMessage::StartISearch(dir) => self.start_search(SearchMode::Interactive, dir),
-            BalanceMessage::SearchPush(c) => self.search_push(c),
-            BalanceMessage::SearchPop => self.search_pop(),
-            BalanceMessage::SearchSubmit => self.search_submit(),
-            BalanceMessage::SearchCancel => self.search_cancel(),
-            BalanceMessage::SearchClose => self.search_close(),
-            BalanceMessage::SearchNext => self.search_next(),
-            BalanceMessage::SearchPrev => self.search_prev(),
+            BalanceMessage::Search(msg) => self.search.update(msg, &mut self.nav, &self.rows),
             BalanceMessage::ToggleTree => self.toggle_tree(),
             BalanceMessage::ToggleFold => self.fold_selected(),
             BalanceMessage::ToggleFoldAll => self.fold_all(),
@@ -294,39 +268,10 @@ impl<'ctx> BalanceView<'ctx> {
     /// as usual. Global keys (quit, reload) return `None` for [`super::event`]
     /// to handle.
     pub(super) fn key_to_message(&self, key: KeyEvent) -> Option<BalanceMessage> {
-        let ctrl = is_ctrl(key.modifiers);
-
-        // Search capture. The editing phases (modal incremental, interactive
-        // i-search) own every key; the modal fixed phase intercepts only its
-        // own controls and lets the rest fall through so full navigation (and
-        // Enter-to-register) keep working.
-        if let Some(search) = &self.search {
-            match search.intent.mode {
-                SearchMode::Modal(SearchPhase::Incremental) => {
-                    return match key.code {
-                        KeyCode::Esc => Some(BalanceMessage::SearchCancel),
-                        KeyCode::Enter => Some(BalanceMessage::SearchSubmit),
-                        KeyCode::Backspace => Some(BalanceMessage::SearchPop),
-                        KeyCode::Char(c) if !ctrl => Some(BalanceMessage::SearchPush(c)),
-                        _ => None,
-                    };
-                }
-                SearchMode::Modal(SearchPhase::Fixed) => match key.code {
-                    KeyCode::Esc => return Some(BalanceMessage::SearchClose),
-                    KeyCode::Char('n') => return Some(BalanceMessage::SearchNext),
-                    KeyCode::Char('N') => return Some(BalanceMessage::SearchPrev),
-                    _ => {} // fall through to normal UI
-                },
-                SearchMode::Interactive => match key.code {
-                    KeyCode::Char('s') if ctrl => return Some(BalanceMessage::SearchNext),
-                    KeyCode::Char('r') if ctrl => return Some(BalanceMessage::SearchPrev),
-                    KeyCode::Char('g') if ctrl => return Some(BalanceMessage::SearchCancel),
-                    KeyCode::Esc => return Some(BalanceMessage::SearchCancel),
-                    KeyCode::Backspace => return Some(BalanceMessage::SearchPop),
-                    KeyCode::Char(c) if !ctrl => return Some(BalanceMessage::SearchPush(c)),
-                    _ => {} // fall through to normal UI
-                },
-            }
+        match self.search.key_to_message(key) {
+            SearchKey::Message(msg) => return Some(BalanceMessage::Search(msg)),
+            SearchKey::Swallow => return None,
+            SearchKey::Pass => {}
         }
 
         // Shared table navigation.
@@ -336,13 +281,6 @@ impl<'ctx> BalanceView<'ctx> {
 
         // Balance-specific actions.
         match key.code {
-            KeyCode::Char('/') => Some(BalanceMessage::StartModalSearch),
-            KeyCode::Char('s') if ctrl => {
-                Some(BalanceMessage::StartISearch(SearchDirection::Forward))
-            }
-            KeyCode::Char('r') if ctrl => {
-                Some(BalanceMessage::StartISearch(SearchDirection::Backward))
-            }
             KeyCode::Char('t') => Some(BalanceMessage::ToggleTree),
             KeyCode::Char(' ') => Some(BalanceMessage::ToggleFold),
             KeyCode::Char('x') => Some(BalanceMessage::ToggleFoldAll),
@@ -494,7 +432,7 @@ impl<'ctx> BalanceView<'ctx> {
     /// search (row identity changes between modes, so stale match indices must
     /// not carry over the reshape) and rebuilding the rows.
     fn toggle_tree(&mut self) {
-        self.search = None;
+        self.search.active = None;
         self.mode = match self.mode {
             DisplayMode::Flat => DisplayMode::Tree,
             DisplayMode::Tree => DisplayMode::Flat,
@@ -506,14 +444,14 @@ impl<'ctx> BalanceView<'ctx> {
     /// children), rebuilds the rows, then recomputes the active search.
     fn fold_selected(&mut self) {
         self.toggle_fold_selected();
-        self.recompute_search();
+        self.search.recompute(&mut self.nav, &self.rows);
     }
 
     /// Folds or unfolds every node (tree view only), rebuilds the rows, then
     /// recomputes the active search.
     fn fold_all(&mut self) {
         self.toggle_fold_all();
-        self.recompute_search();
+        self.search.recompute(&mut self.nav, &self.rows);
     }
 
     fn toggle_fold_selected(&mut self) {
@@ -622,8 +560,8 @@ impl<'ctx> BalanceView<'ctx> {
         BalanceSnapshot {
             viewport_height: self.nav.viewport_height,
             selected_account: self.selected_full_name().map(str::to_owned),
-            search: self.search.as_ref().map(|s| s.intent.clone()),
-            last_search: self.last_search.clone(),
+            search: self.search.intent(),
+            last_search: self.search.last.clone(),
             mode: self.mode,
             folded: self.folded_names(),
         }
@@ -646,180 +584,8 @@ impl<'ctx> BalanceView<'ctx> {
             self.nav.select_item(idx);
         }
 
-        self.last_search = snapshot.last_search.clone();
-        if let Some(intent) = &snapshot.search {
-            let mut intent = intent.clone();
-            intent.origin = min(intent.origin, self.rows.len().saturating_sub(1));
-            let matches = SearchMatch::compute(&intent.input, &self.rows);
-            self.search = Some(Search { intent, matches });
-        }
-    }
-
-    /// Opens a search of the given style, recording the current selection as
-    /// the origin.
-    fn start_search(&mut self, mode: SearchMode, dir: SearchDirection) {
-        let origin = self.nav.selected_item().unwrap_or(0);
-        self.search = Some(Search {
-            intent: SearchIntent {
-                mode,
-                dir,
-                input: String::new(),
-                no_previous: false,
-                origin,
-            },
-            matches: None,
-        });
-    }
-
-    /// Appends a character to the active search pattern and recomputes matches.
-    fn search_push(&mut self, c: char) {
-        if let Some(search) = self.search.as_mut() {
-            search.intent.input.push(c);
-            search.intent.no_previous = false;
-        }
-        self.recompute_search();
-    }
-
-    /// Removes the last character from the active search pattern and recomputes.
-    fn search_pop(&mut self) {
-        if let Some(search) = self.search.as_mut() {
-            search.intent.input.pop();
-            search.intent.no_previous = false;
-        }
-        self.recompute_search();
-    }
-
-    /// Fixes the current pattern (modal incremental → fixed); an empty pattern
-    /// exits the search instead.
-    fn search_submit(&mut self) {
-        match &self.search {
-            // If empty pattern submitted, simply exits the search mode.
-            Some(s) if s.intent.input.is_empty() => self.search = None,
-            Some(search) => {
-                self.last_search = search.intent.input.clone();
-                if let Some(search) = self.search.as_mut()
-                    && let SearchMode::Modal(phase) = &mut search.intent.mode
-                {
-                    *phase = SearchPhase::Fixed;
-                }
-            }
-            None => {}
-        }
-    }
-
-    /// Cancels an editing search: restores the origin selection and exits.
-    fn search_cancel(&mut self) {
-        if let Some(search) = self.search.take() {
-            // on cancel, search query won't be saved.
-            self.nav.select_item(search.intent.origin);
-        }
-    }
-
-    /// Closes the search, keeping the current selection.
-    fn search_close(&mut self) {
-        self.search = None;
-    }
-
-    /// Next match (modal `n`); or, for interactive search, repeat forward /
-    /// recall the previous pattern when empty (`C-s`).
-    fn search_next(&mut self) {
-        self.search_or_recall(SearchDirection::Forward);
-    }
-
-    /// Previous match (modal `N`); or, for interactive search, repeat backward
-    /// / recall the previous pattern when empty (`C-r`).
-    fn search_prev(&mut self) {
-        self.search_or_recall(SearchDirection::Backward);
-    }
-
-    /// Ends an active interactive search, keeping the current selection. Used
-    /// by keys that both navigate and leave i-search (`C-n`/`C-p`, Enter). A
-    /// no-op for modal searches, which stay active during navigation.
-    fn end_interactive_search(&mut self) {
-        if self
-            .search
-            .as_ref()
-            .is_some_and(|s| matches!(s.intent.mode, SearchMode::Interactive))
-            // clear search with take().
-            && let Some(search) = self.search.take()
-            && !search.intent.input.is_empty()
-        {
-            self.last_search = search.intent.input;
-        }
-    }
-
-    /// Handles `C-s`/`C-r` (and modal `n`/`N`). An interactive search on an
-    /// empty pattern recalls the last-used pattern (canonical isearch);
-    /// otherwise it steps to the next/previous match.
-    fn search_or_recall(&mut self, dir: SearchDirection) {
-        let Some(search) = &mut self.search else {
-            return;
-        };
-        // update direction before operation
-        search.intent.dir = dir;
-        let recall =
-            search.intent.mode == SearchMode::Interactive && search.intent.input.is_empty();
-        if recall {
-            self.recall_last_search();
-        } else {
-            self.search_step();
-        }
-    }
-
-    /// Restores [`Self::last_search`] into the active interactive search and
-    /// jumps in `dir`. With no previous pattern, flips on the
-    /// `[no previous search text]` notice and waits for input.
-    fn recall_last_search(&mut self) {
-        let Some(search) = self.search.as_mut() else {
-            return;
-        };
-        search.intent.input = self.last_search.clone();
-        search.intent.no_previous = self.last_search.is_empty();
-        self.recompute_search();
-    }
-
-    /// Moves the balance selection to the next/previous match (wrapping). For
-    /// an interactive search this also records `dir` so subsequent input keeps
-    /// jumping the same way. No-op without matches.
-    fn search_step(&mut self) {
-        let Some(search) = self.search.as_ref() else {
-            return;
-        };
-        let Some(Ok(m)) = search.matches.as_ref() else {
-            return;
-        };
-        let current = self.nav.selected_item().unwrap_or(0);
-        let Some(next) = m.step(current, search.intent.dir) else {
-            return;
-        };
-        self.nav.select_item(next);
-    }
-
-    /// Recompiles the search pattern, recollects matching balance-row indices,
-    /// and jumps the selection to the first match in the active direction.
-    ///
-    /// Modal searches always jump relative to the fixed origin; interactive
-    /// searches jump relative to the current point, mirroring isearch. No-op
-    /// when no search is active.
-    fn recompute_search(&mut self) {
-        let Some(search) = self.search.as_mut() else {
-            return;
-        };
-        let intent = &search.intent;
-        let origin = intent.origin;
-        let reference = match intent.mode {
-            SearchMode::Modal(_) => origin,
-            SearchMode::Interactive => self.nav.selected_item().unwrap_or(origin),
-        };
-        let matches = SearchMatch::compute(&intent.input, &self.rows);
-        let jump = match &matches {
-            Some(Ok(m)) => m.first_match(reference, intent.dir),
-            _ => None,
-        };
-        search.matches = matches;
-        if let Some(idx) = jump {
-            self.nav.select_item(idx);
-        }
+        self.search
+            .restore(snapshot.search.as_ref(), &snapshot.last_search, &self.rows);
     }
 }
 
@@ -934,6 +700,8 @@ mod tests {
 
     // --- search behaviour (BalanceView::update) ---
 
+    use super::super::search::{SearchDirection, SearchMode, SearchPhase};
+
     #[test]
     fn start_search_records_origin() {
         let arena = Bump::new();
@@ -941,8 +709,8 @@ mod tests {
         view.update(BalanceMessage::Nav(NavCommand::Down));
         view.update(BalanceMessage::Nav(NavCommand::Down));
         assert_eq!(selected(&view), Some(2));
-        view.update(BalanceMessage::StartModalSearch);
-        let search = view.search.as_ref().expect("search active");
+        view.update(BalanceMessage::Search(SearchMessage::StartModal));
+        let search = view.search.active.as_ref().expect("search active");
         assert_eq!(
             search.intent.mode,
             SearchMode::Modal(SearchPhase::Incremental)
@@ -957,11 +725,11 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
         view.update(BalanceMessage::Nav(NavCommand::Down));
-        view.update(BalanceMessage::StartModalSearch);
+        view.update(BalanceMessage::Search(SearchMessage::StartModal));
         for c in "assets".chars() {
-            view.update(BalanceMessage::SearchPush(c));
+            view.update(BalanceMessage::Search(SearchMessage::Push(c)));
         }
-        let search = view.search.as_ref().unwrap();
+        let search = view.search.active.as_ref().unwrap();
         assert_eq!(search.matched_rows(), [0, 1]);
         assert_matches!(search.err(), None);
         assert_eq!(selected(&view), Some(1));
@@ -974,21 +742,32 @@ mod tests {
         for _ in 0..3 {
             view.update(BalanceMessage::Nav(NavCommand::Down));
         }
-        view.update(BalanceMessage::StartModalSearch);
+        view.update(BalanceMessage::Search(SearchMessage::StartModal));
         for c in "assets".chars() {
-            view.update(BalanceMessage::SearchPush(c));
+            view.update(BalanceMessage::Search(SearchMessage::Push(c)));
         }
-        assert_eq!(view.search.as_ref().unwrap().matched_rows(), [0, 1]);
+        assert_eq!(view.search.active.as_ref().unwrap().matched_rows(), [0, 1]);
         assert_eq!(selected(&view), Some(0));
+    }
+
+    /// While the pattern is being typed, keys the search has no use for are
+    /// eaten rather than reaching navigation.
+    #[test]
+    fn incremental_search_swallows_navigation_keys() {
+        let arena = Bump::new();
+        let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
+        view.update(BalanceMessage::Search(SearchMessage::StartModal));
+        assert_eq!(view.key_to_message(key(KeyCode::Down)), None);
+        assert_eq!(view.key_to_message(key(KeyCode::PageDown)), None);
     }
 
     #[test]
     fn incremental_invalid_regex_sets_error() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::StartModalSearch);
-        view.update(BalanceMessage::SearchPush('['));
-        let search = view.search.as_ref().unwrap();
+        view.update(BalanceMessage::Search(SearchMessage::StartModal));
+        view.update(BalanceMessage::Search(SearchMessage::Push('[')));
+        let search = view.search.active.as_ref().unwrap();
         assert_matches!(search.err(), Some(_));
         assert!(search.matched_rows().is_empty());
     }
@@ -997,34 +776,34 @@ mod tests {
     fn backspace_recomputes_matches() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::StartModalSearch);
+        view.update(BalanceMessage::Search(SearchMessage::StartModal));
         for c in "cash".chars() {
-            view.update(BalanceMessage::SearchPush(c));
+            view.update(BalanceMessage::Search(SearchMessage::Push(c)));
         }
-        assert_eq!(view.search.as_ref().unwrap().matched_rows(), [1]);
-        view.update(BalanceMessage::SearchPop);
-        view.update(BalanceMessage::SearchPop);
-        assert_eq!(view.search.as_ref().unwrap().matched_rows(), [1, 4]);
+        assert_eq!(view.search.active.as_ref().unwrap().matched_rows(), [1]);
+        view.update(BalanceMessage::Search(SearchMessage::Pop));
+        view.update(BalanceMessage::Search(SearchMessage::Pop));
+        assert_eq!(view.search.active.as_ref().unwrap().matched_rows(), [1, 4]);
     }
 
     #[test]
     fn submit_empty_exits_search() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::StartModalSearch);
-        view.update(BalanceMessage::SearchSubmit);
-        assert!(view.search.is_none());
+        view.update(BalanceMessage::Search(SearchMessage::StartModal));
+        view.update(BalanceMessage::Search(SearchMessage::Submit));
+        assert!(view.search.active.is_none());
     }
 
     #[test]
     fn submit_nonempty_enters_fixed_phase() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::StartModalSearch);
-        view.update(BalanceMessage::SearchPush('a'));
-        view.update(BalanceMessage::SearchSubmit);
+        view.update(BalanceMessage::Search(SearchMessage::StartModal));
+        view.update(BalanceMessage::Search(SearchMessage::Push('a')));
+        view.update(BalanceMessage::Search(SearchMessage::Submit));
         assert_eq!(
-            view.search.as_ref().unwrap().intent.mode,
+            view.search.active.as_ref().unwrap().intent.mode,
             SearchMode::Modal(SearchPhase::Fixed)
         );
     }
@@ -1033,18 +812,20 @@ mod tests {
     fn isearch_forward_jumps_and_repeats() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
-        let search = view.search.as_ref().unwrap();
+        view.update(BalanceMessage::Search(SearchMessage::StartInteractive(
+            SearchDirection::Forward,
+        )));
+        let search = view.search.active.as_ref().unwrap();
         assert_eq!(search.intent.mode, SearchMode::Interactive);
         assert_eq!(search.intent.dir, SearchDirection::Forward);
         for c in "assets".chars() {
-            view.update(BalanceMessage::SearchPush(c));
+            view.update(BalanceMessage::Search(SearchMessage::Push(c)));
         }
-        assert_eq!(view.search.as_ref().unwrap().matched_rows(), [0, 1]);
+        assert_eq!(view.search.active.as_ref().unwrap().matched_rows(), [0, 1]);
         assert_eq!(selected(&view), Some(0));
-        view.update(BalanceMessage::SearchNext);
+        view.update(BalanceMessage::Search(SearchMessage::Next));
         assert_eq!(selected(&view), Some(1));
-        view.update(BalanceMessage::SearchNext);
+        view.update(BalanceMessage::Search(SearchMessage::Next));
         assert_eq!(selected(&view), Some(0));
     }
 
@@ -1053,12 +834,14 @@ mod tests {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
         view.update(BalanceMessage::Nav(NavCommand::Last));
-        view.update(BalanceMessage::StartISearch(SearchDirection::Backward));
+        view.update(BalanceMessage::Search(SearchMessage::StartInteractive(
+            SearchDirection::Backward,
+        )));
         for c in "assets".chars() {
-            view.update(BalanceMessage::SearchPush(c));
+            view.update(BalanceMessage::Search(SearchMessage::Push(c)));
         }
         assert_eq!(selected(&view), Some(1));
-        view.update(BalanceMessage::SearchPrev);
+        view.update(BalanceMessage::Search(SearchMessage::Prev));
         assert_eq!(selected(&view), Some(0));
     }
 
@@ -1069,14 +852,16 @@ mod tests {
             &arena,
             &["Assets:A", "Bonds:x", "Assets:B", "Bonds:y", "Assets:C"],
         );
-        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
+        view.update(BalanceMessage::Search(SearchMessage::StartInteractive(
+            SearchDirection::Forward,
+        )));
         for c in "assets".chars() {
-            view.update(BalanceMessage::SearchPush(c));
+            view.update(BalanceMessage::Search(SearchMessage::Push(c)));
         }
         assert_eq!(selected(&view), Some(0));
-        view.update(BalanceMessage::SearchPrev);
+        view.update(BalanceMessage::Search(SearchMessage::Prev));
         assert_eq!(selected(&view), Some(4));
-        view.update(BalanceMessage::SearchPop);
+        view.update(BalanceMessage::Search(SearchMessage::Pop));
         assert_eq!(selected(&view), Some(4));
     }
 
@@ -1086,12 +871,14 @@ mod tests {
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
         view.update(BalanceMessage::Nav(NavCommand::Down));
         view.update(BalanceMessage::Nav(NavCommand::Down));
-        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
+        view.update(BalanceMessage::Search(SearchMessage::StartInteractive(
+            SearchDirection::Forward,
+        )));
         for c in "assets".chars() {
-            view.update(BalanceMessage::SearchPush(c));
+            view.update(BalanceMessage::Search(SearchMessage::Push(c)));
         }
-        view.update(BalanceMessage::SearchCancel);
-        assert!(view.search.is_none());
+        view.update(BalanceMessage::Search(SearchMessage::Cancel));
+        assert!(view.search.active.is_none());
         assert_eq!(selected(&view), Some(2));
     }
 
@@ -1099,17 +886,19 @@ mod tests {
     fn search_pattern_is_remembered_for_recall() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::StartModalSearch);
+        view.update(BalanceMessage::Search(SearchMessage::StartModal));
         for c in "salary".chars() {
-            view.update(BalanceMessage::SearchPush(c));
+            view.update(BalanceMessage::Search(SearchMessage::Push(c)));
         }
-        view.update(BalanceMessage::SearchSubmit);
-        view.update(BalanceMessage::SearchClose);
-        assert_eq!(&view.last_search, "salary");
+        view.update(BalanceMessage::Search(SearchMessage::Submit));
+        view.update(BalanceMessage::Search(SearchMessage::Close));
+        assert_eq!(&view.search.last, "salary");
 
-        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
-        view.update(BalanceMessage::SearchNext);
-        let search = view.search.as_ref().unwrap();
+        view.update(BalanceMessage::Search(SearchMessage::StartInteractive(
+            SearchDirection::Forward,
+        )));
+        view.update(BalanceMessage::Search(SearchMessage::Next));
+        let search = view.search.active.as_ref().unwrap();
         assert_eq!(search.intent.input, "salary");
         assert!(!search.intent.no_previous);
         assert_eq!(search.matched_rows(), [3]);
@@ -1120,40 +909,46 @@ mod tests {
     fn isearch_recall_without_history_shows_notice() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
-        view.update(BalanceMessage::SearchNext);
-        let search = view.search.as_ref().unwrap();
+        view.update(BalanceMessage::Search(SearchMessage::StartInteractive(
+            SearchDirection::Forward,
+        )));
+        view.update(BalanceMessage::Search(SearchMessage::Next));
+        let search = view.search.active.as_ref().unwrap();
         assert!(search.intent.no_previous);
         assert!(search.intent.input.is_empty());
-        view.update(BalanceMessage::SearchPush('a'));
-        assert!(!view.search.as_ref().unwrap().intent.no_previous);
+        view.update(BalanceMessage::Search(SearchMessage::Push('a')));
+        assert!(!view.search.active.as_ref().unwrap().intent.no_previous);
     }
 
     #[test]
     fn isearch_move_ends_search_and_navigates() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
+        view.update(BalanceMessage::Search(SearchMessage::StartInteractive(
+            SearchDirection::Forward,
+        )));
         for c in "assets".chars() {
-            view.update(BalanceMessage::SearchPush(c));
+            view.update(BalanceMessage::Search(SearchMessage::Push(c)));
         }
         view.update(BalanceMessage::Nav(NavCommand::Down));
-        assert!(view.search.is_none());
+        assert!(view.search.active.is_none());
         assert_eq!(selected(&view), Some(1));
-        assert_eq!(&view.last_search, "assets");
+        assert_eq!(&view.search.last, "assets");
     }
 
     #[test]
     fn isearch_open_register_ends_search() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
+        view.update(BalanceMessage::Search(SearchMessage::StartInteractive(
+            SearchDirection::Forward,
+        )));
         for c in "salary".chars() {
-            view.update(BalanceMessage::SearchPush(c));
+            view.update(BalanceMessage::Search(SearchMessage::Push(c)));
         }
         let action = view.update(BalanceMessage::OpenRegister);
         assert_matches!(action, Some(BalanceAction::OpenRegister { .. }));
-        assert!(view.search.is_none());
+        assert!(view.search.active.is_none());
         assert_eq!(selected(&view), Some(3));
     }
 
@@ -1161,24 +956,26 @@ mod tests {
     fn modal_fixed_search_survives_navigation() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::StartModalSearch);
+        view.update(BalanceMessage::Search(SearchMessage::StartModal));
         for c in "assets".chars() {
-            view.update(BalanceMessage::SearchPush(c));
+            view.update(BalanceMessage::Search(SearchMessage::Push(c)));
         }
-        view.update(BalanceMessage::SearchSubmit);
+        view.update(BalanceMessage::Search(SearchMessage::Submit));
         view.update(BalanceMessage::Nav(NavCommand::Down));
-        assert!(view.search.is_some());
+        assert!(view.search.active.is_some());
     }
 
     #[test]
     fn isearch_recall_backward_sets_direction() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.last_search = "assets".to_owned();
+        view.search.last = "assets".to_owned();
         view.update(BalanceMessage::Nav(NavCommand::Last));
-        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
-        view.update(BalanceMessage::SearchPrev);
-        let search = view.search.as_ref().unwrap();
+        view.update(BalanceMessage::Search(SearchMessage::StartInteractive(
+            SearchDirection::Forward,
+        )));
+        view.update(BalanceMessage::Search(SearchMessage::Prev));
+        let search = view.search.active.as_ref().unwrap();
         assert_eq!(search.intent.input, "assets");
         assert_eq!(search.intent.mode, SearchMode::Interactive);
         assert_eq!(search.intent.dir, SearchDirection::Backward);
@@ -1191,13 +988,13 @@ mod tests {
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
         view.update(BalanceMessage::Nav(NavCommand::Down));
         view.update(BalanceMessage::Nav(NavCommand::Down));
-        view.update(BalanceMessage::StartModalSearch);
+        view.update(BalanceMessage::Search(SearchMessage::StartModal));
         for c in "assets".chars() {
-            view.update(BalanceMessage::SearchPush(c));
+            view.update(BalanceMessage::Search(SearchMessage::Push(c)));
         }
         assert_eq!(selected(&view), Some(0));
-        view.update(BalanceMessage::SearchCancel);
-        assert!(view.search.is_none());
+        view.update(BalanceMessage::Search(SearchMessage::Cancel));
+        assert!(view.search.active.is_none());
         assert_eq!(selected(&view), Some(2));
     }
 
@@ -1205,14 +1002,14 @@ mod tests {
     fn close_keeps_selection() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::StartModalSearch);
+        view.update(BalanceMessage::Search(SearchMessage::StartModal));
         for c in "salary".chars() {
-            view.update(BalanceMessage::SearchPush(c));
+            view.update(BalanceMessage::Search(SearchMessage::Push(c)));
         }
-        view.update(BalanceMessage::SearchSubmit);
+        view.update(BalanceMessage::Search(SearchMessage::Submit));
         assert_eq!(selected(&view), Some(3));
-        view.update(BalanceMessage::SearchClose);
-        assert!(view.search.is_none());
+        view.update(BalanceMessage::Search(SearchMessage::Close));
+        assert!(view.search.active.is_none());
         assert_eq!(selected(&view), Some(3));
     }
 
@@ -1220,17 +1017,17 @@ mod tests {
     fn search_next_prev_wrap_over_matches() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::StartModalSearch);
+        view.update(BalanceMessage::Search(SearchMessage::StartModal));
         for c in "assets".chars() {
-            view.update(BalanceMessage::SearchPush(c));
+            view.update(BalanceMessage::Search(SearchMessage::Push(c)));
         }
-        view.update(BalanceMessage::SearchSubmit);
+        view.update(BalanceMessage::Search(SearchMessage::Submit));
         assert_eq!(selected(&view), Some(0));
-        view.update(BalanceMessage::SearchNext);
+        view.update(BalanceMessage::Search(SearchMessage::Next));
         assert_eq!(selected(&view), Some(1));
-        view.update(BalanceMessage::SearchNext);
+        view.update(BalanceMessage::Search(SearchMessage::Next));
         assert_eq!(selected(&view), Some(0));
-        view.update(BalanceMessage::SearchPrev);
+        view.update(BalanceMessage::Search(SearchMessage::Prev));
         assert_eq!(selected(&view), Some(1));
     }
 
@@ -1526,7 +1323,7 @@ mod tests {
         );
         assert_eq!(
             view.key_to_message(key(KeyCode::Char('/'))),
-            Some(BalanceMessage::StartModalSearch)
+            Some(BalanceMessage::Search(SearchMessage::StartModal))
         );
         assert_eq!(
             view.key_to_message(key(KeyCode::Char('t'))),
@@ -1534,11 +1331,15 @@ mod tests {
         );
         assert_eq!(
             view.key_to_message(ctrl_key('s')),
-            Some(BalanceMessage::StartISearch(SearchDirection::Forward))
+            Some(BalanceMessage::Search(SearchMessage::StartInteractive(
+                SearchDirection::Forward
+            )))
         );
         assert_eq!(
             view.key_to_message(ctrl_key('r')),
-            Some(BalanceMessage::StartISearch(SearchDirection::Backward))
+            Some(BalanceMessage::Search(SearchMessage::StartInteractive(
+                SearchDirection::Backward
+            )))
         );
     }
 
@@ -1557,27 +1358,27 @@ mod tests {
     fn key_incremental_search_captures_editing_keys() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::StartModalSearch);
+        view.update(BalanceMessage::Search(SearchMessage::StartModal));
         assert_eq!(
             view.key_to_message(key(KeyCode::Char('j'))),
-            Some(BalanceMessage::SearchPush('j'))
+            Some(BalanceMessage::Search(SearchMessage::Push('j')))
         );
         assert_eq!(
             view.key_to_message(key(KeyCode::Backspace)),
-            Some(BalanceMessage::SearchPop)
+            Some(BalanceMessage::Search(SearchMessage::Pop))
         );
         assert_eq!(
             view.key_to_message(key(KeyCode::Enter)),
-            Some(BalanceMessage::SearchSubmit)
+            Some(BalanceMessage::Search(SearchMessage::Submit))
         );
         assert_eq!(
             view.key_to_message(key(KeyCode::Esc)),
-            Some(BalanceMessage::SearchCancel)
+            Some(BalanceMessage::Search(SearchMessage::Cancel))
         );
         // 'r' during editing is input, not reload.
         assert_eq!(
             view.key_to_message(key(KeyCode::Char('r'))),
-            Some(BalanceMessage::SearchPush('r'))
+            Some(BalanceMessage::Search(SearchMessage::Push('r')))
         );
     }
 
@@ -1585,20 +1386,20 @@ mod tests {
     fn key_fixed_search_intercepts_only_its_controls() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::StartModalSearch);
-        view.update(BalanceMessage::SearchPush('a'));
-        view.update(BalanceMessage::SearchSubmit); // fixed
+        view.update(BalanceMessage::Search(SearchMessage::StartModal));
+        view.update(BalanceMessage::Search(SearchMessage::Push('a')));
+        view.update(BalanceMessage::Search(SearchMessage::Submit)); // fixed
         assert_eq!(
             view.key_to_message(key(KeyCode::Char('n'))),
-            Some(BalanceMessage::SearchNext)
+            Some(BalanceMessage::Search(SearchMessage::Next))
         );
         assert_eq!(
             view.key_to_message(key(KeyCode::Char('N'))),
-            Some(BalanceMessage::SearchPrev)
+            Some(BalanceMessage::Search(SearchMessage::Prev))
         );
         assert_eq!(
             view.key_to_message(key(KeyCode::Esc)),
-            Some(BalanceMessage::SearchClose)
+            Some(BalanceMessage::Search(SearchMessage::Close))
         );
         // Everything else falls through to normal navigation / drill-in.
         assert_eq!(
@@ -1617,30 +1418,32 @@ mod tests {
     fn key_interactive_search_captures_keys() {
         let arena = Bump::new();
         let (_ctx, mut view) = view_from_names(&arena, ACCOUNTS);
-        view.update(BalanceMessage::StartISearch(SearchDirection::Forward));
+        view.update(BalanceMessage::Search(SearchMessage::StartInteractive(
+            SearchDirection::Forward,
+        )));
         assert_eq!(
             view.key_to_message(key(KeyCode::Char('j'))),
-            Some(BalanceMessage::SearchPush('j'))
+            Some(BalanceMessage::Search(SearchMessage::Push('j')))
         );
         assert_eq!(
             view.key_to_message(key(KeyCode::Backspace)),
-            Some(BalanceMessage::SearchPop)
+            Some(BalanceMessage::Search(SearchMessage::Pop))
         );
         assert_eq!(
             view.key_to_message(ctrl_key('s')),
-            Some(BalanceMessage::SearchNext)
+            Some(BalanceMessage::Search(SearchMessage::Next))
         );
         assert_eq!(
             view.key_to_message(ctrl_key('r')),
-            Some(BalanceMessage::SearchPrev)
+            Some(BalanceMessage::Search(SearchMessage::Prev))
         );
         assert_eq!(
             view.key_to_message(ctrl_key('g')),
-            Some(BalanceMessage::SearchCancel)
+            Some(BalanceMessage::Search(SearchMessage::Cancel))
         );
         assert_eq!(
             view.key_to_message(key(KeyCode::Esc)),
-            Some(BalanceMessage::SearchCancel)
+            Some(BalanceMessage::Search(SearchMessage::Cancel))
         );
         // RET drills in; C-n/C-p move — all end the search at update time.
         assert_eq!(

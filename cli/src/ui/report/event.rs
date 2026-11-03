@@ -22,7 +22,6 @@ use crate::ui::table::key_to_nav;
 use super::app::{App, Message, Screen};
 use super::fulfill::{self, Fulfilled};
 use super::overlay::Overlay;
-use super::register::RegisterView;
 use super::render;
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(250);
@@ -126,7 +125,7 @@ pub(super) fn key_to_message(app: &App<'_>, key: KeyEvent) -> Option<Message> {
     // prompt while `q` on register leaves the screen.
     let routed = match &app.screen {
         Screen::Balance => app.balance.key_to_message(key).map(Message::Balance),
-        Screen::Register(_) => RegisterView::key_to_message(key).map(Message::Register),
+        Screen::Register(view) => view.key_to_message(key).map(Message::Register),
     };
     if let Some(msg) = routed {
         return Some(msg);
@@ -158,18 +157,20 @@ mod tests {
     use super::super::overlay::{ScrollDelta, TextPopup};
     use super::super::register::{RegisterMessage, RegisterScope, RegisterView};
     use super::super::search::{
-        Search, SearchDirection, SearchIntent, SearchMatch, SearchMode, SearchPhase,
+        Search, SearchDirection, SearchIntent, SearchMatch, SearchMessage, SearchMode, SearchPhase,
+        SearchState,
     };
     use super::super::testing::{make_account, query_state};
 
     /// A single-account register screen for `account`, empty rows.
     fn register_screen<'ctx>(account: Account<'ctx>) -> Screen<'ctx> {
-        Screen::Register(RegisterView {
+        Screen::Register(Box::new(RegisterView {
             scope: RegisterScope::Single(account),
             rows: Vec::new(),
             nav: TableNav::new(0),
             col_widths: None,
-        })
+            search: SearchState::default(),
+        }))
     }
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -438,7 +439,7 @@ mod tests {
     #[test]
     fn r_during_fixed_search_reloads() {
         let mut app = app();
-        app.balance.search = Some(fixed_search());
+        app.balance.search.active = Some(fixed_search());
         assert_eq!(
             key_to_message(&app, key(KeyCode::Char('r'))),
             Some(Message::Reload)
@@ -488,10 +489,14 @@ mod tests {
     #[test]
     fn dot_during_an_incremental_search_is_typed() {
         let mut app = app();
-        app.update(Message::Balance(BalanceMessage::StartModalSearch));
+        app.update(Message::Balance(BalanceMessage::Search(
+            SearchMessage::StartModal,
+        )));
         assert_eq!(
             key_to_message(&app, key(KeyCode::Char('.'))),
-            Some(Message::Balance(BalanceMessage::SearchPush('.')))
+            Some(Message::Balance(BalanceMessage::Search(
+                SearchMessage::Push('.')
+            )))
         );
     }
 
@@ -542,10 +547,14 @@ mod tests {
     #[test]
     fn question_mark_during_an_incremental_search_is_typed() {
         let mut app = app();
-        app.update(Message::Balance(BalanceMessage::StartModalSearch));
+        app.update(Message::Balance(BalanceMessage::Search(
+            SearchMessage::StartModal,
+        )));
         assert_eq!(
             key_to_message(&app, key(KeyCode::Char('?'))),
-            Some(Message::Balance(BalanceMessage::SearchPush('?')))
+            Some(Message::Balance(BalanceMessage::Search(
+                SearchMessage::Push('?')
+            )))
         );
     }
 

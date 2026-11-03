@@ -24,12 +24,14 @@ use super::overlay::{Overlay, ScrollDelta};
 use super::register::{
     RegisterAction, RegisterMessage, RegisterRow, RegisterScope, RegisterSnapshot, RegisterView,
 };
+use super::search::SearchState;
 
 /// Top-level screen the user is currently looking at.
 #[derive(Debug)]
 pub enum Screen<'ctx> {
     Balance,
-    Register(RegisterView<'ctx>),
+    /// Boxed: the register view is far larger than the empty balance variant.
+    Register(Box<RegisterView<'ctx>>),
 }
 
 /// Messages that drive state transitions (Elm-style).
@@ -88,6 +90,8 @@ pub struct UiSnapshot {
     /// Snapshot of the register if it's the register screen.
     /// Extend this once [`Screen`] is more than 2 states.
     register: Option<RegisterSnapshot>,
+    /// The register screen's search history (see [`App::register_last_search`]).
+    register_last_search: String,
 }
 
 /// Application state for the TUI session.
@@ -107,6 +111,10 @@ pub struct App<'ctx> {
     /// the resolved parameters every register lookup reuses. Replaced whole
     /// whenever the report is recomputed, so the two never drift.
     pub query: QueryState<'ctx>,
+    /// The register screen's search history, kept here while no register is
+    /// open: a register view lives only as long as one drill-in, but its
+    /// history is the register screen's, separate from the balance one.
+    pub register_last_search: String,
     pub should_quit: bool,
 }
 
@@ -126,6 +134,7 @@ impl<'ctx> App<'ctx> {
             overlay: None,
             error_toast: None,
             query,
+            register_last_search: String::new(),
             should_quit: false,
         }
     }
@@ -146,6 +155,7 @@ impl<'ctx> App<'ctx> {
             overlay: None,
             error_toast: None,
             query,
+            register_last_search: String::new(),
             should_quit: false,
         }
     }
@@ -207,7 +217,10 @@ impl<'ctx> App<'ctx> {
                     && let Some(action) = view.update(register_msg)
                 {
                     match action {
-                        RegisterAction::Leave => self.screen = Screen::Balance,
+                        RegisterAction::Leave => {
+                            self.register_last_search = std::mem::take(&mut view.search.last);
+                            self.screen = Screen::Balance;
+                        }
                     }
                 }
             }
@@ -251,23 +264,28 @@ impl<'ctx> App<'ctx> {
     /// Called by the event loop once a [`Command::LoadRegister`] has been
     /// fulfilled.
     pub fn show_register(&mut self, scope: RegisterScope<'ctx>, rows: Vec<RegisterRow<'ctx>>) {
-        self.screen = Screen::Register(RegisterView::new(scope, rows));
+        let mut view = RegisterView::new(scope, rows);
+        view.search = SearchState::with_last(std::mem::take(&mut self.register_last_search));
+        self.screen = Screen::Register(Box::new(view));
     }
 
     /// Like [`Self::show_register`], but restores a previous cursor position
-    /// (an entry index, clamped to the new entry count) instead of jumping to
-    /// the last entry. Used when re-entering the register after a reload.
+    /// (an entry index, clamped to the new entry count) and search instead of
+    /// jumping to the last entry. Used when re-entering the register after a
+    /// reload.
     pub fn show_register_at(
         &mut self,
         scope: RegisterScope<'ctx>,
         rows: Vec<RegisterRow<'ctx>>,
-        index: usize,
+        snapshot: &RegisterSnapshot,
     ) {
         let mut view = RegisterView::new(scope, rows);
         if let Some(last) = view.nav.item_count().checked_sub(1) {
-            view.nav.select_item(min(index, last));
+            view.nav.select_item(min(snapshot.cursor(), last));
         }
-        self.screen = Screen::Register(view);
+        let history = std::mem::take(&mut self.register_last_search);
+        view.search.restore(snapshot.search(), &history, &view.rows);
+        self.screen = Screen::Register(Box::new(view));
     }
 
     /// Captures the UI state that should survive a reload as owned data
@@ -280,6 +298,10 @@ impl<'ctx> App<'ctx> {
                 Screen::Balance => None,
                 Screen::Register(view) => Some(RegisterSnapshot::capture(view)),
             },
+            register_last_search: match &self.screen {
+                Screen::Balance => self.register_last_search.clone(),
+                Screen::Register(view) => view.search.last.clone(),
+            },
         }
     }
 
@@ -288,15 +310,20 @@ impl<'ctx> App<'ctx> {
     /// reapplied against the new rows).
     ///
     /// When the snapshot had the register screen open, returns
-    /// `Some((scope, index))` asking the caller to re-query that register and
-    /// open it via [`Self::show_register_at`]. If the account no longer exists,
-    /// stays on the balance screen (with a notice) and returns `None`.
-    pub fn restore(&mut self, snapshot: &UiSnapshot) -> Option<(RegisterScope<'ctx>, usize)> {
+    /// `Some((scope, register_snapshot))` asking the caller to re-query that
+    /// register and open it via [`Self::show_register_at`]. If the account no
+    /// longer exists, stays on the balance screen (with a notice) and returns
+    /// `None`.
+    pub fn restore<'s>(
+        &mut self,
+        snapshot: &'s UiSnapshot,
+    ) -> Option<(RegisterScope<'ctx>, &'s RegisterSnapshot)> {
         self.balance.restore(&snapshot.balance);
+        self.register_last_search = snapshot.register_last_search.clone();
 
         let register = snapshot.register.as_ref()?;
         match self.balance.resolve_scope(register.scope()) {
-            Some(register_scope) => Some((register_scope, register.cursor())),
+            Some(register_scope) => Some((register_scope, register)),
             None => {
                 let name = register.scope().name();
                 self.error_toast = Some(format!(
@@ -321,6 +348,8 @@ mod tests {
 
     use super::super::balance::BalanceRow;
     use super::super::overlay::TextPopup;
+    use super::super::register::OwnedRegisterScope;
+    use super::super::search::SearchMessage;
     use super::super::testing::{make_account, process, query_state};
 
     /// Build an `App` with no balance rows — sufficient for testing the
@@ -598,12 +627,13 @@ mod tests {
 
     /// A single-account register screen for `account` with `nav`.
     fn register_screen<'ctx>(account: Account<'ctx>, nav: TableNav) -> Screen<'ctx> {
-        Screen::Register(RegisterView {
+        Screen::Register(Box::new(RegisterView {
             scope: RegisterScope::Single(account),
             rows: Vec::new(),
             nav,
             col_widths: None,
-        })
+            search: SearchState::default(),
+        }))
     }
 
     #[test]
@@ -704,23 +734,32 @@ mod tests {
     fn restore_recomputes_search_matches() {
         let arena = Bump::new();
         let (ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
-        app.update(Message::Balance(BalanceMessage::StartModalSearch));
+        app.update(Message::Balance(BalanceMessage::Search(
+            SearchMessage::StartModal,
+        )));
         for c in "assets".chars() {
-            app.update(Message::Balance(BalanceMessage::SearchPush(c)));
+            app.update(Message::Balance(BalanceMessage::Search(
+                SearchMessage::Push(c),
+            )));
         }
-        app.update(Message::Balance(BalanceMessage::SearchSubmit)); // fixed
-        assert_eq!(app.balance.search.as_ref().unwrap().matched_rows(), [0, 1]);
-        app.balance.last_search = "salary".to_owned();
+        app.update(Message::Balance(BalanceMessage::Search(
+            SearchMessage::Submit,
+        ))); // fixed
+        assert_eq!(
+            app.balance.search.active.as_ref().unwrap().matched_rows(),
+            [0, 1]
+        );
+        app.balance.search.last = "salary".to_owned();
         let snapshot = app.snapshot();
 
         let mut app = next_app(&ctx, &["Assets:Bank", "Income:Salary"]);
         app.restore(&snapshot);
-        let search = app.balance.search.as_ref().unwrap();
+        let search = app.balance.search.active.as_ref().unwrap();
         assert_eq!(search.intent.input, "assets");
         assert_eq!(search.matched_rows(), [0]);
         // Origin is clamped into the new row range.
         assert!(search.intent.origin < 2);
-        assert_eq!(&app.balance.last_search, "salary");
+        assert_eq!(&app.balance.search.last, "salary");
     }
 
     #[test]
@@ -735,7 +774,10 @@ mod tests {
 
         let mut app = next_app(&ctx, ACCOUNTS);
         let got = app.restore(&snapshot);
-        assert_matches!(got, Some((scope, 3)) if scope.display_name() == "Assets:Cash");
+        assert_matches!(
+            got,
+            Some((scope, register)) if scope.display_name() == "Assets:Cash" && register.cursor() == 3
+        );
         // The screen stays on balance until the caller queries the rows and
         // opens the register via `show_register_at`.
         assert!(matches!(app.screen, Screen::Balance));
@@ -757,6 +799,85 @@ mod tests {
         assert_matches!(&app.error_toast, Some(_));
     }
 
+    /// A register snapshot of `Assets:Cash` at entry `cursor`, without a search.
+    fn cursor_at(cursor: usize) -> RegisterSnapshot {
+        RegisterSnapshot {
+            scope: OwnedRegisterScope::Single("Assets:Cash".to_owned()),
+            cursor,
+            search: None,
+        }
+    }
+
+    /// Three register rows with payees `a`, `b`, `c`.
+    fn abc_rows<'ctx>() -> Vec<RegisterRow<'ctx>> {
+        ["a", "b", "c"]
+            .iter()
+            .enumerate()
+            .map(|(i, payee)| RegisterRow {
+                date: NaiveDate::from_ymd_opt(2024, 1, i as u32 + 1).unwrap(),
+                payee: (*payee).to_owned(),
+                amount: Amount::zero(),
+                total: Amount::zero(),
+            })
+            .collect()
+    }
+
+    fn register_search(app: &mut App<'_>, pattern: &str) {
+        app.update(Message::Register(RegisterMessage::Search(
+            SearchMessage::StartModal,
+        )));
+        for c in pattern.chars() {
+            app.update(Message::Register(RegisterMessage::Search(
+                SearchMessage::Push(c),
+            )));
+        }
+        app.update(Message::Register(RegisterMessage::Search(
+            SearchMessage::Submit,
+        )));
+    }
+
+    /// The register keeps its own search history, separate from the balance
+    /// one, and it outlives a single drill-in.
+    #[test]
+    fn register_search_history_is_per_screen_and_survives_leaving() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:Cash");
+        let scope = RegisterScope::Single(account);
+        let mut app = app_no_rows();
+        app.balance.search.last = "assets".to_owned();
+
+        app.show_register(scope, abc_rows());
+        let view = assert_matches!(&app.screen, Screen::Register(view) => view);
+        assert_eq!(&view.search.last, "");
+        register_search(&mut app, "b");
+        app.update(Message::Register(RegisterMessage::Leave));
+        assert_eq!(&app.balance.search.last, "assets");
+
+        app.show_register(scope, abc_rows());
+        let view = assert_matches!(&app.screen, Screen::Register(view) => view);
+        assert_eq!(&view.search.last, "b");
+        assert!(view.search.active.is_none());
+    }
+
+    #[test]
+    fn register_search_survives_reload() {
+        let arena = Bump::new();
+        let (ctx, mut app) = make_balance_app(&arena, ACCOUNTS);
+        let scope = RegisterScope::Single(ctx.account("Assets:Cash").unwrap());
+        app.show_register(scope, abc_rows());
+        register_search(&mut app, "c");
+        let snapshot = app.snapshot();
+
+        let mut app = next_app(&ctx, ACCOUNTS);
+        let (scope, register) = app.restore(&snapshot).expect("register reopens");
+        app.show_register_at(scope, abc_rows(), register);
+        let view = assert_matches!(&app.screen, Screen::Register(view) => view);
+        let search = view.search.active.as_ref().expect("search restored");
+        assert_eq!(search.intent.input, "c");
+        assert_eq!(search.matched_rows(), [2]);
+        assert_eq!(&view.search.last, "c");
+    }
+
     #[test]
     fn show_register_at_clamps_index() {
         let arena = Bump::new();
@@ -772,13 +893,13 @@ mod tests {
 
         let mut app = app_no_rows();
         let scope = RegisterScope::Single(account);
-        app.show_register_at(scope, rows.clone(), 10);
+        app.show_register_at(scope, rows.clone(), &cursor_at(10));
         let Screen::Register(view) = &app.screen else {
             panic!("expected register screen");
         };
         assert_eq!(view.nav.selected_item(), Some(2));
 
-        app.show_register_at(scope, rows, 1);
+        app.show_register_at(scope, rows, &cursor_at(1));
         let Screen::Register(view) = &app.screen else {
             panic!("expected register screen");
         };
