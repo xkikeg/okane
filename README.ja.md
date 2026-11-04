@@ -87,13 +87,13 @@ $ okane format ~/ledger/account.ledger
 その状態でまずは `okane import` コマンドを実行してください。読み込まれたLedgerフォーマットのデータは標準出力に吐かれるので、まず `/dev/null` にリダイレクトすると設定のエラーを確認できます。
 
 ```shell
-$ RUST_LOG=info okane import --config ~/ledger/import.yml ~/ledger/input_file.csv > /dev/null
+$ RUST_LOG=info okane import --rules ~/ledger/import.yml ~/ledger/input_file.csv > /dev/null
 ```
 
 ログを読んである程度満足するまで設定ファイルを編集します。終えたらledgerファイルに追記で書き込みます。
 
 ```shell
-$ RUST_LOG=info okane import --config ~/ledger/import.yml ~/ledger/input_file.csv >> ~/ledger/output_path.ledger
+$ RUST_LOG=info okane import --rules ~/ledger/import.yml ~/ledger/input_file.csv >> ~/ledger/output_path.ledger
 ```
 
 Tips: 100%の自動化を目指すと無理が出るので、80~90%程度自動化できるといいやくらいに思ってると楽です。
@@ -103,7 +103,7 @@ Tips: 100%の自動化を目指すと無理が出るので、80~90%程度自動�
 `rewrite` ルールですべてを賄うのは難しいです。特に旅行中などわざわざルールに追加しなくても…と思うトランザクションもあるでしょう。そんなときは `--interactive` を付けると書き込む前に取り込み結果を確認・修正できます。アカウント名が補完されるので便利です。
 
 ```shell
-$ okane import --config ~/ledger/import.yml --interactive \
+$ okane import --rules ~/ledger/import.yml --interactive \
     --ledger ~/ledger/account.ledger -o ~/ledger/account.ledger ~/ledger/input_file.csv
 ```
 

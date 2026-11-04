@@ -98,13 +98,13 @@ and the `testdata/import/` directory for example configurations.
 Then run the `okane import` command with logging and redirecting to `/dev/null`. This way you can dry-run and check its output.
 
 ```shell
-$ RUST_LOG=info okane import --config ~/ledger/import.yml ~/ledger/input_file.csv > /dev/null
+$ RUST_LOG=info okane import --rules ~/ledger/import.yml ~/ledger/input_file.csv > /dev/null
 ```
 
 After iterating over the logs and modifying YAML file, you can redirect the standard output to the ledger file.
 
 ```shell
-$ RUST_LOG=info okane import --config ~/ledger/import.yml ~/ledger/input_file.csv >> ~/ledger/output_path.ledger
+$ RUST_LOG=info okane import --rules ~/ledger/import.yml ~/ledger/input_file.csv >> ~/ledger/output_path.ledger
 ```
 
 Tips: You probably don't want to handle all the entries, rather should aim to cover 80-90% of entries initially.
@@ -115,7 +115,7 @@ Since the rewrite rules never cover everything, `--interactive` lets you review
 the transactions before they are written.
 
 ```shell
-$ okane import --config ~/ledger/import.yml --interactive \
+$ okane import --rules ~/ledger/import.yml --interactive \
     --ledger ~/ledger/account.ledger -o ~/ledger/account.ledger ~/ledger/input_file.csv
 ```
 
