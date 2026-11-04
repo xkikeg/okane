@@ -264,7 +264,7 @@ scene_import() {
   type_line "cat index_amount.csv"
   sleep 2.5
 
-  type_line "okane import --config test_config.yml --interactive \\"
+  type_line "okane import --rules test_config.yml --interactive \\"
   type_line "    --ledger accounts.ledger -o out.ledger index_amount.csv"
   wait_for 'okane import —' 20
   sleep 2

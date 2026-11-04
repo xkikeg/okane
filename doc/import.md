@@ -6,7 +6,7 @@
 credit card issuers, such as CSV statements.
 
 ```console
-$ okane import --config path/to/import.yml path/to/statement.csv
+$ okane import --rules path/to/import.yml path/to/statement.csv
 ```
 
 The result is written to stdout, so redirect it to `/dev/null` first to check for
@@ -17,7 +17,7 @@ There is also an interactive review mode, which shows every generated transactio
 TUI and lets you fix the account before anything is written:
 
 ```console
-$ okane import --config path/to/import.yml --interactive \
+$ okane import --rules path/to/import.yml --interactive \
     --ledger path/to/main.ledger --output path/to/output.ledger \
     path/to/statement.csv
 ```

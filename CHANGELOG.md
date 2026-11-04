@@ -6,6 +6,9 @@
 
 ### Changed
 
+* `okane import` now takes the import rules YAML with `--rules` / `-r`. The old `--config` / `-c`
+  still works but prints a deprecation warning, and will be removed in a later release, freeing
+  `--config` for the planned okane config file (https://github.com/xkikeg/okane/issues/611).
 * In the TUI, `C-f` / `PgDn` and `C-b` / `PgUp` now turn the page instead of moving the cursor a
   screenful: paging down shows the next screenful with the cursor on its top line, paging up the
   previous one with the cursor on its bottom line. Previously the cursor moved a page while the

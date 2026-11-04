@@ -5,7 +5,7 @@
 `okane import` は CSV ファイルをはじめ、各種の銀行やカード会社からダウンロードしてきたファイルから Ledger 形式のファイルを生成するコマンドです。
 
 ```console
-$ RUST_LOG=info okane import --config path/to/import.yml path/to/statement.csv
+$ RUST_LOG=info okane import --rules path/to/import.yml path/to/statement.csv
 ```
 
 結果は標準出力に書き出されるので、まず `/dev/null` にリダイレクトしつつログで設定の漏れを確認し、問題なさそうならLedgerファイルに追記するのがよいでしょう。`RUST_LOG=info` でマッチするルールがなかったデータが分かります。
@@ -13,7 +13,7 @@ $ RUST_LOG=info okane import --config path/to/import.yml path/to/statement.csv
 生成された取引をTUIで一件ずつ確認し、書き出す前にアカウントを修正できる対話モードもあります。
 
 ```console
-$ okane import --config path/to/import.yml --interactive \
+$ okane import --rules path/to/import.yml --interactive \
     --ledger path/to/main.ledger --output path/to/output.ledger \
     path/to/statement.csv
 ```

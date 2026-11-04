@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::BufReader;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
 use bumpalo::Bump;
@@ -93,8 +93,24 @@ impl Command {
 
 #[derive(Args, Debug)]
 pub struct ImportCmd {
-    #[arg(short, long, value_name = "FILE")]
-    pub config: PathBuf,
+    /// YAML file with the rules that say how to import each source file.
+    #[arg(
+        short = 'r',
+        long,
+        value_name = "FILE",
+        required_unless_present = "config"
+    )]
+    pub rules: Option<PathBuf>,
+
+    /// Deprecated name of `--rules`, kept so that existing scripts still work.
+    #[arg(
+        short = 'c',
+        long,
+        value_name = "FILE",
+        hide = true,
+        conflicts_with = "rules"
+    )]
+    pub config: Option<PathBuf>,
 
     /// Review the imported transactions in an interactive TUI before writing.
     #[arg(long)]
@@ -113,6 +129,9 @@ pub struct ImportCmd {
 
 impl ImportCmd {
     fn validate(&self) -> Result<(), InvalidFlagError> {
+        if self.rules.is_none() && self.config.is_none() {
+            return Err(InvalidFlagError("--rules is required".to_string()));
+        }
         if self.interactive && (self.ledger.is_none() || self.output.is_none()) {
             return Err(InvalidFlagError(
                 "--interactive requires both --ledger and --output".to_string(),
@@ -128,15 +147,24 @@ impl ImportCmd {
         if self.interactive {
             return self.run_interactive();
         }
-        let importer = import::Importer::new(&self.config)?;
+        let importer = import::Importer::new(self.rules_path())?;
         importer.import_and_write(&self.source, w)?;
         Ok(())
+    }
+
+    /// Path to the import rules, from `--rules` or the deprecated `--config`.
+    fn rules_path(&self) -> &Path {
+        if let Some(rules) = &self.rules {
+            return rules;
+        }
+        eprintln!("warning: `--config` / `-c` is deprecated, use `--rules` / `-r` instead");
+        self.config.as_ref().expect("checked by validate()")
     }
 
     fn run_interactive(&self) -> anyhow::Result<()> {
         let ledger_path = self.ledger.as_ref().expect("checked by validate()");
         let output_path = self.output.as_ref().expect("checked by validate()");
-        let importer = import::Importer::new(&self.config)?;
+        let importer = import::Importer::new(self.rules_path())?;
         let (header, mut txns) = importer.import(&self.source)?;
         if txns.is_empty() {
             eprintln!("no transactions found in {}", self.source.display());
@@ -737,7 +765,8 @@ mod tests {
 
     fn import_cmd(interactive: bool, ledger: bool, output: bool) -> ImportCmd {
         ImportCmd {
-            config: PathBuf::from("config.yml"),
+            rules: Some(PathBuf::from("rules.yml")),
+            config: None,
             interactive,
             ledger: ledger.then(|| PathBuf::from("root.ledger")),
             output: output.then(|| PathBuf::from("out.ledger")),
@@ -753,6 +782,26 @@ mod tests {
     #[test]
     fn import_validate_accepts_interactive_with_all_flags() {
         assert!(import_cmd(true, true, true).validate().is_ok());
+    }
+
+    #[test]
+    fn import_validate_accepts_deprecated_config() {
+        let cmd = ImportCmd {
+            rules: None,
+            config: Some(PathBuf::from("rules.yml")),
+            ..import_cmd(false, false, false)
+        };
+        assert!(cmd.validate().is_ok());
+    }
+
+    #[test]
+    fn import_validate_rejects_missing_rules() {
+        let cmd = ImportCmd {
+            rules: None,
+            ..import_cmd(false, false, false)
+        };
+        let err = cmd.validate().unwrap_err();
+        assert_eq!(err.to_string(), "invalid flag: --rules is required");
     }
 
     #[test]
