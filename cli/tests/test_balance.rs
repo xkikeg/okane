@@ -31,8 +31,8 @@ fn balance_default(
     log::info!("golden_path: {}", golden_path.display());
     let golden = okane_golden::Golden::new(golden_path).unwrap();
 
-    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
-        .args(["balance".as_ref(), input.as_os_str()])
+    let result = testing::okane()
+        .args(["balance".as_ref(), "-f".as_ref(), input.as_os_str()])
         .assert()
         .success();
 
@@ -62,9 +62,10 @@ fn balance_filter_exact(
     log::info!("golden_path: {}", golden_path.display());
     let golden = okane_golden::Golden::new(golden_path).unwrap();
 
-    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+    let result = testing::okane()
         .args([
             "balance".as_ref(),
+            "-f".as_ref(),
             input.as_os_str(),
             "--account-filter=exact".as_ref(),
             "Assets:Banks:あおによし".as_ref(),
@@ -99,9 +100,10 @@ fn balance_filter_regex(
     log::info!("golden_path: {}", golden_path.display());
     let golden = okane_golden::Golden::new(golden_path).unwrap();
 
-    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+    let result = testing::okane()
         .args([
             "balance".as_ref(),
+            "-f".as_ref(),
             input.as_os_str(),
             "Assets:Banks".as_ref(),
             "Cards".as_ref(),
@@ -134,9 +136,10 @@ fn balance_in_jpy_up_to_date(
     log::info!("golden_path: {}", golden_path.display());
     let golden = okane_golden::Golden::new(golden_path).unwrap();
 
-    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+    let result = testing::okane()
         .args([
             "balance".as_ref(),
+            "-f".as_ref(),
             input.as_os_str(),
             OsStr::new("-X"),
             OsStr::new("JPY"),
@@ -170,9 +173,10 @@ fn balance_in_chf_up_to_date_price_db(
     let golden = okane_golden::Golden::new(golden_path).unwrap();
     let price_db_path = testing::TESTDATA_DIR.join("report/price_db.txt");
 
-    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+    let result = testing::okane()
         .args([
             "balance".as_ref(),
+            "-f".as_ref(),
             input.as_os_str(),
             OsStr::new("-X"),
             OsStr::new("CHF"),
@@ -207,9 +211,10 @@ fn balance_in_usd_historical(
     log::info!("golden_path: {}", golden_path.display());
     let golden = okane_golden::Golden::new(golden_path).unwrap();
 
-    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+    let result = testing::okane()
         .args([
             "balance".as_ref(),
+            "-f".as_ref(),
             input.as_os_str(),
             OsStr::new("-X"),
             OsStr::new("USD"),
