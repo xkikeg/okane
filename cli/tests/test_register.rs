@@ -31,8 +31,8 @@ fn register_default(
     log::info!("golden_path: {}", golden_path.display());
     let golden = okane_golden::Golden::new(golden_path).unwrap();
 
-    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
-        .args(["register".as_ref(), input.as_os_str()])
+    let result = testing::okane()
+        .args(["register".as_ref(), "-f".as_ref(), input.as_os_str()])
         .assert()
         .success();
 
@@ -61,9 +61,10 @@ fn register_exact_account_filter(
     log::info!("golden_path: {}", golden_path.display());
     let golden = okane_golden::Golden::new(golden_path).unwrap();
 
-    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+    let result = testing::okane()
         .args([
             "register".as_ref(),
+            "-f".as_ref(),
             input.as_os_str(),
             OsStr::new("--account-filter=exact"),
             OsStr::new("Assets:Banks:あおによし"),
@@ -97,9 +98,10 @@ fn register_regex_account_filter(
     log::info!("golden_path: {}", golden_path.display());
     let golden = okane_golden::Golden::new(golden_path).unwrap();
 
-    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+    let result = testing::okane()
         .args([
             "register".as_ref(),
+            "-f".as_ref(),
             input.as_os_str(),
             OsStr::new("Assets:Banks"),
             OsStr::new("^Card"), // ignored
@@ -132,9 +134,10 @@ fn register_date_range(
     log::info!("golden_path: {}", golden_path.display());
     let golden = okane_golden::Golden::new(golden_path).unwrap();
 
-    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+    let result = testing::okane()
         .args([
             "register".as_ref(),
+            "-f".as_ref(),
             input.as_os_str(),
             OsStr::new("--start"),
             OsStr::new("2024-02-01"),
@@ -169,9 +172,10 @@ fn register_in_usd_historical(
     log::info!("golden_path: {}", golden_path.display());
     let golden = okane_golden::Golden::new(golden_path).unwrap();
 
-    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+    let result = testing::okane()
         .args([
             "register".as_ref(),
+            "-f".as_ref(),
             input.as_os_str(),
             OsStr::new("-X"),
             OsStr::new("USD"),
