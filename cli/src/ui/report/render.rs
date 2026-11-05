@@ -441,7 +441,7 @@ fn draw_error(frame: &mut Frame, area: Rect, message: &str) {
 }
 
 /// Renders the search bar in the footer slot: a prompt + the typed
-/// pattern (red on an invalid regex) plus a dim hint suffix. While editing it
+/// pattern (red when it yields no usable regex) plus a dim hint suffix. While editing it
 /// also places the terminal cursor at the end of the pattern.
 fn draw_search_bar(frame: &mut Frame, area: Rect, search: &Search) {
     let count = search.matched_rows().len();
@@ -465,8 +465,8 @@ fn draw_search_bar(frame: &mut Frame, area: Rect, search: &Search) {
         }
     };
     let alert = match (search.err(), search.intent.no_previous) {
-        (Some(_), _) => Span::styled(
-            "  [invalid regex]".to_string(),
+        (Some(err), _) => Span::styled(
+            format!("  {}", err.label()),
             Style::default().fg(Color::Red),
         ),
         (None, true) => Span::styled(
@@ -900,6 +900,7 @@ mod tests {
 
     use std::path::{Path, PathBuf};
 
+    use assert_matches::assert_matches;
     use bumpalo::Bump;
     use okane_core::report::query::DateRange;
     use okane_core::report::{Amount, ReportContext};
@@ -1368,9 +1369,7 @@ mod tests {
     fn help_fits_an_eighty_column_terminal() {
         let mut app = App::new("test.ledger".to_owned(), Vec::new(), query_state());
         app.update(Message::ShowHelp);
-        let Some(Overlay::Help(popup)) = &app.overlay else {
-            panic!("expected the help overlay");
-        };
+        let popup = assert_matches!(&app.overlay, Some(Overlay::Help(popup)) => popup);
         let screen = Rect::new(0, 0, 80, 24);
         let rect = content_rect(screen, popup, HELP_POPUP_HINT);
         assert!(
