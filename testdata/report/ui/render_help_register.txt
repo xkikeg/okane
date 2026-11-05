@@ -2,19 +2,19 @@
 ┌───────┌ Key bindings — register ────────────────────────────────────┐────────┐
 │Date   │ Moving                                                      │        │
 │2024-01│   ↑ / k, C-p               up one line                      │0.00 TWD│
-│2024-01│   ↓ / j, C-n               down one line                    │0000 JPY│
+│2024-01│   ↓ / j, C-n               down one line                    │,000 JPY│
 │       │   K, J                     previous / next entry            │0.00 CHF│
 │       │   PgUp / PgDn, C-b / C-f   up / down one page               │0.00 USD│
 │       │   g / Home, G / End        first / last line                │0.00 EUR│
 │       │                                                             │0.00 AUD│
 │       │ Search                                                      │0.00 TWD│
-│2024-01│   /                        search payees and dates by regex │2000 JPY│
+│2024-01│   /                        search payees and dates by regex │,000 JPY│
 │       │   n, N                     next / previous match, once fixed│0.00 CHF│
 │       │   C-s, C-r                 incremental search forward / back│0.00 USD│
 │       │   Esc                      leave the search                 │0.00 EUR│
 │       │                                                             │0.00 AUD│
 │       │ Session                                                     │0.00 TWD│
-│2024-01│   r, F5                    reload the ledger from disk      │2000 JPY│
+│2024-01│   r, F5                    reload the ledger from disk      │,000 JPY│
 │       │   .                        change the query options         │0.00 CHF│
 │       │   ?, F1                    this help                        │0.00 USD│
 │       │   q, Esc                   back to the balance screen       │0.00 EUR│

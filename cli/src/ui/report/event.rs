@@ -41,10 +41,10 @@ pub(super) fn run<'ctx>(
     terminal: &mut DefaultTerminal,
     app: &mut App<'ctx>,
     ledger: &mut Ledger<'ctx>,
-    ctx: &ReportContext<'ctx>,
+    ctx: &mut ReportContext<'ctx>,
 ) -> anyhow::Result<RunOutcome> {
     while !app.should_quit {
-        terminal.draw(|frame| render::draw(frame, app, ctx))?;
+        terminal.draw(|frame| render::draw(frame, app, &*ctx))?;
         if event::poll(POLL_TIMEOUT)?
             && let Event::Key(key) = event::read()?
             && let Some(msg) = key_to_message(app, key)

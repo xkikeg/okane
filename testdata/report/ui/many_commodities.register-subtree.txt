@@ -1,6 +1,6 @@
  okane ui — many_commodities.ledger — register: Assets                          
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│Date       Payee                                 Amount         Total         │
+│Date       Payee                               Amount          Total          │
 │2024-01-27 ATM abroad                                                10 STOCKH│
 │                                                                     10 STOCKI│
 │                                                                     10 STOCKJ│

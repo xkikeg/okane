@@ -488,6 +488,16 @@ pub struct UiCmd {
     #[command(flatten)]
     eval_options: EvalOptions,
 
+    /// How the amounts are drawn.
+    ///
+    /// `ledger` writes each commodity as its `format` in the Ledger file
+    /// declares, such as `1,234.5 CHF` for `format 1,000.00 CHF`.
+    /// `comma3dot` and `plain` write every commodity that way instead.
+    /// Only the UI is affected: `balance` and `register` always print plain
+    /// decimals, so that their output stays easy to process.
+    #[arg(long, value_enum, default_value_t)]
+    amount_format: ui::report::AmountFormat,
+
     /// Path to the Ledger file.
     source: PathBuf,
 }
@@ -502,10 +512,11 @@ impl UiCmd {
         // All report data is built inside `run_ui`: its session loop resets
         // the arena on reload (`r` / `F5`), which requires that nothing out
         // here borrows it.
-        let config = ui::report::SessionConfig::new(
-            load::new_loader(self.source.clone()),
-            self.eval_options.to_query_options()?,
-        );
+        let options = ui::report::QueryOptions {
+            amount_format: self.amount_format,
+            ..self.eval_options.to_query_options()?
+        };
+        let config = ui::report::SessionConfig::new(load::new_loader(self.source.clone()), options);
         let mut arena = Bump::new();
         ui::report::run_ui(&mut arena, self.source.display().to_string(), &config)
             .context("failed to run TUI")
@@ -733,6 +744,7 @@ impl EvalOptions {
             today: self.today,
             start: range.start,
             end: range.end,
+            amount_format: ui::report::AmountFormat::default(),
         })
     }
 
