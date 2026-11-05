@@ -6,6 +6,7 @@
 //! re-checks its flags.
 
 mod args;
+pub mod config;
 
 pub use args::Cli;
 
@@ -395,14 +396,17 @@ impl UiCmd {
 /// `--sort` flag for `register`. `Original` keeps the file order; `Date`
 /// sorts ascending by transaction date (stable, so ties preserve file order).
 /// Default value is `Date`.
-#[derive(clap::ValueEnum, Clone, Copy, Debug, Default)]
+#[derive(clap::ValueEnum, Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum SortKey {
     /// Stable sort by transaction date, ascending (current default).
     #[default]
+    #[serde(alias = "d")]
     #[value(alias = "d")]
     Date,
     /// Preserve the order of appearance in the source file.
     #[value(alias = "o")]
+    #[serde(alias = "o")]
     Original,
 }
 
@@ -468,17 +472,31 @@ struct EvalOptions {
     price_db: Option<PathBuf>,
     /// Commodity every amount is converted into, if any.
     exchange: Option<String>,
-    /// Convert at the rate of each transaction's date, instead of `today`'s.
-    historical: bool,
+    /// Which date's rate the conversion to `exchange` uses.
+    conversion: ConversionMode,
     today: NaiveDate,
     /// Transactions to report, with `--current` already turned into its end.
     date_range: query::DateRange,
     account_filter: AccountFilterMode,
 }
 
+/// `--conversion`: which date's rate `--exchange` converts at.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, clap::ValueEnum, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ConversionMode {
+    /// Convert at the rate of each transaction's date.
+    /// This is useful for evaluating income and expense,
+    /// while it's pointless for assets and liabilities.
+    Historical,
+    /// Convert at the rate of `--today`.
+    #[default]
+    UpToDate,
+}
+
 /// Mode of the account filter.
-#[derive(Debug, Default, Clone, Copy, clap::ValueEnum)]
-enum AccountFilterMode {
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, clap::ValueEnum, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AccountFilterMode {
     /// Use given account matcher as an unanchored regex.
     /// For example, `Bank` matches any accounts with `.*Bank.*`.
     #[default]
@@ -496,10 +514,9 @@ impl EvalOptions {
     }
 
     fn conversion_strategy(&self) -> query::ConversionStrategy {
-        if self.historical {
-            query::ConversionStrategy::Historical
-        } else {
-            query::ConversionStrategy::UpToDate { today: self.today }
+        match self.conversion {
+            ConversionMode::Historical => query::ConversionStrategy::Historical,
+            ConversionMode::UpToDate => query::ConversionStrategy::UpToDate { today: self.today },
         }
     }
 
@@ -529,7 +546,7 @@ impl EvalOptions {
         ui::report::QueryOptions {
             price_db: self.price_db.clone(),
             exchange: self.exchange.clone(),
-            historical: self.historical,
+            historical: self.conversion == ConversionMode::Historical,
             today: self.today,
             start: self.date_range.start,
             end: self.date_range.end,

@@ -19,7 +19,7 @@ fn tags_default(
     println!("test input file path: {}", input.display());
     let golden = golden_of(&input, "golden.tags.default.txt");
 
-    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+    let result = testing::okane()
         .args(["tags".as_ref(), input.as_os_str()])
         .assert()
         .success();
@@ -36,7 +36,7 @@ fn tags_with_values(
     println!("test input file path: {}", input.display());
     let golden = golden_of(&input, "golden.tags.values.txt");
 
-    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+    let result = testing::okane()
         .args(["tags".as_ref(), input.as_os_str(), "--values".as_ref()])
         .assert()
         .success();
