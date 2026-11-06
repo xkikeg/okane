@@ -21,12 +21,14 @@ use clap::Parser as _;
 
 fn main() {
     env_logger::init();
-    let cli = cmd::Cli::parse();
-    if let Err(err) = cli.validate() {
-        eprintln!("{}", err);
-        std::process::exit(2);
-    }
-    if let Err(err) = cli.run(&mut std::io::stdout().lock()) {
+    let command = match cmd::Cli::parse().build() {
+        Ok(command) => command,
+        Err(err) => {
+            eprintln!("{}", err);
+            std::process::exit(2);
+        }
+    };
+    if let Err(err) = command.run(&mut std::io::stdout().lock()) {
         eprintln!("{}", err);
         for cause in err.chain().skip(1) {
             eprintln!("Caused by {}", cause);
