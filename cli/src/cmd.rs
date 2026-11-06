@@ -394,14 +394,17 @@ impl UiCmd {
 
 /// `--sort` flag for `register`. `Original` keeps the file order; `Date`
 /// sorts ascending by transaction date (stable, so ties preserve file order).
-#[derive(clap::ValueEnum, Clone, Copy, Debug, Default)]
+#[derive(clap::ValueEnum, Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum SortKey {
     /// Preserve the order of appearance in the source file (current default).
     #[default]
     #[value(alias = "o")]
+    #[serde(alias = "o")]
     Original,
     /// Stable sort by transaction date, ascending.
     #[value(alias = "d")]
+    #[serde(alias = "d")]
     Date,
 }
 
@@ -476,8 +479,9 @@ struct EvalOptions {
 }
 
 /// Mode of the account filter.
-#[derive(Debug, Default, Clone, Copy, clap::ValueEnum)]
-enum AccountFilterMode {
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, clap::ValueEnum, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AccountFilterMode {
     /// Use given account matcher as an unanchored regex.
     /// For example, `Bank` matches any accounts with `.*Bank.*`.
     #[default]
