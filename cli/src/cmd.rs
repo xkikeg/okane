@@ -1,3 +1,14 @@
+//! The commands okane runs.
+//!
+//! The command line is parsed into [`args`]' structs first, which `build()`
+//! the commands here. A command holds only valid states (e.g. an interactive
+//! import always has its `--ledger` and `--output`), so running one never
+//! re-checks its flags.
+
+mod args;
+
+pub use args::Cli;
+
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -5,7 +16,6 @@ use std::path::{Path, PathBuf};
 use anyhow::Context as _;
 use bumpalo::Bump;
 use chrono::NaiveDate;
-use clap::{Args, Subcommand};
 
 use lender::FallibleLender;
 use okane_core::report::query;
@@ -14,7 +24,6 @@ use okane_core::syntax::display::DisplayContext;
 use okane_core::syntax::plain::LedgerEntry;
 use okane_core::{load, report};
 
-use crate::build::CLAP_LONG_VERSION;
 use crate::format;
 use crate::import;
 use crate::ui;
@@ -23,57 +32,19 @@ use crate::ui;
 #[error("invalid flag: {0}")]
 pub struct InvalidFlagError(String);
 
-#[derive(clap::Parser, Debug)]
-#[clap(about, version, author, long_version = CLAP_LONG_VERSION)]
-#[command(infer_subcommands = true)]
-pub struct Cli {
-    #[clap(subcommand)]
-    command: Command,
-}
-
-impl Cli {
-    pub fn validate(&self) -> Result<(), InvalidFlagError> {
-        self.command.validate()
-    }
-
-    pub fn run<W>(self, w: &mut W) -> anyhow::Result<()>
-    where
-        W: std::io::Write,
-    {
-        self.command.run(w)
-    }
-}
-
-#[derive(Subcommand, Debug)]
+#[derive(Debug)]
 pub enum Command {
-    /// Import other format into ledger.
     Import(ImportCmd),
-    /// Format the given file (in future it'll work without file arg)
     Format(FormatCmd),
-    /// List all accounts in the file.
     Accounts(AccountsCmd),
-    /// List all tags in the file.
     Tags(TagsCmd),
-    /// Gives balance report.
     Balance(BalanceCmd),
-    /// Gives register report.
     Register(RegisterCmd),
-    /// Open an interactive terminal UI showing the balance report.
     Ui(UiCmd),
-    /// Primitive is a set of commands which are primitive and suitable for debugging.
-    Primitive(Primitives),
+    Primitive(PrimitiveCmd),
 }
 
 impl Command {
-    fn validate(&self) -> Result<(), InvalidFlagError> {
-        match self {
-            Command::Import(cmd) => cmd.validate(),
-            Command::Balance(cmd) => cmd.validate(),
-            Command::Ui(cmd) => cmd.validate(),
-            _ => Ok(()),
-        }
-    }
-
     pub fn run<W>(self, w: &mut W) -> anyhow::Result<()>
     where
         W: std::io::Write,
@@ -91,80 +62,42 @@ impl Command {
     }
 }
 
-#[derive(Args, Debug)]
+#[derive(Debug)]
 pub struct ImportCmd {
-    /// YAML file with the rules that say how to import each source file.
-    #[arg(
-        short = 'r',
-        long,
-        value_name = "FILE",
-        required_unless_present = "config"
-    )]
-    pub rules: Option<PathBuf>,
+    /// YAML file with the import rules.
+    rules: PathBuf,
+    mode: ImportMode,
+    /// File to import.
+    source: PathBuf,
+}
 
-    /// Deprecated name of `--rules`, kept so that existing scripts still work.
-    #[arg(
-        short = 'c',
-        long,
-        value_name = "FILE",
-        hide = true,
-        conflicts_with = "rules"
-    )]
-    pub config: Option<PathBuf>,
-
-    /// Review the imported transactions in an interactive TUI before writing.
-    #[arg(long)]
-    pub interactive: bool,
-
-    /// Ledger file whose accounts feed the autocomplete (interactive only).
-    #[arg(long, value_name = "FILE", requires = "interactive")]
-    pub ledger: Option<PathBuf>,
-
-    /// Ledger file the reviewed transactions are appended to (interactive only).
-    #[arg(short = 'o', long, value_name = "FILE", requires = "interactive")]
-    pub output: Option<PathBuf>,
-
-    pub source: PathBuf,
+/// Whether `import` prints the transactions, or lets the user review them.
+#[derive(Debug)]
+enum ImportMode {
+    /// Write the imported transactions to stdout.
+    Batch,
+    /// Review the imported transactions in the TUI, then append them to
+    /// `output`. `ledger` is the file whose accounts feed the autocomplete.
+    Interactive { ledger: PathBuf, output: PathBuf },
 }
 
 impl ImportCmd {
-    fn validate(&self) -> Result<(), InvalidFlagError> {
-        if self.rules.is_none() && self.config.is_none() {
-            return Err(InvalidFlagError("--rules is required".to_string()));
-        }
-        if self.interactive && (self.ledger.is_none() || self.output.is_none()) {
-            return Err(InvalidFlagError(
-                "--interactive requires both --ledger and --output".to_string(),
-            ));
-        }
-        Ok(())
-    }
-
     pub fn run<W>(&self, w: &mut W) -> anyhow::Result<()>
     where
         W: std::io::Write,
     {
-        if self.interactive {
-            return self.run_interactive();
+        match &self.mode {
+            ImportMode::Batch => {
+                let importer = import::Importer::new(&self.rules)?;
+                importer.import_and_write(&self.source, w)?;
+                Ok(())
+            }
+            ImportMode::Interactive { ledger, output } => self.run_interactive(ledger, output),
         }
-        let importer = import::Importer::new(self.rules_path())?;
-        importer.import_and_write(&self.source, w)?;
-        Ok(())
     }
 
-    /// Path to the import rules, from `--rules` or the deprecated `--config`.
-    fn rules_path(&self) -> &Path {
-        if let Some(rules) = &self.rules {
-            return rules;
-        }
-        eprintln!("warning: `--config` / `-c` is deprecated, use `--rules` / `-r` instead");
-        self.config.as_ref().expect("checked by validate()")
-    }
-
-    fn run_interactive(&self) -> anyhow::Result<()> {
-        let ledger_path = self.ledger.as_ref().expect("checked by validate()");
-        let output_path = self.output.as_ref().expect("checked by validate()");
-        let importer = import::Importer::new(self.rules_path())?;
+    fn run_interactive(&self, ledger_path: &Path, output_path: &Path) -> anyhow::Result<()> {
+        let importer = import::Importer::new(&self.rules)?;
         let (header, mut txns) = importer.import(&self.source)?;
         if txns.is_empty() {
             eprintln!("no transactions found in {}", self.source.display());
@@ -173,7 +106,7 @@ impl ImportCmd {
         let accounts: Vec<String> = {
             let arena = Bump::new();
             let mut ctx = report::ReportContext::new(&arena);
-            report::accounts(&mut ctx, load::new_loader(ledger_path.clone()))
+            report::accounts(&mut ctx, load::new_loader(ledger_path.to_owned()))
                 .with_context(|| format!("failed to load ledger {}", ledger_path.display()))?
                 .iter()
                 .map(|account| account.as_str().to_owned())
@@ -225,9 +158,9 @@ impl ImportCmd {
     }
 }
 
-#[derive(Args, Debug)]
+#[derive(Debug)]
 pub struct FormatCmd {
-    pub source: PathBuf,
+    source: PathBuf,
 }
 
 impl FormatCmd {
@@ -244,28 +177,10 @@ impl FormatCmd {
     }
 }
 
-#[derive(Args, Debug)]
-pub struct Primitives {
-    #[command(subcommand)]
-    command: PrimitiveCmd,
-}
-
-impl Primitives {
-    fn run<W>(self, w: &mut W) -> anyhow::Result<()>
-    where
-        W: std::io::Write,
-    {
-        self.command.run(w)
-    }
-}
-
-#[derive(Subcommand, Debug)]
-enum PrimitiveCmd {
-    /// Format the given one ledger file, to stdout.
+#[derive(Debug)]
+pub enum PrimitiveCmd {
     Format(FormatCmd),
-    /// Read the given one ledger file, recursively resolves include directives and print to stdout.
     Flatten(FlattenCmd),
-    /// Evaluates the given value under given condition.
     Eval(EvalCmd),
 }
 
@@ -282,9 +197,9 @@ impl PrimitiveCmd {
     }
 }
 
-#[derive(Args, Debug)]
-struct FlattenCmd {
-    pub source: PathBuf,
+#[derive(Debug)]
+pub struct FlattenCmd {
+    source: PathBuf,
 }
 
 impl FlattenCmd {
@@ -325,21 +240,14 @@ impl FlattenCmd {
     }
 }
 
-#[derive(Args, Debug)]
-struct EvalCmd {
+#[derive(Debug)]
+pub struct EvalCmd {
     /// Date of the price.
-    #[arg(long)]
-    pub date: NaiveDate,
-
-    #[command(flatten)]
+    date: NaiveDate,
     eval_options: EvalOptions,
-
-    /// source of the Ledger file.
-    #[arg(short = 'f', long = "file")]
-    pub source: PathBuf,
-
-    /// expression to evaluate.
-    pub expression: Vec<String>,
+    source: PathBuf,
+    /// Terms of the expression, joined with spaces.
+    expression: Vec<String>,
 }
 
 impl EvalCmd {
@@ -373,9 +281,9 @@ impl EvalCmd {
     }
 }
 
-#[derive(Args, Debug)]
+#[derive(Debug)]
 pub struct AccountsCmd {
-    pub source: PathBuf,
+    source: PathBuf,
 }
 
 impl AccountsCmd {
@@ -393,16 +301,11 @@ impl AccountsCmd {
     }
 }
 
-#[derive(Args, Debug)]
+#[derive(Debug)]
 pub struct TagsCmd {
-    /// Path to the Ledger file.
-    pub source: PathBuf,
-
+    source: PathBuf,
     /// Print each tag as `key: value`, instead of the key alone.
-    ///
-    /// Tags without a value, such as `; :tag1:tag2:`, are still printed as the bare key.
-    #[arg(long)]
-    pub values: bool,
+    values: bool,
 }
 
 impl TagsCmd {
@@ -427,30 +330,15 @@ impl TagsCmd {
     }
 }
 
-#[derive(Args, Debug)]
+#[derive(Debug)]
 pub struct BalanceCmd {
-    #[command(flatten)]
     eval_options: EvalOptions,
-
-    /// Path to the Ledger file.
     source: PathBuf,
-
-    /// [Optional] Accounts to report the balance.
-    ///
-    /// By default, each pattern is an unanchored regex matched against the account name.
-    /// Use `--account-filter` to change the matching logic.
-    ///
-    /// If none are set, show all accounts.
-    ///
-    /// If any of them are non-existing accounts, those are simply skipped.
+    /// Account patterns to report; empty for every account.
     account: Vec<String>,
 }
 
 impl BalanceCmd {
-    fn validate(&self) -> Result<(), InvalidFlagError> {
-        self.eval_options.validate()?;
-        Ok(())
-    }
     pub fn run<W>(self, w: &mut W) -> anyhow::Result<()>
     where
         W: std::io::Write,
@@ -469,7 +357,7 @@ impl BalanceCmd {
         let query = query::BalanceQuery {
             account,
             conversion: self.eval_options.to_conversion(&ctx)?,
-            date_range: self.eval_options.to_date_range()?,
+            date_range: self.eval_options.date_range,
         };
         for (account, amount) in ledger.balance(&ctx, &query)?.into_owned().into_vec() {
             writeln!(
@@ -483,28 +371,20 @@ impl BalanceCmd {
     }
 }
 
-#[derive(Args, Debug)]
+#[derive(Debug)]
 pub struct UiCmd {
-    #[command(flatten)]
     eval_options: EvalOptions,
-
-    /// Path to the Ledger file.
     source: PathBuf,
 }
 
 impl UiCmd {
-    fn validate(&self) -> Result<(), InvalidFlagError> {
-        self.eval_options.validate()?;
-        Ok(())
-    }
-
     pub fn run(self) -> anyhow::Result<()> {
         // All report data is built inside `run_ui`: its session loop resets
         // the arena on reload (`r` / `F5`), which requires that nothing out
         // here borrows it.
         let config = ui::report::SessionConfig::new(
             load::new_loader(self.source.clone()),
-            self.eval_options.to_query_options()?,
+            self.eval_options.to_query_options(),
         );
         let mut arena = Bump::new();
         ui::report::run_ui(&mut arena, self.source.display().to_string(), &config)
@@ -534,27 +414,12 @@ impl From<SortKey> for query::Sort {
     }
 }
 
-#[derive(Args, Debug)]
+#[derive(Debug)]
 pub struct RegisterCmd {
-    #[command(flatten)]
     eval_options: EvalOptions,
-
-    /// Sort order for the register rows.
-    #[arg(long, value_enum, default_value_t)]
     sort: SortKey,
-
-    /// Path to the Ledger file.
     source: PathBuf,
-
-    /// [Optional] Accounts to get register.
-    ///
-    /// By default, each pattern is an unanchored regex matched against the
-    /// account name. an account is shown when it matches any pattern.
-    /// Use `--account-filter` to change the matching logic.
-    ///
-    /// If none are set, show all accounts.
-    ///
-    /// If any of them are non-existing accounts, those are simply skipped.
+    /// Account patterns to report; empty for every account.
     account: Vec<String>,
 }
 
@@ -575,7 +440,7 @@ impl RegisterCmd {
                 .eval_options
                 .create_account_filter(&ctx, self.account.as_slice())
                 .context("failed to create regex for account filter")?,
-            date_range: self.eval_options.to_date_range()?,
+            date_range: self.eval_options.date_range,
             conversion: self.eval_options.to_conversion(&ctx)?,
             sort: self.sort.into(),
         };
@@ -595,56 +460,18 @@ impl RegisterCmd {
     }
 }
 
-#[derive(Args, Debug)]
-pub struct EvalOptions {
-    /// Path to the Price DB.
-    #[arg(long)]
+/// How the reports are evaluated, shared by `balance`, `register`, `ui` and
+/// `primitive eval`.
+#[derive(Debug)]
+struct EvalOptions {
     price_db: Option<PathBuf>,
-
-    /// Commodity used for the evaluation.
-    ///
-    /// When user specifies `--exchange=FOO`,
-    /// all values in other commmodities are converted to FOO.
-    #[arg(short = 'X', long)]
+    /// Commodity every amount is converted into, if any.
     exchange: Option<String>,
-
-    /// Use historical rate for exchange.
-    ///
-    /// Option `--historical` to evaluate exchange rate at the date of transaction.
-    /// This is useful for evaluating income and expense,
-    /// while it's pointless for assets and liabilities.
-    #[arg(long, default_value_t)]
+    /// Convert at the rate of each transaction's date, instead of `today`'s.
     historical: bool,
-
-    /// Today's date in YYYY-mm-dd format.
-    ///
-    /// By default it points to the current local date.
-    /// This value is used in `--current`, as well as currency conversion.
-    #[arg(long, visible_alias("now"),default_value_t = chrono::Local::now().date_naive())]
     today: NaiveDate,
-
-    /// Beginning of date range (inclusive).
-    ///
-    /// If specified, only transaction with the date equals/after `--start` is considered.
-    #[arg(long, visible_alias("begin"))]
-    start: Option<NaiveDate>,
-
-    /// End of date range (exclusive).
-    ///
-    /// If specified, only transaction with the date before `--end` is considered.
-    #[arg(long)]
-    end: Option<NaiveDate>,
-
-    /// If specified, sets the end date to `--today`.
-    ///
-    /// If this is specified with `--end`, it causes an error.
-    #[arg(long, default_value_t)]
-    current: bool,
-
-    /// Controls the account filter mode.
-    ///
-    /// By default, `regex` mode is used.
-    #[arg(long, value_enum, default_value_t)]
+    /// Transactions to report, with `--current` already turned into its end.
+    date_range: query::DateRange,
     account_filter: AccountFilterMode,
 }
 
@@ -661,34 +488,10 @@ enum AccountFilterMode {
 }
 
 impl EvalOptions {
-    fn validate(&self) -> Result<(), InvalidFlagError> {
-        if self.current && self.end.is_some() {
-            return Err(InvalidFlagError(
-                "--current and --end cannot be set simultaneously".to_string(),
-            ));
-        }
-        Ok(())
-    }
-
     fn to_process_options(&self) -> report::ProcessOptions {
         report::ProcessOptions {
             price_db_path: self.price_db.clone(),
         }
-    }
-
-    fn to_date_range(&self) -> anyhow::Result<query::DateRange> {
-        let end = if self.current {
-            let tomorrow = self.today.succ_opt().ok_or_else(|| {
-                anyhow::anyhow!("cannot compute one day after today {}", self.today)
-            })?;
-            Some(tomorrow)
-        } else {
-            self.end
-        };
-        Ok(query::DateRange {
-            start: self.start,
-            end,
-        })
     }
 
     fn conversion_strategy(&self) -> query::ConversionStrategy {
@@ -721,19 +524,15 @@ impl EvalOptions {
     /// Owned counterpart of [`Self::to_conversion`] for the UI, which
     /// re-resolves the query against every session's fresh context — and lets
     /// the user restate it from inside the TUI.
-    ///
-    /// `--current` is resolved here rather than carried along: it is shorthand
-    /// for an end date, and the form shows dates.
-    fn to_query_options(&self) -> anyhow::Result<ui::report::QueryOptions> {
-        let range = self.to_date_range()?;
-        Ok(ui::report::QueryOptions {
+    fn to_query_options(&self) -> ui::report::QueryOptions {
+        ui::report::QueryOptions {
             price_db: self.price_db.clone(),
             exchange: self.exchange.clone(),
             historical: self.historical,
             today: self.today,
-            start: range.start,
-            end: range.end,
-        })
+            start: self.date_range.start,
+            end: self.date_range.end,
+        }
     }
 
     fn create_account_filter<'ctx>(
@@ -750,64 +549,5 @@ impl EvalOptions {
                 Ok(query::AccountFilter::from_exact_accounts(ctx, accounts))
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn verify_command() {
-        use clap::CommandFactory;
-        Cli::command().debug_assert();
-    }
-
-    fn import_cmd(interactive: bool, ledger: bool, output: bool) -> ImportCmd {
-        ImportCmd {
-            rules: Some(PathBuf::from("rules.yml")),
-            config: None,
-            interactive,
-            ledger: ledger.then(|| PathBuf::from("root.ledger")),
-            output: output.then(|| PathBuf::from("out.ledger")),
-            source: PathBuf::from("source.csv"),
-        }
-    }
-
-    #[test]
-    fn import_validate_accepts_batch_mode() {
-        assert!(import_cmd(false, false, false).validate().is_ok());
-    }
-
-    #[test]
-    fn import_validate_accepts_interactive_with_all_flags() {
-        assert!(import_cmd(true, true, true).validate().is_ok());
-    }
-
-    #[test]
-    fn import_validate_accepts_deprecated_config() {
-        let cmd = ImportCmd {
-            rules: None,
-            config: Some(PathBuf::from("rules.yml")),
-            ..import_cmd(false, false, false)
-        };
-        assert!(cmd.validate().is_ok());
-    }
-
-    #[test]
-    fn import_validate_rejects_missing_rules() {
-        let cmd = ImportCmd {
-            rules: None,
-            ..import_cmd(false, false, false)
-        };
-        let err = cmd.validate().unwrap_err();
-        assert_eq!(err.to_string(), "invalid flag: --rules is required");
-    }
-
-    #[test]
-    fn import_validate_rejects_interactive_without_ledger_or_output() {
-        assert!(import_cmd(true, false, true).validate().is_err());
-        assert!(import_cmd(true, true, false).validate().is_err());
-        assert!(import_cmd(true, false, false).validate().is_err());
     }
 }
