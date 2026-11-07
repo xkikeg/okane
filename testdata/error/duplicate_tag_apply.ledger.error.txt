@@ -1,0 +1,8 @@
+error: duplicated tag: trip
+ --> okane/testdata/error/duplicate_tag_apply.ledger:5:1
+  |
+5 | / 2024/09/01 Train
+6 | |     ; trip: Osaka
+7 | |     Expenses:Travel                              100 CHF
+8 | |     Assets:Banks
+  | |_________________^ tag trip is already given by apply tag
