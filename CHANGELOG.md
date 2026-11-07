@@ -16,6 +16,10 @@
 
 ### Changed
 
+* Reports (`balance`, `register`, `ui`) now reject a transaction or posting that has the same tag
+  twice, such as `; :trip:` and `; trip: Kyoto`, or a transaction tag already given by an enclosing
+  `apply tag`. A posting may still carry a tag its transaction has; the posting's value is meant to
+  take precedence (https://github.com/xkikeg/okane/issues/619).
 * `okane import` now takes the import rules YAML with `--rules` / `-r`. The old `--config` / `-c`
   still works but prints a deprecation warning, and will be removed in a later release, freeing
   `--config` for the planned okane config file (https://github.com/xkikeg/okane/issues/611).

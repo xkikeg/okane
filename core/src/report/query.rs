@@ -239,6 +239,7 @@ impl<'ctx> Ledger<'ctx> {
                     date: txn.date,
                     payee: txn.payee,
                     clear_state: txn.clear_state,
+                    tags: txn.tags,
                     postings: postings.into_boxed_slice(),
                 }
             })

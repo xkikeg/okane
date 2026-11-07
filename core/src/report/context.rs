@@ -4,6 +4,7 @@ use crate::report::AccountAggregate;
 
 use super::account::{Account, AccountStore, AccountTree};
 use super::commodity::{CommodityStore, CommodityTag};
+use super::tag::{TagKey, TagStore};
 
 /// Context object extensively used across Ledger file evaluation.
 pub struct ReportContext<'ctx> {
@@ -11,6 +12,7 @@ pub struct ReportContext<'ctx> {
     pub(super) accounts: AccountStore<'ctx>,
     pub(super) account_tree: AccountTree<'ctx>,
     pub(super) commodities: CommodityStore<'ctx>,
+    pub(super) tags: TagStore<'ctx>,
 }
 
 impl<'ctx> ReportContext<'ctx> {
@@ -19,11 +21,13 @@ impl<'ctx> ReportContext<'ctx> {
         let accounts = AccountStore::new(arena);
         let account_tree = AccountTree::new(arena);
         let commodities = CommodityStore::new(arena);
+        let tags = TagStore::new(arena);
         Self {
             arena,
             accounts,
             account_tree,
             commodities,
+            tags,
         }
     }
 
@@ -60,6 +64,12 @@ impl<'ctx> ReportContext<'ctx> {
     #[inline]
     pub fn commodity(&self, value: &str) -> Option<CommodityTag<'ctx>> {
         self.commodities.resolve(value)
+    }
+
+    /// Returns the given tag key, or `None` if no transaction or posting has it.
+    #[inline]
+    pub fn tag_key(&self, value: &str) -> Option<TagKey<'ctx>> {
+        self.tags.resolve(value)
     }
 
     /// Returns [`CommodityStore`].
