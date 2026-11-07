@@ -11,7 +11,7 @@ use crate::parse::ParsedSpan;
 use crate::{
     report::eval::EvalError,
     syntax::{
-        self,
+        self, ClearState,
         decoration::AsUndecorated,
         tracked::{Tracked, TrackedSpan},
     },
@@ -200,6 +200,7 @@ pub fn add_transaction<'ctx>(
         postings.push(Posting {
             account,
             payee,
+            clear_state: effective_clear_state(txn.clear_state, posting.clear_state),
             amount: evaluated.amount.into(),
             converted_amount: evaluated.converted_amount,
         });
@@ -215,6 +216,8 @@ pub fn add_transaction<'ctx>(
     }
     Ok(Transaction {
         date: txn.date,
+        payee: txn_payee,
+        clear_state: txn.clear_state,
         postings: postings.into_boxed_slice(),
     })
 }
@@ -554,6 +557,15 @@ fn posting_lot_exchange<'a, 'ctx>(
 
 /// Returns the per-posting payee override (`; Payee: <name>` metadata), if any,
 /// interned into the report arena.
+/// Returns the clear state of a posting: its own state if marked,
+/// otherwise the state of the enclosing transaction.
+fn effective_clear_state(txn: ClearState, posting: ClearState) -> ClearState {
+    match posting {
+        ClearState::Uncleared => txn,
+        marked => marked,
+    }
+}
+
 fn posting_payee_override<'ctx>(
     ctx: &ReportContext<'ctx>,
     posting: &syntax::tracked::Posting,
@@ -717,22 +729,27 @@ mod tests {
             add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
 
         let want = Transaction {
+            payee: "Sample",
+            clear_state: ClearState::Uncleared,
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 1"),
                         payee: "Posting 1",
                         amount: Amount::from_value(ctx.commodities.ensure("JPY"), dec!(200)),
                         converted_amount: None,
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 2"),
                         payee: "Posting 2",
                         amount: Amount::from_value(ctx.commodities.ensure("JPY"), dec!(-100)),
                         converted_amount: None,
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 2"),
                         payee: "Posting 3",
                         amount: Amount::from_value(ctx.commodities.ensure("JPY"), dec!(-100)),
@@ -787,28 +804,34 @@ mod tests {
             add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
 
         let want = Transaction {
+            payee: "Sample",
+            clear_state: ClearState::Uncleared,
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 1"),
                         payee: "Posting 1",
                         amount: Amount::from_value(jpy, dec!(200)),
                         converted_amount: None,
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 2"),
                         payee: "Posting 2",
                         amount: Amount::from_value(jpy, dec!(100)),
                         converted_amount: None,
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 3"),
                         payee: "Posting 3",
                         amount: Amount::from_value(jpy, dec!(150)),
                         converted_amount: None,
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 4"),
                         payee: "Posting 4",
                         amount: Amount::from_value(jpy, dec!(-450)),
@@ -842,28 +865,34 @@ mod tests {
         let got =
             add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
         let want = Transaction {
+            payee: "Sample",
+            clear_state: ClearState::Uncleared,
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 1"),
                         payee: "Posting 1",
                         amount: Amount::from_value(jpy, dec!(1200)),
                         converted_amount: None,
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 2"),
                         payee: "Posting 2",
                         amount: Amount::from_value(eur, dec!(234)),
                         converted_amount: None,
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 3"),
                         payee: "Posting 3",
                         amount: Amount::from_value(chf, dec!(34.56)),
                         converted_amount: None,
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 4"),
                         payee: "Posting 4",
                         amount: Amount::from_iter([
@@ -947,16 +976,20 @@ mod tests {
         let okane = ctx.commodities.resolve("OKANE").unwrap();
         let jpy = ctx.commodities.resolve("JPY").unwrap();
         let want = Transaction {
+            payee: "Sample",
+            clear_state: ClearState::Uncleared,
             date,
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 1"),
                         payee: "Posting 1",
                         amount: Amount::from_value(okane, dec!(12)),
                         converted_amount: Some(SingleAmount::from_value(jpy, dec!(1200))),
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 2"),
                         payee: "Posting 2",
                         amount: Amount::from_value(jpy, dec!(-1200)),
@@ -1003,16 +1036,20 @@ mod tests {
             add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
 
         let want = Transaction {
+            payee: "Sample",
+            clear_state: ClearState::Uncleared,
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 1"),
                         payee: "Posting 1",
                         amount: Amount::from_value(okane, dec!(12)),
                         converted_amount: Some(SingleAmount::from_value(jpy, dec!(1200))),
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 2"),
                         payee: "Posting 2",
                         amount: Amount::from_value(jpy, dec!(-1200)),
@@ -1047,22 +1084,27 @@ mod tests {
         let okane = ctx.commodities.resolve("OKANE").unwrap();
         let jpy = ctx.commodities.resolve("JPY").unwrap();
         let want = Transaction {
+            payee: "Sample",
+            clear_state: ClearState::Uncleared,
             date,
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 1"),
                         payee: "Posting 1",
                         amount: Amount::from_value(okane, dec!(-12)),
                         converted_amount: Some(SingleAmount::from_value(jpy, dec!(-1440))),
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 2"),
                         payee: "Posting 2",
                         amount: Amount::from_value(jpy, dec!(1440)),
                         converted_amount: None,
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Income"),
                         payee: "Posting 3",
                         amount: Amount::from_value(jpy, dec!(-240)),
@@ -1111,16 +1153,20 @@ mod tests {
         let okane = ctx.commodities.resolve("OKANE").unwrap();
         let jpy = ctx.commodities.resolve("JPY").unwrap();
         let want = Transaction {
+            payee: "Sample",
+            clear_state: ClearState::Uncleared,
             date,
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 1"),
                         payee: "Posting 1",
                         amount: Amount::from_value(okane, dec!(-12)),
                         converted_amount: Some(SingleAmount::from_value(jpy, dec!(-1440))),
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 2"),
                         payee: "Posting 2",
                         amount: Amount::from_value(jpy, dec!(1000)),
@@ -1130,6 +1176,7 @@ mod tests {
                         )),
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 3"),
                         payee: "Posting 3",
                         amount: Amount::from_value(jpy, dec!(440)),
@@ -1184,34 +1231,41 @@ mod tests {
             add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
         let eur = ctx.commodities.resolve("EUR").unwrap();
         let want = Transaction {
+            payee: "Petrol Station",
+            clear_state: ClearState::Uncleared,
             date,
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Expenses:Travel:Petrol"),
                         payee: "Petrol Station",
                         amount: Amount::from_value(eur, dec!(30.33)),
                         converted_amount: Some(SingleAmount::from_value(chf, dec!(33.065766))),
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Expenses:Commissions"),
                         payee: "Bank",
                         amount: Amount::from_value(chf, dec!(1.50)),
                         converted_amount: None,
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Expenses:Commissions"),
                         payee: "Bank",
                         amount: Amount::from_value(eur, dec!(0.06)),
                         converted_amount: Some(SingleAmount::from_value(chf, dec!(0.065412))),
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Expenses:Commissions"),
                         payee: "Bank",
                         amount: Amount::from_value(chf, dec!(0.07)),
                         converted_amount: None,
                     },
                     Posting {
+                        clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Assets:Banks"),
                         payee: "Petrol Station",
                         amount: Amount::from_value(chf, dec!(-34.70)),

@@ -183,6 +183,7 @@ impl<'ctx> QueryState<'ctx> {
             account: AccountFilter::All,
             conversion: self.template.conversion,
             date_range: self.template.date_range,
+            filter: None,
         }
     }
 }
