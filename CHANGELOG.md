@@ -14,7 +14,9 @@
   `--filter 't.postings.exists(p, p.account.startsWith("Expenses:Travel"))'`. Use
   `date("2024-01-31")` to compare dates. `tags` is a `map<string, string>` of the transaction's
   tags (including `apply tag`) overlaid by the posting's own, so `--filter '"business" in tags'` or
-  `--filter 'tags[?"trip"].orValue("") == "kyoto"'` select by tag
+  `--filter 'tags[?"trip"].orValue("") == "kyoto"'` select by tag. `amount` is the posting amount,
+  comparable with `amount("100 JPY")`; amounts are only partially ordered, so ordering two amounts
+  that depend on exchange rates, such as `100 JPY` and `1 USD`, is an error
   (https://github.com/xkikeg/okane/issues/619).
 
 ### Changed
