@@ -1,0 +1,10 @@
+error: duplicated tag: snack
+ --> okane/testdata/error/duplicate_tag_posting.ledger:5:5
+  |
+3 | 2024/09/01 Shopping
+4 |     ; :daily:
+5 |     Expenses:Food                                100 CHF  ; :snack:
+  |     ^^^^^^^^^^^^^ tag snack appears more than once
+6 |     ; snack: chocolate
+7 |     Assets:Banks
+  |
