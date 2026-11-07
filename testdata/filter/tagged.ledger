@@ -1,0 +1,20 @@
+; Input for the CEL --filter tests on tags.
+
+apply tag trip: kyoto
+
+2026/01/01 * Train
+    Expenses:Travel                           120.00 CHF
+    Assets:Banks:Main
+
+2026/01/02 Hotel
+    ; :business:
+    Expenses:Travel                           300.00 CHF
+    Expenses:Food                              20.00 CHF  ; trip: osaka
+    Assets:Banks:Main
+
+end apply tag
+
+2026/01/10 * Grocery
+    ; :daily:
+    Expenses:Food                              45.00 CHF
+    Assets:Banks:Main

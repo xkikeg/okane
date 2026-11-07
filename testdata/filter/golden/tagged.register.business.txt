@@ -1,0 +1,2 @@
+2026-01-02 Hotel Expenses:Travel 300.00 CHF 300.00 CHF
+2026-01-02 Hotel Expenses:Food 20.00 CHF 320.00 CHF
