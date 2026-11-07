@@ -341,9 +341,10 @@ struct FilterArgs {
     /// Only include postings for which this CEL expression is true.
     ///
     /// Variables: `date`, `payee`, `state` ("cleared", "pending" or
-    /// "uncleared"), `account` and `tags` of the posting, and `transaction`
-    /// (alias `t`) with `date`, `payee`, `state`, `tags` and `postings`.
-    /// Each element of `postings` has `account`, `payee`, `state` and `tags`.
+    /// "uncleared"), `account`, `amount` and `tags` of the posting, and
+    /// `transaction` (alias `t`) with `date`, `payee`, `state`, `tags` and
+    /// `postings`. Each element of `postings` has `account`, `payee`,
+    /// `state`, `amount` and `tags`.
     ///
     /// `tags` is a `map<string, string>`: the transaction's tags (including
     /// `apply tag`) overlaid by the posting's own. A tag without value maps
@@ -352,9 +353,16 @@ struct FilterArgs {
     /// Use `date("YYYY-MM-DD")` to compare dates, and
     /// `tags[?"key"].orValue("")` to read a tag that may be missing.
     ///
+    /// `amount("100 JPY")` builds an amount to compare with. Ordering amounts
+    /// of different commodities is an error, so guard it with e.g.
+    /// `"JPY" in amount.commodities()`. Amounts also have `abs()` and
+    /// `isZero()`.
+    ///
     /// Example: `--filter 't.postings.exists(p, p.account.startsWith("Expenses:Travel"))'`
     ///
     /// Example: `--filter 'tags[?"trip"].orValue("") == "kyoto"'`
+    ///
+    /// Example: `--filter 'amount.abs() >= amount("1000 CHF")'`
     #[arg(long, value_name = "EXPR")]
     filter: Option<String>,
 }
