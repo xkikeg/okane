@@ -1,0 +1,2 @@
+2024-02-03 explicit posting Assets:Banks:あおによし -10000 JPY -10000 JPY
+2024-02-26 saving Assets:Banks:あおによし -10000 JPY -20000 JPY

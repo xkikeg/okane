@@ -153,6 +153,7 @@ fn query_balance(c: &mut Criterion) {
                     end: Some(end),
                 },
                 conversion: None,
+                filter: None,
             };
             group.bench_with_input(BenchmarkId::new(label, params), &params, |b, _params| {
                 b.iter_with_large_drop(|| {
@@ -181,6 +182,7 @@ fn query_balance(c: &mut Criterion) {
                 },
                 target: usd,
             }),
+            filter: None,
         };
         group.bench_with_input(
             BenchmarkId::new("conversion-up-to-date", params),
@@ -209,6 +211,7 @@ fn query_balance(c: &mut Criterion) {
                 strategy: report::query::ConversionStrategy::Historical,
                 target: chf,
             }),
+            filter: None,
         };
         group.bench_with_input(
             BenchmarkId::new("conversion-historical", params),
@@ -239,6 +242,7 @@ fn query_balance(c: &mut Criterion) {
                 strategy: report::query::ConversionStrategy::Historical,
                 target: chf,
             }),
+            filter: None,
         };
         group.bench_with_input(
             BenchmarkId::new("conversion-historical-pricedb", params),

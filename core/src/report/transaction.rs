@@ -1,5 +1,7 @@
 use chrono::NaiveDate;
 
+use crate::syntax::ClearState;
+
 use super::{
     account::Account,
     eval::{Amount, SingleAmount},
@@ -11,6 +13,10 @@ use super::{
 #[non_exhaustive]
 pub struct Transaction<'ctx> {
     pub date: NaiveDate,
+    /// Payee of the transaction.
+    pub payee: &'ctx str,
+    /// Clear state of the transaction itself.
+    pub clear_state: ClearState,
     // Posting in the transaction.
     // Note this MUST be a Box instead of &[Posting],
     // as Posting is a [Drop] and we can't skip calling Drop,
@@ -28,6 +34,10 @@ pub struct Posting<'ctx> {
     /// Payee of the posting. By default this is the enclosing transaction's
     /// payee; per-posting payee overrides via metadata are not implemented yet.
     pub payee: &'ctx str,
+
+    /// Clear state of the posting. A posting without its own mark takes
+    /// the state of the enclosing transaction.
+    pub clear_state: ClearState,
 
     /// Amount of the posting described in the Ledger.
     // Note this is not PostingAmount,

@@ -12,13 +12,14 @@ pub use args::Cli;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::Context as _;
 use bumpalo::Bump;
 use chrono::NaiveDate;
 
 use lender::FallibleLender;
-use okane_core::report::query;
+use okane_core::report::{PostingFilter, query};
 use okane_core::syntax::Separation;
 use okane_core::syntax::display::DisplayContext;
 use okane_core::syntax::plain::LedgerEntry;
@@ -333,6 +334,7 @@ impl TagsCmd {
 #[derive(Debug)]
 pub struct BalanceCmd {
     eval_options: EvalOptions,
+    filter: Option<Arc<PostingFilter>>,
     source: PathBuf,
     /// Account patterns to report; empty for every account.
     account: Vec<String>,
@@ -358,6 +360,7 @@ impl BalanceCmd {
             account,
             conversion: self.eval_options.to_conversion(&ctx)?,
             date_range: self.eval_options.date_range,
+            filter: self.filter,
         };
         for (account, amount) in ledger.balance(&ctx, &query)?.into_owned().into_vec() {
             writeln!(
@@ -417,6 +420,7 @@ impl From<SortKey> for query::Sort {
 #[derive(Debug)]
 pub struct RegisterCmd {
     eval_options: EvalOptions,
+    filter: Option<Arc<PostingFilter>>,
     sort: SortKey,
     source: PathBuf,
     /// Account patterns to report; empty for every account.
@@ -443,6 +447,7 @@ impl RegisterCmd {
             date_range: self.eval_options.date_range,
             conversion: self.eval_options.to_conversion(&ctx)?,
             sort: self.sort.into(),
+            filter: self.filter,
         };
         let mut entries = ledger.register_entries(&ctx, &query)?;
         while let Some(entry) = entries.next()? {
