@@ -243,3 +243,36 @@ fn register_cel_filter_invalid(
     let stderr = std::str::from_utf8(&result.get_output().stderr).unwrap();
     assert!(stderr.contains("--filter"), "stderr: {stderr}");
 }
+
+#[rstest]
+#[case::tag_value("trip_kyoto", r#"tags[?"trip"].orValue("") == "kyoto""#)]
+#[case::tag_presence(
+    "business",
+    r#""business" in t.tags && account.startsWith("Expenses:")"#
+)]
+#[case::other_posting_tag(
+    "bank_of_osaka_txn",
+    r#"account == "Assets:Banks:Main" && t.postings.exists(p, p.tags[?"trip"] == optional.of("osaka"))"#
+)]
+fn register_cel_filter_tags(#[case] name: &str, #[case] filter: &str) {
+    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../testdata/filter/tagged.ledger");
+    let golden_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!(
+        "../testdata/filter/golden/tagged.register.{name}.txt"
+    ));
+    let golden = okane_golden::Golden::new(golden_path).unwrap();
+
+    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+        .args([
+            "register".as_ref(),
+            input.as_os_str(),
+            OsStr::new("--filter"),
+            OsStr::new(filter),
+        ])
+        .assert()
+        .success();
+
+    let output = result.get_output();
+    std::io::stderr().write_all(&output.stderr).unwrap();
+    let stdout = std::str::from_utf8(&output.stdout).unwrap();
+    golden.assert(stdout);
+}

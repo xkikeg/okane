@@ -11,20 +11,34 @@
 //! | `payee` | `string` | Payee of the posting (`; Payee:` override, or the transaction payee). |
 //! | `state` | `string` | `"cleared"`, `"pending"` or `"uncleared"`. Falls back to the transaction state. |
 //! | `account` | `string` | Account of the posting. |
-//! | `transaction`, `t` | `map` | The enclosing transaction: `date`, `payee`, `state` and `postings`. |
+//! | `tags` | `map<string, string>` | Tags of the transaction, overlaid by the posting's own tags. |
+//! | `transaction`, `t` | `map` | The enclosing transaction: `date`, `payee`, `state`, `tags` and `postings`. |
 //!
-//! Each element of `transaction.postings` has `account`, `payee` and `state`.
+//! Each element of `transaction.postings` has `account`, `payee`, `state` and
+//! `tags`, the last overlaid the same way as the top-level `tags`.
+//! `transaction.tags` has the transaction's tags only, including `apply tag`.
+//!
+//! A tag without value, such as `:trip:`, maps to `""`, so `"trip" in tags`
+//! matches both `; :trip:` and `; trip: Kyoto`. Looking up a missing key is
+//! an error, so use `"trip" in tags && tags["trip"] == "Kyoto"`, or the
+//! optional syntax `tags[?"trip"].orValue("") == "Kyoto"`.
+//!
+//! Besides the CEL standard library, the strings extension (`lowerAscii()`,
+//! `split()`, ...) is available.
 //!
 //! The `date("2024-01-31")` function builds a value comparable to `date`.
 
 use std::{collections::HashMap, fmt, sync::Arc};
 
-use cel::{Context, ExecutionError, Program, Value};
+use cel::{Context, Env, ExecutionError, Program, Value, extensions};
 use chrono::{DateTime, FixedOffset, NaiveDate};
 
 use crate::syntax::ClearState;
 
-use super::transaction::{Posting, Transaction};
+use super::{
+    tag::TagSet,
+    transaction::{Posting, Transaction},
+};
 
 /// Error on compiling or evaluating a [`PostingFilter`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -58,8 +72,14 @@ impl fmt::Debug for PostingFilter {
 impl PostingFilter {
     /// Compiles the given CEL expression.
     pub fn new(source: &str) -> Result<Self, FilterError> {
-        let program = Program::compile(source).map_err(|e| FilterError::Parse(e.to_string()))?;
-        let mut root = Context::default();
+        let mut env = Env::stdlib();
+        env.add_extension(extensions::strings)
+            .expect("strings extension must not conflict with the standard library");
+        let env = Arc::new(env);
+        let program = env
+            .compile(source)
+            .map_err(|e| FilterError::Parse(e.to_string()))?;
+        let mut root = Context::with_env(env);
         root.add_function("date", parse_date)
             .expect("date() must not conflict with the standard library");
         Ok(Self {
@@ -82,6 +102,7 @@ impl PostingFilter {
         ctx.add_variable_from_value("payee", posting.payee.clone());
         ctx.add_variable_from_value("state", posting.state.clone());
         ctx.add_variable_from_value("account", posting.account.clone());
+        ctx.add_variable_from_value("tags", posting.tags.clone());
         ctx.add_variable_from_value("transaction", txn.value.clone());
         ctx.add_variable_from_value("t", txn.value.clone());
         match self.program.execute(&ctx) {
@@ -103,17 +124,25 @@ struct PostingValue {
     account: Value,
     payee: Value,
     state: Value,
+    /// Transaction tags overlaid by the posting tags.
+    tags: Value,
 }
 
 impl TxnValue {
     pub(super) fn new(txn: &Transaction<'_>) -> Self {
         let date = date_value(txn.date);
-        let postings: Vec<PostingValue> = txn.postings.iter().map(PostingValue::new).collect();
+        let txn_tags = tags_value(&[txn.tags]);
+        let postings: Vec<PostingValue> = txn
+            .postings
+            .iter()
+            .map(|p| PostingValue::new(txn, &txn_tags, p))
+            .collect();
         let posting_list: Vec<Value> = postings.iter().map(PostingValue::to_map).collect();
         let value = Value::from(HashMap::from([
             ("date", date.clone()),
             ("payee", Value::from(txn.payee)),
             ("state", state_value(txn.clear_state)),
+            ("tags", txn_tags),
             ("postings", Value::List(Arc::new(posting_list))),
         ]));
         Self {
@@ -125,11 +154,18 @@ impl TxnValue {
 }
 
 impl PostingValue {
-    fn new(posting: &Posting<'_>) -> Self {
+    fn new(txn: &Transaction<'_>, txn_tags: &Value, posting: &Posting<'_>) -> Self {
+        // Share the transaction's map when the posting adds nothing.
+        let tags = if posting.tags.is_empty() {
+            txn_tags.clone()
+        } else {
+            tags_value(&[txn.tags, posting.tags])
+        };
         Self {
             account: Value::from(posting.account.as_str()),
             payee: Value::from(posting.payee),
             state: state_value(posting.clear_state),
+            tags,
         }
     }
 
@@ -138,8 +174,20 @@ impl PostingValue {
             ("account", self.account.clone()),
             ("payee", self.payee.clone()),
             ("state", self.state.clone()),
+            ("tags", self.tags.clone()),
         ]))
     }
+}
+
+/// Builds `map<string, string>` out of the tag sets, later ones winning.
+fn tags_value(sets: &[TagSet<'_>]) -> Value {
+    let mut map: HashMap<&str, Value> = HashMap::new();
+    for set in sets {
+        for entry in set.iter() {
+            map.insert(entry.key.as_str(), Value::from(entry.value.unwrap_or("")));
+        }
+    }
+    Value::from(map)
 }
 
 fn date_value(date: NaiveDate) -> Value {
@@ -286,6 +334,26 @@ mod tests {
     }
 
     #[test]
+    fn filter_with_strings_extension() {
+        assert_eq!(
+            eval_all(
+                INPUT,
+                r#"payee.lowerAscii() == "grocery" && account == "Assets:Bank""#
+            )
+            .unwrap(),
+            vec![pair("Grocery", "Assets:Bank")]
+        );
+    }
+
+    #[test]
+    fn missing_tag_is_error() {
+        assert!(matches!(
+            eval_all(TAGGED, r#"tags["trip"] == "Kyoto""#),
+            Err(FilterError::Eval(_))
+        ));
+    }
+
+    #[test]
     fn filter_by_account() {
         assert_eq!(
             eval_all(INPUT, r#"account.startsWith("Expenses:")"#).unwrap(),
@@ -305,6 +373,73 @@ mod tests {
             )
             .unwrap(),
             vec![pair("Grocery", "Assets:Bank")]
+        );
+    }
+
+    const TAGGED: &str = indoc! {"
+        apply tag trip: Kyoto
+
+        2024/04/01 Hotel
+            ; :business:
+            Expenses:Travel           100 CHF  ; trip: Osaka
+            Expenses:Food              20 CHF  ; :snack:
+            Assets:Bank
+
+        end apply tag
+
+        2024/04/05 Home
+            Expenses:Food              30 CHF
+            Assets:Bank
+    "};
+
+    #[test]
+    fn filter_by_tag_presence() {
+        // `:business:` is on the transaction, so every posting sees it.
+        assert_eq!(
+            eval_all(TAGGED, r#""business" in tags"#).unwrap(),
+            vec![
+                pair("Hotel", "Expenses:Travel"),
+                pair("Hotel", "Expenses:Food"),
+                pair("Hotel", "Assets:Bank"),
+            ]
+        );
+        assert_eq!(
+            eval_all(TAGGED, r#""snack" in tags"#).unwrap(),
+            vec![pair("Hotel", "Expenses:Food")]
+        );
+    }
+
+    #[test]
+    fn filter_by_tag_value_overlaid_by_posting() {
+        // apply tag gives trip: Kyoto; the travel posting overrides it.
+        assert_eq!(
+            eval_all(TAGGED, r#"tags[?"trip"].orValue("") == "Kyoto""#).unwrap(),
+            vec![pair("Hotel", "Expenses:Food"), pair("Hotel", "Assets:Bank")]
+        );
+        assert_eq!(
+            eval_all(TAGGED, r#""trip" in tags && tags["trip"] == "Osaka""#).unwrap(),
+            vec![pair("Hotel", "Expenses:Travel")]
+        );
+    }
+
+    #[test]
+    fn filter_by_transaction_tags() {
+        // transaction.tags is not overlaid.
+        assert_eq!(
+            eval_all(
+                TAGGED,
+                r#"account == "Assets:Bank" && t.tags[?"trip"] == optional.of("Kyoto")"#
+            )
+            .unwrap(),
+            vec![pair("Hotel", "Assets:Bank")]
+        );
+        assert_eq!(
+            eval_all(
+                TAGGED,
+                r#"account == "Assets:Bank" && t.postings.exists(p, "snack" in p.tags)"#
+            )
+            .unwrap(),
+            vec![pair("Hotel", "Assets:Bank")]
         );
     }
 

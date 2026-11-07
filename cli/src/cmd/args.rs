@@ -341,12 +341,20 @@ struct FilterArgs {
     /// Only include postings for which this CEL expression is true.
     ///
     /// Variables: `date`, `payee`, `state` ("cleared", "pending" or
-    /// "uncleared") and `account` of the posting, and `transaction` (alias
-    /// `t`) with `date`, `payee`, `state` and `postings`. Each element of
-    /// `postings` has `account`, `payee` and `state`.
-    /// Use `date("YYYY-MM-DD")` to compare dates.
+    /// "uncleared"), `account` and `tags` of the posting, and `transaction`
+    /// (alias `t`) with `date`, `payee`, `state`, `tags` and `postings`.
+    /// Each element of `postings` has `account`, `payee`, `state` and `tags`.
+    ///
+    /// `tags` is a `map<string, string>`: the transaction's tags (including
+    /// `apply tag`) overlaid by the posting's own. A tag without value maps
+    /// to "". `transaction.tags` has the transaction's tags only.
+    ///
+    /// Use `date("YYYY-MM-DD")` to compare dates, and
+    /// `tags[?"key"].orValue("")` to read a tag that may be missing.
     ///
     /// Example: `--filter 't.postings.exists(p, p.account.startsWith("Expenses:Travel"))'`
+    ///
+    /// Example: `--filter 'tags[?"trip"].orValue("") == "kyoto"'`
     #[arg(long, value_name = "EXPR")]
     filter: Option<String>,
 }
