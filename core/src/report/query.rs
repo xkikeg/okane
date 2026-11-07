@@ -1,6 +1,6 @@
 //! Provides query of transactions / balances on the processed [Ledger] instance.
 
-use std::{borrow::Cow, collections::HashSet};
+use std::{borrow::Cow, collections::HashSet, sync::Arc};
 
 use bumpalo::collections as bcc;
 use chrono::NaiveDate;
@@ -18,6 +18,7 @@ use super::{
     commodity::OwnedCommodity,
     context::ReportContext,
     eval::{Amount, EvalError, Evaluable},
+    filter::{FilterError, PostingFilter, TxnValue},
     price_db::{self, ConversionError, PriceRepository},
     transaction::{Posting, Transaction},
 };
@@ -50,6 +51,8 @@ pub enum QueryError {
     ParseFailed(#[from] parse::ParseError),
     #[error("failed to evaluate the expr")]
     EvalFailed(#[from] OwnedEvalError),
+    #[error("failed to apply the filter")]
+    FilterFailed(#[from] FilterError),
     #[error("commodity {0} not found")]
     CommodityNotFound(OwnedCommodity),
     #[error("cannot convert amount: {0}")]
@@ -85,6 +88,8 @@ pub struct RegisterQuery<'ctx> {
     pub conversion: Option<Conversion<'ctx>>,
     /// Order in which the matching postings are yielded.
     pub sort: Sort,
+    /// Optional CEL filter; only postings it accepts are yielded.
+    pub filter: Option<Arc<PostingFilter>>,
 }
 
 /// A row of the register report.
@@ -167,11 +172,13 @@ pub struct BalanceQuery<'ctx> {
     pub account: AccountFilter<'ctx>,
     pub conversion: Option<Conversion<'ctx>>,
     pub date_range: DateRange,
+    /// Optional CEL filter; only postings it accepts are summed up.
+    pub filter: Option<Arc<PostingFilter>>,
 }
 
 impl BalanceQuery<'_> {
     fn require_recompute(&self) -> bool {
-        if !self.date_range.is_bypass() {
+        if !self.date_range.is_bypass() || self.filter.is_some() {
             return true;
         }
         if matches!(&self.conversion, Some(conv) if conv.strategy == ConversionStrategy::Historical)
@@ -230,6 +237,8 @@ impl<'ctx> Ledger<'ctx> {
                 }
                 Transaction {
                     date: txn.date,
+                    payee: txn.payee,
+                    clear_state: txn.clear_state,
                     postings: postings.into_boxed_slice(),
                 }
             })
@@ -294,8 +303,11 @@ impl<'ctx> Ledger<'ctx> {
         Ok(RegisterEntries {
             ctx,
             txns,
-            current: [].iter(),
+            current_txn: None,
+            current: [].iter().enumerate(),
             account_filter,
+            filter: query.filter.clone(),
+            txn_value: None,
             date_range: query.date_range,
             conversion,
             price_repos: &mut self.price_repos,
@@ -337,6 +349,7 @@ impl<'ctx> Ledger<'ctx> {
                 &mut self.price_repos,
                 txns,
                 query.conversion,
+                query.filter.as_deref(),
             )?)
         };
         let balance = match query.conversion {
@@ -481,8 +494,12 @@ impl<'a, 'ctx> Iterator for TxnIter<'a, 'ctx> {
 pub struct RegisterEntries<'a, 'ctx> {
     ctx: &'a ReportContext<'ctx>,
     txns: TxnIter<'a, 'ctx>,
-    current: std::slice::Iter<'a, Posting<'ctx>>,
+    current_txn: Option<&'a Transaction<'ctx>>,
+    current: std::iter::Enumerate<std::slice::Iter<'a, Posting<'ctx>>>,
     account_filter: AccountFilter<'ctx>,
+    filter: Option<Arc<PostingFilter>>,
+    /// CEL values of `current_txn`, built on the first posting the filter sees.
+    txn_value: Option<TxnValue>,
     date_range: DateRange,
     conversion: Option<Conversion<'ctx>>,
     price_repos: &'a mut PriceRepository<'ctx>,
@@ -495,20 +512,31 @@ pub struct RegisterEntries<'a, 'ctx> {
 }
 
 impl<'a, 'ctx> RegisterEntries<'a, 'ctx> {
-    fn advance_to_next_posting(&mut self) -> Option<&'a Posting<'ctx>> {
+    fn advance_to_next_posting(&mut self) -> Result<Option<&'a Posting<'ctx>>, QueryError> {
         loop {
-            if let Some(posting) = self.current.next() {
-                if self.account_filter.is_match(&posting.account) {
-                    return Some(posting);
+            if let Some((i, posting)) = self.current.next() {
+                if !self.account_filter.is_match(&posting.account) {
+                    continue;
                 }
-                continue;
+                if let Some(filter) = &self.filter {
+                    let txn = self.current_txn.expect("current_txn set with current");
+                    let txn_value = self.txn_value.get_or_insert_with(|| TxnValue::new(txn));
+                    if !filter.matches(txn_value, i)? {
+                        continue;
+                    }
+                }
+                return Ok(Some(posting));
             }
-            let txn = self.txns.next()?;
+            let Some(txn) = self.txns.next() else {
+                return Ok(None);
+            };
             if !self.date_range.contains(txn.date) {
                 continue;
             }
             self.current_date = txn.date;
-            self.current = txn.postings.iter();
+            self.current_txn = Some(txn);
+            self.current = txn.postings.iter().enumerate();
+            self.txn_value = None;
         }
     }
 }
@@ -523,7 +551,7 @@ impl<'a, 'ctx> FallibleLender for RegisterEntries<'a, 'ctx> {
     check_covariance_fallible!();
 
     fn next(&mut self) -> Result<Option<lender::FallibleLend<'_, Self>>, Self::Error> {
-        let Some(posting) = self.advance_to_next_posting() else {
+        let Some(posting) = self.advance_to_next_posting()? else {
             return Ok(None);
         };
         self.current_amount = match self.conversion {
@@ -584,10 +612,17 @@ fn compute_balance<'a, 'ctx>(
     price_repos: &mut PriceRepository<'ctx>,
     txns: TxnIter<'a, 'ctx>,
     conversion: Option<Conversion<'ctx>>,
+    filter: Option<&PostingFilter>,
 ) -> Result<Balance<'ctx>, QueryError> {
     let mut bal = Balance::default();
     for txn in txns {
-        for posting in txn.postings.iter() {
+        let txn_value = filter.map(|_| TxnValue::new(txn));
+        for (i, posting) in txn.postings.iter().enumerate() {
+            if let (Some(filter), Some(txn_value)) = (filter, &txn_value)
+                && !filter.matches(txn_value, i)?
+            {
+                continue;
+            }
             let delta = match conversion {
                 Some(Conversion {
                     strategy: ConversionStrategy::Historical,
@@ -873,6 +908,7 @@ mod tests {
                         target: jpy,
                     }),
                     date_range: DateRange::default(),
+                    filter: None,
                 },
             )
             .unwrap();
@@ -961,6 +997,7 @@ mod tests {
                         target: jpy,
                     }),
                     date_range: DateRange::default(),
+                    filter: None,
                 },
             )
             .unwrap();
@@ -1041,6 +1078,7 @@ mod tests {
                         start: Some(NaiveDate::from_ymd_opt(2024, 1, 5).unwrap()),
                         end: Some(NaiveDate::from_ymd_opt(2024, 1, 9).unwrap()),
                     },
+                    filter: None,
                 },
             )
             .unwrap();
@@ -1053,6 +1091,46 @@ mod tests {
             (
                 ctx.account("Expenses:Grocery").unwrap(),
                 Amount::from_value(chf, dec!(100.00)),
+            ),
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(want.into_vec(), got.into_owned().into_vec());
+    }
+
+    #[test]
+    fn balance_cel_filter() {
+        let arena = Bump::new();
+        let (ctx, mut ledger) = create_ledger(&arena);
+        let jpy = ctx.commodities.resolve("JPY").unwrap();
+
+        let filter = PostingFilter::new(
+            r#"date.getFullYear() == 2025 || payee == "Ramen" && account.startsWith("Expenses:")"#,
+        )
+        .unwrap();
+        let got = ledger
+            .balance(
+                &ctx,
+                &BalanceQuery {
+                    filter: Some(Arc::new(filter)),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let want: Balance = [
+            (
+                ctx.account("Expenses:Food Fight").unwrap(),
+                Amount::from_value(jpy, dec!(1000)),
+            ),
+            (
+                ctx.account("Assets:J 銀行:普通").unwrap(),
+                Amount::from_value(jpy, dec!(-1000)),
+            ),
+            (
+                ctx.account("Expenses:Food:Ramen").unwrap(),
+                Amount::from_value(jpy, dec!(650)),
             ),
         ]
         .into_iter()
@@ -1076,6 +1154,7 @@ mod tests {
                     account: AccountFilter::from_regex_patterns(&ctx, &["^Assets"]).unwrap(),
                     conversion: None,
                     date_range: DateRange::default(),
+                    filter: None,
                 },
             )
             .unwrap()
@@ -1160,6 +1239,7 @@ mod tests {
                         date_range: DateRange::default(),
                         conversion: None,
                         sort: Sort::Original,
+                        filter: None,
                     },
                 )
                 .unwrap(),
@@ -1220,6 +1300,7 @@ mod tests {
                         },
                         conversion: None,
                         sort: Sort::Original,
+                        filter: None,
                     },
                 )
                 .unwrap(),
@@ -1249,6 +1330,69 @@ mod tests {
     }
 
     #[test]
+    fn register_entries_cel_filter() {
+        let arena = Bump::new();
+        let (ctx, mut ledger) = create_ledger(&arena);
+        let chf = ctx.commodities.resolve("CHF").unwrap();
+
+        let bank = ctx.account("Assets:CH Bank").unwrap();
+        // CH Bank postings of transactions that also have a food expense.
+        let filter = PostingFilter::new(
+            r#"account == "Assets:CH Bank" && t.postings.exists(p, p.account.startsWith("Expenses:Food:") || p.account == "Expenses:Food")"#,
+        )
+        .unwrap();
+        let got = collect_register(
+            ledger
+                .register_entries(
+                    &ctx,
+                    &RegisterQuery {
+                        filter: Some(Arc::new(filter)),
+                        ..Default::default()
+                    },
+                )
+                .unwrap(),
+        )
+        .unwrap();
+
+        let want = vec![
+            (
+                NaiveDate::from_ymd_opt(2024, 1, 20).unwrap(),
+                "Restaurant".to_string(),
+                bank,
+                Amount::from_value(chf, dec!(-141.96)),
+                Amount::from_value(chf, dec!(-141.96)),
+            ),
+            (
+                NaiveDate::from_ymd_opt(2026, 1, 30).unwrap(),
+                "Ramen".to_string(),
+                bank,
+                Amount::from_value(chf, dec!(-3.25)),
+                Amount::from_value(chf, dec!(-145.21)),
+            ),
+        ];
+        assert_eq!(want, got);
+    }
+
+    #[test]
+    fn register_entries_cel_filter_error() {
+        let arena = Bump::new();
+        let (ctx, mut ledger) = create_ledger(&arena);
+        let filter = PostingFilter::new("payee").unwrap();
+        let got = collect_register(
+            ledger
+                .register_entries(
+                    &ctx,
+                    &RegisterQuery {
+                        filter: Some(Arc::new(filter)),
+                        ..Default::default()
+                    },
+                )
+                .unwrap(),
+        );
+        assert_matches!(got, Err(QueryError::FilterFailed(FilterError::NotBool(_))));
+    }
+
+    #[test]
     fn register_entries_unknown_account_is_empty() {
         let arena = Bump::new();
         let (ctx, mut ledger) = create_ledger(&arena);
@@ -1262,6 +1406,7 @@ mod tests {
                         date_range: DateRange::default(),
                         conversion: None,
                         sort: Sort::Original,
+                        filter: None,
                     },
                 )
                 .unwrap(),
@@ -1296,6 +1441,7 @@ mod tests {
                             target: jpy,
                         }),
                         sort: Sort::Original,
+                        filter: None,
                     },
                 )
                 .unwrap(),
@@ -1341,6 +1487,7 @@ mod tests {
                         target: jpy,
                     }),
                     sort: Sort::Original,
+                    filter: None,
                 },
             )
             .err()

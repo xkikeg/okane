@@ -8,6 +8,11 @@
   (then `n` / `N`) and `C-s` / `C-r` match the payee or the date as shown, so `/2024-03` jumps to
   March. The register remembers its own last pattern for `C-s` / `C-r`, separately from the balance
   screen's (https://github.com/xkikeg/okane/issues/608).
+* `balance` and `register` take `--filter EXPR`, a [CEL](https://cel.dev/) expression evaluated per
+  posting; only postings it accepts are reported. The expression sees the posting's `date`, `payee`,
+  `state` and `account`, and the enclosing `transaction` (alias `t`) with its `postings`, e.g.
+  `--filter 't.postings.exists(p, p.account.startsWith("Expenses:Travel"))'`. Use
+  `date("2024-01-31")` to compare dates (https://github.com/xkikeg/okane/issues/619).
 
 ### Changed
 

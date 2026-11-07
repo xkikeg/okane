@@ -185,3 +185,61 @@ fn register_in_usd_historical(
     let stdout = std::str::from_utf8(&output.stdout).unwrap();
     golden.assert(stdout);
 }
+
+#[rstest]
+fn register_cel_filter(
+    #[base_dir = "../testdata/report"]
+    #[files("single_commodity.ledger")]
+    input: PathBuf,
+) {
+    let mut golden_path = input.clone();
+    let filename = golden_path.file_name().unwrap().to_owned();
+    assert!(golden_path.pop());
+    golden_path.push("golden");
+    golden_path.push(filename);
+    assert!(
+        golden_path.set_extension("golden.register.cel_filter.txt"),
+        "failed to set extension .ledger to input {}",
+        input.display()
+    );
+    log::info!("golden_path: {}", golden_path.display());
+    let golden = okane_golden::Golden::new(golden_path).unwrap();
+
+    // Bank postings of the cleared transactions that also touch an expense.
+    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+        .args([
+            "register".as_ref(),
+            input.as_os_str(),
+            OsStr::new("--filter"),
+            OsStr::new(
+                r#"account.startsWith("Assets:Banks:") && t.state == "cleared" && t.postings.exists(p, p.account.startsWith("Expenses:"))"#,
+            ),
+        ])
+        .assert()
+        .success();
+
+    let output = result.get_output();
+    std::io::stderr().write_all(&output.stderr).unwrap();
+    let stdout = std::str::from_utf8(&output.stdout).unwrap();
+    golden.assert(stdout);
+}
+
+#[rstest]
+fn register_cel_filter_invalid(
+    #[base_dir = "../testdata/report"]
+    #[files("single_commodity.ledger")]
+    input: PathBuf,
+) {
+    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+        .args([
+            "register".as_ref(),
+            input.as_os_str(),
+            OsStr::new("--filter"),
+            OsStr::new("payee =="),
+        ])
+        .assert()
+        .failure();
+
+    let stderr = std::str::from_utf8(&result.get_output().stderr).unwrap();
+    assert!(stderr.contains("--filter"), "stderr: {stderr}");
+}
