@@ -1,0 +1,7 @@
+; A posting must not have the same tag twice.
+
+2024/09/01 Shopping
+    ; :daily:
+    Expenses:Food                                100 CHF  ; :snack:
+    ; snack: chocolate
+    Assets:Banks

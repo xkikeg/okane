@@ -9,6 +9,7 @@ use super::context::ReportContext;
 use super::error::{self, ReportError};
 use super::price_db::PriceRepositoryBuilder;
 use super::query::Ledger;
+use super::tag::TagEntry;
 use super::transaction::Transaction;
 
 /// Options to control process behavior.
@@ -63,6 +64,8 @@ struct ProcessAccumulator<'ctx> {
     balance: Balance<'ctx>,
     txns: Vec<Transaction<'ctx>>,
     price_repos: PriceRepositoryBuilder<'ctx>,
+    /// Stack of tags from the `apply tag` directives in effect.
+    applied_tags: Vec<TagEntry<'ctx>>,
 }
 
 impl<'ctx> ProcessAccumulator<'ctx> {
@@ -71,6 +74,7 @@ impl<'ctx> ProcessAccumulator<'ctx> {
             balance: Balance::default(),
             txns: Vec::new(),
             price_repos: PriceRepositoryBuilder::default(),
+            applied_tags: Vec::new(),
         }
     }
 
@@ -85,10 +89,24 @@ impl<'ctx> ProcessAccumulator<'ctx> {
                     ctx,
                     &mut self.price_repos,
                     &mut self.balance,
+                    &self.applied_tags,
                     txn,
                 )?);
                 Ok(())
             }
+            syntax::LedgerStatement::ApplyTag(apply) => {
+                self.applied_tags.push(book_keeping::tag_entry(
+                    ctx,
+                    &apply.key,
+                    apply.value.as_ref(),
+                ));
+                Ok(())
+            }
+            syntax::LedgerStatement::EndApplyTag => self
+                .applied_tags
+                .pop()
+                .map(|_| ())
+                .ok_or(BookKeepError::UnmatchedEndApplyTag),
             syntax::LedgerStatement::Account(account) => process_account(ctx, account),
             syntax::LedgerStatement::Commodity(commodity) => process_commodity(ctx, commodity),
             _ => Ok(()),
@@ -142,7 +160,41 @@ mod tests {
     use assert_matches::assert_matches;
     use bumpalo::Bump;
 
+    use std::path::PathBuf;
+
+    use indoc::indoc;
+    use maplit::hashmap;
+    use pretty_assertions::assert_eq;
+
     use super::super::account::{AccountAggregate, AccountTreeKey};
+
+    fn process_str<'ctx>(
+        ctx: &mut ReportContext<'ctx>,
+        input: &str,
+    ) -> Result<Ledger<'ctx>, ReportError> {
+        let path = PathBuf::from("path/to/file.ledger");
+        let fake = hashmap! { path.clone() => input.as_bytes().to_vec() };
+        let loader: load::Loader<load::FakeFileSystem> = load::Loader::new(path, fake.into());
+        process(ctx, loader, &ProcessOptions::default())
+    }
+
+    /// Returns `key` or `key=value` of each tag, sorted by key.
+    fn tag_strs(tags: &super::super::TagSet<'_>) -> Vec<String> {
+        tags.iter()
+            .map(|e| match e.value {
+                None => e.key.as_str().to_string(),
+                Some(v) => format!("{}={}", e.key.as_str(), v),
+            })
+            .collect()
+    }
+
+    fn is_duplicate_tag(err: &ReportError, want_key: &str, on_posting: bool) -> bool {
+        matches!(
+            err,
+            ReportError::BookKeep(BookKeepError::DuplicateTag { key, posting, .. }, _)
+                if key == want_key && posting.is_some() == on_posting
+        )
+    }
 
     #[test]
     fn process_constructs_account_tree() {
@@ -170,6 +222,147 @@ mod tests {
         assert_eq!(
             Some(AccountTreeKey::Descendant(parent)),
             ctx.account_tree.parent(child1)
+        );
+    }
+
+    #[test]
+    fn process_collects_transaction_and_posting_tags() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let input = indoc! {"
+            2024/01/01 Shop
+                ; :food:daily:
+                ; trip: Kyoto
+                Expenses:Food       10 CHF  ; :snack:
+                Assets:Bank         ; Payee: ATM
+        "};
+        let ledger = process_str(&mut ctx, input).unwrap();
+        let txn = ledger.transactions().next().unwrap();
+        assert_eq!(vec!["daily", "food", "trip=Kyoto"], tag_strs(&txn.tags));
+        assert_eq!(vec!["snack"], tag_strs(&txn.postings[0].tags));
+        assert_eq!(vec!["Payee=ATM"], tag_strs(&txn.postings[1].tags));
+    }
+
+    #[test]
+    fn process_applies_nested_apply_tags() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let input = indoc! {"
+            apply tag trip: Kyoto
+
+            2024/01/01 Train
+                Expenses:Travel     10 CHF
+                Assets:Bank
+
+            apply tag business
+
+            2024/01/02 Hotel
+                ; :hotel:
+                Expenses:Travel     20 CHF
+                Assets:Bank
+
+            end apply tag
+
+            2024/01/03 Dinner
+                Expenses:Food       30 CHF
+                Assets:Bank
+
+            end apply tag
+
+            2024/01/04 Home
+                Expenses:Food       40 CHF
+                Assets:Bank
+        "};
+        let ledger = process_str(&mut ctx, input).unwrap();
+        let got: Vec<Vec<String>> = ledger.transactions().map(|t| tag_strs(&t.tags)).collect();
+        assert_eq!(
+            vec![
+                vec!["trip=Kyoto".to_string()],
+                vec![
+                    "business".to_string(),
+                    "hotel".to_string(),
+                    "trip=Kyoto".to_string()
+                ],
+                vec!["trip=Kyoto".to_string()],
+                vec![],
+            ],
+            got
+        );
+        // apply tag goes to the transaction, not to its postings.
+        let first = ledger.transactions().next().unwrap();
+        assert!(first.postings.iter().all(|p| p.tags.is_empty()));
+    }
+
+    #[test]
+    fn process_allows_posting_tag_overriding_transaction_tag() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let input = indoc! {"
+            2024/01/01 Shop
+                ; trip: Kyoto
+                Expenses:Food       10 CHF  ; trip: Osaka
+                Assets:Bank
+        "};
+        let ledger = process_str(&mut ctx, input).unwrap();
+        let txn = ledger.transactions().next().unwrap();
+        assert_eq!(vec!["trip=Kyoto"], tag_strs(&txn.tags));
+        assert_eq!(vec!["trip=Osaka"], tag_strs(&txn.postings[0].tags));
+    }
+
+    #[test]
+    fn process_rejects_duplicate_transaction_tag() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let input = indoc! {"
+            2024/01/01 Shop
+                ; :trip:
+                ; trip: Kyoto
+                Expenses:Food       10 CHF
+                Assets:Bank
+        "};
+        let err = process_str(&mut ctx, input).unwrap_err();
+        assert!(is_duplicate_tag(&err, "trip", false), "{err:?}");
+    }
+
+    #[test]
+    fn process_rejects_duplicate_posting_tag() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let input = indoc! {"
+            2024/01/01 Shop
+                Expenses:Food       10 CHF  ; :snack:snack:
+                Assets:Bank
+        "};
+        let err = process_str(&mut ctx, input).unwrap_err();
+        assert!(is_duplicate_tag(&err, "snack", true), "{err:?}");
+    }
+
+    #[test]
+    fn process_rejects_transaction_tag_duplicating_apply_tag() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let input = indoc! {"
+            apply tag trip: Kyoto
+
+            2024/01/01 Shop
+                ; trip: Osaka
+                Expenses:Food       10 CHF
+                Assets:Bank
+
+            end apply tag
+        "};
+        let err = process_str(&mut ctx, input).unwrap_err();
+        assert!(is_duplicate_tag(&err, "trip", false), "{err:?}");
+    }
+
+    #[test]
+    fn process_rejects_unmatched_end_apply_tag() {
+        let arena = Bump::new();
+        let mut ctx = ReportContext::new(&arena);
+        let err = process_str(&mut ctx, "end apply tag\n").unwrap_err();
+        assert_matches!(
+            err,
+            ReportError::BookKeep(BookKeepError::UnmatchedEndApplyTag, _)
         );
     }
 }
