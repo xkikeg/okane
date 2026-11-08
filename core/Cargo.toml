@@ -42,6 +42,10 @@ pretty_assertions.workspace = true
 rstest.workspace = true
 rust_decimal_macros.workspace = true
 
+# Gungraun runs on Valgrind, which only supports Linux among our CI targets.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+gungraun = "0.20.0"
+
 [[bench]]
 name = "report_bench"
 harness = false
@@ -49,3 +53,10 @@ harness = false
 [[bench]]
 name = "decimal_bench"
 harness = false
+
+# Needs Valgrind and gungraun-runner, so plain `cargo bench` skips it.
+# Run with `cargo bench --bench report_gungraun`.
+[[bench]]
+name = "report_gungraun"
+harness = false
+bench = false

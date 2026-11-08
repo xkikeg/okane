@@ -1,0 +1,126 @@
+name: Gungraun bench
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# Instruction counts from Valgrind (Callgrind), which shouldn't depend on the
+# runner's CPU, unlike the wall-time benches in ci.yml. This job only reports
+# for now: we run it alongside the wall-time benches to see how noisy it is
+# before deciding whether PRs should fail on it.
+#
+# PRs get two comparisons in the job summary: gungraun's own against the base
+# commit run on the same runner, and github-action-benchmark's against the
+# latest main result on gh-pages (dev/gungraun), which ran on another runner.
+jobs:
+  gungraun:
+    name: Run gungraun bench
+    runs-on: ubuntu-latest
+    permissions:
+      # Push results to the gh-pages branch on main.
+      contents: write
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      # Keep results of the base and the PR runs in one place, even though
+      # the base run builds from another directory.
+      GUNGRAUN_HOME: ${{ github.workspace }}/target/gungraun
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # On PRs HEAD is the merge commit and HEAD^1 is the base branch.
+          fetch-depth: 2
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1.94.1
+        with:
+          toolchain: stable
+          target: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Discard restored gungraun results
+        # Only this run's summary.json files must be converted below.
+        run: rm -rf target/gungraun
+      - name: Install valgrind
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y valgrind
+      - name: Find gungraun version
+        id: gungraun
+        # gungraun-runner must have the same version as the gungraun crate.
+        run: |
+          version=$(cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "gungraun") | .version')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Install gungraun-runner
+        uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
+        with:
+          tool: gungraun-runner@${{ steps.gungraun.outputs.version }}
+      - name: Run gungraun bench on base commit
+        id: base
+        if: github.event_name == 'pull_request'
+        # The base commit may not have this bench yet, or may use another
+        # gungraun version than the installed runner. Then there is simply
+        # nothing to compare against.
+        continue-on-error: true
+        run: |
+          git worktree add "$RUNNER_TEMP/base" HEAD^1
+          cd "$RUNNER_TEMP/base"
+          test -f core/benches/report_gungraun.rs
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" \
+            cargo bench -p okane-core --bench report_gungraun -- --save-baseline=base
+      - name: Run gungraun bench
+        shell: bash
+        run: |
+          args=(--save-summary=pretty-json)
+          if [[ "${{ steps.base.outcome }}" == "success" ]]; then
+            args+=(--baseline=base)
+          fi
+          # Plain text for the job summary.
+          GUNGRAUN_COLOR=never cargo bench -p okane-core --bench report_gungraun -- "${args[@]}" | tee gungraun.txt
+          {
+            echo '## Gungraun bench'
+            if [[ "${{ steps.base.outcome }}" == "success" ]]; then
+              echo "Compared against base commit $(git rev-parse --short HEAD^1) on the same runner."
+            else
+              echo 'No comparison against the base commit.'
+            fi
+            echo '```text'
+            cat gungraun.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Convert gungraun summaries for github-action-benchmark
+        run: |
+          find target/gungraun -name summary.json -print0 \
+            | xargs -0 jq -s '[.[] | {
+                name: "\(.group)::\(.function_name)/\(.id)",
+                unit: "instructions",
+                value: .profiles[0].data.total.metrics.Ir.values.new
+              }] | sort_by(.name)' > gungraun-bench.json
+      - name: Store gungraun result
+        uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
+        with:
+          name: Gungraun Benchmark
+          tool: customSmallerIsBetter
+          output-file-path: gungraun-bench.json
+          benchmark-data-dir-path: dev/gungraun
+          # ci.yml pushes wall-time results to gh-pages too. auto-push
+          # refetches and retries when the branch moved in between.
+          auto-push: ${{ github.event_name != 'pull_request' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Report only for now: the summary shows every ratio, and changes
+          # beyond the threshold are logged as warnings.
+          alert-threshold: '105%'
+          comment-on-alert: false
+          fail-on-alert: false
+          summary-always: true
+      - name: Upload gungraun summaries
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gungraun-summary
+          path: |
+            gungraun.txt
+            gungraun-bench.json
+            target/gungraun/**/summary.json
