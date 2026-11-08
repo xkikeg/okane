@@ -32,6 +32,9 @@ cargo clippy
 # Benchmarks (criterion)
 cargo bench
 
+# Instruction-count benchmarks (needs valgrind and a matching gungraun-runner)
+cargo bench --bench report_gungraun
+
 # Run the CLI during development
 cargo run -- <subcommand> [args]
 RUST_LOG=info cargo run -- import --config path/to/config.yml path/to/input.csv
