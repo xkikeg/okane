@@ -1,0 +1,6 @@
+Assets:Banks:あおによし: 310000 JPY
+Equity:Initial: -99000 JPY
+Expenses:Cash: 10000 JPY
+Expenses:T Assets:Banks:あおによし: 10000 JPY
+Expenses:Tax:Income: 70000 JPY
+Income:Salary: -300000 JPY

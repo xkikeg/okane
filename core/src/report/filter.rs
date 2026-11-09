@@ -11,11 +11,12 @@
 //! | `payee` | `string` | Payee of the posting (`; Payee:` override, or the transaction payee). |
 //! | `state` | `string` | `"cleared"`, `"pending"` or `"uncleared"`. Falls back to the transaction state. |
 //! | `account` | `string` | Account of the posting. |
+//! | `amount` | `okane.Amount` | Amount of the posting, as written (not converted). |
 //! | `tags` | `map<string, string>` | Tags of the transaction, overlaid by the posting's own tags. |
 //! | `transaction`, `t` | `map` | The enclosing transaction: `date`, `payee`, `state`, `tags` and `postings`. |
 //!
-//! Each element of `transaction.postings` has `account`, `payee`, `state` and
-//! `tags`, the last overlaid the same way as the top-level `tags`.
+//! Each element of `transaction.postings` has `account`, `payee`, `state`,
+//! `amount` and `tags`, the last overlaid the same way as the top-level `tags`.
 //! `transaction.tags` has the transaction's tags only, including `apply tag`.
 //!
 //! A tag without value, such as `:trip:`, maps to `""`, so `"trip" in tags`
@@ -27,18 +28,35 @@
 //! `split()`, ...) is available.
 //!
 //! The `date("2024-01-31")` function builds a value comparable to `date`.
+//!
+//! `amount("100 JPY")` builds an amount. Amounts support `==`, `!=`, unary
+//! `-`, and `<`, `<=`, `>`, `>=` as a partial order: comparing amounts whose
+//! order depends on exchange rates, such as `100 JPY` and `1 USD`, is an
+//! error. `amount("0")` has no commodity, so it compares with any amount.
+//! Methods: `isZero()`, `abs()` and `commodities()` (sorted `list<string>`).
+
+mod amount;
 
 use std::{collections::HashMap, fmt, sync::Arc};
 
-use cel::{Context, Env, ExecutionError, Program, Value, extensions};
+use cel::{
+    Context, Env, ExecutionError, Program, Value,
+    common::{
+        types::{CelList, CelMap, CelMapKey as Key},
+        value::Val,
+    },
+    extensions,
+};
 use chrono::{DateTime, FixedOffset, NaiveDate};
 
 use crate::syntax::ClearState;
 
 use super::{
+    context::ReportContext,
     tag::TagSet,
     transaction::{Posting, Transaction},
 };
+use amount::AmountVal;
 
 /// Error on compiling or evaluating a [`PostingFilter`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -75,6 +93,7 @@ impl PostingFilter {
         let mut env = Env::stdlib();
         env.add_extension(extensions::strings)
             .expect("strings extension must not conflict with the standard library");
+        amount::register(&mut env);
         let env = Arc::new(env);
         let program = env
             .compile(source)
@@ -98,13 +117,14 @@ impl PostingFilter {
     pub(super) fn matches(&self, txn: &TxnValue, index: usize) -> Result<bool, FilterError> {
         let posting = &txn.postings[index];
         let mut ctx = self.root.new_inner_scope();
-        ctx.add_variable_from_value("date", txn.date.clone());
-        ctx.add_variable_from_value("payee", posting.payee.clone());
-        ctx.add_variable_from_value("state", posting.state.clone());
-        ctx.add_variable_from_value("account", posting.account.clone());
-        ctx.add_variable_from_value("tags", posting.tags.clone());
-        ctx.add_variable_from_value("transaction", txn.value.clone());
-        ctx.add_variable_from_value("t", txn.value.clone());
+        ctx.add_variable_as_val("date", txn.date.clone_as_boxed());
+        ctx.add_variable_as_val("payee", posting.payee.clone_as_boxed());
+        ctx.add_variable_as_val("state", posting.state.clone_as_boxed());
+        ctx.add_variable_as_val("account", posting.account.clone_as_boxed());
+        ctx.add_variable_as_val("amount", posting.amount.clone_as_boxed());
+        ctx.add_variable_as_val("tags", posting.tags.clone_as_boxed());
+        ctx.add_variable_as_val("transaction", txn.value.clone_as_boxed());
+        ctx.add_variable_as_val("t", txn.value.clone_as_boxed());
         match self.program.execute(&ctx) {
             Ok(Value::Bool(b)) => Ok(b),
             Ok(other) => Err(FilterError::NotBool(format!("{:?}", other))),
@@ -113,38 +133,41 @@ impl PostingFilter {
     }
 }
 
+type BoxVal = Box<dyn Val + 'static>;
+
 /// CEL values of a transaction, built once and shared by all its postings.
 pub(super) struct TxnValue {
-    date: Value,
-    value: Value,
+    date: BoxVal,
+    value: BoxVal,
     postings: Vec<PostingValue>,
 }
 
 struct PostingValue {
-    account: Value,
-    payee: Value,
-    state: Value,
+    account: BoxVal,
+    payee: BoxVal,
+    state: BoxVal,
+    amount: BoxVal,
     /// Transaction tags overlaid by the posting tags.
-    tags: Value,
+    tags: BoxVal,
 }
 
 impl TxnValue {
-    pub(super) fn new(txn: &Transaction<'_>) -> Self {
-        let date = date_value(txn.date);
+    pub(super) fn new(ctx: &ReportContext<'_>, txn: &Transaction<'_>) -> Self {
+        let date = val(Value::Timestamp(midnight_utc(txn.date)));
         let txn_tags = tags_value(&[txn.tags]);
         let postings: Vec<PostingValue> = txn
             .postings
             .iter()
-            .map(|p| PostingValue::new(txn, &txn_tags, p))
+            .map(|p| PostingValue::new(ctx, txn, &txn_tags, p))
             .collect();
-        let posting_list: Vec<Value> = postings.iter().map(PostingValue::to_map).collect();
-        let value = Value::from(HashMap::from([
-            ("date", date.clone()),
-            ("payee", Value::from(txn.payee)),
+        let posting_list: Vec<BoxVal> = postings.iter().map(PostingValue::to_map).collect();
+        let value = map_val([
+            ("date", date.clone_as_boxed()),
+            ("payee", val(txn.payee)),
             ("state", state_value(txn.clear_state)),
             ("tags", txn_tags),
-            ("postings", Value::List(Arc::new(posting_list))),
-        ]));
+            ("postings", Box::new(CelList::from(posting_list))),
+        ]);
         Self {
             date,
             value,
@@ -154,44 +177,61 @@ impl TxnValue {
 }
 
 impl PostingValue {
-    fn new(txn: &Transaction<'_>, txn_tags: &Value, posting: &Posting<'_>) -> Self {
-        // Share the transaction's map when the posting adds nothing.
+    fn new(
+        ctx: &ReportContext<'_>,
+        txn: &Transaction<'_>,
+        txn_tags: &BoxVal,
+        posting: &Posting<'_>,
+    ) -> Self {
         let tags = if posting.tags.is_empty() {
-            txn_tags.clone()
+            txn_tags.clone_as_boxed()
         } else {
             tags_value(&[txn.tags, posting.tags])
         };
         Self {
-            account: Value::from(posting.account.as_str()),
-            payee: Value::from(posting.payee),
+            account: val(posting.account.as_str()),
+            payee: val(posting.payee),
             state: state_value(posting.clear_state),
+            amount: Box::new(AmountVal::new(ctx, &posting.amount)),
             tags,
         }
     }
 
-    fn to_map(&self) -> Value {
-        Value::from(HashMap::from([
-            ("account", self.account.clone()),
-            ("payee", self.payee.clone()),
-            ("state", self.state.clone()),
-            ("tags", self.tags.clone()),
-        ]))
+    fn to_map(&self) -> BoxVal {
+        map_val([
+            ("account", self.account.clone_as_boxed()),
+            ("payee", self.payee.clone_as_boxed()),
+            ("state", self.state.clone_as_boxed()),
+            ("amount", self.amount.clone_as_boxed()),
+            ("tags", self.tags.clone_as_boxed()),
+        ])
     }
 }
 
+/// Converts a plain CEL [`Value`] into a [`Val`].
+fn val(v: impl Into<Value>) -> BoxVal {
+    v.into()
+        .try_into()
+        .expect("plain values must convert into Val")
+}
+
+fn map_val<const N: usize>(entries: [(&'static str, BoxVal); N]) -> BoxVal {
+    let map: HashMap<Key<'static>, BoxVal> = entries
+        .into_iter()
+        .map(|(k, v)| (Key::from(k), v))
+        .collect();
+    Box::new(CelMap::from(map))
+}
+
 /// Builds `map<string, string>` out of the tag sets, later ones winning.
-fn tags_value(sets: &[TagSet<'_>]) -> Value {
+fn tags_value(sets: &[TagSet<'_>]) -> BoxVal {
     let mut map: HashMap<&str, Value> = HashMap::new();
     for set in sets {
         for entry in set.iter() {
             map.insert(entry.key.as_str(), Value::from(entry.value.unwrap_or("")));
         }
     }
-    Value::from(map)
-}
-
-fn date_value(date: NaiveDate) -> Value {
-    Value::Timestamp(midnight_utc(date))
+    val(map)
 }
 
 fn midnight_utc(date: NaiveDate) -> DateTime<FixedOffset> {
@@ -200,8 +240,8 @@ fn midnight_utc(date: NaiveDate) -> DateTime<FixedOffset> {
         .fixed_offset()
 }
 
-fn state_value(state: ClearState) -> Value {
-    Value::from(match state {
+fn state_value(state: ClearState) -> BoxVal {
+    val(match state {
         ClearState::Uncleared => "uncleared",
         ClearState::Cleared => "cleared",
         ClearState::Pending => "pending",
@@ -241,7 +281,7 @@ mod tests {
         let filter = PostingFilter::new(expr)?;
         let mut got = Vec::new();
         for txn in ledger.transactions() {
-            let value = TxnValue::new(txn);
+            let value = TxnValue::new(&ctx, txn);
             for (i, posting) in txn.postings.iter().enumerate() {
                 if filter.matches(&value, i)? {
                     got.push((
@@ -441,6 +481,99 @@ mod tests {
             .unwrap(),
             vec![pair("Hotel", "Assets:Bank")]
         );
+    }
+
+    const MULTI: &str = indoc! {"
+        2024/05/01 Exchange
+            Assets:JPY              10,000 JPY
+            Assets:USD                 -70 USD
+
+        2024/05/02 Coffee
+            Expenses:Food              500 JPY
+            Assets:JPY
+
+        2024/05/03 Book
+            Expenses:Book               20 USD
+            Assets:USD
+    "};
+
+    #[test]
+    fn filter_by_amount_same_commodity() {
+        assert_eq!(
+            eval_all(
+                MULTI,
+                r#""JPY" in amount.commodities() && amount >= amount("1,000 JPY")"#
+            )
+            .unwrap(),
+            vec![pair("Exchange", "Assets:JPY")]
+        );
+        assert_eq!(
+            // Equality never fails, even between different commodities.
+            eval_all(MULTI, r#"amount == amount("JPY -500")"#).unwrap(),
+            vec![pair("Coffee", "Assets:JPY")]
+        );
+    }
+
+    #[test]
+    fn filter_by_amount_against_zero() {
+        // Zero has no commodity, so it is comparable with every amount.
+        assert_eq!(
+            eval_all(
+                MULTI,
+                r#"account.startsWith("Assets:") && amount < amount("0")"#
+            )
+            .unwrap(),
+            vec![
+                pair("Exchange", "Assets:USD"),
+                pair("Coffee", "Assets:JPY"),
+                pair("Book", "Assets:USD"),
+            ]
+        );
+    }
+
+    #[test]
+    fn filter_by_amount_abs_and_negate() {
+        assert_eq!(
+            eval_all(MULTI, r#"-amount == amount("70 USD")"#).unwrap(),
+            vec![pair("Exchange", "Assets:USD")]
+        );
+        assert_eq!(
+            eval_all(
+                MULTI,
+                r#""USD" in amount.commodities() && amount.abs() >= amount("50 USD")"#
+            )
+            .unwrap(),
+            vec![pair("Exchange", "Assets:USD")]
+        );
+    }
+
+    #[test]
+    fn filter_by_other_posting_amount() {
+        assert_eq!(
+            eval_all(
+                MULTI,
+                r#"account == "Assets:USD" && t.postings.exists(p, p.account.startsWith("Expenses:") && p.amount > amount("10 USD"))"#
+            )
+            .unwrap(),
+            vec![pair("Book", "Assets:USD")]
+        );
+    }
+
+    #[test]
+    fn amount_different_commodities_not_comparable() {
+        let err = eval_all(MULTI, r#"amount > amount("1 USD")"#).unwrap_err();
+        assert!(
+            matches!(&err, FilterError::Eval(msg) if msg.contains("without exchange rates")),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn amount_invalid_literal() {
+        assert!(matches!(
+            eval_all(MULTI, r#"amount > amount("100")"#),
+            Err(FilterError::Eval(_))
+        ));
     }
 
     #[test]

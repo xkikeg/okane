@@ -258,3 +258,38 @@ fn balance_cel_filter(
     let stdout = std::str::from_utf8(&output.stdout).unwrap();
     golden.assert(stdout);
 }
+
+#[rstest]
+fn balance_cel_filter_amount(
+    #[base_dir = "../testdata/report"]
+    #[files("single_commodity.ledger")]
+    input: PathBuf,
+) {
+    let mut golden_path = input.clone();
+    let filename = golden_path.file_name().unwrap().to_owned();
+    assert!(golden_path.pop());
+    golden_path.push("golden");
+    golden_path.push(filename);
+    assert!(
+        golden_path.set_extension("golden.balance.cel_filter_amount.txt"),
+        "failed to set extension .ledger to input {}",
+        input.display()
+    );
+    let golden = okane_golden::Golden::new(golden_path).unwrap();
+
+    // Postings of at least 10,000 JPY either way.
+    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+        .args([
+            "balance".as_ref(),
+            input.as_os_str(),
+            OsStr::new("--filter"),
+            OsStr::new(r#"amount.abs() >= amount("10,000 JPY")"#),
+        ])
+        .assert()
+        .success();
+
+    let output = result.get_output();
+    std::io::stderr().write_all(&output.stderr).unwrap();
+    let stdout = std::str::from_utf8(&output.stdout).unwrap();
+    golden.assert(stdout);
+}
