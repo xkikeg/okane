@@ -1,0 +1,10 @@
+; apply tag counts as a transaction tag, so the transaction must not repeat it.
+
+apply tag trip: Kyoto
+
+2024/09/01 Train
+    ; trip: Osaka
+    Expenses:Travel                              100 CHF
+    Assets:Banks
+
+end apply tag
