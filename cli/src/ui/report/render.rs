@@ -1469,6 +1469,7 @@ mod tests {
             account: AccountFilter::All,
             conversion: None,
             date_range: DateRange::default(),
+            filter: None,
         };
         let balance = ledger.balance(&ctx, &query).unwrap().into_owned();
         let tree = BalanceTree::create(&ctx, balance).unwrap().into_nodes();
@@ -1488,6 +1489,7 @@ mod tests {
             account: AccountFilter::All,
             conversion: None,
             date_range: DateRange::default(),
+            filter: None,
         };
         let account = ledger
             .balance(&ctx, &query)
@@ -1522,6 +1524,7 @@ mod tests {
             account: AccountFilter::All,
             conversion: None,
             date_range: DateRange::default(),
+            filter: None,
         };
         let balance = ledger.balance(&ctx, &query).unwrap().into_owned();
         let tree = BalanceTree::create(&ctx, balance).unwrap().into_nodes();

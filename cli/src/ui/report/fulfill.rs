@@ -112,6 +112,7 @@ pub fn load_register<'ctx>(
         date_range: template.date_range,
         conversion: template.conversion,
         sort: Sort::Date,
+        filter: None,
     };
     let mut entries = ledger.register_entries(ctx, &query)?;
     let mut rows = Vec::new();
