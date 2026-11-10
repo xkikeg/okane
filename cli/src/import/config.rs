@@ -2,7 +2,6 @@
 
 mod commodity;
 mod format;
-mod merge;
 mod output;
 mod rewrite;
 
@@ -25,9 +24,9 @@ use path_slash::PathBufExt;
 use serde::{Deserialize, Serialize, de};
 use soft_canonicalize::soft_canonicalize;
 
-use super::error::{ImportError, ImportErrorKind, IntoImportError};
+use crate::merge::{Merge, MergeOwned, impl_merge_from_owned};
 
-use merge::Merge;
+use super::error::{ImportError, ImportErrorKind, IntoImportError};
 
 /// Set of config covering several paths.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -175,7 +174,7 @@ impl From<Config> for ConfigFragment {
 
 /// One flagment of config corresponding to particular path prefix.
 /// It'll be merged into `Config`.
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 struct ConfigFragment {
     /// Path pattern which file the entry will match against.
@@ -204,8 +203,8 @@ struct ConfigFragment {
     rewrite: Vec<rewrite::RewriteRule>,
 }
 
-impl Merge for ConfigFragment {
-    fn merge(mut self, mut other: ConfigFragment) -> Self {
+impl MergeOwned for ConfigFragment {
+    fn merge_owned(mut self, mut other: ConfigFragment) -> Self {
         self.rewrite.append(&mut other.rewrite);
         self.commodity.merge_from(other.commodity);
         self.format.merge_from(other.format);
@@ -224,12 +223,9 @@ impl Merge for ConfigFragment {
             rewrite: self.rewrite,
         }
     }
-
-    fn merge_from(&mut self, other: Self) {
-        // insufficient implementation, but safer unless we implement derive macro.
-        *self = self.clone().merge(other);
-    }
 }
+
+impl_merge_from_owned!(ConfigFragment);
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Encoding(pub &'static encoding_rs::Encoding);

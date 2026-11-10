@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use okane_core::syntax::display::DisplayContext;
 
-use super::merge::Merge;
+use crate::merge::{Merge, MergeOwned, impl_merge_from_owned};
 
 /// Spec to describe the output formatting.
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
@@ -33,12 +33,16 @@ pub struct OutputCommoditySpec {
     pub overrides: HashMap<String, OutputCommodityDetailsSpec>,
 }
 
-impl Merge for OutputCommoditySpec {
-    fn merge_from(&mut self, other: Self) {
-        self.default.merge_from(other.default);
-        self.overrides.merge_from(other.overrides);
+impl MergeOwned for OutputCommoditySpec {
+    fn merge_owned(self, other: Self) -> Self {
+        Self {
+            default: self.default.merge(other.default),
+            overrides: self.overrides.merge(other.overrides),
+        }
     }
 }
+
+impl_merge_from_owned!(OutputCommoditySpec);
 
 impl From<OutputCommoditySpec> for DisplayContext {
     fn from(value: OutputCommoditySpec) -> Self {

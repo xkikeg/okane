@@ -9,6 +9,7 @@
 mod cmd;
 mod format;
 mod import;
+mod merge;
 #[cfg(test)]
 mod one_based_macro;
 mod ui;

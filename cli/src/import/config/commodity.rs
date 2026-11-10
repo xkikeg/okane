@@ -10,8 +10,7 @@ use serde::{
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 
 use crate::import::amount::OwnedAmount;
-
-use super::merge::{Merge, merge_non_empty};
+use crate::merge::{Merge, MergeOwned, impl_merge_from_owned, merge_non_empty};
 
 /// CommodityConfig contains either primary commodity string, or more complex CommoditySpec.
 #[derive(Debug, PartialEq, Eq, Serialize, Clone)]
@@ -118,8 +117,8 @@ impl From<AccountCommoditySpec> for AccountCommodityConfig {
     }
 }
 
-impl Merge for AccountCommoditySpec {
-    fn merge(self, other: Self) -> Self {
+impl MergeOwned for AccountCommoditySpec {
+    fn merge_owned(self, other: Self) -> Self {
         let mut rename = self.rename;
         for (k, v) in other.rename.into_iter() {
             rename.insert(k, v);
@@ -127,15 +126,13 @@ impl Merge for AccountCommoditySpec {
         Self {
             primary: merge_non_empty!(self.primary, other.primary),
             conversion: self.conversion.merge(other.conversion),
-            hidden_fee: other.hidden_fee.or(self.hidden_fee),
+            hidden_fee: self.hidden_fee.merge(other.hidden_fee),
             rename,
         }
     }
-
-    fn merge_from(&mut self, other: Self) {
-        *self = self.clone().merge(other)
-    }
 }
+
+impl_merge_from_owned!(AccountCommoditySpec);
 
 /// Specify the currency conversion details described in the transaction.
 ///
@@ -153,8 +150,8 @@ pub struct CommodityConversionSpec {
     pub disabled: Option<bool>,
 }
 
-impl Merge for CommodityConversionSpec {
-    fn merge(self, other: Self) -> Self {
+impl MergeOwned for CommodityConversionSpec {
+    fn merge_owned(self, other: Self) -> Self {
         Self {
             amount: other.amount.or(self.amount),
             commodity: other.commodity.or(self.commodity),
@@ -162,11 +159,9 @@ impl Merge for CommodityConversionSpec {
             disabled: other.disabled.or(self.disabled),
         }
     }
-
-    fn merge_from(&mut self, other: Self) {
-        *self = self.clone().merge(other)
-    }
 }
+
+impl_merge_from_owned!(CommodityConversionSpec);
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
@@ -266,18 +261,16 @@ pub enum HiddenFeeCondition {
     DebitOnly,
 }
 
-impl Merge for HiddenFee {
-    fn merge(self, other: Self) -> Self {
+impl MergeOwned for HiddenFee {
+    fn merge_owned(self, other: Self) -> Self {
         Self {
             spread: other.spread.or(self.spread),
             condition: other.condition.or(self.condition),
         }
     }
-
-    fn merge_from(&mut self, other: Self) {
-        *self = self.clone().merge(other)
-    }
 }
+
+impl_merge_from_owned!(HiddenFee);
 
 #[cfg(test)]
 mod tests {
@@ -327,6 +320,48 @@ mod tests {
                 rename: hashmap! {"米ドル".to_string() => "USD".to_string()},
             })
             .merge(AccountCommodityConfig::PrimaryCommodity("JPY".to_string()))
+        );
+
+        // Rename and hidden_fee merge behavior.
+        let want = AccountCommodityConfig::Spec(AccountCommoditySpec {
+            primary: "CHF".to_string(),
+            conversion: CommodityConversionSpec::default(),
+            hidden_fee: Some(HiddenFee {
+                spread: Some(HiddenFeeRate::Percent(dec!(0.1))),
+                condition: Some(HiddenFeeCondition::AlwaysIncurred),
+            }),
+            rename: hashmap! {
+                "米ドル".to_string() => "USD".to_string(),
+                "フラン".to_string() => "CHF".to_string(),
+                "ユーロ".to_string() => "EUR".to_string(),
+            },
+        });
+        assert_eq!(
+            want,
+            AccountCommodityConfig::Spec(AccountCommoditySpec {
+                primary: "JPY".to_string(),
+                conversion: CommodityConversionSpec::default(),
+                hidden_fee: Some(HiddenFee {
+                    spread: Some(HiddenFeeRate::Fixed(OwnedAmount {
+                        value: dec!(1),
+                        commodity: "JPY".to_string()
+                    })),
+                    condition: Some(HiddenFeeCondition::DebitOnly),
+                }),
+                rename: hashmap! {
+                    "米ドル".to_string() => "$".to_string(),
+                    "フラン".to_string() => "CHF".to_string(),
+                },
+            })
+            .merge(AccountCommodityConfig::Spec(AccountCommoditySpec {
+                rename: hashmap! {
+                    // This entry will be updated.
+                    "米ドル".to_string() => "USD".to_string(),
+                    // This entry will be added.
+                    "ユーロ".to_string() => "EUR".to_string(),
+                },
+                ..want.clone().into()
+            }))
         );
     }
 
