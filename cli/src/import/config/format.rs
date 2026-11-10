@@ -6,7 +6,7 @@ use serde::{
     de::{self, value::MapAccessDeserializer},
 };
 
-use super::merge::{Merge, merge_non_empty};
+use crate::merge::{Merge, MergeOwned, impl_merge_from_owned, merge_non_empty};
 
 /// FormatSpec describes the several format used in import target.
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
@@ -34,8 +34,8 @@ pub struct FormatSpec {
     pub row_order: Option<RowOrder>,
 }
 
-impl Merge for FormatSpec {
-    fn merge(self, other: Self) -> Self {
+impl MergeOwned for FormatSpec {
+    fn merge_owned(self, other: Self) -> Self {
         let date = merge_non_empty!(self.date, other.date);
         let fields = merge_non_empty!(self.fields, other.fields);
         let delimiter = merge_non_empty!(self.delimiter, other.delimiter);
@@ -50,12 +50,9 @@ impl Merge for FormatSpec {
             row_order,
         }
     }
-
-    fn merge_from(&mut self, other: Self) {
-        // insufficient implementation, but safer unless we have derive macro.
-        *self = self.clone().merge(other)
-    }
 }
+
+impl_merge_from_owned!(FormatSpec);
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
