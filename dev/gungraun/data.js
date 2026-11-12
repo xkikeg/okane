@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794213586485,
+  "lastUpdate": 1794477149412,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Gungraun Benchmark": [
@@ -88,6 +88,95 @@ window.BENCHMARK_DATA = {
           {
             "name": "query_register::register/sort_date_warm",
             "value": 4758877,
+            "unit": "instructions"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "39dc968ddeb2cfa4c7cdeb83b8cc0288a28deb7a",
+          "message": "Use lz4 package instead of liblz4-tool.\n\nhttps://packages.ubuntu.com/noble/liblz4-tool\nThe package was already transitional in 24.04,\nand 26.04 doesn't support it anymore.",
+          "timestamp": "2026-11-12T10:50:34+01:00",
+          "tree_id": "317e0cdf6e845bbcfcfcbaaeb7fb954ee09a600b",
+          "url": "https://github.com/xkikeg/okane/commit/39dc968ddeb2cfa4c7cdeb83b8cc0288a28deb7a"
+        },
+        "date": 1794477147960,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "load_process::load_on_memory/small",
+            "value": 119245691,
+            "unit": "instructions"
+          },
+          {
+            "name": "load_process::process/small",
+            "value": 169709217,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_historical",
+            "value": 36176244,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_historical_pricedb",
+            "value": 34110515,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_up_to_date",
+            "value": 47540,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/date_range_middle20",
+            "value": 10422187,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/account_filter",
+            "value": 757983,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/conversion_historical",
+            "value": 26913670,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/conversion_historical_pricedb",
+            "value": 29055944,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/date_range_middle20",
+            "value": 1184149,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/default",
+            "value": 4838735,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/sort_date_cold",
+            "value": 12531776,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/sort_date_warm",
+            "value": 4758810,
             "unit": "instructions"
           }
         ]
