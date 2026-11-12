@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794477149412,
+  "lastUpdate": 1794478861409,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Gungraun Benchmark": [
@@ -172,6 +172,95 @@ window.BENCHMARK_DATA = {
           {
             "name": "query_register::register/sort_date_cold",
             "value": 12531776,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/sort_date_warm",
+            "value": 4758810,
+            "unit": "instructions"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "0c148ac1046e68dfa85e26238e8dfafff9070cd6",
+          "message": "Create MergeOwned trait for structs.\n\nWe used to implement Merge directly, with implementing\nmerge_from with clone().\nBut for T: Default, we can use mem::take() which is cheaper.\nSo we split MergeOwned for these types,\nand provided a macro to implement Merge for MergeOwned types.\nAvoided the blanket implementation, but it might be possible\nto adopt it instead later.",
+          "timestamp": "2026-11-12T11:19:10+01:00",
+          "tree_id": "4c39a5b9aad1dde86d61bcb0c8d077b549e3adb5",
+          "url": "https://github.com/xkikeg/okane/commit/0c148ac1046e68dfa85e26238e8dfafff9070cd6"
+        },
+        "date": 1794478859691,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "load_process::load_on_memory/small",
+            "value": 119250962,
+            "unit": "instructions"
+          },
+          {
+            "name": "load_process::process/small",
+            "value": 169693696,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_historical",
+            "value": 36184164,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_historical_pricedb",
+            "value": 34108598,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_up_to_date",
+            "value": 47312,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/date_range_middle20",
+            "value": 10422329,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/account_filter",
+            "value": 757983,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/conversion_historical",
+            "value": 26918417,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/conversion_historical_pricedb",
+            "value": 29051913,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/date_range_middle20",
+            "value": 1184149,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/default",
+            "value": 4838735,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/sort_date_cold",
+            "value": 12532261,
             "unit": "instructions"
           },
           {
