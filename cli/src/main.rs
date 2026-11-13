@@ -7,6 +7,7 @@
 //! As oppose to that, this library mainly provides binary specific functionalities, mainly for integration tests.
 
 mod cmd;
+mod config;
 mod format;
 mod import;
 mod merge;
@@ -22,7 +23,22 @@ use clap::Parser as _;
 
 fn main() {
     env_logger::init();
-    let command = match cmd::Cli::parse().build() {
+    let cli = cmd::Cli::parse();
+    let config = if cli.no_config() {
+        None
+    } else {
+        match load_config() {
+            Ok(config) => Some(config),
+            Err(err) => {
+                eprintln!("{}", err);
+                for cause in err.chain().skip(1) {
+                    eprintln!("Caused by {}", cause);
+                }
+                std::process::exit(2);
+            }
+        }
+    };
+    let command = match cli.build(config.as_ref()) {
         Ok(command) => command,
         Err(err) => {
             eprintln!("{}", err);
@@ -36,6 +52,12 @@ fn main() {
         }
         std::process::exit(1);
     }
+}
+
+fn load_config() -> anyhow::Result<config::Config> {
+    use anyhow::Context as _;
+    let env = config::Env::from_process().context("failed to read the current directory")?;
+    Ok(config::load(&env, &config::RealFs)?)
 }
 
 #[cfg(test)]

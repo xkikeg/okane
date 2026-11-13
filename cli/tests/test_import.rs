@@ -27,7 +27,7 @@ fn test_import_with_cli(
     );
     let golden = okane_golden::Golden::new(golden_path).unwrap();
 
-    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+    let result = testing::okane()
         .args([
             "import".as_ref(),
             "--rules".as_ref(),
@@ -52,7 +52,7 @@ fn test_import_deprecated_config_flag_still_works(#[case] flag: &str) {
     let input = testing::TESTDATA_DIR.join("import/csv_delimiter.csv");
     let golden = okane_golden::Golden::new(input.with_extension("ledger")).unwrap();
 
-    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+    let result = testing::okane()
         .args([
             "import".as_ref(),
             flag.as_ref(),
@@ -76,7 +76,7 @@ fn test_import_rejects_both_rules_and_config() {
     let config = testing::TESTDATA_DIR.join("import/test_config.yml");
     let input = testing::TESTDATA_DIR.join("import/csv_delimiter.csv");
 
-    assert_cmd::Command::new(&*testing::BIN_PATH)
+    testing::okane()
         .args([
             "import".as_ref(),
             "--rules".as_ref(),
@@ -94,7 +94,7 @@ fn test_import_rejects_both_rules_and_config() {
 fn test_import_requires_rules() {
     let input = testing::TESTDATA_DIR.join("import/csv_delimiter.csv");
 
-    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+    let result = testing::okane()
         .args(["import".as_ref(), input.as_os_str()])
         .assert()
         .failure()
