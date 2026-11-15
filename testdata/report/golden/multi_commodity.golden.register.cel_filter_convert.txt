@@ -1,0 +1,10 @@
+2024-01-26 Initial with deduced amount Liabilities:Study Loan -1000000 JPY -1000000 JPY
+2024-01-26 Initial with deduced amount Liabilities:My Card -2000.00 CHF (-2000.00 CHF - 1000000 JPY)
+2024-01-26 Initial with deduced amount Equity:Initial (-48000.00 CHF + 900000 JPY - 26230.0000 USD) (-50000.00 CHF - 100000 JPY - 26230.0000 USD)
+2024-02-03 payment Assets:Banks:Swiss Bank -2000.00 CHF (-52000.00 CHF - 100000 JPY - 26230.0000 USD)
+2024-02-05 wire Assets:Banks:Swiss Bank -10000.00 CHF (-62000.00 CHF - 100000 JPY - 26230.0000 USD)
+2024-02-07 wire company Assets:Wire:US Broker -11481.06 USD (-62000.00 CHF - 100000 JPY - 37711.0600 USD)
+2024-02-09 Buy stock Assets:Brokers:US Broker -2400.00 USD (-62000.00 CHF - 100000 JPY - 40111.0600 USD)
+2024-02-09 Sell stock Assets:Brokers:US Broker -20.0000 OKANE (-62000.00 CHF - 100000 JPY - 40111.0600 USD - 20.0000 OKANE)
+2024-02-09 Sell stock Assets:Brokers:US Broker -20.0000 OKANE (-62000.00 CHF - 100000 JPY - 40111.0600 USD - 40.0000 OKANE)
+2024-02-25 salary Income:Salary -8500.00 CHF (-70500.00 CHF - 100000 JPY - 40111.0600 USD - 40.0000 OKANE)

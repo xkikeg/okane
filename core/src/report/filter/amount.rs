@@ -67,10 +67,15 @@ impl AmountVal {
         Self(Arc::new(values))
     }
 
-    fn from_values(values: BTreeMap<String, Decimal>) -> Self {
+    pub(super) fn from_values(values: BTreeMap<String, Decimal>) -> Self {
         Self(Arc::new(
             values.into_iter().filter(|(_, v)| !v.is_zero()).collect(),
         ))
+    }
+
+    /// Returns the commodities and their values, sorted by commodity.
+    pub(super) fn iter(&self) -> impl Iterator<Item = (&str, Decimal)> {
+        self.0.iter().map(|(k, v)| (k.as_str(), *v))
     }
 
     fn map_values(&self, f: impl Fn(Decimal) -> Decimal) -> Self {
