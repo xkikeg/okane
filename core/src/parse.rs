@@ -230,4 +230,15 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn parse_ledger_fails_at_end_of_input() {
+        let input = indoc! {"
+            2024/01/01 Shop
+                Expenses:Food    (10 JPY +"};
+        let got: Result<Vec<(ParsedContext, LedgerEntry)>, ParseError> =
+            parse_ledger(&ParseOptions::default(), input).collect();
+        let err = got.unwrap_err();
+        assert!(!err.to_string().is_empty());
+    }
 }
