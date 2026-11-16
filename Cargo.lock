@@ -2217,9 +2217,9 @@ dependencies = [
 
 [[package]]
 name = "pretty_decimal"
-version = "0.2.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0af146e591a94430234da4178fbdec4bc867b5ad2859700646ef9e5c2b6ec8e"
+checksum = "5f8faa5eecff89e395336ff117e4dc0a3413f598329ffd3f08bdc89720788d1a"
 dependencies = [
  "arrayvec",
  "bounded-static",
