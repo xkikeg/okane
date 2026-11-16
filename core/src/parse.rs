@@ -18,6 +18,7 @@ pub(crate) mod testing;
 
 pub use adaptor::{ParseOptions, ParsedContext, ParsedSpan};
 pub use error::ParseError;
+pub use expr::amount_with_prefix_commodity;
 
 use winnow::{
     ModalResult, Parser,

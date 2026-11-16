@@ -122,17 +122,16 @@ where
     .parse_next(input)
 }
 
-/// Parses amount expression, possibly with negative op.
-// Only used for [`Amount`] `TryFrom<&'str>` implementation.
-fn unary_amount<'i, I, E>(input: &mut I) -> winnow::Result<expr::Amount<'i>, E>
+/// Parses amount with the commodity on either side, possibly with negative op.
+// Only used for [`amount_with_prefix_commodity`].
+fn either_side_amount<'i, I, E>(input: &mut I) -> winnow::Result<expr::Amount<'i>, E>
 where
     I: Stream<Slice = &'i str> + StreamIsPartial,
     E: ParserError<I> + FromExternalError<I, pretty_decimal::ParseError>,
     <I as Stream>::Token: AsChar + Clone,
 {
-    // This supports prefix commodity.
     trace(
-        "expr::unary_amount",
+        "expr::either_side_amount",
         (
             opt(one_of('-')),
             unordered_seq!((
@@ -155,14 +154,29 @@ where
     .parse_next(input)
 }
 
+/// Parses an amount as written in a posting, such as `-1,234.5 JPY`.
+///
+/// The commodity must follow the value, as in Ledger files.
+/// Use [`amount_with_prefix_commodity`] to also accept `JPY 1,234.5`.
 impl<'i> TryFrom<&'i str> for expr::Amount<'i> {
     type Error = error::ParseError;
 
     fn try_from(value: &'i str) -> Result<Self, Self::Error> {
         ParseOptions::default()
-            .parse_single(unary_amount, value)
+            .parse_single(terminated(amount, space0), value)
             .map(|x| x.1)
     }
+}
+
+/// Parses an amount whose commodity may also come before the value, such as
+/// `$1,234.56`, `CHF 7.90` or `-$8000.00`, as well as `1,234.56 USD`.
+///
+/// Ledger files only take the commodity after the value; this is for other
+/// sources, such as CSV files to import.
+pub fn amount_with_prefix_commodity(value: &str) -> Result<expr::Amount<'_>, error::ParseError> {
+    ParseOptions::default()
+        .parse_single(either_side_amount, value)
+        .map(|x| x.1)
 }
 
 fn negate_expr<'i, I, E>(input: &mut I) -> winnow::Result<expr::Expr<'i>, E>
@@ -305,5 +319,53 @@ mod tests {
         }));
 
         assert_eq!(expect_parse_ok(value_expr, input), ("", want))
+    }
+
+    fn parsed_amount(got: Result<expr::Amount<'_>, error::ParseError>) -> (Decimal, String) {
+        let got = got.unwrap();
+        (got.value.value, got.commodity.into_owned())
+    }
+
+    #[test]
+    fn amount_try_from_takes_suffix_commodity() {
+        for (input, value, commodity) in [
+            ("1,234.5 JPY", dec!(1234.5), "JPY"),
+            ("-10USD", dec!(-10), "USD"),
+            ("100 JPY ", dec!(100), "JPY"),
+            ("0", dec!(0), ""),
+        ] {
+            assert_eq!(
+                (value, commodity.to_string()),
+                parsed_amount(expr::Amount::try_from(input)),
+                "{input}"
+            );
+        }
+    }
+
+    #[test]
+    fn amount_try_from_rejects_prefix_commodity() {
+        for input in ["JPY 100", "$6.96", "-$8000.00", "CHF -1.5"] {
+            assert!(expr::Amount::try_from(input).is_err(), "{input}");
+        }
+    }
+
+    #[test]
+    fn amount_with_prefix_commodity_takes_either_side() {
+        for (input, value, commodity) in [
+            ("$6.96", dec!(6.96), "$"),
+            ("-$8000.00", dec!(-8000.00), "$"),
+            ("CHF 7.90", dec!(7.90), "CHF"),
+            ("CHF -1.5", dec!(-1.5), "CHF"),
+            ("1,234.56 USD", dec!(1234.56), "USD"),
+            ("1234.56", dec!(1234.56), ""),
+        ] {
+            assert_eq!(
+                (value, commodity.to_string()),
+                parsed_amount(amount_with_prefix_commodity(input)),
+                "{input}"
+            );
+        }
+        assert!(amount_with_prefix_commodity("JPY USD").is_err());
+        assert!(amount_with_prefix_commodity("1 2 JPY").is_err());
     }
 }

@@ -24,6 +24,9 @@
   table, which cost a real value on every scroll to say something the reader could already see. An
   account or entry whose lines run past the bottom of the body now says so with a `…` in the
   account / payee column, in the colour the sticky account label already uses at the other edge.
+* Core: `syntax::expr::Amount::try_from(&str)` now takes the commodity after the value only, as a
+  posting does (`100 JPY`, not `JPY 100`). The new `parse::amount_with_prefix_commodity` still
+  takes either side, for sources such as CSV files to import.
 
 ### Fixed
 
