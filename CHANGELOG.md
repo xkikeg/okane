@@ -30,6 +30,9 @@
 
 ### Fixed
 
+* A parse error at the very end of the input, such as a file ending in `Expenses:Food  (10 JPY +`,
+  no longer hangs okane while it builds the error message.
+
 ## [0.21.1] - 2026-08-20
 
 ### Added

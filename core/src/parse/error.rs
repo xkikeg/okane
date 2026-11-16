@@ -35,9 +35,9 @@ impl ParseError {
         let offset = input.offset_from(&start);
         input.reset(&start);
         let line_start = compute_line_number(initial, input.current_token_start());
-        // Assume the error span is only for the first `char`.
-        // When we'll implement
-        let end = (offset + 1..)
+        // Assume the error span is only for the first `char`, which is empty
+        // when the error is at the end of the input.
+        let end = (offset + 1..=input.len())
             .find(|e| input.is_char_boundary(*e))
             .unwrap_or(offset);
         Self(Box::new(ParseErrorImpl {

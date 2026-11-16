@@ -368,4 +368,17 @@ mod tests {
         assert!(amount_with_prefix_commodity("JPY USD").is_err());
         assert!(amount_with_prefix_commodity("1 2 JPY").is_err());
     }
+
+    #[test]
+    fn try_from_fails_on_incomplete_input() {
+        // An error at the end of the input used to hang while building the
+        // error span.
+        for input in ["", "(", "(1 +", "1 +"] {
+            let err = expr::ValueExpr::try_from(input).unwrap_err();
+            // Rendering must finish too.
+            let _ = err.to_string();
+            let err = expr::Amount::try_from(input).unwrap_err();
+            let _ = err.to_string();
+        }
+    }
 }
