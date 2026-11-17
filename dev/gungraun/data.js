@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794897643128,
+  "lastUpdate": 1794897996468,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Gungraun Benchmark": [
@@ -439,6 +439,95 @@ window.BENCHMARK_DATA = {
           {
             "name": "query_register::register/sort_date_cold",
             "value": 12531859,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/sort_date_warm",
+            "value": 4838812,
+            "unit": "instructions"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "a0b691a0fd5c2eedc51d2639ad0157c31be180fb",
+          "message": "build(deps): bump softprops/action-gh-release from 3.0.3 to 3.0.4\n\nBumps [softprops/action-gh-release](https://github.com/softprops/action-gh-release) from 3.0.3 to 3.0.4.\n- [Release notes](https://github.com/softprops/action-gh-release/releases)\n- [Changelog](https://github.com/softprops/action-gh-release/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/softprops/action-gh-release/compare/efb35369e0ad2afab669f228072c1b0d510eae64...8a0cd651e5b2365bd640854a3fa5dfc70e4875f3)\n\n---\nupdated-dependencies:\n- dependency-name: softprops/action-gh-release\n  dependency-version: 3.0.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>",
+          "timestamp": "2026-11-17T07:45:08+01:00",
+          "tree_id": "a3df601fae2cd5f973832842b3e987cd92678e1c",
+          "url": "https://github.com/xkikeg/okane/commit/a0b691a0fd5c2eedc51d2639ad0157c31be180fb"
+        },
+        "date": 1794897995291,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "load_process::load_on_memory/small",
+            "value": 119225557,
+            "unit": "instructions"
+          },
+          {
+            "name": "load_process::process/small",
+            "value": 169687434,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_historical",
+            "value": 36230544,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_historical_pricedb",
+            "value": 34150812,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_up_to_date",
+            "value": 46839,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/date_range_middle20",
+            "value": 10422114,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/account_filter",
+            "value": 757983,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/conversion_historical",
+            "value": 26967473,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/conversion_historical_pricedb",
+            "value": 29102832,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/date_range_middle20",
+            "value": 1184149,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/default",
+            "value": 4838735,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/sort_date_cold",
+            "value": 12531926,
             "unit": "instructions"
           },
           {
