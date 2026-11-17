@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794554672403,
+  "lastUpdate": 1794897643128,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Gungraun Benchmark": [
@@ -350,6 +350,95 @@ window.BENCHMARK_DATA = {
           {
             "name": "query_register::register/sort_date_cold",
             "value": 12531612,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/sort_date_warm",
+            "value": 4838812,
+            "unit": "instructions"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "e844e336c3dc082365d240a6445d710ce64cf5f6",
+          "message": "parse: accept prefix commodity only through a named function\n\n`Amount::try_from(&str)` accepted the commodity on either side, though\nLedger files only take it after the value. Its only caller relying on\nthe prefix form was the CSV importer, which reads values such as\n`$6.96` and drops the commodity.\n\nMake `TryFrom` take the posting syntax only, and expose the old\nbehaviour as `parse::amount_with_prefix_commodity` for the importer.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-17T07:38:37+01:00",
+          "tree_id": "d127a1784d5ceb3e28169f8ae5196f3843c58da6",
+          "url": "https://github.com/xkikeg/okane/commit/e844e336c3dc082365d240a6445d710ce64cf5f6"
+        },
+        "date": 1794897641909,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "load_process::load_on_memory/small",
+            "value": 119224413,
+            "unit": "instructions"
+          },
+          {
+            "name": "load_process::process/small",
+            "value": 169658713,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_historical",
+            "value": 36225500,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_historical_pricedb",
+            "value": 34154917,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_up_to_date",
+            "value": 47065,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/date_range_middle20",
+            "value": 10422620,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/account_filter",
+            "value": 757983,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/conversion_historical",
+            "value": 26965183,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/conversion_historical_pricedb",
+            "value": 29099199,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/date_range_middle20",
+            "value": 1184149,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/default",
+            "value": 4838735,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/sort_date_cold",
+            "value": 12531859,
             "unit": "instructions"
           },
           {
