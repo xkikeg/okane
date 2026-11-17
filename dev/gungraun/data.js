@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794906325238,
+  "lastUpdate": 1794906448920,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Gungraun Benchmark": [
@@ -617,6 +617,95 @@ window.BENCHMARK_DATA = {
           {
             "name": "query_register::register/sort_date_cold",
             "value": 12531501,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/sort_date_warm",
+            "value": 4838812,
+            "unit": "instructions"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "17a99c4ae67a6dd3d7d3c5cc9e012045abc84523",
+          "message": "parse: fix hang on a parse error at the end of input\n\nParseError::new looked for the end of the error span with an unbounded\n`(offset + 1..)` range. `is_char_boundary` is false past the end of\nthe string, so an error at the end of the input, such as\n`ValueExpr::try_from(\"\")`, walked up usize forever.\n\nBound the range by the input length, so the span is empty at the end.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-17T10:05:33+01:00",
+          "tree_id": "46667932cacbbd9774ed0e65d0b4ece2ceee950f",
+          "url": "https://github.com/xkikeg/okane/commit/17a99c4ae67a6dd3d7d3c5cc9e012045abc84523"
+        },
+        "date": 1794906446701,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "load_process::load_on_memory/small",
+            "value": 119735860,
+            "unit": "instructions"
+          },
+          {
+            "name": "load_process::process/small",
+            "value": 170217069,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_historical",
+            "value": 36238096,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_historical_pricedb",
+            "value": 34150930,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_up_to_date",
+            "value": 47068,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/date_range_middle20",
+            "value": 10422055,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/account_filter",
+            "value": 757983,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/conversion_historical",
+            "value": 26966516,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/conversion_historical_pricedb",
+            "value": 29102836,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/date_range_middle20",
+            "value": 1184149,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/default",
+            "value": 4838735,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/sort_date_cold",
+            "value": 12531721,
             "unit": "instructions"
           },
           {
