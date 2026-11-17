@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794897996468,
+  "lastUpdate": 1794906325238,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Gungraun Benchmark": [
@@ -528,6 +528,95 @@ window.BENCHMARK_DATA = {
           {
             "name": "query_register::register/sort_date_cold",
             "value": 12531926,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/sort_date_warm",
+            "value": 4838812,
+            "unit": "instructions"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "acbdf29bb2b51726f1e4bfd8790782eb797600f8",
+          "message": "Bump pretty_decimal to 0.3\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-17T10:03:38+01:00",
+          "tree_id": "aad2e0dfed6700ef90810414f3702d4998ae7c80",
+          "url": "https://github.com/xkikeg/okane/commit/acbdf29bb2b51726f1e4bfd8790782eb797600f8"
+        },
+        "date": 1794906323842,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "load_process::load_on_memory/small",
+            "value": 119737733,
+            "unit": "instructions"
+          },
+          {
+            "name": "load_process::process/small",
+            "value": 170176051,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_historical",
+            "value": 36227456,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_historical_pricedb",
+            "value": 34174237,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_up_to_date",
+            "value": 46751,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/date_range_middle20",
+            "value": 10421548,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/account_filter",
+            "value": 757983,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/conversion_historical",
+            "value": 26967091,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/conversion_historical_pricedb",
+            "value": 29101550,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/date_range_middle20",
+            "value": 1184149,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/default",
+            "value": 4838735,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/sort_date_cold",
+            "value": 12531501,
             "unit": "instructions"
           },
           {
