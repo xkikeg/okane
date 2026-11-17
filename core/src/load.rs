@@ -280,9 +280,9 @@ mod tests {
     /// A fragment starts wherever the preceding `include` directive was, so its
     /// first entry's [`syntax::Separation`] cannot be derived from the fragment
     /// itself and is given explicitly.
-    fn parse_static_ledger_entry(
-        input: &[(&Path, syntax::Separation, &'static str)],
-    ) -> Result<Vec<(PathBuf, syntax::plain::LedgerEntry<'static>)>, parse::ParseError> {
+    fn parse_ledger_entries<'i>(
+        input: &[(&Path, syntax::Separation, &'i str)],
+    ) -> Result<Vec<(PathBuf, syntax::plain::LedgerEntry<'i>)>, parse::ParseError> {
         let opts = parse::ParseOptions::default();
         input
             .iter()
@@ -301,19 +301,37 @@ mod tests {
             .collect()
     }
 
-    fn parse_into_vec<L, F>(
+    /// Loads entries and compares them against `want`, parsed with [`parse_ledger_entries`].
+    ///
+    /// Loaded entries borrow from the loader only within the callback, and
+    /// [`syntax::LedgerEntry`] is invariant over its lifetime (the `Decoration` GAT
+    /// projection), so a `LedgerEntry<'static>` can't be compared with them.
+    /// Instead `want` is re-parsed inside the callback so both sides share a lifetime.
+    fn load_and_compare<L, F>(
         loader: L,
-    ) -> Result<Vec<(PathBuf, syntax::plain::LedgerEntry<'static>)>, LoadError>
+        want: &[(&Path, syntax::Separation, &'static str)],
+    ) -> Result<(), LoadError>
     where
         L: Borrow<Loader<F>>,
         F: FileSystem,
     {
-        let mut ret: Vec<(PathBuf, syntax::plain::LedgerEntry<'static>)> = Vec::new();
-        loader.borrow().load(|path, _ctx, entry| {
-            ret.push((path.to_owned(), entry.to_static()));
-            Ok::<(), LoadError>(())
-        })?;
-        Ok(ret)
+        let want_len = parse_ledger_entries(want)
+            .expect("test input parse must not fail")
+            .len();
+        let mut i = 0;
+        loader
+            .borrow()
+            .load(|path, _ctx, entry: &syntax::plain::LedgerEntry<'_>| {
+                let want = parse_ledger_entries(want).expect("test input parse must not fail");
+                let Some((want_path, want_entry)) = want.get(i) else {
+                    panic!("unexpected extra entry at {}: {:?}", path.display(), entry);
+                };
+                assert_eq!((want_path.as_path(), want_entry), (path, entry));
+                i += 1;
+                Ok::<(), LoadError>(())
+            })?;
+        assert_eq!(want_len, i, "fewer entries loaded than expected");
+        Ok(())
     }
 
     #[test]
@@ -331,9 +349,9 @@ mod tests {
         let child2 = testdata_dir.join("sub").join("child2.ledger");
         let child3 = testdata_dir.join("child3.ledger");
         let child4 = testdata_dir.join("sub").join("child4.ledger");
-        let want = parse_static_ledger_entry(&[
+        let want = [
             (
-                &root,
+                root.as_path(),
                 syntax::Separation::Immediate,
                 indoc! {"
             ; Demonstrates include feature including glob, parent dir, ...
@@ -349,7 +367,7 @@ mod tests {
             "},
             ),
             (
-                &child2,
+                child2.as_path(),
                 syntax::Separation::Immediate,
                 indoc! {"
             2024/01/01 * Complicated salary
@@ -361,7 +379,7 @@ mod tests {
             "},
             ),
             (
-                &child3,
+                child3.as_path(),
                 syntax::Separation::Immediate,
                 indoc! {"
             2024/03/01 * SBB CFF FFS
@@ -370,7 +388,7 @@ mod tests {
             "},
             ),
             (
-                &child2,
+                child2.as_path(),
                 // Follows a blank line after `include ../child3.ledger`.
                 syntax::Separation::BlankLine,
                 indoc! {"
@@ -382,7 +400,7 @@ mod tests {
             "},
             ),
             (
-                &child4,
+                child4.as_path(),
                 syntax::Separation::Immediate,
                 indoc! {"
             2024/7/1 * Send money
@@ -391,7 +409,7 @@ mod tests {
             "},
             ),
             (
-                &child1,
+                child1.as_path(),
                 // Follows a blank line after `include sub/child*.ledger`.
                 syntax::Separation::BlankLine,
                 indoc! {"
@@ -400,10 +418,8 @@ mod tests {
                 Assets:Bank:ZKB                            10.00 CHF
             "},
             ),
-        ])
-        .expect("test input parse must not fail");
-        let got = parse_into_vec(new_loader(root.clone())).expect("failed to parse the test data");
-        assert_eq!(want, got);
+        ];
+        load_and_compare(new_loader(root.clone()), &want).expect("failed to parse the test data");
     }
 
     #[test]
@@ -424,21 +440,22 @@ mod tests {
             "}.as_bytes().to_vec(),
         };
 
-        let want = parse_static_ledger_entry(&[(
+        let want = [(
             Path::new("path/to/sub/child3.ledger"),
             syntax::Separation::Immediate,
             indoc! {"
             ; comment here
             "},
-        )])
-        .expect("test input parse must not fail");
+        )];
 
-        let got = parse_into_vec(Loader::new(
-            PathBuf::from("path/to/root.ledger"),
-            FakeFileSystem::from(fake),
-        ))
+        load_and_compare(
+            Loader::new(
+                PathBuf::from("path/to/root.ledger"),
+                FakeFileSystem::from(fake),
+            ),
+            &want,
+        )
         .expect("parse failed");
-        assert_eq!(want, got);
     }
 
     #[test]
@@ -449,10 +466,13 @@ mod tests {
             "}.as_bytes().to_vec(),
         };
 
-        let got_err = parse_into_vec(Loader::new(
-            PathBuf::from("/path/to/not_found.ledger"),
-            FakeFileSystem::from(fake),
-        ))
+        let got_err = load_and_compare(
+            Loader::new(
+                PathBuf::from("/path/to/not_found.ledger"),
+                FakeFileSystem::from(fake),
+            ),
+            &[],
+        )
         .unwrap_err();
 
         match got_err {
@@ -473,10 +493,13 @@ mod tests {
             "}.as_bytes().to_vec(),
         };
 
-        let got_err = parse_into_vec(Loader::new(
-            PathBuf::from("/path/to/root.ledger"),
-            FakeFileSystem::from(fake),
-        ))
+        let got_err = load_and_compare(
+            Loader::new(
+                PathBuf::from("/path/to/root.ledger"),
+                FakeFileSystem::from(fake),
+            ),
+            &[],
+        )
         .expect_err("parse failed");
 
         match got_err {
