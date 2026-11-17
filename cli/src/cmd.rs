@@ -394,15 +394,16 @@ impl UiCmd {
 
 /// `--sort` flag for `register`. `Original` keeps the file order; `Date`
 /// sorts ascending by transaction date (stable, so ties preserve file order).
+/// Default value is `Date`.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, Default)]
 pub enum SortKey {
-    /// Preserve the order of appearance in the source file (current default).
+    /// Stable sort by transaction date, ascending (current default).
     #[default]
-    #[value(alias = "o")]
-    Original,
-    /// Stable sort by transaction date, ascending.
     #[value(alias = "d")]
     Date,
+    /// Preserve the order of appearance in the source file.
+    #[value(alias = "o")]
+    Original,
 }
 
 impl From<SortKey> for query::Sort {

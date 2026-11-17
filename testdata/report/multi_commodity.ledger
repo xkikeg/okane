@@ -23,7 +23,8 @@ commodity USD
     Liabilities:My Card                    -2,000.00 CHF
     Equity:Initial
 
-2024/01/27 * payment
+2024/02/03 * payment
+    ; this date is flipped
     Liabilities:My Card                     2,000.00 CHF = 0
     Assets:Banks:Swiss Bank                -2,000.00 CHF
 

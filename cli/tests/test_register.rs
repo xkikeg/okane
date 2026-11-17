@@ -43,6 +43,41 @@ fn register_default(
 }
 
 #[rstest]
+fn register_sort_original(
+    #[base_dir = "../testdata/report"]
+    #[files("multi_commodity.ledger")]
+    input: PathBuf,
+) {
+    println!("test input file path: {}", input.display());
+    let mut golden_path = input.clone();
+    let filename = golden_path.file_name().unwrap().to_owned();
+    assert!(golden_path.pop());
+    golden_path.push("golden");
+    golden_path.push(filename);
+    assert!(
+        golden_path.set_extension("golden.register.sort_original.txt"),
+        "failed to set extension .ledger to input {}",
+        input.display()
+    );
+    log::info!("golden_path: {}", golden_path.display());
+    let golden = okane_golden::Golden::new(golden_path).unwrap();
+
+    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+        .args([
+            "register".as_ref(),
+            input.as_os_str(),
+            "--sort=original".as_ref(),
+        ])
+        .assert()
+        .success();
+
+    let output = result.get_output();
+    std::io::stderr().write_all(&output.stderr).unwrap();
+    let stdout = std::str::from_utf8(&output.stdout).unwrap();
+    golden.assert(stdout);
+}
+
+#[rstest]
 fn register_exact_account_filter(
     #[base_dir = "../testdata/report"]
     #[files("single_commodity.ledger")]
