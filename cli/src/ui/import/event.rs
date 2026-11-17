@@ -149,8 +149,8 @@ fn fulfill(
 mod tests {
     use super::*;
 
-    use chrono::NaiveDate;
     use crossterm::event::KeyModifiers;
+    use jiff::civil::date;
     use pretty_assertions::assert_eq;
 
     use crate::import::single_entry::ReviewKind;
@@ -171,7 +171,7 @@ mod tests {
                 ReviewItem::new(
                     kind,
                     "preview\n".to_string(),
-                    NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+                    date(2024, 1, 2),
                     "payee".to_string(),
                     "10 USD".to_string(),
                 )

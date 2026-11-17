@@ -3,7 +3,7 @@
 use std::collections::{BinaryHeap, HashMap};
 use std::path::{Path, PathBuf};
 
-use chrono::{NaiveDate, TimeDelta};
+use jiff::{SignedDuration, civil::Date};
 use rust_decimal::Decimal;
 
 use crate::load;
@@ -32,7 +32,7 @@ pub(super) enum PriceSource {
 }
 
 #[derive(Debug)]
-struct Entry(PriceSource, Vec<(NaiveDate, Decimal)>);
+struct Entry(PriceSource, Vec<(Date, Decimal)>);
 
 /// Builder of [`PriceRepository`].
 #[derive(Debug, Default)]
@@ -43,14 +43,14 @@ pub(super) struct PriceRepositoryBuilder<'ctx> {
 /// Event of commodity price.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct PriceEvent<'ctx> {
-    pub date: NaiveDate,
+    pub date: Date,
     pub price_x: SingleAmount<'ctx>,
     pub price_y: SingleAmount<'ctx>,
 }
 
 #[cfg(test)]
 impl<'ctx> PriceEvent<'ctx> {
-    fn sort_key(&self) -> (NaiveDate, usize, usize) {
+    fn sort_key(&self) -> (Date, usize, usize) {
         let PriceEvent {
             date,
             price_x:
@@ -81,7 +81,7 @@ impl<'ctx> PriceRepositoryBuilder<'ctx> {
     fn insert_impl(
         &mut self,
         source: PriceSource,
-        date: NaiveDate,
+        date: Date,
         price_of: SingleAmount<'ctx>,
         price_with: SingleAmount<'ctx>,
     ) {
@@ -182,7 +182,7 @@ impl<'ctx> PriceRepositoryBuilder<'ctx> {
 #[derive(Debug, thiserror::Error)]
 pub enum ConversionError {
     #[error("commodity rate {0} into {1} at {2} not found")]
-    RateNotFound(OwnedCommodity, OwnedCommodity, NaiveDate),
+    RateNotFound(OwnedCommodity, OwnedCommodity, Date),
 }
 
 /// Converts the given amount into the specified commodity.
@@ -191,7 +191,7 @@ pub fn convert_amount<'ctx>(
     price_repos: &mut PriceRepository<'ctx>,
     amount: &Amount<'ctx>,
     commodity_with: CommodityTag<'ctx>,
-    date: NaiveDate,
+    date: Date,
 ) -> Result<Amount<'ctx>, ConversionError> {
     let mut result = Amount::zero();
     for v in amount.iter() {
@@ -206,7 +206,7 @@ pub struct PriceRepository<'ctx> {
     inner: NaivePriceRepository<'ctx>,
     // BTreeMap could be used if cursor support is ready.
     // Then, we can avoid computing rates over and over if no rate update happens.
-    cache: HashMap<(CommodityTag<'ctx>, NaiveDate), CommodityMap<WithDistance<Decimal>>>,
+    cache: HashMap<(CommodityTag<'ctx>, Date), CommodityMap<WithDistance<Decimal>>>,
 }
 
 impl<'ctx> PriceRepository<'ctx> {
@@ -225,7 +225,7 @@ impl<'ctx> PriceRepository<'ctx> {
         ctx: &ReportContext<'ctx>,
         value: SingleAmount<'ctx>,
         commodity_with: CommodityTag<'ctx>,
-        date: NaiveDate,
+        date: Date,
     ) -> Result<SingleAmount<'ctx>, ConversionError> {
         if value.commodity == commodity_with {
             return Ok(value);
@@ -252,7 +252,7 @@ impl<'ctx> PriceRepository<'ctx> {
 struct NaivePriceRepository<'ctx> {
     // from comodity -> to commodity -> date -> price.
     // e.g. USD AAPL 2024-01-01 100 means 1 AAPL == 100 USD at 2024-01-01.
-    // the value are sorted in NaiveDate order.
+    // the value are sorted in date order.
     records: HashMap<CommodityTag<'ctx>, HashMap<CommodityTag<'ctx>, Entry>>,
 }
 
@@ -264,7 +264,7 @@ impl<'ctx> NaivePriceRepository<'ctx> {
         ctx: &ReportContext<'ctx>,
         value: SingleAmount<'ctx>,
         commodity_with: CommodityTag<'ctx>,
-        date: NaiveDate,
+        date: Date,
     ) -> Result<SingleAmount<'ctx>, SingleAmount<'ctx>> {
         if value.commodity == commodity_with {
             return Ok(value);
@@ -283,7 +283,7 @@ impl<'ctx> NaivePriceRepository<'ctx> {
         &self,
         ctx: &ReportContext<'ctx>,
         price_with: CommodityTag<'ctx>,
-        date: NaiveDate,
+        date: Date,
     ) -> CommodityMap<WithDistance<Decimal>> {
         // minimize the distance, and then minimize the staleness.
         let mut queue: BinaryHeap<WithDistance<(CommodityTag<'ctx>, Decimal)>> = BinaryHeap::new();
@@ -293,7 +293,7 @@ impl<'ctx> NaivePriceRepository<'ctx> {
             Distance {
                 num_ledger_conversions: 0,
                 num_all_conversions: 0,
-                staleness: TimeDelta::zero(),
+                staleness: SignedDuration::ZERO,
             },
             (price_with, Decimal::ONE),
         ));
@@ -326,7 +326,7 @@ impl<'ctx> NaivePriceRepository<'ctx> {
                     continue;
                 }
                 let (record_date, rate) = rates[bound - 1];
-                let next_dist = curr_dist.extend(*source, date - record_date);
+                let next_dist = curr_dist.extend(*source, date.duration_since(record_date));
                 let rate = prev_rate * rate;
                 let next = WithDistance(next_dist.clone(), (*j, rate));
                 let e: &mut Option<_> = distances.get_mut(*j);
@@ -367,11 +367,11 @@ struct Distance {
     /// Number of conversions used to compute the rate.
     num_all_conversions: usize,
     /// Staleness of the conversion rate.
-    staleness: TimeDelta,
+    staleness: SignedDuration,
 }
 
 impl Distance {
-    fn extend(&self, source: PriceSource, staleness: TimeDelta) -> Self {
+    fn extend(&self, source: PriceSource, staleness: SignedDuration) -> Self {
         let num_ledger_conversions = self.num_ledger_conversions
             + match source {
                 PriceSource::Ledger => 1,
@@ -425,6 +425,7 @@ mod tests {
     use super::*;
 
     use bumpalo::Bump;
+    use jiff::civil::date;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
@@ -438,7 +439,7 @@ mod tests {
         builder.insert_price(
             PriceSource::Ledger,
             PriceEvent {
-                date: NaiveDate::from_ymd_opt(2024, 10, 1).unwrap(),
+                date: date(2024, 10, 1),
                 price_x: SingleAmount::from_value(eur, dec!(1)),
                 price_y: SingleAmount::from_value(chf, dec!(0.8)),
             },
@@ -451,7 +452,7 @@ mod tests {
             &ctx,
             SingleAmount::from_value(eur, dec!(1)),
             chf,
-            NaiveDate::from_ymd_opt(2024, 9, 30).unwrap(),
+            date(2024, 9, 30),
         );
         assert_eq!(got, Err(SingleAmount::from_value(eur, dec!(1))));
 
@@ -459,7 +460,7 @@ mod tests {
             &ctx,
             SingleAmount::from_value(chf, dec!(10)),
             eur,
-            NaiveDate::from_ymd_opt(2024, 9, 30).unwrap(),
+            date(2024, 9, 30),
         );
         assert_eq!(got, Err(SingleAmount::from_value(chf, dec!(10))));
 
@@ -467,7 +468,7 @@ mod tests {
             &ctx,
             SingleAmount::from_value(eur, dec!(1.0)),
             chf,
-            NaiveDate::from_ymd_opt(2024, 10, 1).unwrap(),
+            date(2024, 10, 1),
         );
         assert_eq!(got, Ok(SingleAmount::from_value(chf, dec!(0.8))));
 
@@ -475,7 +476,7 @@ mod tests {
             &ctx,
             SingleAmount::from_value(chf, dec!(10.0)),
             eur,
-            NaiveDate::from_ymd_opt(2024, 10, 1).unwrap(),
+            date(2024, 10, 1),
         );
         assert_eq!(got, Ok(SingleAmount::from_value(eur, dec!(12.5))));
     }
@@ -493,7 +494,7 @@ mod tests {
         builder.insert_price(
             PriceSource::Ledger,
             PriceEvent {
-                date: NaiveDate::from_ymd_opt(2024, 10, 1).unwrap(),
+                date: date(2024, 10, 1),
                 price_x: SingleAmount::from_value(chf, dec!(0.8)),
                 price_y: SingleAmount::from_value(eur, dec!(1)),
             },
@@ -501,7 +502,7 @@ mod tests {
         builder.insert_price(
             PriceSource::Ledger,
             PriceEvent {
-                date: NaiveDate::from_ymd_opt(2024, 10, 2).unwrap(),
+                date: date(2024, 10, 2),
                 price_x: SingleAmount::from_value(eur, dec!(0.8)),
                 price_y: SingleAmount::from_value(usd, dec!(1)),
             },
@@ -509,7 +510,7 @@ mod tests {
         builder.insert_price(
             PriceSource::Ledger,
             PriceEvent {
-                date: NaiveDate::from_ymd_opt(2024, 10, 3).unwrap(),
+                date: date(2024, 10, 3),
                 price_x: SingleAmount::from_value(jpy, dec!(100)),
                 price_y: SingleAmount::from_value(usd, dec!(1)),
             },
@@ -526,7 +527,7 @@ mod tests {
             &ctx,
             SingleAmount::from_value(chf, dec!(1)),
             jpy,
-            NaiveDate::from_ymd_opt(2024, 10, 3).unwrap(),
+            date(2024, 10, 3),
         );
         assert_eq!(got, Ok(SingleAmount::from_value(jpy, dec!(156.25))));
     }
@@ -544,7 +545,7 @@ mod tests {
         builder.insert_price(
             PriceSource::Ledger,
             PriceEvent {
-                date: NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+                date: date(2024, 1, 1),
                 price_x: SingleAmount::from_value(chf, dec!(0.8)),
                 price_y: SingleAmount::from_value(eur, dec!(1)),
             },
@@ -555,7 +556,7 @@ mod tests {
             .unwrap();
 
         let is_in_scope = |event: &PriceEvent<'_>| {
-            event.date == NaiveDate::from_ymd_opt(2024, 1, 31).unwrap()
+            event.date == date(2024, 1, 31)
                 && ((event.price_x.commodity == chf && event.price_y.commodity == eur)
                     || (event.price_x.commodity == eur && event.price_y.commodity == chf))
         };
@@ -573,12 +574,12 @@ mod tests {
         filtered.sort_by_key(|x| x.sort_key());
         let want = vec![
             PriceEvent {
-                date: NaiveDate::from_ymd_opt(2024, 1, 31).unwrap(),
+                date: date(2024, 1, 31),
                 price_x: SingleAmount::from_value(chf, Decimal::ONE),
                 price_y: SingleAmount::from_value(eur, Decimal::ONE / dec!(0.9348)),
             },
             PriceEvent {
-                date: NaiveDate::from_ymd_opt(2024, 1, 31).unwrap(),
+                date: date(2024, 1, 31),
                 price_x: SingleAmount::from_value(eur, dec!(1)),
                 price_y: SingleAmount::from_value(chf, dec!(0.9348)),
             },

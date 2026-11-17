@@ -1,4 +1,4 @@
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use rust_decimal::Decimal;
 
 use crate::import::{
@@ -11,8 +11,8 @@ use crate::import::{
 pub struct Entry {
     /// Initial line number, 1-origin.
     pub line_count: usize,
-    pub date: NaiveDate,
-    pub effective_date: NaiveDate,
+    pub date: Date,
+    pub effective_date: Date,
     pub payee: String,
     pub amount: Decimal,
     pub category: String,
@@ -75,7 +75,7 @@ impl extract::EntityFormat for VisecaFormat {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Exchange {
     pub rate: Decimal,
-    pub rate_date: NaiveDate,
+    pub rate_date: Date,
     /// original currency representation of spent.
     pub equivalent: OwnedAmount,
 }
@@ -91,6 +91,7 @@ pub struct Fee {
 mod tests {
     use super::*;
 
+    use jiff::civil::date;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
@@ -100,8 +101,8 @@ mod tests {
     fn entry_without_spent() {
         let entry = Entry {
             line_count: 6,
-            date: NaiveDate::from_ymd_opt(2020, 8, 10).unwrap(),
-            effective_date: NaiveDate::from_ymd_opt(2020, 8, 11).unwrap(),
+            date: date(2020, 8, 10),
+            effective_date: date(2020, 8, 11),
             payee: "Super gas".to_string(),
             amount: dec!(52.10),
             category: "Service stations".to_string(),
@@ -130,8 +131,8 @@ mod tests {
     fn entry_with_spent() {
         let entry = Entry {
             line_count: 6,
-            date: NaiveDate::from_ymd_opt(2020, 8, 10).unwrap(),
-            effective_date: NaiveDate::from_ymd_opt(2020, 8, 11).unwrap(),
+            date: date(2020, 8, 10),
+            effective_date: date(2020, 8, 11),
             payee: "Super gas".to_string(),
             amount: dec!(52.10),
             category: "Service stations".to_string(),
@@ -141,7 +142,7 @@ mod tests {
             }),
             exchange: Some(Exchange {
                 rate: dec!(1.092432),
-                rate_date: NaiveDate::from_ymd_opt(2020, 8, 9).unwrap(),
+                rate_date: date(2020, 8, 9),
                 equivalent: OwnedAmount {
                     value: dec!(51.20),
                     commodity: "CHF".to_string(),

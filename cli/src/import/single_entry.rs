@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use pretty_decimal::PrettyDecimal;
 use rust_decimal::Decimal;
 
@@ -15,10 +15,10 @@ use super::error::{ImportError, ImportErrorKind, IntoImportError};
 #[derive(Debug, Clone)]
 pub struct Txn {
     /// Date when the transaction happened.
-    date: NaiveDate,
+    date: Date,
 
     /// Date when the transaction took effects (i.e. actually paid / transfered).
-    effective_date: Option<NaiveDate>,
+    effective_date: Option<Date>,
 
     /// Code of the transcation for tracking.
     code: Option<String>,
@@ -126,7 +126,7 @@ const LABEL_UNKNOWN_EXPENSE: &str = "Expenses:Unknown";
 impl Txn {
     /// Create a new single entry [`Txn`].
     /// For those who owns [`super::extract::Fragment`], use [`super::extract::Fragment::new_txn()`].
-    pub fn new(date: NaiveDate, payee: &str, amount: OwnedAmount) -> Txn {
+    pub fn new(date: Date, payee: &str, amount: OwnedAmount) -> Txn {
         Txn {
             date,
             effective_date: None,
@@ -145,7 +145,7 @@ impl Txn {
     }
 
     /// Set effective date, only when it's different from date.
-    pub fn effective_date(&mut self, effective_date: NaiveDate) -> &mut Txn {
+    pub fn effective_date(&mut self, effective_date: Date) -> &mut Txn {
         if self.date != effective_date {
             self.effective_date = Some(effective_date);
         }
@@ -163,7 +163,7 @@ impl Txn {
     }
 
     /// Date when the transaction happened.
-    pub fn date(&self) -> NaiveDate {
+    pub fn date(&self) -> Date {
         self.date
     }
 
@@ -727,6 +727,7 @@ fn detach_hidden_rate<'a>(
 mod tests {
     use super::*;
 
+    use jiff::civil::date;
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
@@ -734,14 +735,14 @@ mod tests {
     #[test]
     fn test_effective_date_not_set_same_date() {
         let mut txn = Txn::new(
-            NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
+            date(2021, 10, 1),
             "foo",
             OwnedAmount {
                 commodity: "JPY".to_string(),
                 value: dec!(10),
             },
         );
-        txn.effective_date(NaiveDate::from_ymd_opt(2021, 10, 1).unwrap());
+        txn.effective_date(date(2021, 10, 1));
 
         assert_eq!(txn.effective_date, None);
     }
@@ -749,39 +750,28 @@ mod tests {
     #[test]
     fn test_effective_date_set_different_date() {
         let mut txn = Txn::new(
-            NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
+            date(2021, 10, 1),
             "foo",
             OwnedAmount {
                 commodity: "JPY".to_string(),
                 value: dec!(10),
             },
         );
-        txn.effective_date(NaiveDate::from_ymd_opt(2021, 10, 2).unwrap());
+        txn.effective_date(date(2021, 10, 2));
 
-        assert_eq!(
-            txn.effective_date,
-            Some(NaiveDate::from_ymd_opt(2021, 10, 2).unwrap())
-        );
+        assert_eq!(txn.effective_date, Some(date(2021, 10, 2)));
     }
 
     #[test]
     fn review_kind_unknown_without_dest_account() {
-        let txn = Txn::new(
-            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
-            "foo",
-            owned_amount(dec!(10), "JPY"),
-        );
+        let txn = Txn::new(date(2024, 1, 2), "foo", owned_amount(dec!(10), "JPY"));
 
         assert_eq!(ReviewKind::Unknown, txn.review_kind());
     }
 
     #[test]
     fn review_kind_pending_on_pending_rule_match() {
-        let mut txn = Txn::new(
-            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
-            "foo",
-            owned_amount(dec!(10), "JPY"),
-        );
+        let mut txn = Txn::new(date(2024, 1, 2), "foo", owned_amount(dec!(10), "JPY"));
         txn.dest_account("Expenses:Grocery")
             .clear_state(syntax::ClearState::Pending);
 
@@ -790,11 +780,7 @@ mod tests {
 
     #[test]
     fn review_kind_auto_on_regular_rule_match() {
-        let mut txn = Txn::new(
-            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
-            "foo",
-            owned_amount(dec!(10), "JPY"),
-        );
+        let mut txn = Txn::new(date(2024, 1, 2), "foo", owned_amount(dec!(10), "JPY"));
         txn.dest_account("Expenses:Grocery");
         assert_eq!(ReviewKind::Auto, txn.review_kind());
 
@@ -823,11 +809,7 @@ mod tests {
 
     #[test]
     fn try_add_charge_not_included_fails_on_different_commodity() {
-        let mut txn = Txn::new(
-            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
-            "foo",
-            owned_amount(dec!(1000), "JPY"),
-        );
+        let mut txn = Txn::new(date(2024, 1, 2), "foo", owned_amount(dec!(1000), "JPY"));
 
         let got_err = txn
             .try_add_charge_not_included(owned_amount(dec!(1), "CHF"))
@@ -842,11 +824,7 @@ mod tests {
 
     #[test]
     fn try_add_charge_not_included_fails_on_already_transferred_amount_set_txn() {
-        let mut txn = Txn::new(
-            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
-            "foo",
-            owned_amount(dec!(1000), "JPY"),
-        );
+        let mut txn = Txn::new(date(2024, 1, 2), "foo", owned_amount(dec!(1000), "JPY"));
 
         let got_err = txn
             .transferred_amount(owned_amount(dec!(900), "JPY"))
@@ -862,11 +840,7 @@ mod tests {
 
     #[test]
     fn try_add_charge_not_included_with_negative_amount() {
-        let mut txn = Txn::new(
-            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
-            "foo",
-            owned_amount(dec!(-1000), "JPY"),
-        );
+        let mut txn = Txn::new(date(2024, 1, 2), "foo", owned_amount(dec!(-1000), "JPY"));
 
         txn.try_add_charge_not_included(owned_amount(dec!(100), "JPY"))
             .expect("try_add_charge must succeed");
@@ -877,11 +851,7 @@ mod tests {
 
     #[test]
     fn try_add_charge_not_included_positive_amount() {
-        let mut txn = Txn::new(
-            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
-            "foo",
-            owned_amount(dec!(1000), "JPY"),
-        );
+        let mut txn = Txn::new(date(2024, 1, 2), "foo", owned_amount(dec!(1000), "JPY"));
 
         txn.try_add_charge_not_included(owned_amount(dec!(100), "JPY"))
             .expect("try_add_charge must succeed");
@@ -892,22 +862,14 @@ mod tests {
 
     #[test]
     fn dest_amount_plain() {
-        let txn = Txn::new(
-            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
-            "foo",
-            owned_amount(dec!(10), "JPY"),
-        );
+        let txn = Txn::new(date(2024, 1, 2), "foo", owned_amount(dec!(10), "JPY"));
 
         assert_eq!(txn.dest_amount(), borrowed_amount(dec!(-10), "JPY"));
     }
 
     #[test]
     fn dest_amount_exchanged() {
-        let mut txn = Txn::new(
-            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
-            "foo",
-            owned_amount(dec!(1000), "JPY"),
-        );
+        let mut txn = Txn::new(date(2024, 1, 2), "foo", owned_amount(dec!(1000), "JPY"));
         txn.rate(
             "USD".to_owned(),
             OwnedAmount {
@@ -922,11 +884,7 @@ mod tests {
 
     #[test]
     fn dest_amount_transferred_negative() {
-        let mut txn = Txn::new(
-            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
-            "foo",
-            owned_amount(dec!(1000), "JPY"),
-        );
+        let mut txn = Txn::new(date(2024, 1, 2), "foo", owned_amount(dec!(1000), "JPY"));
         txn.rate(
             "USD".to_owned(),
             OwnedAmount {
@@ -955,11 +913,7 @@ mod tests {
                 display_context: DisplayContext::default(),
                 commodity_rename: HashMap::new(),
             };
-            let mut txn = Txn::new(
-                NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
-                "foo",
-                owned_amount(dec!(1000), "JPY"),
-            );
+            let mut txn = Txn::new(date(2024, 1, 2), "foo", owned_amount(dec!(1000), "JPY"));
             txn.add_charge(owned_amount(dec!(10), "JPY"))
                 .transferred_amount(owned_amount(dec!(1010), "JPY"));
 
@@ -990,11 +944,7 @@ mod tests {
                 display_context: DisplayContext::default(),
                 commodity_rename: HashMap::new(),
             };
-            let mut txn = Txn::new(
-                NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
-                "foo",
-                owned_amount(dec!(-9000), "JPY"),
-            );
+            let mut txn = Txn::new(date(2024, 1, 2), "foo", owned_amount(dec!(-9000), "JPY"));
             txn.add_charge(owned_amount(dec!(1), "USD"))
                 .add_charge(owned_amount(dec!(1), "CHF"))
                 .transferred_amount(owned_amount(dec!(8700), "JPY"));
@@ -1019,11 +969,7 @@ mod tests {
                 display_context: DisplayContext::default(),
                 commodity_rename: HashMap::new(),
             };
-            let mut txn = Txn::new(
-                NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
-                "foo",
-                owned_amount(dec!(-1000), "JPY"),
-            );
+            let mut txn = Txn::new(date(2024, 1, 2), "foo", owned_amount(dec!(-1000), "JPY"));
             txn.dest_account("Expenses:Grocery")
                 .add_charge(owned_amount(dec!(100), "JPY"))
                 .transferred_amount(owned_amount(dec!(900), "JPY"));

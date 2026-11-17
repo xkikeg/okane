@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use std::io::BufRead;
 use std::io::BufReader;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 
 use super::amount::OwnedAmount;
 use super::config::{self, FieldKey};
@@ -104,7 +104,7 @@ fn extract_transaction(
         log::info!("skip empty date at line {}", pos.line());
         return Ok(None);
     }
-    let date = NaiveDate::parse_from_str(&datestr, config.format.date.as_str()).into_import_err(
+    let date = Date::strptime(config.format.date.as_str(), datestr.as_ref()).into_import_err(
         ImportErrorKind::InvalidSource,
         || {
             format!(

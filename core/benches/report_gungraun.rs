@@ -15,8 +15,8 @@ use std::hint::black_box;
 use std::path::Path;
 
 use bumpalo::Bump;
-use chrono::NaiveDate;
 use gungraun::{library_benchmark, library_benchmark_group, main};
+use jiff::civil::date;
 use lender::FallibleLender;
 use okane_core::{
     load::{self, LoadError},
@@ -144,7 +144,7 @@ fn setup_balance(case: BalanceCase) -> (&'static mut Processed, BalanceQuery<'st
         BalanceCase::ConversionUpToDate => {
             query.conversion = Some(Conversion {
                 strategy: ConversionStrategy::UpToDate {
-                    today: NaiveDate::from_ymd_opt(2025, 12, 31).unwrap(),
+                    today: date(2025, 12, 31),
                 },
                 target: p
                     .ctx

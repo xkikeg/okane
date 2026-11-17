@@ -185,9 +185,9 @@ impl fmt::Display for WithContext<'_, CommodityDetail<'_>> {
 impl<Deco: Decoration> fmt::Display for WithContext<'_, Transaction<'_, Deco>> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let xact = self.value;
-        write!(f, "{}", xact.date.format("%Y/%m/%d"))?;
+        write!(f, "{}", xact.date.strftime("%Y/%m/%d"))?;
         if let Some(edate) = &xact.effective_date {
-            write!(f, "={}", edate.format("%Y/%m/%d"))?;
+            write!(f, "={}", edate.strftime("%Y/%m/%d"))?;
         }
         write!(f, " {}", print_clear_state(xact.clear_state))?;
         if let Some(code) = &xact.code {
@@ -301,7 +301,7 @@ impl<Deco: Decoration> fmt::Display for WithContext<'_, Lot<'_, Deco>> {
             }?;
         }
         if let Some(date) = &self.value.date {
-            write!(f, " [{}]", date.format("%Y/%m/%d"))?;
+            write!(f, " [{}]", date.strftime("%Y/%m/%d"))?;
         }
         if let Some(note) = &self.value.note {
             write!(f, " ({})", note)?;
@@ -468,6 +468,7 @@ mod tests {
 
     use std::collections::HashMap;
 
+    use jiff::civil::date;
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use rust_decimal::Decimal;
@@ -560,7 +561,7 @@ mod tests {
         let got = format!(
             "{}",
             DisplayContext::default().as_display(&LedgerStatement::Txn(plain::Transaction {
-                date: NaiveDate::from_ymd_opt(2022, 12, 23).unwrap(),
+                date: date(2022, 12, 23),
                 effective_date: None,
                 clear_state: ClearState::Uncleared,
                 code: None,
@@ -603,7 +604,7 @@ mod tests {
                 cost: Some(Exchange::Rate(amount(dec!(100.00), "JPY"))),
                 lot: plain::Lot {
                     price: Some(Exchange::Rate(amount(dec!(1.1), "USD"))),
-                    date: Some(NaiveDate::from_ymd_opt(2022, 5, 20).unwrap()),
+                    date: Some(date(2022, 5, 20)),
                     note: Some(Cow::Borrowed("printable note")),
                 },
             }),

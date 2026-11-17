@@ -1,4 +1,4 @@
-use chrono::NaiveDate;
+use jiff::civil::Date;
 
 use super::{
     account::Account,
@@ -10,7 +10,7 @@ use super::{
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Transaction<'ctx> {
-    pub date: NaiveDate,
+    pub date: Date,
     // Posting in the transaction.
     // Note this MUST be a Box instead of &[Posting],
     // as Posting is a [Drop] and we can't skip calling Drop,

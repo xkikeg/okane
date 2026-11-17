@@ -1,6 +1,6 @@
 //! Defines parser functions for the primitive types used in Ledger format.
 
-use chrono::NaiveDate;
+use jiff::civil;
 use pretty_decimal::{self, PrettyDecimal};
 use winnow::{
     Parser,
@@ -43,35 +43,27 @@ where
     trace("primitive::commodity", take_till(0.., NON_COMMODITY_CHARS)).parse_next(input)
 }
 
-#[derive(Copy, Clone)]
-enum DateType {
-    Slash,
-    Hyphen,
-}
-
-impl DateType {
-    fn pattern(self) -> &'static str {
-        match self {
-            DateType::Slash => "%Y/%m/%d",
-            DateType::Hyphen => "%F",
-        }
-    }
-}
-
-/// Parses date in yyyy/mm/dd format.
-pub fn date<'a, I, E>(input: &mut I) -> winnow::Result<NaiveDate, E>
+/// Parses date in `yyyy/mm/dd` or `yyyy-mm-dd` format.
+pub fn date<'a, I, E>(input: &mut I) -> winnow::Result<civil::Date, E>
 where
     I: Stream<Slice = &'a str> + StreamIsPartial,
-    E: ParserError<I> + FromExternalError<I, chrono::ParseError>,
+    E: ParserError<I> + FromExternalError<I, jiff::Error>,
     <I as Stream>::Token: AsChar + Clone,
 {
-    let slash = (digit1, one_of('/'), digit1, one_of('/'), digit1);
-    let hyphen = (digit1, one_of('-'), digit1, one_of('-'), digit1);
+    // Both separators must be the same.
+    let ymd = |sep: char| {
+        (
+            digit1.parse_to::<i16>(),
+            one_of(sep),
+            digit1.parse_to::<i8>(),
+            one_of(sep),
+            digit1.parse_to::<i8>(),
+        )
+            .map(|(y, _, m, _, d)| (y, m, d))
+    };
     trace(
         "primitive::date",
-        alt((slash.value(DateType::Slash), hyphen.value(DateType::Hyphen)))
-            .with_taken()
-            .try_map(|(date_type, s)| NaiveDate::parse_from_str(s, date_type.pattern())),
+        alt((ymd('/'), ymd('-'))).try_map(|(y, m, d)| civil::Date::new(y, m, d)),
     )
     .parse_next(input)
 }
@@ -130,13 +122,13 @@ mod tests {
     #[test]
     fn date_parses_valid_inputs() {
         let res = expect_parse_ok(date, "2022/01/15");
-        assert_eq!(res, ("", NaiveDate::from_ymd_opt(2022, 1, 15).unwrap()));
+        assert_eq!(res, ("", civil::date(2022, 1, 15)));
 
         let res = expect_parse_ok(date, "2022/2/3");
-        assert_eq!(res, ("", NaiveDate::from_ymd_opt(2022, 2, 3).unwrap()));
+        assert_eq!(res, ("", civil::date(2022, 2, 3)));
 
         let res = expect_parse_ok(date, "2022-01-15");
-        assert_eq!(res, ("", NaiveDate::from_ymd_opt(2022, 1, 15).unwrap()));
+        assert_eq!(res, ("", civil::date(2022, 1, 15)));
     }
 
     #[test]

@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use bumpalo::Bump;
-use chrono::NaiveDate;
+use jiff::civil::date;
 use maplit::hashmap;
 use okane_core::load;
 use okane_core::report::query::{DateRange, Ledger};
@@ -31,7 +31,7 @@ pub(super) fn options() -> QueryOptions {
         price_db: None,
         exchange: None,
         historical: false,
-        today: NaiveDate::from_ymd_opt(2024, 6, 1).expect("a valid date"),
+        today: date(2024, 6, 1),
         start: None,
         end: None,
     }

@@ -9,8 +9,8 @@ pub mod tracked;
 use std::{borrow::Cow, fmt};
 
 use bounded_static::ToStatic;
-use chrono::{NaiveDate, NaiveDateTime};
 use derive_where::derive_where;
+use jiff::civil::{Date, DateTime};
 
 #[cfg(test)]
 use bounded_static::ToBoundedStatic;
@@ -163,9 +163,9 @@ pub enum CommodityDetail<'i> {
 #[derive_where(Debug, PartialEq, Eq)]
 pub struct Transaction<'i, Deco: Decoration> {
     /// Date when the transaction issued.
-    pub date: NaiveDate,
+    pub date: Date,
     /// Date when the transaction got effective, optional.
-    pub effective_date: Option<NaiveDate>,
+    pub effective_date: Option<Date>,
     /// Indiacates clearing state of the entire transaction.
     pub clear_state: ClearState,
     /// Transaction code (not necessarily unique).
@@ -199,7 +199,7 @@ impl Transaction<'_, plain::Ident> {
 
 impl<'i, Deco: Decoration> Transaction<'i, Deco> {
     /// Constructs minimal transaction.
-    pub fn new<T>(date: NaiveDate, payee: T) -> Self
+    pub fn new<T>(date: Date, payee: T) -> Self
     where
         T: Into<Cow<'i, str>>,
     {
@@ -345,7 +345,7 @@ impl<'i> From<expr::ValueExpr<'i>> for PostingAmount<'i, plain::Ident> {
 #[derive_where(Debug, PartialEq, Eq)]
 pub struct Lot<'i, Deco: Decoration> {
     pub price: Option<Deco::Decorated<Exchange<'i>>>,
-    pub date: Option<NaiveDate>,
+    pub date: Option<Date>,
     pub note: Option<Cow<'i, str>>,
 }
 
@@ -389,7 +389,7 @@ pub enum Exchange<'i> {
 /// in another commodity on a particular date time.
 #[derive(Debug, PartialEq, Eq, ToStatic)]
 pub struct PriceDBEntry<'i> {
-    pub datetime: NaiveDateTime,
+    pub datetime: DateTime,
     /// Target commodity of the price.
     pub target: Cow<'i, str>,
     /// The rate of the target commodity.

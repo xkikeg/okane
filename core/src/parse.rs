@@ -102,8 +102,8 @@ where
 mod tests {
     use super::*;
 
-    use chrono::NaiveDate;
     use indoc::indoc;
+    use jiff::civil::date;
     use pretty_assertions::assert_eq;
 
     use syntax::plain::LedgerEntry;
@@ -142,7 +142,7 @@ mod tests {
                     // Leading newlines must not turn into a leading blank line.
                     separation: Separation::Immediate,
                     statement: LedgerStatement::Txn(syntax::Transaction::new(
-                        NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(),
+                        date(2022, 1, 23),
                         ""
                     )),
                 }
@@ -172,10 +172,7 @@ mod tests {
                         separation: Separation::Immediate,
                         statement: LedgerStatement::Txn(syntax::Transaction {
                             posts: vec![syntax::Posting::new_untracked("Expenses:Grocery")],
-                            ..syntax::Transaction::new(
-                                NaiveDate::from_ymd_opt(2024, 4, 10).unwrap(),
-                                "Migros",
-                            )
+                            ..syntax::Transaction::new(date(2024, 4, 10), "Migros",)
                         }),
                     }
                 ),
@@ -189,10 +186,7 @@ mod tests {
                         separation: Separation::Immediate,
                         statement: LedgerStatement::Txn(syntax::Transaction {
                             posts: vec![syntax::Posting::new_untracked("Expenses:Grocery")],
-                            ..syntax::Transaction::new(
-                                NaiveDate::from_ymd_opt(2024, 4, 20).unwrap(),
-                                "Coop"
-                            )
+                            ..syntax::Transaction::new(date(2024, 4, 20), "Coop")
                         }),
                     }
                 )

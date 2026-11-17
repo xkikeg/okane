@@ -40,7 +40,7 @@ where
     E: ParserError<Input>
         + AddContext<Input, StrContext>
         + FromExternalError<Input, pretty_decimal::ParseError>
-        + FromExternalError<Input, chrono::ParseError>,
+        + FromExternalError<Input, jiff::Error>,
 {
     trace("posting::posting", move |input: &mut Input| {
         let clear_state = preceded(space0, metadata::clear_state).parse_next(input)?;
@@ -134,7 +134,7 @@ where
     E: ParserError<Input>
         + AddContext<Input, StrContext>
         + FromExternalError<Input, pretty_decimal::ParseError>
-        + FromExternalError<Input, chrono::ParseError>,
+        + FromExternalError<Input, jiff::Error>,
 {
     let amount = terminated(Deco::decorate_parser(expr::value_expr), space0).parse_next(input)?;
     let lot = lot(input)?;
@@ -163,7 +163,7 @@ where
     E: ParserError<Input>
         + AddContext<Input, StrContext>
         + FromExternalError<Input, pretty_decimal::ParseError>
-        + FromExternalError<Input, chrono::ParseError>,
+        + FromExternalError<Input, jiff::Error>,
 {
     space0.void().parse_next(input)?;
     let mut lot = syntax::Lot::default();
@@ -271,8 +271,8 @@ where
 mod tests {
     use super::*;
 
-    use chrono::NaiveDate;
     use indoc::indoc;
+    use jiff::civil::date;
     use pretty_assertions::assert_eq;
     use pretty_decimal::PrettyDecimal;
     use rust_decimal_macros::dec;
@@ -496,7 +496,7 @@ mod tests {
                                             commodity: "JPY".into()
                                         })
                                     )),
-                                    date: Some(NaiveDate::from_ymd_opt(2022, 9, 1).unwrap()),
+                                    date: Some(date(2022, 9, 1)),
                                     note: Some("note foobar".into()),
                                 }
                             )

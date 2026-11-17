@@ -3,7 +3,7 @@
 use std::io::BufRead;
 use std::str::FromStr;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use lazy_static::lazy_static;
 use regex::Regex;
 use rust_decimal::Decimal;
@@ -245,11 +245,10 @@ fn parse_decimal(name: &str, value: &str) -> Result<Decimal, ImportError> {
         })
 }
 
-fn parse_euro_date(name: &str, value: &str) -> Result<NaiveDate, ImportError> {
-    NaiveDate::parse_from_str(value, "%d.%m.%y")
-        .into_import_err(ImportErrorKind::InvalidSource, || {
-            format!("failed to parse the given string {value} as a date for {name}")
-        })
+fn parse_euro_date(name: &str, value: &str) -> Result<Date, ImportError> {
+    Date::strptime("%d.%m.%y", value).into_import_err(ImportErrorKind::InvalidSource, || {
+        format!("failed to parse the given string {value} as a date for {name}")
+    })
 }
 
 #[cfg(test)]
@@ -257,6 +256,7 @@ mod tests {
     use super::*;
 
     use indoc::indoc;
+    use jiff::civil::date;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
@@ -264,7 +264,7 @@ mod tests {
     fn parse_euro_date_valid() {
         assert_eq!(
             parse_euro_date("date", "22.06.20").unwrap(),
-            NaiveDate::from_ymd_opt(2020, 6, 22).unwrap()
+            date(2020, 6, 22)
         );
     }
 
@@ -389,8 +389,8 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 1,
-                date: NaiveDate::from_ymd_opt(2020, 6, 21).unwrap(),
-                effective_date: NaiveDate::from_ymd_opt(2020, 6, 22).unwrap(),
+                date: date(2020, 6, 21),
+                effective_date: date(2020, 6, 22),
                 payee: "Your payment - Thank you".to_string(),
                 amount: dec!(-4204.75),
                 category: String::new(),
@@ -403,8 +403,8 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 2,
-                date: NaiveDate::from_ymd_opt(2020, 6, 22).unwrap(),
-                effective_date: NaiveDate::from_ymd_opt(2020, 6, 24).unwrap(),
+                date: date(2020, 6, 22),
+                effective_date: date(2020, 6, 24),
                 payee: "foo shop 100".to_owned(),
                 amount: dec!(1234.56),
                 category: "Catering Service".to_owned(),
@@ -417,8 +417,8 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 4,
-                date: NaiveDate::from_ymd_opt(2020, 6, 29).unwrap(),
-                effective_date: NaiveDate::from_ymd_opt(2020, 7, 1).unwrap(),
+                date: date(2020, 6, 29),
+                effective_date: date(2020, 7, 1),
                 payee: "foo shop 100".to_string(),
                 amount: dec!(-56.23),
                 category: "Catering Service".to_string(),
@@ -431,8 +431,8 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 6,
-                date: NaiveDate::from_ymd_opt(2020, 8, 10).unwrap(),
-                effective_date: NaiveDate::from_ymd_opt(2020, 8, 11).unwrap(),
+                date: date(2020, 8, 10),
+                effective_date: date(2020, 8, 11),
                 payee: "Super gas".to_string(),
                 amount: dec!(52.10),
                 category: "Service stations".to_string(),
@@ -442,7 +442,7 @@ mod tests {
                 }),
                 exchange: Some(Exchange {
                     rate: dec!(1.092432),
-                    rate_date: NaiveDate::from_ymd_opt(2020, 8, 9).unwrap(),
+                    rate_date: date(2020, 8, 9),
                     equivalent: OwnedAmount {
                         value: dec!(51.20),
                         commodity: "CHF".to_string(),
@@ -461,8 +461,8 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 10,
-                date: NaiveDate::from_ymd_opt(2020, 12, 13).unwrap(),
-                effective_date: NaiveDate::from_ymd_opt(2020, 12, 15).unwrap(),
+                date: date(2020, 12, 13),
+                effective_date: date(2020, 12, 15),
                 payee: "PAYPAL *STEAM GAMES, 35314369001 GB".to_string(),
                 amount: dec!(19.35),
                 category: "Game, toy, and hobby shops".to_string(),
@@ -499,8 +499,8 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 1,
-                date: NaiveDate::from_ymd_opt(2020, 6, 21).unwrap(),
-                effective_date: NaiveDate::from_ymd_opt(2020, 6, 22).unwrap(),
+                date: date(2020, 6, 21),
+                effective_date: date(2020, 6, 22),
                 payee: "Your payment - Thank you".to_string(),
                 amount: dec!(-4204.75),
                 category: String::new(),
@@ -513,8 +513,8 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 2,
-                date: NaiveDate::from_ymd_opt(2020, 8, 10).unwrap(),
-                effective_date: NaiveDate::from_ymd_opt(2020, 8, 11).unwrap(),
+                date: date(2020, 8, 10),
+                effective_date: date(2020, 8, 11),
                 payee: "Super gas".to_string(),
                 amount: dec!(52.10),
                 category: "Service stations".to_string(),
@@ -524,7 +524,7 @@ mod tests {
                 }),
                 exchange: Some(Exchange {
                     rate: dec!(1.092432),
-                    rate_date: NaiveDate::from_ymd_opt(2020, 8, 9).unwrap(),
+                    rate_date: date(2020, 8, 9),
                     equivalent: OwnedAmount {
                         value: dec!(51.20),
                         commodity: "CHF".to_string(),
@@ -537,8 +537,8 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 5,
-                date: NaiveDate::from_ymd_opt(2020, 8, 20).unwrap(),
-                effective_date: NaiveDate::from_ymd_opt(2020, 8, 23).unwrap(),
+                date: date(2020, 8, 20),
+                effective_date: date(2020, 8, 23),
                 payee: "MY TAXI, Amsterdam NL".to_string(),
                 amount: dec!(1.05),
                 category: "Taxicabs and limousines".to_string(),
@@ -548,7 +548,7 @@ mod tests {
                 }),
                 exchange: Some(Exchange {
                     rate: dec!(1.045704),
-                    rate_date: NaiveDate::from_ymd_opt(2020, 8, 23).unwrap(),
+                    rate_date: date(2020, 8, 23),
                     equivalent: OwnedAmount {
                         value: dec!(1.05),
                         commodity: "CHF".to_string(),
@@ -574,8 +574,8 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 1,
-                date: NaiveDate::from_ymd_opt(2023, 8, 16).unwrap(),
-                effective_date: NaiveDate::from_ymd_opt(2023, 8, 18).unwrap(),
+                date: date(2023, 8, 16),
+                effective_date: date(2023, 8, 18),
                 payee: "MY AIR, FRANKFURT AT".to_string(),
                 amount: dec!(935.05),
                 category: "".to_string(),
@@ -585,7 +585,7 @@ mod tests {
                 }),
                 exchange: Some(Exchange {
                     rate: dec!(0.9746651982),
-                    rate_date: NaiveDate::from_ymd_opt(2023, 8, 16).unwrap(),
+                    rate_date: date(2023, 8, 16),
                     equivalent: OwnedAmount {
                         value: dec!(918.95),
                         commodity: "CHF".to_string(),
@@ -623,8 +623,8 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 1,
-                date: NaiveDate::from_ymd_opt(2023, 8, 16).unwrap(),
-                effective_date: NaiveDate::from_ymd_opt(2023, 8, 18).unwrap(),
+                date: date(2023, 8, 16),
+                effective_date: date(2023, 8, 18),
                 payee: "MY AIR, FRANKFURT AT".to_string(),
                 amount: dec!(935.05),
                 category: "Air carriers, airlines".to_string(),
@@ -634,7 +634,7 @@ mod tests {
                 }),
                 exchange: Some(Exchange {
                     rate: dec!(0.9746651982),
-                    rate_date: NaiveDate::from_ymd_opt(2023, 8, 16).unwrap(),
+                    rate_date: date(2023, 8, 16),
                     equivalent: OwnedAmount {
                         value: dec!(918.95),
                         commodity: "CHF".to_string(),
@@ -653,8 +653,8 @@ mod tests {
         assert_eq!(
             Some(Entry {
                 line_count: 11,
-                date: NaiveDate::from_ymd_opt(2020, 6, 22).unwrap(),
-                effective_date: NaiveDate::from_ymd_opt(2020, 6, 24).unwrap(),
+                date: date(2020, 6, 22),
+                effective_date: date(2020, 6, 24),
                 payee: "foo shop 100".to_owned(),
                 amount: dec!(1234.56),
                 category: "Catering Service".to_owned(),

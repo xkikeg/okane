@@ -6,7 +6,7 @@
 //! [`Command`]s and fulfilled by [`super::event`], which reports back via
 //! [`ReviewApp::apply_decision`].
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 
 use crate::import::single_entry::ReviewKind;
 use crate::ui::table::TableNav;
@@ -29,7 +29,7 @@ pub struct ReviewItem {
     pub status: Status,
     /// Rendered Ledger text of the (possibly edited) transaction.
     pub preview: String,
-    pub date: NaiveDate,
+    pub date: Date,
     pub payee: String,
     pub amount: String,
 }
@@ -38,7 +38,7 @@ impl ReviewItem {
     pub fn new(
         kind: ReviewKind,
         preview: String,
-        date: NaiveDate,
+        date: Date,
         payee: String,
         amount: String,
     ) -> Self {
@@ -379,13 +379,14 @@ impl ReviewApp {
 mod tests {
     use super::*;
 
+    use jiff::civil::date;
     use pretty_assertions::assert_eq;
 
     fn item(kind: ReviewKind) -> ReviewItem {
         ReviewItem::new(
             kind,
             "preview\n".to_string(),
-            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            date(2024, 1, 2),
             "payee".to_string(),
             "10 USD".to_string(),
         )

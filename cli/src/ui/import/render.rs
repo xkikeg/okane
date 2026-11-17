@@ -270,7 +270,7 @@ fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
 mod tests {
     use std::path::Path;
 
-    use chrono::NaiveDate;
+    use jiff::civil::date;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::layout::Position;
@@ -284,7 +284,7 @@ mod tests {
         ReviewItem::new(
             kind,
             format!("2024-01-02 {payee}\n    Expenses:Food    {amount}\n    Assets:Bank\n"),
-            NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+            date(2024, 1, 2),
             payee.to_string(),
             amount.to_string(),
         )

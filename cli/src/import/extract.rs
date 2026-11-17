@@ -2,7 +2,7 @@ mod filter;
 #[cfg(test)]
 mod testing;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 
 use okane_core::syntax::ClearState;
 
@@ -153,7 +153,7 @@ impl<'a> Fragment<'a> {
     /// Creates a new transaction out of the fragment.
     pub fn new_txn<Pos, PosFn>(
         &self,
-        date: NaiveDate,
+        date: Date,
         amount: OwnedAmount,
         mut position: PosFn,
     ) -> single_entry::Txn

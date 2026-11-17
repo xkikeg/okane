@@ -341,7 +341,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use bumpalo::Bump;
-    use chrono::NaiveDate;
+    use jiff::civil::date;
     use okane_core::report::{Account, Amount, ReportContext};
 
     use crate::ui::table::{NavCommand, TableNav};
@@ -812,7 +812,7 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(i, payee)| RegisterRow {
-                date: NaiveDate::from_ymd_opt(2024, 1, i as u32 + 1).unwrap(),
+                date: date(2024, 1, i as i8 + 1),
                 payee: (*payee).to_owned(),
                 amount: Amount::zero(),
                 total: Amount::zero(),
@@ -882,7 +882,7 @@ mod tests {
         let (_ctx, account) = make_account(&arena, "Assets:Cash");
         let rows: Vec<RegisterRow<'_>> = (0..3)
             .map(|i| RegisterRow {
-                date: NaiveDate::from_ymd_opt(2024, 1, i + 1).unwrap(),
+                date: date(2024, 1, i + 1),
                 payee: "payee".to_owned(),
                 amount: Amount::zero(),
                 total: Amount::zero(),

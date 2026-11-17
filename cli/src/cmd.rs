@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
 use bumpalo::Bump;
-use chrono::NaiveDate;
+use jiff::civil::Date;
 
 use lender::FallibleLender;
 use okane_core::report::query;
@@ -243,7 +243,7 @@ impl FlattenCmd {
 #[derive(Debug)]
 pub struct EvalCmd {
     /// Date of the price.
-    date: NaiveDate,
+    date: Date,
     eval_options: EvalOptions,
     source: PathBuf,
     /// Terms of the expression, joined with spaces.
@@ -470,7 +470,7 @@ struct EvalOptions {
     exchange: Option<String>,
     /// Convert at the rate of each transaction's date, instead of `today`'s.
     historical: bool,
-    today: NaiveDate,
+    today: Date,
     /// Transactions to report, with `--current` already turned into its end.
     date_range: query::DateRange,
     account_filter: AccountFilterMode,

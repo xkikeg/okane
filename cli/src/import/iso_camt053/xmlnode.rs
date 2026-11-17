@@ -507,32 +507,48 @@ pub struct DateHolder {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Date {
     #[serde(rename = "Dt")]
-    Date(chrono::NaiveDate),
-    #[serde(rename = "DtTm")]
-    DateTime(chrono::DateTime<chrono::FixedOffset>),
+    Date(jiff::civil::Date),
+    /// ISO 8601 date time, usually with an UTC offset such as `+02:00` or `Z`.
+    /// The offset is dropped on parsing: we only need the date in the local
+    /// time of the statement.
+    #[serde(rename = "DtTm", deserialize_with = "deserialize_local_datetime")]
+    DateTime(jiff::civil::DateTime),
+}
+
+/// Deserializes ISO 8601 date time, keeping the local date time as written
+/// regardless of its offset. Unlike [`jiff::civil::DateTime`]'s own parser,
+/// this accepts the `Z` offset too.
+fn deserialize_local_datetime<'de, D>(deserializer: D) -> Result<jiff::civil::DateTime, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = Cow::<'de, str>::deserialize(deserializer)?;
+    let pieces =
+        jiff::fmt::temporal::Pieces::parse(s.as_bytes()).map_err(serde::de::Error::custom)?;
+    Ok(pieces.date().to_datetime(pieces.time().unwrap_or_default()))
 }
 
 impl DateHolder {
-    /// Creates instance from NaiveDate.
+    /// Creates instance from Date.
     #[cfg(test)]
-    pub fn from_naive_date(date: chrono::NaiveDate) -> Self {
+    pub fn from_date(date: jiff::civil::Date) -> Self {
         Self {
             value: Date::Date(date),
         }
     }
 
-    /// Returns the naive local date for the Date.
-    pub fn as_naive_date(&self) -> chrono::NaiveDate {
-        self.value.as_naive_date()
+    /// Returns the local date for the Date.
+    pub fn as_date(&self) -> jiff::civil::Date {
+        self.value.as_date()
     }
 }
 
 impl Date {
-    /// Returns the naive local date for the Date.
-    pub fn as_naive_date(&self) -> chrono::NaiveDate {
+    /// Returns the local date for the Date.
+    pub fn as_date(&self) -> jiff::civil::Date {
         match &self {
             Self::Date(d) => *d,
-            Self::DateTime(d) => d.date_naive(),
+            Self::DateTime(d) => d.date(),
         }
     }
 }
@@ -545,6 +561,28 @@ mod tests {
 
     use indoc::indoc;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn parse_date_holder_date() {
+        let input = "<BookgDt><Dt>2021-10-01</Dt></BookgDt>";
+        let date: DateHolder = quick_xml::de::from_str(input).unwrap();
+        assert_eq!(jiff::civil::date(2021, 10, 1), date.as_date());
+    }
+
+    #[test]
+    fn parse_date_holder_date_time_keeps_local_date() {
+        // In UTC this is 2021-09-30, but the statement's local date is 10-01.
+        let input = "<BookgDt><DtTm>2021-10-01T01:00:00+02:00</DtTm></BookgDt>";
+        let date: DateHolder = quick_xml::de::from_str(input).unwrap();
+        assert_eq!(jiff::civil::date(2021, 10, 1), date.as_date());
+    }
+
+    #[test]
+    fn parse_date_holder_date_time_zulu() {
+        let input = "<BookgDt><DtTm>2021-10-01T23:00:00Z</DtTm></BookgDt>";
+        let date: DateHolder = quick_xml::de::from_str(input).unwrap();
+        assert_eq!(jiff::civil::date(2021, 10, 1), date.as_date());
+    }
 
     #[test]
     fn parse_account_iban() {
