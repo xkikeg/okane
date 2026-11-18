@@ -524,7 +524,7 @@ impl<'a, 'ctx> RegisterEntries<'a, 'ctx> {
                     let txn_value = self
                         .txn_value
                         .get_or_insert_with(|| TxnValue::new(self.ctx, txn));
-                    if !filter.matches(txn_value, i)? {
+                    if !filter.matches(self.ctx, self.price_repos, txn_value, i)? {
                         continue;
                     }
                 }
@@ -622,7 +622,7 @@ fn compute_balance<'a, 'ctx>(
         let matcher = filter.map(|filter| (filter, TxnValue::new(ctx, txn)));
         for (i, posting) in txn.postings.iter().enumerate() {
             if let Some((filter, txn_value)) = &matcher
-                && !filter.matches(txn_value, i)?
+                && !filter.matches(ctx, price_repos, txn_value, i)?
             {
                 continue;
             }

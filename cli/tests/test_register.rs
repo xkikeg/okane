@@ -346,3 +346,38 @@ fn register_cel_filter_partial_amount(
     let stdout = std::str::from_utf8(&output.stdout).unwrap();
     golden.assert(stdout);
 }
+
+#[rstest]
+fn register_cel_filter_convert(
+    #[base_dir = "../testdata/report"]
+    #[files("multi_commodity.ledger")]
+    input: PathBuf,
+) {
+    let mut golden_path = input.clone();
+    let filename = golden_path.file_name().unwrap().to_owned();
+    assert!(golden_path.pop());
+    golden_path.push("golden");
+    golden_path.push(filename);
+    assert!(
+        golden_path.set_extension("golden.register.cel_filter_convert.txt"),
+        "failed to set extension .ledger to input {}",
+        input.display()
+    );
+    let golden = okane_golden::Golden::new(golden_path).unwrap();
+
+    // Postings below -1,000 CHF at the rate of the day, whatever commodity.
+    let result = assert_cmd::Command::new(&*testing::BIN_PATH)
+        .args([
+            "register".as_ref(),
+            input.as_os_str(),
+            OsStr::new("--filter"),
+            OsStr::new(r#"convert(amount, "CHF") < amount("-1,000 CHF")"#),
+        ])
+        .assert()
+        .success();
+
+    let output = result.get_output();
+    std::io::stderr().write_all(&output.stderr).unwrap();
+    let stdout = std::str::from_utf8(&output.stdout).unwrap();
+    golden.assert(stdout);
+}
