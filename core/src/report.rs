@@ -13,6 +13,7 @@ mod filter;
 mod price_db;
 mod process;
 pub mod query;
+mod tag;
 mod tags;
 mod transaction;
 
@@ -28,6 +29,7 @@ pub use eval::{Amount, SingleAmount};
 pub use filter::{FilterError, PostingFilter};
 pub use price_db::LoadError;
 pub use process::{ProcessOptions, process};
+pub use tag::{TagEntry, TagKey, TagSet, TagStore};
 pub use tags::{Tag, TagQuery, TagValue, tags};
 pub use transaction::{Posting, Transaction};
 

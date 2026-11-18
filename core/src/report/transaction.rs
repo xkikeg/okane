@@ -5,6 +5,7 @@ use crate::syntax::ClearState;
 use super::{
     account::Account,
     eval::{Amount, SingleAmount},
+    tag::TagSet,
 };
 
 /// Evaluated transaction, already processed to have right balance.
@@ -17,6 +18,8 @@ pub struct Transaction<'ctx> {
     pub payee: &'ctx str,
     /// Clear state of the transaction itself.
     pub clear_state: ClearState,
+    /// Tags of the transaction, including the ones from `apply tag`.
+    pub tags: TagSet<'ctx>,
     // Posting in the transaction.
     // Note this MUST be a Box instead of &[Posting],
     // as Posting is a [Drop] and we can't skip calling Drop,
@@ -38,6 +41,9 @@ pub struct Posting<'ctx> {
     /// Clear state of the posting. A posting without its own mark takes
     /// the state of the enclosing transaction.
     pub clear_state: ClearState,
+
+    /// Tags written on the posting itself, without the transaction's tags.
+    pub tags: TagSet<'ctx>,
 
     /// Amount of the posting described in the Ledger.
     // Note this is not PostingAmount,
