@@ -2,11 +2,11 @@ use std::hint::black_box;
 use std::path::Path;
 
 use bumpalo::Bump;
-use chrono::NaiveDate;
 use criterion::measurement::Measurement as _;
 use criterion::{
     BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main, measurement::WallTime,
 };
+use jiff::civil::date;
 use lender::FallibleLender;
 use log::LevelFilter;
 use okane_core::{
@@ -177,7 +177,7 @@ fn query_balance(c: &mut Criterion) {
             date_range: report::query::DateRange::default(),
             conversion: Some(report::query::Conversion {
                 strategy: report::query::ConversionStrategy::UpToDate {
-                    today: NaiveDate::from_ymd_opt(2025, 12, 31).unwrap(),
+                    today: date(2025, 12, 31),
                 },
                 target: usd,
             }),

@@ -185,7 +185,7 @@ The following attributes can be specified.
   `VISECA`. If unset, it is guessed from the suffix: `.csv` means CSV and `.tsv` means
   TSV. For any other file it is mandatory to set this field.
 * `date`: the format string for the date, in
-  [`chrono::format::strftime`](https://docs.rs/chrono/latest/chrono/format/strftime/index.html)
+  [`jiff::fmt::strtime`](https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html)
   syntax. Required for CSV/TSV. `"%Y/%m/%d"` (year/month/day) is commonly used in Japan.
 * `delimiter`: the delimiter of the file. As of 2024-07-30 it only takes effect for CSV
   files. It must be a single ASCII character.

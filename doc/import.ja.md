@@ -145,7 +145,7 @@ format:
 下記の属性が指定できます。
 
 * `file_type`: 入力ファイルの種別で、`CSV`, `TSV`, `ISO_CAMT053`, `VISECA` のいずれかです。指定がない場合は拡張子から推測され、`.csv` ならCSV、`.tsv` ならTSVとなります。それ以外のファイルではこの属性の指定が必須です。
-* `date`: 日付のフォーマット文字列を [`chrono::format::strftime`](https://docs.rs/chrono/latest/chrono/format/strftime/index.html) の書式で指定します。CSV/TSVでは必須です。`"%Y/%m/%d"` (年/月/日)が日本ではよく使われると思います。
+* `date`: 日付のフォーマット文字列を [`jiff::fmt::strtime`](https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html) の書式で指定します。CSV/TSVでは必須です。`"%Y/%m/%d"` (年/月/日)が日本ではよく使われると思います。
 * `delimiter`: ファイルの区切り文字を指定します。2024-07-30時点ではCSVファイルにしか効果がありません。ASCII1文字である必要があります。
 * `fields`: CSVファイルで列の意味を記述します。詳細は後述します。
 * `skip.head`: ヘッダ行を読み込む前に、ファイル先頭で読み飛ばす行数を指定します。CSVのみで有効です。

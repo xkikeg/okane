@@ -290,7 +290,7 @@ impl OptionsForm {
         Ok(options)
     }
 
-    fn date_of(&self, field: &Field) -> Result<Option<chrono::NaiveDate>, String> {
+    fn date_of(&self, field: &Field) -> Result<Option<jiff::civil::Date>, String> {
         field
             .stated()
             .map(|text| parse_date(text).map_err(|err| format!("{}: {err}", field.label())))
@@ -305,14 +305,10 @@ mod tests {
     use std::path::PathBuf;
 
     use assert_matches::assert_matches;
-    use chrono::NaiveDate;
     use crossterm::event::KeyModifiers;
+    use jiff::civil::date;
 
     use super::super::testing::options;
-
-    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(y, m, d).unwrap()
-    }
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)

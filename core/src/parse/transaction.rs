@@ -71,8 +71,8 @@ where
 mod tests {
     use super::*;
 
-    use chrono::NaiveDate;
     use indoc::indoc;
+    use jiff::civil::date;
     use pretty_assertions::assert_eq;
     use pretty_decimal::PrettyDecimal;
     use rust_decimal_macros::dec;
@@ -87,10 +87,7 @@ mod tests {
         let input = "2022/01/23\n";
         assert_eq!(
             expect_parse_ok(transaction, input),
-            (
-                "",
-                Transaction::new(NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(), "")
-            )
+            ("", Transaction::new(date(2022, 1, 23), ""))
         );
     }
 
@@ -106,7 +103,7 @@ mod tests {
             (
                 "",
                 syntax::Transaction {
-                    effective_date: Some(NaiveDate::from_ymd_opt(2022, 1, 28).unwrap()),
+                    effective_date: Some(date(2022, 1, 28)),
                     clear_state: syntax::ClearState::Cleared,
                     code: Some(Cow::Borrowed("code")),
                     payee: Cow::Borrowed("Foo"),
@@ -124,7 +121,7 @@ mod tests {
                         },
                         Posting::new_untracked("Liabilities B")
                     ],
-                    ..Transaction::new(NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(), "")
+                    ..Transaction::new(date(2022, 1, 23), "")
                 }
             )
         );
@@ -147,7 +144,7 @@ mod tests {
             (
                 "",
                 syntax::Transaction {
-                    effective_date: Some(NaiveDate::from_ymd_opt(2022, 1, 28).unwrap()),
+                    effective_date: Some(date(2022, 1, 28)),
                     clear_state: syntax::ClearState::Pending,
                     code: Some(Cow::Borrowed("code")),
                     payee: Cow::Borrowed("Foo"),
@@ -206,7 +203,7 @@ mod tests {
                             ..Posting::new_untracked("Assets C")
                         }
                     ],
-                    ..Transaction::new(NaiveDate::from_ymd_opt(2022, 1, 23).unwrap(), "")
+                    ..Transaction::new(date(2022, 1, 23), "")
                 }
             )
         );

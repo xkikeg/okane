@@ -132,8 +132,8 @@ mod tests {
 
     use assert_matches::assert_matches;
     use bumpalo::Bump;
-    use chrono::NaiveDate;
     use indoc::indoc;
+    use jiff::civil::date;
 
     use super::super::app::Screen;
     use super::super::testing::{options, process};
@@ -154,10 +154,6 @@ mod tests {
             Assets:Bank    100 USD
             Equity
     "};
-
-    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(y, m, d).unwrap()
-    }
 
     /// Builds the app the way a session does, from `options`.
     fn app_with<'ctx>(

@@ -3,8 +3,8 @@
 
 use std::cmp::max;
 
-use chrono::NaiveDate;
 use crossterm::event::{KeyCode, KeyEvent};
+use jiff::civil::Date;
 use okane_core::report::query::{Conversion, DateRange};
 use okane_core::report::{Account, AccountAggregate, Amount};
 use regex::Regex;
@@ -81,7 +81,7 @@ impl OwnedRegisterScope {
 /// filter), so it is not duplicated per row.
 #[derive(Debug, Clone)]
 pub struct RegisterRow<'ctx> {
-    pub date: NaiveDate,
+    pub date: Date,
     pub payee: String,
     pub amount: Amount<'ctx>,
     pub total: Amount<'ctx>,
@@ -265,7 +265,7 @@ mod tests {
     fn register_view<'ctx>(account: Account<'ctx>, n: usize) -> RegisterView<'ctx> {
         let rows: Vec<RegisterRow<'ctx>> = (0..n)
             .map(|i| RegisterRow {
-                date: NaiveDate::from_ymd_opt(2024, 1, (i + 1) as u32).unwrap(),
+                date: jiff::civil::date(2024, 1, (i + 1) as i8),
                 payee: "payee".to_owned(),
                 amount: Amount::zero(),
                 total: Amount::zero(),

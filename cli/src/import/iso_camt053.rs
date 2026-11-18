@@ -1,7 +1,7 @@
 pub(super) mod xmlnode;
 
-use chrono::NaiveDate;
 use either::Either;
+use jiff::civil::Date;
 use rust_decimal::Decimal;
 
 use super::amount::OwnedAmount;
@@ -12,11 +12,11 @@ use super::single_entry;
 
 impl xmlnode::Entry {
     /// Returns value_date if available, otherwise booking date.
-    fn guess_value_date(&self) -> NaiveDate {
+    fn guess_value_date(&self) -> Date {
         self.value_date
             .as_ref()
             .unwrap_or(&self.booking_date)
-            .as_naive_date()
+            .as_date()
     }
 }
 
@@ -66,7 +66,7 @@ where
                         entry.credit_or_debit.value
                     )
                 });
-                txn.effective_date(entry.booking_date.as_naive_date());
+                txn.effective_date(entry.booking_date.as_date());
                 add_charges(&mut txn, &entry.charges)?;
                 res.push(txn);
             }
@@ -85,7 +85,7 @@ where
                         code,
                     )
                 });
-                txn.effective_date(entry.booking_date.as_naive_date())
+                txn.effective_date(entry.booking_date.as_date())
                     .code_option(code);
                 if let Some(detail_amount) = transaction
                     .amount_details
@@ -255,7 +255,7 @@ impl<'a> extract::Entity<'a> for CamtEntity<'a> {
 mod tests {
     use super::*;
 
-    use chrono::NaiveDate;
+    use jiff::civil::date;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
 
@@ -270,12 +270,8 @@ mod tests {
             credit_or_debit: xmlnode::CreditDebitIndicator {
                 value: xmlnode::CreditOrDebit::Credit,
             },
-            booking_date: xmlnode::DateHolder::from_naive_date(
-                NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
-            ),
-            value_date: Some(xmlnode::DateHolder::from_naive_date(
-                NaiveDate::from_ymd_opt(2021, 10, 1).unwrap(),
-            )),
+            booking_date: xmlnode::DateHolder::from_date(date(2021, 10, 1)),
+            value_date: Some(xmlnode::DateHolder::from_date(date(2021, 10, 1))),
             bank_transaction_code: xmlnode::BankTransactionCode {
                 domain: None,
                 proprietary: None,

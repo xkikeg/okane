@@ -10,7 +10,10 @@ use std::{
 
 use okane_core::load;
 
-use chrono::{Datelike, Days, NaiveDate, Weekday};
+use jiff::{
+    ToSpan,
+    civil::{Date, Weekday},
+};
 use pretty_decimal::PrettyDecimal;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -161,30 +164,30 @@ impl InputParams {
     /// Returns a `[start, end)` date window covering `length_pct` percent of
     /// the dataset's date span, starting `start_pct` percent in from the
     /// beginning. The dataset spans `[YEAR_BEGIN-01-01, (YEAR_BEGIN+num_years)-01-01)`.
-    fn date_window(&self, start_pct: u32, length_pct: u32) -> (NaiveDate, NaiveDate) {
+    fn date_window(&self, start_pct: u32, length_pct: u32) -> (Date, Date) {
         debug_assert!(start_pct + length_pct <= 100);
-        let begin = NaiveDate::from_ymd_opt(YEAR_BEGIN, 1, 1).unwrap();
-        let end = NaiveDate::from_ymd_opt(YEAR_BEGIN + self.num_years, 1, 1).unwrap();
-        let total_days = (end - begin).num_days() as u64;
-        let start_offset = total_days * start_pct as u64 / 100;
-        let end_offset = total_days * (start_pct + length_pct) as u64 / 100;
-        let start = begin.checked_add_days(Days::new(start_offset)).unwrap();
-        let stop = begin.checked_add_days(Days::new(end_offset)).unwrap();
+        let begin = new_year_day(YEAR_BEGIN);
+        let end = new_year_day(YEAR_BEGIN + self.num_years);
+        let total_days = i64::from((end - begin).get_days());
+        let start_offset = total_days * i64::from(start_pct) / 100;
+        let end_offset = total_days * i64::from(start_pct + length_pct) / 100;
+        let start = begin + start_offset.days();
+        let stop = begin + end_offset.days();
         (start, stop)
     }
 
     /// First 10% of the dataset's date span.
-    pub fn date_range_first(&self) -> (NaiveDate, NaiveDate) {
+    pub fn date_range_first(&self) -> (Date, Date) {
         self.date_window(0, 10)
     }
 
     /// Middle 20% of the dataset's date span (40%..60%).
-    pub fn date_range_middle(&self) -> (NaiveDate, NaiveDate) {
+    pub fn date_range_middle(&self) -> (Date, Date) {
         self.date_window(40, 20)
     }
 
     /// Last 30% of the dataset's date span.
-    pub fn date_range_last(&self) -> (NaiveDate, NaiveDate) {
+    pub fn date_range_last(&self) -> (Date, Date) {
         self.date_window(70, 30)
     }
 }
@@ -439,32 +442,39 @@ fn prepare_price_db_file<T: FileSink>(
     num_years: i32,
 ) -> Result<(), std::io::Error> {
     let mut w = sink.writer(pricedbfile)?;
-    let begin = NaiveDate::from_ymd_opt(year_begin, 1, 1).unwrap();
-    let end = NaiveDate::from_ymd_opt(year_begin + num_years, 1, 1).unwrap();
-    for d in begin.iter_days() {
-        if d >= end {
-            break;
-        }
-        if d.weekday() == Weekday::Sat || d.weekday() == Weekday::Sun {
+    let begin = new_year_day(year_begin);
+    let end = new_year_day(year_begin + num_years);
+    for d in begin.series(1.day()).take_while(|d| *d < end) {
+        if d.weekday() == Weekday::Saturday || d.weekday() == Weekday::Sunday {
             continue;
         }
-        writeln!(w, "P {} USD {} JPY", d.format("%Y/%m/%d"), usdjpy(d))?;
-        writeln!(w, "P {} CHF {} JPY", d.format("%Y/%m/%d"), chfjpy(d))?;
+        writeln!(w, "P {} USD {} JPY", d.strftime("%Y/%m/%d"), usdjpy(d))?;
+        writeln!(w, "P {} CHF {} JPY", d.strftime("%Y/%m/%d"), chfjpy(d))?;
     }
     w.flush()?;
     Ok(())
 }
 
-fn usdjpy(date: NaiveDate) -> Decimal {
-    let rand = (date.year() * 5 + date.month() as i32) % 97
-        + ((date.month() * 7 + date.day() * 13) as i32) % 13;
-    dec!(120) + Decimal::from(rand)
+/// Returns January 1st of the given year.
+fn new_year_day(year: i32) -> Date {
+    Date::new(year.try_into().unwrap(), 1, 1).unwrap()
 }
 
-fn chfjpy(date: NaiveDate) -> Decimal {
-    let rand = (date.year() * 5 + date.month() as i32) % 97
-        + ((date.month() * 7 + date.day() * 13) as i32) % 13;
-    dec!(160) + Decimal::from(rand)
+fn pseudo_rate(date: Date) -> i32 {
+    let (year, month, day) = (
+        i32::from(date.year()),
+        i32::from(date.month()),
+        i32::from(date.day()),
+    );
+    (year * 5 + month) % 97 + (month * 7 + day * 13) % 13
+}
+
+fn usdjpy(date: Date) -> Decimal {
+    dec!(120) + Decimal::from(pseudo_rate(date))
+}
+
+fn chfjpy(date: Date) -> Decimal {
+    dec!(160) + Decimal::from(pseudo_rate(date))
 }
 
 fn prepare_root_file<T: FileSink>(
@@ -519,19 +529,23 @@ fn prepare_leaf_file<T: FileSink>(
     year: Year,
     mut total: i64,
 ) -> Result<i64, std::io::Error> {
-    let initial_week = NaiveDate::from_ymd_opt(YEAR_BEGIN, 1, 7).unwrap();
+    let initial_week = new_year_day(YEAR_BEGIN) + 6.days();
     let multi_commodity =
-        |date: NaiveDate| date.weekday().number_from_monday() <= 3 || date < initial_week;
+        |date: Date| date.weekday().to_monday_one_offset() <= 3 || date < initial_week;
     let mut w = sink.writer(target)?;
     for i in 0..params.num_transactions_per_file {
-        let ordinal = (i * 365 / params.num_transactions_per_file + 1) as u32;
-        let date = NaiveDate::from_yo_opt(year.0, ordinal).expect("must be a valid date");
-        let date_fmt = date.format("%Y/%m/%d");
+        let ordinal = (i * 365 / params.num_transactions_per_file + 1) as i16;
+        let date = new_year_day(year.0)
+            .with()
+            .day_of_year(ordinal)
+            .build()
+            .expect("must be a valid date");
+        let date_fmt = date.strftime("%Y/%m/%d");
         let payee = payee(dir, year, i);
         let pseudo = ((dir as i32) * 31 + year.0 * 17 + (i as i32) * 7) % 13;
         let (other_account, other_amount, amount): (Cow<str>, _, _) = match pseudo {
             0..=10 => {
-                if pseudo >= 9 && params.more_commodity && date.weekday() == Weekday::Mon {
+                if pseudo >= 9 && params.more_commodity && date.weekday() == Weekday::Monday {
                     let pseudo2 = ((dir as i32) * 31 + year.0 * 17 + (i as i32) * 7) % 26;
                     let pseudo3 = ((dir as i32) * 31 + year.0 * 17 + (i as i32) * 7) / 26 % 26;
                     let commodity = format!(

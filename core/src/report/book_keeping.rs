@@ -4,7 +4,7 @@
 use annotate_snippets::{Annotation, AnnotationKind};
 use bumpalo::Bump;
 use bumpalo::collections as bcc;
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use rust_decimal::Decimal;
 
 use crate::parse::ParsedSpan;
@@ -242,7 +242,7 @@ fn map_eval_err<'ctx>(
 fn process_posting<'ctx>(
     ctx: &mut ReportContext<'ctx>,
     bal: &mut Balance<'ctx>,
-    date: NaiveDate,
+    date: Date,
     account: super::Account<'ctx>,
     posting: &syntax::tracked::Posting,
 ) -> Result<(Option<EvaluatedPosting<'ctx>>, Option<PriceEvent<'ctx>>), BookKeepError> {
@@ -389,7 +389,7 @@ impl<'ctx> ComputedPosting<'ctx> {
 
 /// Adds the price of the commodity in the posting into PriceRepositoryBuilder.
 fn posting_price_event<'ctx>(
-    date: NaiveDate,
+    date: Date,
     computed: &ComputedPosting<'ctx>,
 ) -> Result<Option<PriceEvent<'ctx>>, BookKeepError> {
     let exchange = match computed.cost.as_ref().or(computed.lot.as_ref()) {
@@ -485,7 +485,7 @@ fn check_balance<'ctx>(
     ctx: &ReportContext<'ctx>,
     price_repos: &mut PriceRepositoryBuilder<'ctx>,
     postings: &mut bcc::Vec<'ctx, Posting<'ctx>>,
-    date: NaiveDate,
+    date: Date,
     balance: Amount<'ctx>,
 ) -> Result<(), BookKeepError> {
     log::trace!(
@@ -572,8 +572,8 @@ mod tests {
     use super::*;
 
     use bumpalo::Bump;
-    use chrono::NaiveDate;
     use indoc::indoc;
+    use jiff::civil::date;
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
@@ -717,7 +717,7 @@ mod tests {
             add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
 
         let want = Transaction {
-            date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
+            date: date(2024, 8, 1),
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
@@ -787,7 +787,7 @@ mod tests {
             add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
 
         let want = Transaction {
-            date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
+            date: date(2024, 8, 1),
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
@@ -842,7 +842,7 @@ mod tests {
         let got =
             add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
         let want = Transaction {
-            date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
+            date: date(2024, 8, 1),
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
@@ -937,7 +937,7 @@ mod tests {
               Account 1             12 OKANE {100 JPY}  ; Payee: Posting 1
               Account 2         -1,200 JPY  ; Payee: Posting 2
         "};
-        let date = NaiveDate::from_ymd_opt(2024, 8, 1).unwrap();
+        let date = date(2024, 8, 1);
         let txn = parse_transaction(input);
         let mut price_repos = PriceRepositoryBuilder::default();
 
@@ -1003,7 +1003,7 @@ mod tests {
             add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
 
         let want = Transaction {
-            date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
+            date: date(2024, 8, 1),
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
@@ -1037,7 +1037,7 @@ mod tests {
               Account 2          1,440 JPY  ; Payee: Posting 2
               Income              -240 JPY  ; Payee: Posting 3
         "};
-        let date = NaiveDate::from_ymd_opt(2024, 8, 1).unwrap();
+        let date = date(2024, 8, 1);
         let txn = parse_transaction(input);
         let mut price_repos = PriceRepositoryBuilder::default();
 
@@ -1101,7 +1101,7 @@ mod tests {
               Account 2          1,000 JPY  ; Payee: Posting 2
               Account 3            440 JPY  ; Payee: Posting 3
         "};
-        let date = NaiveDate::from_ymd_opt(2024, 8, 1).unwrap();
+        let date = date(2024, 8, 1);
         let txn = parse_transaction(input);
         let mut price_repos = PriceRepositoryBuilder::default();
 
@@ -1176,7 +1176,7 @@ mod tests {
               Expenses:Commissions          0.07 CHF  ; Payee: Bank
               Assets:Banks                -34.70 CHF
         "};
-        let date = NaiveDate::from_ymd_opt(2020, 8, 8).unwrap();
+        let date = date(2020, 8, 8);
         let txn = parse_transaction(input);
         let mut price_repos = PriceRepositoryBuilder::default();
 

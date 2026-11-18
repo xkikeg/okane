@@ -49,7 +49,7 @@ where
     <I as Stream>::Token: AsChar + Clone,
     E: ParserError<I>
         + FromExternalError<I, pretty_decimal::ParseError>
-        + FromExternalError<I, chrono::ParseError>,
+        + FromExternalError<I, jiff::Error>,
 {
     trace(
         "price::price_db_entry",
@@ -71,8 +71,8 @@ where
 mod tests {
     use super::*;
 
-    use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
     use indoc::indoc;
+    use jiff::civil::date;
     use pretty_assertions::assert_eq;
     use pretty_decimal::PrettyDecimal;
     use rust_decimal_macros::dec;
@@ -105,10 +105,7 @@ mod tests {
             got,
             vec![
                 PriceDBEntry {
-                    datetime: NaiveDateTime::new(
-                        NaiveDate::from_ymd_opt(2023, 12, 31).unwrap(),
-                        NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-                    ),
+                    datetime: date(2023, 12, 31).at(0, 0, 0, 0),
                     target: Cow::Borrowed("JRTOK"),
                     rate: Amount {
                         value: PrettyDecimal::comma3dot(dec!(3584)),
@@ -116,10 +113,7 @@ mod tests {
                     },
                 },
                 PriceDBEntry {
-                    datetime: NaiveDateTime::new(
-                        NaiveDate::from_ymd_opt(2026, 2, 1).unwrap(),
-                        NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-                    ),
+                    datetime: date(2026, 2, 1).at(0, 0, 0, 0),
                     target: Cow::Borrowed("CHF"),
                     rate: Amount {
                         value: PrettyDecimal::unformatted(dec!(200.07)),
@@ -139,10 +133,7 @@ mod tests {
             (
                 "",
                 PriceDBEntry {
-                    datetime: NaiveDateTime::new(
-                        NaiveDate::from_ymd_opt(2023, 12, 31).expect("2023-12-31 must exist"),
-                        NaiveTime::from_hms_opt(0, 0, 0).expect("00:00:00 must exist")
-                    ),
+                    datetime: date(2023, 12, 31).at(0, 0, 0, 0),
                     target: Cow::Borrowed("JRTOK"),
                     rate: Amount {
                         value: PrettyDecimal::comma3dot(dec!(3584)),
@@ -159,10 +150,7 @@ mod tests {
             (
                 "",
                 PriceDBEntry {
-                    datetime: NaiveDateTime::new(
-                        NaiveDate::from_ymd_opt(2024, 10, 28).expect("2024-10-28 must exist"),
-                        NaiveTime::from_hms_opt(0, 0, 0).expect("00:00:00 must exist")
-                    ),
+                    datetime: date(2024, 10, 28).at(0, 0, 0, 0),
                     target: Cow::Borrowed("EUR"),
                     rate: Amount {
                         value: PrettyDecimal::unformatted(dec!(0.9367)),
@@ -182,10 +170,7 @@ mod tests {
             (
                 "",
                 PriceDBEntry {
-                    datetime: NaiveDateTime::new(
-                        NaiveDate::from_ymd_opt(2022, 2, 2).expect("2022-02-02 must exist"),
-                        NaiveTime::from_hms_opt(17, 6, 0).expect("17:06:00 must exist")
-                    ),
+                    datetime: date(2022, 2, 2).at(17, 6, 0, 0),
                     target: Cow::Borrowed("DCTOPIX"),
                     rate: Amount {
                         value: PrettyDecimal::comma3dot(dec!(22745)),

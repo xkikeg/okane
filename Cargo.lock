@@ -263,18 +263,16 @@ dependencies = [
 [[package]]
 name = "bounded-static"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0beb903daa49b43bcafb5d5eebe633f9ad638d8b16cd08f95fb05ee7bd099321"
+source = "git+https://github.com/fujiapple852/bounded-static?rev=8a106d25b4e1d2ad644b0cb8309f589417fcedad#8a106d25b4e1d2ad644b0cb8309f589417fcedad"
 dependencies = [
  "bounded-static-derive",
- "chrono",
+ "jiff",
 ]
 
 [[package]]
 name = "bounded-static-derive"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0af050e27e5d57aa14975f97fe47a134c46a390f91819f23a625319a7111bfa"
+source = "git+https://github.com/fujiapple852/bounded-static?rev=8a106d25b4e1d2ad644b0cb8309f589417fcedad#8a106d25b4e1d2ad644b0cb8309f589417fcedad"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -376,10 +374,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
 dependencies = [
  "iana-time-zone",
- "js-sys",
  "num-traits",
  "serde",
- "wasm-bindgen",
  "windows-link",
 ]
 
@@ -1765,7 +1761,6 @@ dependencies = [
  "assert_cmd",
  "assert_matches",
  "bumpalo",
- "chrono",
  "clap",
  "crossterm",
  "csv",
@@ -1775,6 +1770,7 @@ dependencies = [
  "encoding_rs_io",
  "env_logger",
  "indoc",
+ "jiff",
  "lazy_static",
  "lender",
  "log",
@@ -1815,7 +1811,6 @@ dependencies = [
  "bounded-static",
  "bumpalo",
  "bumpalo-intern",
- "chrono",
  "criterion",
  "ctor",
  "derive-where",
@@ -1825,6 +1820,7 @@ dependencies = [
  "gungraun",
  "indoc",
  "itoa",
+ "jiff",
  "lender",
  "log",
  "maplit",
@@ -2966,7 +2962,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys",

@@ -902,6 +902,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use bumpalo::Bump;
+    use jiff::civil::date;
     use okane_core::report::query::DateRange;
     use okane_core::report::{Amount, ReportContext};
     use ratatui::Terminal;
@@ -1353,7 +1354,7 @@ mod tests {
         assert!(!status_text(&app).contains('·'), "{}", status_text(&app));
 
         app.query.options.exchange = Some("CHF".to_owned());
-        app.query.options.start = Some(chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap());
+        app.query.options.start = Some(date(2024, 1, 1));
         let out = render(&mut app, &ctx);
         let status = out.lines().last().expect("a status line");
         assert!(status.contains("-X CHF"), "{status:?}");

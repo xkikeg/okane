@@ -6,8 +6,8 @@
 
 use std::path::PathBuf;
 
-use chrono::NaiveDate;
 use clap::{Args, Subcommand};
+use jiff::civil::Date;
 
 use okane_core::report::query;
 
@@ -187,7 +187,7 @@ impl FlattenArgs {
 struct EvalArgs {
     /// Date of the price.
     #[arg(long)]
-    date: NaiveDate,
+    date: Date,
 
     #[command(flatten)]
     eval_options: EvalOptionsArgs,
@@ -354,20 +354,20 @@ struct EvalOptionsArgs {
     ///
     /// By default it points to the current local date.
     /// This value is used in `--current`, as well as currency conversion.
-    #[arg(long, visible_alias("now"),default_value_t = chrono::Local::now().date_naive())]
-    today: NaiveDate,
+    #[arg(long, visible_alias("now"),default_value_t = jiff::Zoned::now().date())]
+    today: Date,
 
     /// Beginning of date range (inclusive).
     ///
     /// If specified, only transaction with the date equals/after `--start` is considered.
     #[arg(long, visible_alias("begin"))]
-    start: Option<NaiveDate>,
+    start: Option<Date>,
 
     /// End of date range (exclusive).
     ///
     /// If specified, only transaction with the date before `--end` is considered.
     #[arg(long)]
-    end: Option<NaiveDate>,
+    end: Option<Date>,
 
     /// If specified, sets the end date to `--today`.
     ///
@@ -392,7 +392,7 @@ impl EvalOptionsArgs {
                     "--current and --end cannot be set simultaneously".to_string(),
                 ));
             }
-            (true, None) => Some(self.today.succ_opt().ok_or_else(|| {
+            (true, None) => Some(self.today.tomorrow().map_err(|_| {
                 InvalidFlagError(format!("cannot compute one day after today {}", self.today))
             })?),
             (false, end) => end,
@@ -417,6 +417,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use clap::Parser as _;
+    use jiff::civil::date;
 
     #[test]
     fn verify_command() {
@@ -490,10 +491,7 @@ mod tests {
     fn eval_options_resolve_current_to_the_day_after_today() {
         let cmd = build(&["balance", "--today=2024-03-31", "--current", "a.ledger"]).unwrap();
         let cmd = assert_matches!(cmd, Command::Balance(cmd) => cmd);
-        assert_eq!(
-            cmd.eval_options.date_range.end,
-            NaiveDate::from_ymd_opt(2024, 4, 1)
-        );
+        assert_eq!(cmd.eval_options.date_range.end, Some(date(2024, 4, 1)));
     }
 
     #[test]
@@ -505,14 +503,8 @@ mod tests {
             "a.ledger",
         ]);
         let cmd = assert_matches!(cmd, Ok(Command::Register(cmd)) => cmd);
-        assert_eq!(
-            cmd.eval_options.date_range.start,
-            NaiveDate::from_ymd_opt(2024, 1, 1)
-        );
-        assert_eq!(
-            cmd.eval_options.date_range.end,
-            NaiveDate::from_ymd_opt(2024, 2, 1)
-        );
+        assert_eq!(cmd.eval_options.date_range.start, Some(date(2024, 1, 1)));
+        assert_eq!(cmd.eval_options.date_range.end, Some(date(2024, 2, 1)));
     }
 
     #[test]
@@ -526,7 +518,7 @@ mod tests {
 
     #[test]
     fn eval_options_reject_current_on_the_last_representable_day() {
-        let today = NaiveDate::MAX.to_string();
+        let today = Date::MAX.to_string();
         let err = build(&["balance", "--today", &today, "--current", "a.ledger"]).unwrap_err();
         assert_eq!(
             err.to_string(),

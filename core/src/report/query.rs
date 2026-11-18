@@ -3,7 +3,7 @@
 use std::{borrow::Cow, collections::HashSet};
 
 use bumpalo::collections as bcc;
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use lender::{FallibleLender, FallibleLending, check_covariance_fallible};
 
 use crate::{
@@ -96,7 +96,7 @@ pub struct RegisterQuery<'ctx> {
 #[non_exhaustive]
 pub struct RegisterEntry<'lend, 'ctx> {
     /// Date of the enclosing transaction.
-    pub date: NaiveDate,
+    pub date: Date,
     /// Payee of the posting (per-posting `; Payee:` override falls back to the
     /// enclosing transaction's payee).
     pub payee: &'ctx str,
@@ -120,7 +120,7 @@ pub enum ConversionStrategy {
     /// https://github.com/xkikeg/okane/issues/313
     UpToDate {
         /// Date for the conversion to be _up-to-date_.
-        today: NaiveDate,
+        today: Date,
     },
 }
 
@@ -138,9 +138,9 @@ pub struct Conversion<'ctx> {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DateRange {
     /// Start of the range (inclusive), if exists.
-    pub start: Option<NaiveDate>,
+    pub start: Option<Date>,
     /// End of the range (exclusive), if exists.
-    pub end: Option<NaiveDate>,
+    pub end: Option<Date>,
 }
 
 impl DateRange {
@@ -149,7 +149,7 @@ impl DateRange {
     }
 
     #[inline]
-    fn contains(&self, date: NaiveDate) -> bool {
+    fn contains(&self, date: Date) -> bool {
         match (self.start, self.end) {
             (Some(start), _) if date < start => false,
             (_, Some(end)) if end <= date => false,
@@ -187,7 +187,7 @@ impl BalanceQuery<'_> {
 #[derive(Debug)]
 // TODO: non_exhaustive
 pub struct EvalContext {
-    pub date: NaiveDate,
+    pub date: Date,
     pub exchange: Option<String>,
 }
 
@@ -299,7 +299,7 @@ impl<'ctx> Ledger<'ctx> {
             date_range: query.date_range,
             conversion,
             price_repos: &mut self.price_repos,
-            current_date: NaiveDate::MIN,
+            current_date: Date::MIN,
             current_amount: Cow::Owned(Amount::default()),
             total: Amount::default(),
         })
@@ -435,7 +435,7 @@ pub(super) struct TxnIter<'a, 'ctx> {
     it: std::slice::Iter<'a, Transaction<'ctx>>,
     /// Upper bound for sorted iteration: once a yielded transaction's date
     /// is `>= end`, iteration stops. `None` for the linear / unbounded case.
-    end: Option<NaiveDate>,
+    end: Option<Date>,
 }
 
 impl<'a, 'ctx> TxnIter<'a, 'ctx> {
@@ -450,7 +450,7 @@ impl<'a, 'ctx> TxnIter<'a, 'ctx> {
     /// Walk `slice` (assumed to be in ascending date order) and stop as
     /// soon as a transaction's date is `>= end`. Pass `end = None` to
     /// disable the upper-bound check.
-    fn sorted(slice: &'a [Transaction<'ctx>], end: Option<NaiveDate>) -> Self {
+    fn sorted(slice: &'a [Transaction<'ctx>], end: Option<Date>) -> Self {
         Self {
             it: slice.iter(),
             end,
@@ -486,7 +486,7 @@ pub struct RegisterEntries<'a, 'ctx> {
     date_range: DateRange,
     conversion: Option<Conversion<'ctx>>,
     price_repos: &'a mut PriceRepository<'ctx>,
-    current_date: NaiveDate,
+    current_date: Date,
     /// Buffer holding the amount lent in the most recent yield. Storing this
     /// inside the lender keeps `RegisterEntry::amount` a `&Amount` even when
     /// conversion produces a fresh value.
@@ -719,6 +719,7 @@ mod tests {
     use assert_matches::assert_matches;
     use bumpalo::Bump;
     use indoc::indoc;
+    use jiff::civil::date;
     use maplit::{hashmap, hashset};
     use pretty_assertions::assert_eq;
     use rust_decimal_macros::dec;
@@ -956,7 +957,7 @@ mod tests {
                     account: AccountFilter::All,
                     conversion: Some(Conversion {
                         strategy: ConversionStrategy::UpToDate {
-                            today: NaiveDate::from_ymd_opt(2024, 1, 16).unwrap(),
+                            today: date(2024, 1, 16),
                         },
                         target: jpy,
                     }),
@@ -1038,8 +1039,8 @@ mod tests {
                     account: AccountFilter::All,
                     conversion: None,
                     date_range: DateRange {
-                        start: Some(NaiveDate::from_ymd_opt(2024, 1, 5).unwrap()),
-                        end: Some(NaiveDate::from_ymd_opt(2024, 1, 9).unwrap()),
+                        start: Some(date(2024, 1, 5)),
+                        end: Some(date(2024, 1, 9)),
                     },
                 },
             )
@@ -1110,7 +1111,7 @@ mod tests {
                 &ctx,
                 "1 JPY",
                 &EvalContext {
-                    date: NaiveDate::from_ymd_opt(2024, 10, 1).unwrap(),
+                    date: date(2024, 10, 1),
                     exchange: None,
                 },
             )
@@ -1124,7 +1125,7 @@ mod tests {
 
     /// Owned snapshot of a `RegisterEntry`, used in tests to compare against
     /// expected rows without juggling the lender's borrow.
-    type Row<'ctx> = (NaiveDate, String, Account<'ctx>, Amount<'ctx>, Amount<'ctx>);
+    type Row<'ctx> = (Date, String, Account<'ctx>, Amount<'ctx>, Amount<'ctx>);
 
     /// Drains the lender into an owned vec for easy assertion. The `total`
     /// borrow is materialized as an owned `Amount` snapshot per row.
@@ -1168,28 +1169,28 @@ mod tests {
 
         let want = vec![
             (
-                NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+                date(2024, 1, 1),
                 "Initial".to_string(),
                 bank,
                 Amount::from_value(jpy, dec!(1_000_000)),
                 Amount::from_value(jpy, dec!(1_000_000)),
             ),
             (
-                NaiveDate::from_ymd_opt(2024, 1, 5).unwrap(),
+                date(2024, 1, 5),
                 "Shopping".to_string(),
                 bank,
                 Amount::from_value(jpy, dec!(-17_150)),
                 Amount::from_value(jpy, dec!(982_850)),
             ),
             (
-                NaiveDate::from_ymd_opt(2024, 1, 9).unwrap(),
+                date(2024, 1, 9),
                 "Buy Stock".to_string(),
                 bank,
                 Amount::from_value(jpy, dec!(-2760)),
                 Amount::from_value(jpy, dec!(980_090)),
             ),
             (
-                NaiveDate::from_ymd_opt(2025, 10, 30).unwrap(),
+                date(2025, 10, 30),
                 "event".to_string(),
                 bank,
                 Amount::from_value(jpy, dec!(-1000)),
@@ -1215,8 +1216,8 @@ mod tests {
                     &RegisterQuery {
                         account: AccountFilter::All,
                         date_range: DateRange {
-                            start: Some(NaiveDate::from_ymd_opt(2024, 1, 5).unwrap()),
-                            end: Some(NaiveDate::from_ymd_opt(2024, 1, 9).unwrap()),
+                            start: Some(date(2024, 1, 5)),
+                            end: Some(date(2024, 1, 9)),
                         },
                         conversion: None,
                         sort: Sort::Original,
@@ -1231,14 +1232,14 @@ mod tests {
         // cumulative sum of the displayed amounts, mixing commodities.
         let want = vec![
             (
-                NaiveDate::from_ymd_opt(2024, 1, 5).unwrap(),
+                date(2024, 1, 5),
                 "Shopping".to_string(),
                 grocery,
                 Amount::from_value(chf, dec!(100.00)),
                 Amount::from_value(chf, dec!(100.00)),
             ),
             (
-                NaiveDate::from_ymd_opt(2024, 1, 5).unwrap(),
+                date(2024, 1, 5),
                 "Shopping".to_string(),
                 bank,
                 Amount::from_value(jpy, dec!(-17150)),
@@ -1288,8 +1289,8 @@ mod tests {
                     &RegisterQuery {
                         account: AccountFilter::All,
                         date_range: DateRange {
-                            start: Some(NaiveDate::from_ymd_opt(2024, 1, 5).unwrap()),
-                            end: Some(NaiveDate::from_ymd_opt(2024, 1, 6).unwrap()),
+                            start: Some(date(2024, 1, 5)),
+                            end: Some(date(2024, 1, 6)),
                         },
                         conversion: Some(Conversion {
                             strategy: ConversionStrategy::Historical,
@@ -1304,7 +1305,7 @@ mod tests {
 
         let want = vec![
             (
-                NaiveDate::from_ymd_opt(2024, 1, 5).unwrap(),
+                date(2024, 1, 5),
                 "Shopping".to_string(),
                 grocery,
                 // 100.00 CHF * 171.50 JPY/CHF.
@@ -1312,7 +1313,7 @@ mod tests {
                 Amount::from_value(jpy, dec!(17150.00)),
             ),
             (
-                NaiveDate::from_ymd_opt(2024, 1, 5).unwrap(),
+                date(2024, 1, 5),
                 "Shopping".to_string(),
                 bank,
                 Amount::from_value(jpy, dec!(-17150)),
@@ -1336,7 +1337,7 @@ mod tests {
                     date_range: DateRange::default(),
                     conversion: Some(Conversion {
                         strategy: ConversionStrategy::UpToDate {
-                            today: NaiveDate::from_ymd_opt(2024, 1, 20).unwrap(),
+                            today: date(2024, 1, 20),
                         },
                         target: jpy,
                     }),
@@ -1426,14 +1427,10 @@ mod tests {
                 .unwrap(),
         )
         .unwrap();
-        let dates: Vec<NaiveDate> = rows.iter().map(|r| r.0).collect();
+        let dates: Vec<Date> = rows.iter().map(|r| r.0).collect();
         assert_eq!(
             dates,
-            vec![
-                NaiveDate::from_ymd_opt(2024, 3, 1).unwrap(),
-                NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-                NaiveDate::from_ymd_opt(2024, 2, 1).unwrap(),
-            ]
+            vec![date(2024, 3, 1), date(2024, 1, 1), date(2024, 2, 1),]
         );
         // Every row is on the same account, so the filter is exercised.
         assert!(rows.iter().all(|r| r.2 == bank));
@@ -1463,14 +1460,10 @@ mod tests {
                 .unwrap(),
         )
         .unwrap();
-        let dates: Vec<NaiveDate> = rows.iter().map(|r| r.0).collect();
+        let dates: Vec<Date> = rows.iter().map(|r| r.0).collect();
         assert_eq!(
             dates,
-            vec![
-                NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-                NaiveDate::from_ymd_opt(2024, 2, 1).unwrap(),
-                NaiveDate::from_ymd_opt(2024, 3, 1).unwrap(),
-            ]
+            vec![date(2024, 1, 1), date(2024, 2, 1), date(2024, 3, 1),]
         );
     }
 

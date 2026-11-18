@@ -22,7 +22,7 @@ repository = "https://github.com/xkikeg/okane"
 # dependencies
 anyhow = "1.0"
 bumpalo = {version = "3.20", features = ["collections", "boxed"]}
-chrono = "0.4.45"
+jiff = { version = "0.2.46", default-features = false, features = ["std"] }
 lender = "0.8"
 log = "0.4"
 pretty_decimal = { version = "0.3", features = ["bounded-static"] }
@@ -59,3 +59,10 @@ codegen-units = 1
 
 [profile.bench]
 debug = "limited"
+
+# bounded-static 0.8.0 lacks the `jiff` feature; it's only on master so far.
+# Patch it (rather than a git dep in okane-core) so pretty_decimal shares the same
+# trait. Drop this once a release with `jiff` is out.
+[patch.crates-io]
+bounded-static = { git = "https://github.com/fujiapple852/bounded-static", rev = "8a106d25b4e1d2ad644b0cb8309f589417fcedad" }
+bounded-static-derive = { git = "https://github.com/fujiapple852/bounded-static", rev = "8a106d25b4e1d2ad644b0cb8309f589417fcedad" }

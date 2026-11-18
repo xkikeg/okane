@@ -20,7 +20,7 @@ pub struct FormatSpec {
     /// For others, it's mandatory to set this field.
     #[serde(default)]
     pub file_type: Option<FileType>,
-    /// Specify the date format, in [`chrono::format::strftime`] compatible format.
+    /// Specify the date format, in [`jiff::fmt::strtime`] compatible format.
     #[serde(default)]
     pub date: String,
     /// Mapping from abstracted field key to abstracted position.

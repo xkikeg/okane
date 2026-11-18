@@ -11,7 +11,7 @@
 
 use std::path::PathBuf;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use okane_core::report::query::{
     AccountFilter, BalanceQuery, Conversion, ConversionStrategy, DateRange, QueryError,
 };
@@ -38,11 +38,11 @@ pub struct QueryOptions {
     /// The date "now" means, as `--today`. Not editable in the form: it is what
     /// a non-historical conversion is dated at, and the CLI's default (the
     /// local date) is the answer in a session someone is sitting in front of.
-    pub today: NaiveDate,
+    pub today: Date,
     /// Start of the date range (inclusive), as `--start`.
-    pub start: Option<NaiveDate>,
+    pub start: Option<Date>,
     /// End of the date range (exclusive), as `--end`.
-    pub end: Option<NaiveDate>,
+    pub end: Option<Date>,
 }
 
 impl QueryOptions {
@@ -133,18 +133,14 @@ impl QueryOptions {
 
 /// A date as the form types it and the status bar prints it; an open end of a
 /// range is left blank.
-pub(super) fn format_date(date: Option<NaiveDate>) -> String {
-    date.map(|d| d.format(DATE_FORMAT).to_string())
-        .unwrap_or_default()
+pub(super) fn format_date(date: Option<Date>) -> String {
+    date.map(|d| d.to_string()).unwrap_or_default()
 }
 
-/// The one date format, shared by the form's parser and its placeholder — the
-/// same ISO form `--start` / `--end` take on the command line.
-pub(super) const DATE_FORMAT: &str = "%Y-%m-%d";
-
-/// Parses a date the way the CLI flags do, reporting the expected shape.
-pub(super) fn parse_date(text: &str) -> Result<NaiveDate, String> {
-    NaiveDate::parse_from_str(text, DATE_FORMAT)
+/// Parses a date the way the CLI flags do (ISO 8601 `YYYY-MM-DD`), reporting
+/// the expected shape.
+pub(super) fn parse_date(text: &str) -> Result<Date, String> {
+    text.parse::<Date>()
         .map_err(|_| format!("expected a date as YYYY-MM-DD, got `{text}`"))
 }
 
@@ -193,12 +189,9 @@ mod tests {
 
     use assert_matches::assert_matches;
     use bumpalo::Bump;
+    use jiff::civil::date;
 
     use super::super::testing::{options, process};
-
-    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(y, m, d).unwrap()
-    }
 
     const LEDGER: &str = "2024/01/01 Init\n    Assets:Bank    10 USD\n    Equity\n";
 
