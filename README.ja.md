@@ -40,10 +40,10 @@ $ cargo install okane
 [ledger-cli][ledger document]同様のコマンドです。オプション等は少しあるので `--help` を見てみてください。
 
 ```shell
-$ okane accounts /path/to/file.ledger
-$ okane tags /path/to/file.ledger [--values]
-$ okane balance /path/to/file.ledger
-$ okane registry /path/to/file.ledger [optional account]
+$ okane accounts -f /path/to/file.ledger
+$ okane tags -f /path/to/file.ledger [--values]
+$ okane balance -f /path/to/file.ledger [optional account]
+$ okane register -f /path/to/file.ledger [optional account]
 ```
 
 ### 対話的なTUI
@@ -52,7 +52,7 @@ $ okane registry /path/to/file.ledger [optional account]
 コマンドを何度も実行することなく色んな情報を確認できます。
 
 ```shell
-$ okane ui /path/to/file.ledger
+$ okane ui -f /path/to/file.ledger
 ```
 
 [![okane ui のデモ](https://asciinema.org/a/tqcqRCXYuTNYGmC5.svg)](https://asciinema.org/a/tqcqRCXYuTNYGmC5)
@@ -62,12 +62,48 @@ $ okane ui /path/to/file.ledger
 `balance` や `register` と同じ評価用オプションが使えるので、通貨換算や日付指定も可能です。
 
 ```shell
-$ okane ui --price-db ~/ledger/prices.db -X CHF /path/to/file.ledger
-$ okane ui --price-db ~/ledger/prices.db -X CHF --historical /path/to/file.ledger
-$ okane ui --start 2024-01-01 --end 2025-01-01 /path/to/file.ledger
+$ okane ui --price-db ~/ledger/prices.db -X CHF -f /path/to/file.ledger
+$ okane ui --price-db ~/ledger/prices.db -X CHF --historical -f /path/to/file.ledger
+$ okane ui --start 2024-01-01 --end 2025-01-01 -f /path/to/file.ledger
 ```
 
 同じオプションは `.` で開くフォームから対話的に変更できます。換算先の通貨、日付範囲、価格DBを書き換えるとレポートが再計算され、選択位置などの状態はそのまま保たれます。現在有効なオプションはステータスバーに表示されます。
+
+### 設定ファイル
+
+毎回指定するオプションはTOMLの設定ファイルに書いておけます。okane はまずユーザー設定
+`$XDG_CONFIG_HOME/okane/config.toml` (未設定なら `~/.config/okane/config.toml`、Windows では
+`%APPDATA%\okane\config.toml`) を読み、次にカレントディレクトリから親をたどってホームディレクトリまでで最も近い
+`okane.toml` を読みます。`okane.toml` の値はユーザー設定より、コマンドラインのオプションはその両方より優先されます。
+
+```toml
+# -f / --file を指定しなかった時の Ledger ファイル
+source = "main.ledger"
+
+[report]                  # balance, register, ui で共通
+price-db = "prices.db"
+exchange = "CHF"          # -X / --exchange
+account-filter = "regex"  # "regex" または "exact"
+
+[register]                # register でだけ [report] を上書き
+historical = true
+sort = "date"
+
+[ui]
+historical = false
+
+[import]
+rules = "import.yml"      # -r / --rules
+ledger = "main.ledger"    # --interactive の --ledger、省略時は source
+```
+
+キーはオプションの長い名前から `--` を除いたものです。相対パスはそれを書いた設定ファイルからの相対パスで、`~/` はホームディレクトリを指します。
+知らないキーはエラーになるので、typo に気付けます。設定の `historical = true` を一度だけ無効にしたい時は `--no-historical` を使ってください。
+
+`OKANE_CONFIG=path/to/file.toml` を指定するとそのファイルだけを読み、`okane --no-config <command>` はどの設定ファイルも読みません。
+
+Ledger ファイルは `-f` / `--file` か `source` で指定するので、`balance` と `register` の引数はすべてアカウントのパターンになります。
+どちらも無い場合に限り、最初の引数をファイルとして扱う従来の書き方も動きますが、非推奨です。
 
 ### format
 

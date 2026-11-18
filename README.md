@@ -42,10 +42,10 @@ $ cargo install okane
 Similar to [Ledger][ledger document], you can use similar commands.
 
 ```shell
-$ okane accounts /path/to/file.ledger
-$ okane tags /path/to/file.ledger [--values]
-$ okane balance /path/to/file.ledger
-$ okane registry /path/to/file.ledger [optional account]
+$ okane accounts -f /path/to/file.ledger
+$ okane tags -f /path/to/file.ledger [--values]
+$ okane balance -f /path/to/file.ledger [optional account]
+$ okane register -f /path/to/file.ledger [optional account]
 ```
 
 ### Browse the file interactively
@@ -54,7 +54,7 @@ $ okane registry /path/to/file.ledger [optional account]
 accounts instead of re-running queries.
 
 ```shell
-$ okane ui /path/to/file.ledger
+$ okane ui -f /path/to/file.ledger
 ```
 
 [![okane ui demo](https://asciinema.org/a/tqcqRCXYuTNYGmC5.svg)](https://asciinema.org/a/tqcqRCXYuTNYGmC5)
@@ -71,15 +71,57 @@ It takes the same evaluation flags as `balance` and `register`, so the amounts
 can be converted into a single commodity, or filtered by the time range:
 
 ```shell
-$ okane ui --price-db ~/ledger/prices.db -X CHF /path/to/file.ledger
-$ okane ui --price-db ~/ledger/prices.db -X CHF --historical /path/to/file.ledger
-$ okane ui --start 2024-01-01 --end 2025-01-01 /path/to/file.ledger
+$ okane ui --price-db ~/ledger/prices.db -X CHF -f /path/to/file.ledger
+$ okane ui --price-db ~/ledger/prices.db -X CHF --historical -f /path/to/file.ledger
+$ okane ui --start 2024-01-01 --end 2025-01-01 -f /path/to/file.ledger
 ```
 
 `.` opens those same options in a form, so you can change them without leaving
 the UI: pick a commodity to convert into, bound the dates, or point at a
 different price DB, and the report is recomputed with your place in it kept.
 Whichever ones are in effect are shown in the status bar.
+
+### Set defaults in a config file
+
+Flags you pass every time can go in a TOML file instead. okane reads the user
+config, `$XDG_CONFIG_HOME/okane/config.toml` (`~/.config/okane/config.toml` if
+it is unset, `%APPDATA%\okane\config.toml` on Windows), and then the nearest
+`okane.toml` in the current directory or its parents, up to your home directory.
+Keys in `okane.toml` override the user config, and flags on the command line
+override both.
+
+```toml
+# Ledger file used when -f / --file is not given.
+source = "main.ledger"
+
+[report]                  # shared by balance, register and ui
+price-db = "prices.db"
+exchange = "CHF"          # -X / --exchange
+account-filter = "regex"  # "regex" or "exact"
+
+[register]                # overrides [report] for register only
+historical = true
+sort = "date"
+
+[ui]
+historical = false
+
+[import]
+rules = "import.yml"      # -r / --rules
+ledger = "main.ledger"    # --ledger of --interactive, defaults to source
+```
+
+Each key is the long name of a flag, without `--`. Relative paths are relative
+to the file that sets them, and `~/` is your home directory. Unknown keys are an
+error, so a typo doesn't go unnoticed. `--no-historical` turns off a
+`historical = true` of the config for one run.
+
+`OKANE_CONFIG=path/to/file.toml` reads only that file, and
+`okane --no-config <command>` reads none.
+
+As the Ledger file comes from `-f` / `--file` or `source`, the arguments of
+`balance` and `register` are all account patterns. Passing the file as the first
+argument still works when neither is set, but it is deprecated.
 
 ### Format the file
 

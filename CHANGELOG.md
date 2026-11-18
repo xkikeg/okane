@@ -4,6 +4,14 @@
 
 ### Added
 
+* Flag defaults can be set in config files: the user config `$XDG_CONFIG_HOME/okane/config.toml`
+  (`~/.config/okane/config.toml` when unset, `%APPDATA%\okane\config.toml` on Windows) and the
+  nearest `okane.toml` from the current directory up to the home directory. Each key is a long flag
+  name, `[report]` is shared by `balance`, `register` and `ui`, and the top-level `source` names the
+  Ledger file. `OKANE_CONFIG` reads a given file instead, and `--no-config` reads none
+  (https://github.com/xkikeg/okane/issues/611).
+* `accounts`, `tags`, `balance`, `register` and `ui` take the Ledger file with `-f` / `--file`.
+* `--no-historical` turns off `historical = true` set in a config file.
 * The TUI register screen can now be searched, with the same keys as the balance screen: `/`
   (then `n` / `N`) and `C-s` / `C-r` match the payee or the date as shown, so `/2024-03` jumps to
   March. The register remembers its own last pattern for `C-s` / `C-r`, separately from the balance
@@ -11,6 +19,9 @@
 
 ### Changed
 
+* `balance` and `register` take the Ledger file with `-f` / `--file`, and their arguments are all
+  account patterns. Passing the file as the first argument still works when neither `--file` nor
+  `source` in the config is given, but prints a deprecation warning.
 * `okane import` now takes the import rules YAML with `--rules` / `-r`. The old `--config` / `-c`
   still works but prints a deprecation warning, and will be removed in a later release, freeing
   `--config` for the planned okane config file (https://github.com/xkikeg/okane/issues/611).
