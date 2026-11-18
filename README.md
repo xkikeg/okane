@@ -81,6 +81,13 @@ the UI: pick a commodity to convert into, bound the dates, or point at a
 different price DB, and the report is recomputed with your place in it kept.
 Whichever ones are in effect are shown in the status bar.
 
+Amounts are drawn in the format each commodity declares in the Ledger file, so
+`commodity CHF` with `format 1,000.00 CHF` shows `1,234.50 CHF`.
+`--amount-format=comma3dot` or `--amount-format=plain` draws every commodity
+that way instead, and the form can switch it too. This is only about the UI:
+`balance` and `register` always print plain decimals, so that scripts can
+read them.
+
 ### Format the file
 
 ```shell

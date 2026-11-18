@@ -1,4 +1,5 @@
 use bumpalo::Bump;
+use pretty_decimal::Format;
 
 use crate::report::AccountAggregate;
 
@@ -11,6 +12,8 @@ pub struct ReportContext<'ctx> {
     pub(super) accounts: AccountStore<'ctx>,
     pub(super) account_tree: AccountTree<'ctx>,
     pub(super) commodities: CommodityStore<'ctx>,
+    /// Format used by the pretty display in place of each commodity's own.
+    pretty_format_override: Option<Format>,
 }
 
 impl<'ctx> ReportContext<'ctx> {
@@ -24,7 +27,28 @@ impl<'ctx> ReportContext<'ctx> {
             accounts,
             account_tree,
             commodities,
+            pretty_format_override: None,
         }
+    }
+
+    /// Sets the decimal format [`SingleAmount::as_pretty_display`] uses for
+    /// every commodity, in place of the format each one is declared with in
+    /// the Ledger file. `None`, the default, follows the Ledger file.
+    ///
+    /// [`SingleAmount::as_pretty_display`]: crate::report::SingleAmount::as_pretty_display
+    pub fn set_pretty_format_override(&mut self, format: Option<Format>) {
+        self.pretty_format_override = format;
+    }
+
+    /// Returns the format set by [`Self::set_pretty_format_override`].
+    pub fn pretty_format_override(&self) -> Option<Format> {
+        self.pretty_format_override
+    }
+
+    /// Returns the decimal format the pretty display uses for `commodity`.
+    pub(super) fn pretty_format(&self, commodity: CommodityTag<'ctx>) -> Option<Format> {
+        self.pretty_format_override
+            .or_else(|| self.commodities.format(commodity))
     }
 
     /// Returns all accounts, sorted as string order.

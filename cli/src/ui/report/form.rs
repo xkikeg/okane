@@ -15,7 +15,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::ui::keys::is_ctrl;
 
-use super::options::{QueryOptions, format_date, parse_date};
+use super::options::{AmountFormat, QueryOptions, format_date, parse_date};
 
 /// The options the form edits, in the order they are drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,18 +25,21 @@ pub(super) enum FieldId {
     Start,
     End,
     PriceDb,
+    AmountFormat,
 }
 
 impl FieldId {
     /// Every field, top to bottom. The conversion first (the option most worth
     /// changing mid-session), then the range, then the price DB — which is also
-    /// the only one whose change costs a reload.
-    const ALL: [FieldId; 5] = [
+    /// the only one whose change costs a reload — and last how the amounts look,
+    /// the one that changes no number at all.
+    const ALL: [FieldId; 6] = [
         FieldId::Exchange,
         FieldId::Historical,
         FieldId::Start,
         FieldId::End,
         FieldId::PriceDb,
+        FieldId::AmountFormat,
     ];
 
     /// The command-line flag this row stands for. Named after the flag rather
@@ -49,6 +52,7 @@ impl FieldId {
             FieldId::Start => "--start",
             FieldId::End => "--end",
             FieldId::PriceDb => "--price-db",
+            FieldId::AmountFormat => "--amount-format",
         }
     }
 
@@ -58,17 +62,19 @@ impl FieldId {
         match self {
             FieldId::Start | FieldId::End => "YYYY-MM-DD",
             FieldId::Exchange | FieldId::PriceDb => "(none)",
-            // A flag is never empty.
-            FieldId::Historical => "",
+            // A flag or a choice is never empty.
+            FieldId::Historical | FieldId::AmountFormat => "",
         }
     }
 }
 
-/// One row's value: free text, or a flag toggled with `space`.
+/// One row's value: free text, a flag toggled with `space`, or the amount
+/// format, which `space` cycles through.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Value {
     Text(String),
     Flag(bool),
+    Format(AmountFormat),
 }
 
 /// One row of the form.
@@ -89,6 +95,7 @@ impl Field {
             Value::Text(text) => text,
             Value::Flag(true) => "on",
             Value::Flag(false) => "off",
+            Value::Format(format) => format.name(),
         }
     }
 
@@ -108,12 +115,19 @@ impl Field {
     fn stated(&self) -> Option<&str> {
         match &self.value {
             Value::Text(text) => Some(text.trim()).filter(|t| !t.is_empty()),
-            Value::Flag(_) => None,
+            Value::Flag(_) | Value::Format(_) => None,
         }
     }
 
     fn flag(&self) -> bool {
         matches!(self.value, Value::Flag(true))
+    }
+
+    fn amount_format(&self) -> AmountFormat {
+        match self.value {
+            Value::Format(format) => format,
+            _ => AmountFormat::default(),
+        }
     }
 }
 
@@ -128,9 +142,10 @@ pub enum FormMessage {
     Push(char),
     /// Delete the last character of the focused text row.
     Pop,
-    /// Empty the focused row (`C-u`); a flag goes back to off.
+    /// Empty the focused row (`C-u`); a flag goes back to off, and a choice
+    /// to its default.
     Clear,
-    /// Flip the focused flag row (`space`).
+    /// Flip the focused flag row, or move a choice to its next value (`space`).
     Toggle,
     /// Apply every row (`Enter`).
     Submit,
@@ -180,6 +195,7 @@ impl OptionsForm {
                             .map(|p| p.display().to_string())
                             .unwrap_or_default(),
                     ),
+                    FieldId::AmountFormat => Value::Format(options.amount_format),
                 };
                 Field { id, value }
             })
@@ -232,15 +248,21 @@ impl OptionsForm {
                 self.focused().value = match self.focused().value {
                     Value::Text(_) => Value::Text(String::new()),
                     Value::Flag(_) => Value::Flag(false),
+                    Value::Format(_) => Value::Format(AmountFormat::default()),
                 };
                 self.error = None;
             }
-            FormMessage::Toggle => {
-                if let Value::Flag(on) = &mut self.focused().value {
+            FormMessage::Toggle => match &mut self.focused().value {
+                Value::Flag(on) => {
                     *on = !*on;
                     self.error = None;
                 }
-            }
+                Value::Format(format) => {
+                    *format = format.next();
+                    self.error = None;
+                }
+                Value::Text(_) => (),
+            },
             FormMessage::Submit => match self.to_options() {
                 Ok(options) => return Some(FormAction::Apply(options)),
                 // Nothing is applied and nothing is lost: the offending row is
@@ -285,6 +307,7 @@ impl OptionsForm {
                 FieldId::Start => options.start = self.date_of(field)?,
                 FieldId::End => options.end = self.date_of(field)?,
                 FieldId::PriceDb => options.price_db = field.stated().map(Into::into),
+                FieldId::AmountFormat => options.amount_format = field.amount_format(),
             }
         }
         Ok(options)
@@ -347,9 +370,33 @@ mod tests {
         opts.historical = true;
         opts.start = Some(date(2024, 1, 1));
         opts.price_db = Some(PathBuf::from("prices.db"));
+        opts.amount_format = AmountFormat::Plain;
         let form = OptionsForm::new(&opts);
         let shown: Vec<&str> = form.fields().iter().map(Field::text).collect();
-        assert_eq!(shown, ["CHF", "on", "2024-01-01", "", "prices.db"]);
+        assert_eq!(shown, ["CHF", "on", "2024-01-01", "", "prices.db", "plain"]);
+    }
+
+    /// `space` cycles the amount format, `C-u` puts it back to `ledger`, and
+    /// the row is never typed into.
+    #[test]
+    fn space_cycles_the_amount_format() {
+        let mut form = OptionsForm::new(&options());
+        form.update(FormMessage::FocusPrev); // wraps to the last row
+        assert_eq!(form.fields()[form.focus()].label(), "--amount-format");
+        assert!(!form.fields()[form.focus()].is_text());
+        assert_eq!(
+            form.key_to_message(key(KeyCode::Char(' '))),
+            Some(FormMessage::Toggle)
+        );
+
+        form.update(FormMessage::Toggle);
+        assert_matches!(submit(&mut form), Some(FormAction::Apply(o)) if o.amount_format == AmountFormat::Comma3dot);
+        form.update(FormMessage::Toggle);
+        assert_matches!(submit(&mut form), Some(FormAction::Apply(o)) if o.amount_format == AmountFormat::Plain);
+        form.update(FormMessage::Push('x'));
+        assert_eq!(form.fields()[form.focus()].text(), "plain");
+        form.update(FormMessage::Clear);
+        assert_matches!(submit(&mut form), Some(FormAction::Apply(o)) if o.amount_format == AmountFormat::Ledger);
     }
 
     /// Submitting an untouched form yields exactly what it was opened on —

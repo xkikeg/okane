@@ -28,7 +28,7 @@ mod search;
 mod testing;
 
 pub use app::App;
-pub use options::QueryOptions;
+pub use options::{AmountFormat, QueryOptions};
 
 use bumpalo::Bump;
 use okane_core::load;
@@ -103,6 +103,7 @@ fn session_loop<F: load::FileSystem>(
             arena.reset();
         }
         let mut ctx = ReportContext::new(arena);
+        ctx.set_pretty_format_override(options.amount_format.pretty_format_override());
         let built = build_session(
             &mut ctx,
             config,
@@ -131,7 +132,7 @@ fn session_loop<F: load::FileSystem>(
         };
         first = false;
         let terminal = terminal.get_or_insert_with(ratatui::init);
-        match event::run(terminal, &mut app, &mut ledger, &ctx)? {
+        match event::run(terminal, &mut app, &mut ledger, &mut ctx)? {
             event::RunOutcome::Quit => return Ok(()),
             event::RunOutcome::Reload => {
                 if has_data {
