@@ -1,0 +1,4 @@
+2024-01-26 Initial with deduced amount Liabilities:My Card -2000.00 CHF -2000.00 CHF
+2024-02-03 payment Assets:Banks:Swiss Bank -2000.00 CHF -4000.00 CHF
+2024-02-05 wire Assets:Banks:Swiss Bank -10000.00 CHF -14000.00 CHF
+2024-02-25 salary Income:Salary -8500.00 CHF -22500.00 CHF
