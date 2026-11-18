@@ -261,27 +261,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bounded-static"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0beb903daa49b43bcafb5d5eebe633f9ad638d8b16cd08f95fb05ee7bd099321"
-dependencies = [
- "bounded-static-derive",
- "chrono",
-]
-
-[[package]]
-name = "bounded-static-derive"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0af050e27e5d57aa14975f97fe47a134c46a390f91819f23a625319a7111bfa"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "bs58"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1812,7 +1791,6 @@ version = "0.21.1"
 dependencies = [
  "annotate-snippets",
  "assert_matches",
- "bounded-static",
  "bumpalo",
  "bumpalo-intern",
  "chrono",
@@ -2192,7 +2170,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f8faa5eecff89e395336ff117e4dc0a3413f598329ffd3f08bdc89720788d1a"
 dependencies = [
  "arrayvec",
- "bounded-static",
  "itoa",
  "rust_decimal",
  "thiserror 2.0.21",

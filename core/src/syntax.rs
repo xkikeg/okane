@@ -8,12 +8,8 @@ pub mod tracked;
 
 use std::{borrow::Cow, fmt};
 
-use bounded_static::ToStatic;
 use chrono::{NaiveDate, NaiveDateTime};
 use derive_where::derive_where;
-
-#[cfg(test)]
-use bounded_static::ToBoundedStatic;
 
 use decoration::Decoration;
 
@@ -54,16 +50,6 @@ impl<'i, Deco: Decoration> LedgerEntry<'i, Deco> {
     }
 }
 
-impl LedgerEntry<'_, plain::Ident> {
-    #[cfg(test)]
-    pub(crate) fn to_static(&self) -> LedgerEntry<'static, plain::Ident> {
-        LedgerEntry {
-            separation: self.separation,
-            statement: self.statement.to_static(),
-        }
-    }
-}
-
 /// Top-level statement of the LedgerFile.
 #[derive_where(Debug, PartialEq, Eq)]
 pub enum LedgerStatement<'i, Deco: Decoration> {
@@ -83,27 +69,12 @@ pub enum LedgerStatement<'i, Deco: Decoration> {
     Commodity(CommodityDeclaration<'i>),
 }
 
-impl LedgerStatement<'_, plain::Ident> {
-    #[cfg(test)]
-    pub(crate) fn to_static(&self) -> LedgerStatement<'static, plain::Ident> {
-        match self {
-            LedgerStatement::Txn(v) => LedgerStatement::Txn(v.to_static()),
-            LedgerStatement::Comment(v) => LedgerStatement::Comment(v.to_static()),
-            LedgerStatement::ApplyTag(v) => LedgerStatement::ApplyTag(v.to_static()),
-            LedgerStatement::EndApplyTag => LedgerStatement::EndApplyTag,
-            LedgerStatement::Include(v) => LedgerStatement::Include(v.to_static()),
-            LedgerStatement::Account(v) => LedgerStatement::Account(v.to_static()),
-            LedgerStatement::Commodity(v) => LedgerStatement::Commodity(v.to_static()),
-        }
-    }
-}
-
 /// Top-level comment. OK to have multi-line comment.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct TopLevelComment<'i>(pub Cow<'i, str>);
 
 /// "apply tag" directive content.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ApplyTag<'i> {
     pub key: Cow<'i, str>,
     pub value: Option<MetadataValue<'i>>,
@@ -111,11 +82,11 @@ pub struct ApplyTag<'i> {
 
 /// "include" directive, taking a path as an argument.
 /// Path can be a relative path or an absolute path.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct IncludeFile<'i>(pub Cow<'i, str>);
 
 /// "account" directive to declare account information.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct AccountDeclaration<'i> {
     /// Canonical name of the account.
     pub name: Cow<'i, str>,
@@ -124,7 +95,7 @@ pub struct AccountDeclaration<'i> {
 }
 
 /// Sub directives for "account" directive.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum AccountDetail<'i> {
     /// Comment is a pure comment without any semantics, similar to `TopLevelComment`.
     Comment(Cow<'i, str>),
@@ -136,7 +107,7 @@ pub enum AccountDetail<'i> {
 }
 
 /// "commodity" directive to declare commodity information.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct CommodityDeclaration<'i> {
     /// Canonical name of the commodity.
     pub name: Cow<'i, str>,
@@ -145,7 +116,7 @@ pub struct CommodityDeclaration<'i> {
 }
 
 /// Sub directives for "commodity" directive.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum CommodityDetail<'i> {
     /// Comment is a pure comment without any semantics, similar to `TopLevelComment`.
     Comment(Cow<'i, str>),
@@ -176,25 +147,6 @@ pub struct Transaction<'i, Deco: Decoration> {
     pub posts: Vec<Deco::Decorated<Posting<'i, Deco>>>,
     /// Transaction level metadata.
     pub metadata: Vec<Metadata<'i>>,
-}
-
-impl Transaction<'_, plain::Ident> {
-    #[cfg(test)]
-    fn to_static(&self) -> Transaction<'static, plain::Ident> {
-        let mut posts = Vec::new();
-        for p in &self.posts {
-            posts.push(p.to_static());
-        }
-        Transaction {
-            date: self.date,
-            effective_date: self.effective_date,
-            clear_state: self.clear_state,
-            code: self.code.to_static(),
-            payee: self.payee.to_static(),
-            posts,
-            metadata: self.metadata.to_static(),
-        }
-    }
 }
 
 impl<'i, Deco: Decoration> Transaction<'i, Deco> {
@@ -230,19 +182,6 @@ pub struct Posting<'i, Deco: Decoration> {
     pub metadata: Vec<Metadata<'i>>,
 }
 
-impl Posting<'_, plain::Ident> {
-    #[cfg(test)]
-    fn to_static(&self) -> Posting<'static, plain::Ident> {
-        Posting {
-            account: self.account.to_static(),
-            clear_state: self.clear_state,
-            amount: self.amount.as_ref().map(|x| x.to_static()),
-            balance: self.balance.to_static(),
-            metadata: self.metadata.to_static(),
-        }
-    }
-}
-
 impl<'i> Posting<'i, plain::Ident> {
     pub fn new_untracked<T>(account: T) -> Self
     where
@@ -271,7 +210,7 @@ impl<'i, Deco: Decoration> Posting<'i, Deco> {
 }
 
 /// Represents a clearing state, often combined with the ambiguity.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, ToStatic)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 pub enum ClearState {
     /// No specific meaning.
     #[default]
@@ -283,7 +222,7 @@ pub enum ClearState {
 }
 
 /// Metadata represents meta information associated with transactions / posts.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Metadata<'i> {
     /// Comment, which covers just one line (without the suceeding new line).
     /// If users wrongly construct this `Comment` with multi-line text,
@@ -299,7 +238,7 @@ pub enum Metadata<'i> {
 }
 
 /// MetadataValue represents the value in key-value pair used in `Metadata`.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum MetadataValue<'i> {
     /// Regular string.
     Text(Cow<'i, str>),
@@ -320,17 +259,6 @@ pub struct PostingAmount<'i, Deco: Decoration> {
     pub lot: Lot<'i, Deco>,
 }
 
-impl PostingAmount<'_, plain::Ident> {
-    #[cfg(test)]
-    fn to_static(&self) -> PostingAmount<'static, plain::Ident> {
-        PostingAmount {
-            amount: self.amount.to_static(),
-            cost: self.cost.to_static(),
-            lot: self.lot.to_static(),
-        }
-    }
-}
-
 impl<'i> From<expr::ValueExpr<'i>> for PostingAmount<'i, plain::Ident> {
     fn from(v: expr::ValueExpr<'i>) -> Self {
         PostingAmount {
@@ -349,17 +277,6 @@ pub struct Lot<'i, Deco: Decoration> {
     pub note: Option<Cow<'i, str>>,
 }
 
-impl Lot<'_, plain::Ident> {
-    #[cfg(test)]
-    fn to_static(&self) -> Lot<'static, plain::Ident> {
-        Lot {
-            price: self.price.to_static(),
-            date: self.date.to_static(),
-            note: self.note.to_static(),
-        }
-    }
-}
-
 impl<Deco: Decoration> Default for Lot<'_, Deco> {
     fn default() -> Self {
         Self {
@@ -371,7 +288,7 @@ impl<Deco: Decoration> Default for Lot<'_, Deco> {
 }
 
 /// Exchange represents the amount expressed in the different commodity.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Exchange<'i> {
     /// Specified value equals to the total amount.
     /// For example,
@@ -387,7 +304,7 @@ pub enum Exchange<'i> {
 
 /// Price DB entry, which contains one commodity price
 /// in another commodity on a particular date time.
-#[derive(Debug, PartialEq, Eq, ToStatic)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct PriceDBEntry<'i> {
     pub datetime: NaiveDateTime,
     /// Target commodity of the price.
