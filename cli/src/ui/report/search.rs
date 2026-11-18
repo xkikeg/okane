@@ -7,11 +7,59 @@
 //! to [`SearchMessage`]s, and moves the screen's [`TableNav`] selection over
 //! any rows implementing [`Searchable`].
 
+use std::borrow::Cow;
+use std::rc::Rc;
+
 use crossterm::event::{KeyCode, KeyEvent};
 use regex::{Regex, RegexBuilder};
 
 use crate::ui::keys::is_ctrl;
+use crate::ui::migemo::{Migemo, MigemoError};
 use crate::ui::table::TableNav;
+
+/// How the text typed in the search bar becomes the regex the rows are matched
+/// against.
+///
+/// [`Self::Plain`] is what a session without `--migemo` uses: the pattern is
+/// the regex, exactly as typed. [`Self::Migemo`] runs it through a migemo
+/// process first, so `ginkou` matches the accounts written 銀行 — the typed
+/// text is still in migemo's output as one alternative, so plain ASCII
+/// searching keeps working.
+#[derive(Debug, Default)]
+pub enum Translator {
+    #[default]
+    Plain,
+    Migemo(Migemo),
+}
+
+impl Translator {
+    /// The regex `input` stands for under this translation.
+    fn to_regex<'a>(&self, input: &'a str) -> Result<Cow<'a, str>, SearchError> {
+        match self {
+            Translator::Plain => Ok(Cow::Borrowed(input)),
+            Translator::Migemo(migemo) => Ok(Cow::Owned(migemo.query(input)?)),
+        }
+    }
+}
+
+/// Why the typed pattern produced no matches to show.
+#[derive(thiserror::Error, Debug)]
+pub enum SearchError {
+    #[error("invalid regex: {0}")]
+    Regex(#[from] regex::Error),
+    #[error("migemo failed: {0}")]
+    Migemo(#[from] MigemoError),
+}
+
+impl SearchError {
+    /// Short tag for the search bar, which has one line to say what went wrong.
+    pub(super) fn label(&self) -> &'static str {
+        match self {
+            SearchError::Regex(_) => "[invalid regex]",
+            SearchError::Migemo(err) => err.label(),
+        }
+    }
+}
 
 /// A table row the search can match against.
 pub trait Searchable {
@@ -100,26 +148,34 @@ impl SearchMatch {
         Some(rows[idx])
     }
 
-    /// Computes matching row indices for `input` as a case-insensitive regex.
-    /// Returns `None` for empty input, `Err` for an invalid pattern.
-    pub fn compute<T: Searchable>(input: &str, rows: &[T]) -> Option<Result<Self, regex::Error>> {
+    /// Computes matching row indices for `input`, translated by `translator`
+    /// and compiled as a case-insensitive regex. Returns `None` for empty
+    /// input, `Err` for a pattern that cannot be built.
+    pub fn compute<T: Searchable>(
+        input: &str,
+        rows: &[T],
+        translator: &Translator,
+    ) -> Option<Result<Self, SearchError>> {
         if input.is_empty() {
             return None;
         }
-        Some(
-            RegexBuilder::new(input)
-                .case_insensitive(true)
-                .build()
-                .map(|re| {
-                    Self(
-                        rows.iter()
-                            .enumerate()
-                            .filter(|(_, row)| row.is_match(&re))
-                            .map(|(i, _)| i)
-                            .collect(),
-                    )
-                }),
-        )
+        Some(Self::compute_nonempty(input, rows, translator))
+    }
+
+    fn compute_nonempty<T: Searchable>(
+        input: &str,
+        rows: &[T],
+        translator: &Translator,
+    ) -> Result<Self, SearchError> {
+        let pattern = translator.to_regex(input)?;
+        let re = RegexBuilder::new(&pattern).case_insensitive(true).build()?;
+        Ok(Self(
+            rows.iter()
+                .enumerate()
+                .filter(|(_, row)| row.is_match(&re))
+                .map(|(i, _)| i)
+                .collect(),
+        ))
     }
 
     /// Row index of the next/previous match relative to `current` (wrapping).
@@ -145,18 +201,18 @@ impl SearchMatch {
 
 /// An active search: what is searched for, and what it matched.
 ///
-/// Not `PartialEq` because `regex::Error` doesn't implement it — tests inspect
+/// Not `PartialEq` because [`SearchError`] doesn't implement it — tests inspect
 /// the individual fields.
 #[derive(Debug)]
 pub struct Search {
     pub intent: SearchIntent,
     /// `None` when `input` is empty; `Ok` with matching row indices; `Err` when
-    /// the pattern fails to compile as a regex.
-    pub matches: Option<Result<SearchMatch, regex::Error>>,
+    /// the pattern cannot be turned into a regex.
+    pub matches: Option<Result<SearchMatch, SearchError>>,
 }
 
 impl Search {
-    pub(super) fn err(&self) -> Option<&regex::Error> {
+    pub(super) fn err(&self) -> Option<&SearchError> {
         self.matches.as_ref()?.as_ref().err()
     }
     pub(super) fn matched_rows(&self) -> &[usize] {
@@ -219,12 +275,21 @@ pub struct SearchState {
     /// search via `C-s`/`C-r`. Shared across modal and interactive searches.
     /// Not `Option` because empty string can represent empty state.
     pub last: String,
+    /// How a typed pattern becomes the regex the rows are matched against.
+    /// Shared with the session rather than owned, so the migemo process is
+    /// spawned once and survives the reloads that rebuild the screens.
+    pub translator: Rc<Translator>,
 }
 
 impl SearchState {
-    /// A state with no active search, remembering `last` as the history.
-    pub fn with_last(last: String) -> Self {
-        Self { active: None, last }
+    /// A state with no active search, remembering `last` as the history and
+    /// translating patterns with `translator`.
+    pub fn new(last: String, translator: Rc<Translator>) -> Self {
+        Self {
+            active: None,
+            last,
+            translator,
+        }
     }
 
     /// Whether an interactive (`C-s`/`C-r`) search is active.
@@ -413,7 +478,7 @@ impl SearchState {
             SearchMode::Modal(_) => origin,
             SearchMode::Interactive => nav.selected_item().unwrap_or(origin),
         };
-        let matches = SearchMatch::compute(&intent.input, rows);
+        let matches = SearchMatch::compute(&intent.input, rows, &self.translator);
         let jump = match &matches {
             Some(Ok(m)) => m.first_match(reference, intent.dir),
             _ => None,
@@ -442,7 +507,7 @@ impl SearchState {
         self.active = intent.map(|intent| {
             let mut intent = intent.clone();
             intent.origin = intent.origin.min(rows.len().saturating_sub(1));
-            let matches = SearchMatch::compute(&intent.input, rows);
+            let matches = SearchMatch::compute(&intent.input, rows, &self.translator);
             Search { intent, matches }
         });
     }
@@ -479,9 +544,16 @@ mod tests {
     #[test]
     fn compute_matches_classifies_input() {
         let rows: &[&str] = &["Assets", "Income"];
-        assert_matches!(SearchMatch::compute("", rows), None);
-        assert_matches!(SearchMatch::compute("assets", rows), Some(Ok(m)) if m.rows() == [0]);
-        assert_matches!(SearchMatch::compute("[", rows), Some(Err(_)));
+        let plain = Translator::Plain;
+        assert_matches!(SearchMatch::compute("", rows, &plain), None);
+        assert_matches!(
+            SearchMatch::compute("assets", rows, &plain),
+            Some(Ok(m)) if m.rows() == [0]
+        );
+        assert_matches!(
+            SearchMatch::compute("[", rows, &plain),
+            Some(Err(SearchError::Regex(_)))
+        );
     }
 
     fn key(code: KeyCode) -> KeyEvent {

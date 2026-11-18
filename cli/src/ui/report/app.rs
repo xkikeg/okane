@@ -13,6 +13,7 @@
 //! the reload snapshot.
 
 use std::cmp::min;
+use std::rc::Rc;
 
 use okane_core::report::BalanceTreeNode;
 
@@ -24,7 +25,7 @@ use super::overlay::{Overlay, ScrollDelta};
 use super::register::{
     RegisterAction, RegisterMessage, RegisterRow, RegisterScope, RegisterSnapshot, RegisterView,
 };
-use super::search::SearchState;
+use super::search::{SearchState, Translator};
 
 /// Top-level screen the user is currently looking at.
 #[derive(Debug)]
@@ -115,6 +116,10 @@ pub struct App<'ctx> {
     /// open: a register view lives only as long as one drill-in, but its
     /// history is the register screen's, separate from the balance one.
     pub register_last_search: String,
+    /// How both screens' searches turn a typed pattern into a regex (plain, or
+    /// migemo). Kept here so every register view opened later gets the same
+    /// one as the balance search.
+    pub translator: Rc<Translator>,
     pub should_quit: bool,
 }
 
@@ -135,8 +140,17 @@ impl<'ctx> App<'ctx> {
             error_toast: None,
             query,
             register_last_search: String::new(),
+            translator: Rc::default(),
             should_quit: false,
         }
+    }
+
+    /// Points both screens' searches at `translator`, the shared translation
+    /// the session was configured with (plain regex, or migemo).
+    pub fn with_translator(mut self, translator: Rc<Translator>) -> Self {
+        self.balance.search.translator = Rc::clone(&translator);
+        self.translator = translator;
+        self
     }
 
     /// Builds an app from pre-derived balance rows, with no backing tree.
@@ -156,6 +170,7 @@ impl<'ctx> App<'ctx> {
             error_toast: None,
             query,
             register_last_search: String::new(),
+            translator: Rc::default(),
             should_quit: false,
         }
     }
@@ -265,7 +280,10 @@ impl<'ctx> App<'ctx> {
     /// fulfilled.
     pub fn show_register(&mut self, scope: RegisterScope<'ctx>, rows: Vec<RegisterRow<'ctx>>) {
         let mut view = RegisterView::new(scope, rows);
-        view.search = SearchState::with_last(std::mem::take(&mut self.register_last_search));
+        view.search = SearchState::new(
+            std::mem::take(&mut self.register_last_search),
+            Rc::clone(&self.translator),
+        );
         self.screen = Screen::Register(Box::new(view));
     }
 
@@ -284,6 +302,7 @@ impl<'ctx> App<'ctx> {
             view.nav.select_item(min(snapshot.cursor(), last));
         }
         let history = std::mem::take(&mut self.register_last_search);
+        view.search.translator = Rc::clone(&self.translator);
         view.search.restore(snapshot.search(), &history, &view.rows);
         self.screen = Screen::Register(Box::new(view));
     }
@@ -855,6 +874,26 @@ mod tests {
         let view = assert_matches!(&app.screen, Screen::Register(view) => view);
         assert_eq!(&view.search.last, "b");
         assert!(view.search.active.is_none());
+    }
+
+    /// The session's translator (plain or migemo) reaches the balance search
+    /// and every register opened later, fresh or restored after a reload.
+    #[test]
+    fn translator_is_shared_with_every_register_view() {
+        let arena = Bump::new();
+        let (_ctx, account) = make_account(&arena, "Assets:Cash");
+        let scope = RegisterScope::Single(account);
+        let translator = Rc::new(Translator::Plain);
+        let mut app = app_no_rows().with_translator(Rc::clone(&translator));
+        assert!(Rc::ptr_eq(&app.balance.search.translator, &translator));
+
+        app.show_register(scope, abc_rows());
+        let view = assert_matches!(&app.screen, Screen::Register(view) => view);
+        assert!(Rc::ptr_eq(&view.search.translator, &translator));
+
+        app.show_register_at(scope, abc_rows(), &cursor_at(0));
+        let view = assert_matches!(&app.screen, Screen::Register(view) => view);
+        assert!(Rc::ptr_eq(&view.search.translator, &translator));
     }
 
     #[test]
