@@ -73,13 +73,29 @@ jobs:
   benchmark:
     name: Run report bench
     runs-on: ubuntu-latest
+    env:
+      # The base and PR runs share target/, where report_bench caches its
+      # generated input. Always regenerate it so that the PR run never uses
+      # input written by the base commit's generator.
+      OKANE_BENCH_CREATE: '1'
+      # GitHub-hosted runners differ in CPU model from job to job, and the
+      # same code runs up to ~1.7x faster on some of them. Comparing a PR
+      # against the main history on gh-pages therefore mostly compares
+      # machines. On PRs we instead benchmark the base commit on the same
+      # runner and compare against that; this file holds both results.
+      PR_BENCH_JSON: pr-bench.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # On PRs HEAD is the merge commit and HEAD^1 is the base branch.
+          fetch-depth: 2
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1.94.1
         with:
           toolchain: stable
           target: x86_64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Show runner CPU
+        run: lscpu | grep -E '^(Model name|CPU\(s\)|L3 cache):'
       - name: Discard restored criterion baselines
         # rust-cache prunes target/ before saving it, and since v2.9.2 that
         # leaves target/criterion as a tree of empty directories. criterion
@@ -90,6 +106,30 @@ jobs:
         # baselines are useless to us anyway: the benchmark history lives on
         # the gh-pages branch.
         run: rm -rf target/criterion
+      - name: Run benchmark on base commit
+        if: github.event_name == 'pull_request'
+        run: |
+          git worktree add "$RUNNER_TEMP/base" HEAD^1
+          (cd "$RUNNER_TEMP/base" && CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" \
+            cargo bench --bench decimal_bench --bench report_bench -- --output-format bencher) | tee base.txt
+          rm -rf target/criterion
+      - name: Store base benchmark result
+        if: github.event_name == 'pull_request'
+        uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
+        with:
+          name: Criterion.rs Benchmark
+          tool: 'cargo'
+          output-file-path: base.txt
+          external-data-json-path: ${{ env.PR_BENCH_JSON }}
+          auto-push: false
+      - name: Label base benchmark result with the base commit
+        if: github.event_name == 'pull_request'
+        # On PRs the action labels every entry with the PR head commit, and
+        # it ignores entries of the same commit when looking for the previous
+        # result. Relabel the base entry so the next step compares against it.
+        run: |
+          jq --arg sha "$(git rev-parse HEAD^1)" '.entries[][].commit.id = $sha' "$PR_BENCH_JSON" > "$PR_BENCH_JSON.tmp"
+          mv "$PR_BENCH_JSON.tmp" "$PR_BENCH_JSON"
       - name: Run benchmark
         run: cargo bench --bench decimal_bench --bench report_bench -- --output-format bencher | tee output.txt
       - name: Store benchmark result
@@ -98,6 +138,8 @@ jobs:
           name: Criterion.rs Benchmark
           tool: 'cargo'
           output-file-path: output.txt
+          # Empty on push, which stores into the gh-pages branch instead.
+          external-data-json-path: ${{ github.event_name == 'pull_request' && env.PR_BENCH_JSON || '' }}
           auto-push: false
           alert-threshold: '200%'
           comment-on-alert: true
