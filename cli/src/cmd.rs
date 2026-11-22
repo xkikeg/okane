@@ -28,7 +28,7 @@ use okane_core::{load, report};
 use crate::format;
 use crate::import;
 use crate::ui;
-use crate::ui::migemo::{Migemo, MigemoCommand};
+use crate::ui::migemo::{Migemo, MigemoDict, MigemoSource};
 
 #[derive(thiserror::Error, Debug)]
 #[error("invalid flag: {0}")]
@@ -376,8 +376,8 @@ impl BalanceCmd {
 #[derive(Debug)]
 pub struct UiCmd {
     eval_options: EvalOptions,
-    /// Command expanding search queries through migemo, if any.
-    migemo: Option<MigemoCommand>,
+    /// Where search queries are expanded through migemo, if anywhere.
+    migemo: Option<MigemoSource>,
     source: PathBuf,
 }
 
@@ -390,11 +390,20 @@ impl UiCmd {
             load::new_loader(self.source.clone()),
             self.eval_options.to_query_options(),
         );
-        if let Some(command) = self.migemo {
-            // Spawned before the terminal is taken over, so a command that
-            // cannot even start says so on the normal terminal.
-            let migemo = Migemo::spawn(command).context("failed to start migemo")?;
-            config = config.with_translator(ui::report::Translator::Migemo(migemo));
+        // Started before the terminal is taken over, so a command that cannot
+        // even start, or a dictionary that does not load, says so on the
+        // normal terminal.
+        let translator = match self.migemo {
+            None => None,
+            Some(MigemoSource::Command(command)) => Some(ui::report::Translator::Migemo(
+                Migemo::spawn(command).context("failed to start migemo")?,
+            )),
+            Some(MigemoSource::Dict(path)) => Some(ui::report::Translator::MigemoDict(
+                MigemoDict::load(&path).context("failed to load the migemo dictionary")?,
+            )),
+        };
+        if let Some(translator) = translator {
+            config = config.with_translator(translator);
         }
         let mut arena = Bump::new();
         ui::report::run_ui(&mut arena, self.source.display().to_string(), &config)

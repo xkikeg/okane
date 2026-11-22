@@ -21,7 +21,7 @@ use super::{
     TagsCmd, UiCmd,
 };
 use crate::build::CLAP_LONG_VERSION;
-use crate::ui::migemo::MigemoCommand;
+use crate::ui::migemo::{MigemoCommand, MigemoSource};
 
 #[derive(clap::Parser, Debug)]
 #[clap(about, version, author, long_version = CLAP_LONG_VERSION)]
@@ -421,8 +421,18 @@ struct UiArgs {
     /// `--migemo='cmigemo -q -d /usr/share/cmigemo/utf-8/migemo-dict'`.
     /// The command must read a query per line on stdin and write the regex it
     /// expands to on stdout, which is what `cmigemo` does.
-    #[arg(long, value_name = "COMMAND")]
+    #[arg(long, value_name = "COMMAND", conflicts_with = "migemo_dict")]
     migemo: Option<String>,
+
+    /// rustmigemo compact dictionary, to expand the search query in-process.
+    ///
+    /// The same romaji search as `--migemo`, without running a command: the
+    /// dictionary is loaded once, and queries never wait on another process.
+    /// It takes `migemo-compact-dict` from
+    /// https://github.com/oguna/migemo-compact-dict-latest, not the
+    /// `migemo-dict` of cmigemo.
+    #[arg(long, value_name = "FILE")]
+    migemo_dict: Option<PathBuf>,
 
     #[command(flatten)]
     file: LedgerFileArgs,
@@ -435,11 +445,15 @@ impl UiArgs {
     }
 
     fn build(self) -> Result<UiCmd, InvalidFlagError> {
-        let migemo = self
+        let command = self
             .migemo
             .map(|command| MigemoCommand::parse(&command))
             .transpose()
             .map_err(|err| InvalidFlagError(err.to_string()))?;
+        // clap already refuses both at once.
+        let migemo = command
+            .map(MigemoSource::Command)
+            .or(self.migemo_dict.map(MigemoSource::Dict));
         Ok(UiCmd {
             eval_options: self.eval_options.build()?,
             migemo,
@@ -802,7 +816,9 @@ mod tests {
         let cmd = assert_matches!(cmd, Ok(Command::Ui(cmd)) => cmd);
         assert_eq!(
             cmd.migemo,
-            Some(MigemoCommand::parse("cmigemo -d 'my dict'").unwrap())
+            Some(MigemoSource::Command(
+                MigemoCommand::parse("cmigemo -d 'my dict'").unwrap()
+            ))
         );
 
         let err = build(&["ui", "--migemo=cmigemo 'unbalanced", "a.ledger"]).unwrap_err();
@@ -816,6 +832,23 @@ mod tests {
             err.to_string(),
             "invalid flag: --migemo needs a command to run"
         );
+    }
+
+    #[test]
+    fn ui_migemo_dict_is_an_alternative_to_the_command() {
+        let cmd = build(&["ui", "--migemo-dict", "dict", "a.ledger"]);
+        let cmd = assert_matches!(cmd, Ok(Command::Ui(cmd)) => cmd);
+        assert_eq!(cmd.migemo, Some(MigemoSource::Dict(PathBuf::from("dict"))));
+
+        let err = Cli::try_parse_from([
+            "okane",
+            "ui",
+            "--migemo=cmigemo",
+            "--migemo-dict=dict",
+            "a.ledger",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
     #[test]

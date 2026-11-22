@@ -14,7 +14,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use regex::{Regex, RegexBuilder};
 
 use crate::ui::keys::is_ctrl;
-use crate::ui::migemo::{Migemo, MigemoError};
+use crate::ui::migemo::{Migemo, MigemoDict, MigemoError};
 use crate::ui::table::TableNav;
 
 /// How the text typed in the search bar becomes the regex the rows are matched
@@ -24,12 +24,14 @@ use crate::ui::table::TableNav;
 /// the regex, exactly as typed. [`Self::Migemo`] runs it through a migemo
 /// process first, so `ginkou` matches the accounts written 銀行 — the typed
 /// text is still in migemo's output as one alternative, so plain ASCII
-/// searching keeps working.
+/// searching keeps working. [`Self::MigemoDict`] does the same in-process,
+/// from `--migemo-dict`.
 #[derive(Debug, Default)]
 pub enum Translator {
     #[default]
     Plain,
     Migemo(Migemo),
+    MigemoDict(MigemoDict),
 }
 
 impl Translator {
@@ -38,6 +40,7 @@ impl Translator {
         match self {
             Translator::Plain => Ok(Cow::Borrowed(input)),
             Translator::Migemo(migemo) => Ok(Cow::Owned(migemo.query(input)?)),
+            Translator::MigemoDict(dict) => Ok(Cow::Owned(dict.query(input)?)),
         }
     }
 }
@@ -553,6 +556,27 @@ mod tests {
         assert_matches!(
             SearchMatch::compute("[", rows, &plain),
             Some(Err(SearchError::Regex(_)))
+        );
+    }
+
+    /// What migemo expands is what the rows are matched against: romaji
+    /// reaches the Japanese, and the typed text itself still matches.
+    #[test]
+    fn compute_matches_through_migemo() {
+        let rows: &[&str] = &["資産:銀行", "資産:現金", "Assets:Ginkou"];
+        let migemo = Translator::MigemoDict(crate::ui::migemo::tests::tiny_dict());
+        assert_matches!(
+            SearchMatch::compute("ginkou", rows, &migemo),
+            Some(Ok(m)) if m.rows() == [0, 2]
+        );
+        // Without migemo the same query is only the ASCII it spells.
+        assert_matches!(
+            SearchMatch::compute("ginkou", rows, &Translator::Plain),
+            Some(Ok(m)) if m.rows() == [2]
+        );
+        assert_matches!(
+            SearchMatch::compute(" ", rows, &migemo),
+            Some(Err(SearchError::Migemo(_)))
         );
     }
 

@@ -39,6 +39,8 @@ ratatui = "0.30"
 regex.workspace = true
 rstest_reuse = "0.7.0"
 rust_decimal.workspace = true
+# Not on crates.io yet: a git dependency blocks `cargo publish` until it is.
+rustmigemo = { git = "https://github.com/oguna/rustmigemo", rev = "121101dfcfd9465c998ba53fabe43773b14bf868" }
 serde = { version = "1.0", features = [ "derive" ] }
 serde_with = { version = "3.21", features = [ "chrono" ] }
 shadow-rs = { version = "2.0.0", default-features = false }

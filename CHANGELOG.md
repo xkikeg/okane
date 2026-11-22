@@ -19,6 +19,10 @@
   stands for, so `ginkou` finds `資産:銀行`. The process is spawned once and kept for the whole
   session (reloads included), so an incremental search does not pay the dictionary load per
   keystroke. Without the flag the query is used as the regex, as before.
+* CLI: `ui --migemo-dict <FILE>` runs the same romaji search in-process through
+  [rustmigemo](https://github.com/oguna/rustmigemo), with no external command. It takes the
+  `migemo-compact-dict` from https://github.com/oguna/migemo-compact-dict-latest rather than
+  cmigemo's dictionary, and cannot be combined with `--migemo`.
 * The TUI register screen can now be searched, with the same keys as the balance screen: `/`
   (then `n` / `N`) and `C-s` / `C-r` match the payee or the date as shown, so `/2024-03` jumps to
   March. The register remembers its own last pattern for `C-s` / `C-r`, separately from the balance
