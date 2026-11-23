@@ -325,6 +325,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64fa3c856b712db6612c019f14756e64e4bcea13337a6b33b696333a9eaa2d06"
 
 [[package]]
+name = "byteorder"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
+
+[[package]]
 name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1792,6 +1798,7 @@ dependencies = [
  "rstest_reuse",
  "rust_decimal",
  "rust_decimal_macros",
+ "rustmigemo",
  "serde",
  "serde_test",
  "serde_with",
@@ -2620,6 +2627,14 @@ dependencies = [
  "libc",
  "linux-raw-sys",
  "windows-sys",
+]
+
+[[package]]
+name = "rustmigemo"
+version = "0.1.7-dev.0"
+source = "git+https://github.com/oguna/rustmigemo?rev=121101dfcfd9465c998ba53fabe43773b14bf868#121101dfcfd9465c998ba53fabe43773b14bf868"
+dependencies = [
+ "byteorder",
 ]
 
 [[package]]

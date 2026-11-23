@@ -65,6 +65,12 @@ $ okane ui -f /path/to/file.ledger
 $ okane ui --migemo='cmigemo -q -d /usr/share/cmigemo/utf-8/migemo-dict' -f /path/to/file.ledger
 ```
 
+cmigemo がなくても、`--migemo-dict` を使えば [rustmigemo](https://github.com/oguna/rustmigemo) で同じ検索ができます。外部コマンドは起動しません。辞書は cmigemo の `migemo-dict` ではなく、[migemo-compact-dict-latest](https://github.com/oguna/migemo-compact-dict-latest) の `migemo-compact-dict` を使います。
+
+```shell
+$ okane ui --migemo-dict ~/.local/share/migemo-compact-dict -f /path/to/file.ledger
+```
+
 `balance` や `register` と同じ評価用オプションが使えるので、通貨換算や日付指定も可能です。
 
 ```shell

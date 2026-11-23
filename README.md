@@ -77,6 +77,16 @@ it:
 $ okane ui --migemo='cmigemo -q -d /usr/share/cmigemo/utf-8/migemo-dict' -f /path/to/file.ledger
 ```
 
+Without cmigemo installed, `--migemo-dict` does the same in-process through
+[rustmigemo](https://github.com/oguna/rustmigemo). It takes rustmigemo's own
+dictionary, `migemo-compact-dict` from
+[migemo-compact-dict-latest](https://github.com/oguna/migemo-compact-dict-latest),
+not cmigemo's `migemo-dict`:
+
+```shell
+$ okane ui --migemo-dict ~/.local/share/migemo-compact-dict -f /path/to/file.ledger
+```
+
 It takes the same evaluation flags as `balance` and `register`, so the amounts
 can be converted into a single commodity, or filtered by the time range:
 
