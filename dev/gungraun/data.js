@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794997142415,
+  "lastUpdate": 1795641238712,
   "repoUrl": "https://github.com/xkikeg/okane",
   "entries": {
     "Gungraun Benchmark": [
@@ -1062,6 +1062,95 @@ window.BENCHMARK_DATA = {
           {
             "name": "query_register::register/sort_date_cold",
             "value": 12532009,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/sort_date_warm",
+            "value": 4838812,
+            "unit": "instructions"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "committer": {
+            "email": "kikeg@kikeg.com",
+            "name": "kikeg",
+            "username": "xkikeg"
+          },
+          "distinct": true,
+          "id": "851e63c78bbc9c438cbdc7eec491706eec09d3de",
+          "message": "chore: Upgrade dependencies.",
+          "timestamp": "2026-11-25T22:11:35+01:00",
+          "tree_id": "9d3bb01ffb14243f7f68c0e553747dd4c3496714",
+          "url": "https://github.com/xkikeg/okane/commit/851e63c78bbc9c438cbdc7eec491706eec09d3de"
+        },
+        "date": 1795641237370,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "load_process::load_on_memory/small",
+            "value": 119734072,
+            "unit": "instructions"
+          },
+          {
+            "name": "load_process::process/small",
+            "value": 170137488,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_historical",
+            "value": 36240726,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_historical_pricedb",
+            "value": 34154627,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/conversion_up_to_date",
+            "value": 47052,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_balance::balance/date_range_middle20",
+            "value": 10421702,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/account_filter",
+            "value": 757983,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/conversion_historical",
+            "value": 26958080,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/conversion_historical_pricedb",
+            "value": 29100961,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/date_range_middle20",
+            "value": 1184149,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/default",
+            "value": 4838735,
+            "unit": "instructions"
+          },
+          {
+            "name": "query_register::register/sort_date_cold",
+            "value": 12532350,
             "unit": "instructions"
           },
           {
