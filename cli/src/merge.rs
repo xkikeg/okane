@@ -28,9 +28,24 @@ pub trait Merge: Sized {
     fn merge_from(&mut self, other: Self);
 }
 
+/// One of the ways to implement [`Merge`] trait,
+/// especially for `struct` with multiple fields.
+///
+/// Since [`Merge`] isn't used for performance critical paths,
+/// rather just initial CLI startups, correctness and robustness
+/// should be preferred over performance.
+/// And implementing [`Merge`] is hard for struct without left behind
+/// one field not calling merge_from on.
+///
+/// This trait provides clarity and allow users to write [`merge_owned()`]
+/// implementation relying on `struct` field exhaustiveness check.
+///
+/// With using `impl_merge_from_owned`, you'll get [`Merge`] implementation
+/// with reasonable cost relying on [`std::mem::take()`], that's why this
+/// trait requires [`Default`].
 pub trait MergeOwned: Default {
-    /// [`Merge::merge()`] implementation for struct,
-    /// expecting `struct` to use this to benefit from exhaustive field check.
+    /// [`Merge::merge()`] with a different name.
+    /// Expecting `struct` to use this to benefit from exhaustive field check.
     fn merge_owned(self, other: Self) -> Self;
 }
 

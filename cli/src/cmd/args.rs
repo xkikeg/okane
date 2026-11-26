@@ -2,19 +2,23 @@
 //!
 //! These say nothing about whether the flags make sense together. Each one
 //! `build()`s the matching command in [`super`], which holds only valid states,
-//! so the commands never re-check their flags while running.
+//! so the commands never re-check their flags while running. Given a config
+//! file, [`Cli::build`] first fills in what the command line left out from it
+//! (the private `with_config()` methods); flags given on the command line
+//! always win.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use chrono::NaiveDate;
 use clap::{Args, Subcommand};
 
 use okane_core::report::query;
 
+use super::config::{Config, ReportTable};
 use super::{
-    AccountFilterMode, AccountsCmd, BalanceCmd, Command, EvalCmd, EvalOptions, FlattenCmd,
-    FormatCmd, ImportCmd, ImportMode, InvalidFlagError, PrimitiveCmd, RegisterCmd, SortKey,
-    TagsCmd, UiCmd,
+    AccountFilterMode, AccountsCmd, BalanceCmd, Command, ConversionMode, EvalCmd, EvalOptions,
+    FlattenCmd, FormatCmd, ImportCmd, ImportMode, InvalidFlagError, PrimitiveCmd, RegisterCmd,
+    SortKey, TagsCmd, UiCmd,
 };
 use crate::build::CLAP_LONG_VERSION;
 
@@ -22,13 +26,36 @@ use crate::build::CLAP_LONG_VERSION;
 #[clap(about, version, author, long_version = CLAP_LONG_VERSION)]
 #[command(infer_subcommands = true)]
 pub struct Cli {
+    /// Don't read any config file.
+    ///
+    /// Without it, flag defaults are read from the user config
+    /// (`$XDG_CONFIG_HOME/okane/config.toml`) and the nearest `okane.toml`,
+    /// or only from `$OKANE_CONFIG` when it is set.
+    #[arg(long)]
+    no_config: bool,
+
     #[clap(subcommand)]
     command: CommandArgs,
 }
 
 impl Cli {
+    /// Whether config files should be skipped.
+    pub fn no_config(&self) -> bool {
+        self.no_config
+    }
+
     /// The command to run, or why the given flags don't describe one.
-    pub fn build(self) -> Result<Command, InvalidFlagError> {
+    ///
+    /// The flags not given on the command line are taken from `config`, if
+    /// any; pass `None` for [`Self::no_config`].
+    pub fn build(mut self, config: Option<&Config>) -> Result<Command, InvalidFlagError> {
+        // double check that we don't have --no-config set.
+        // Caller should give None to avoid config load error.
+        if !self.no_config
+            && let Some(config) = config
+        {
+            self.command = self.command.with_config(config);
+        }
         self.command.build()
     }
 }
@@ -54,12 +81,24 @@ enum CommandArgs {
 }
 
 impl CommandArgs {
+    fn with_config(self, config: &Config) -> Self {
+        match self {
+            CommandArgs::Import(args) => CommandArgs::Import(args.with_config(config)),
+            CommandArgs::Accounts(args) => CommandArgs::Accounts(args.with_config(config)),
+            CommandArgs::Tags(args) => CommandArgs::Tags(args.with_config(config)),
+            CommandArgs::Balance(args) => CommandArgs::Balance(args.with_config(config)),
+            CommandArgs::Register(args) => CommandArgs::Register(args.with_config(config)),
+            CommandArgs::Ui(args) => CommandArgs::Ui(args.with_config(config)),
+            args @ (CommandArgs::Format(_) | CommandArgs::Primitive(_)) => args,
+        }
+    }
+
     fn build(self) -> Result<Command, InvalidFlagError> {
         Ok(match self {
             CommandArgs::Import(args) => Command::Import(args.build()?),
             CommandArgs::Format(args) => Command::Format(args.build()),
-            CommandArgs::Accounts(args) => Command::Accounts(args.build()),
-            CommandArgs::Tags(args) => Command::Tags(args.build()),
+            CommandArgs::Accounts(args) => Command::Accounts(args.build()?),
+            CommandArgs::Tags(args) => Command::Tags(args.build()?),
             CommandArgs::Balance(args) => Command::Balance(args.build()?),
             CommandArgs::Register(args) => Command::Register(args.build()?),
             CommandArgs::Ui(args) => Command::Ui(args.build()?),
@@ -71,12 +110,9 @@ impl CommandArgs {
 #[derive(Args, Debug)]
 pub(super) struct ImportArgs {
     /// YAML file with the rules that say how to import each source file.
-    #[arg(
-        short = 'r',
-        long,
-        value_name = "FILE",
-        required_unless_present = "config"
-    )]
+    ///
+    /// Defaults to `rules` in the `[import]` table of the config file.
+    #[arg(short = 'r', long, value_name = "FILE")]
     rules: Option<PathBuf>,
 
     /// Deprecated name of `--rules`, kept so that existing scripts still work.
@@ -94,6 +130,9 @@ pub(super) struct ImportArgs {
     interactive: bool,
 
     /// Ledger file whose accounts feed the autocomplete (interactive only).
+    ///
+    /// Defaults to `ledger` in the `[import]` table of the config file,
+    /// then to the top-level `source`.
     #[arg(long, value_name = "FILE", requires = "interactive")]
     ledger: Option<PathBuf>,
 
@@ -105,6 +144,23 @@ pub(super) struct ImportArgs {
 }
 
 impl ImportArgs {
+    fn with_config(self, config: &Config) -> Self {
+        Self {
+            rules: if self.rules.is_none() && self.config.is_none() {
+                config.import.rules.clone()
+            } else {
+                self.rules
+            },
+            config: self.config,
+            interactive: self.interactive,
+            ledger: self
+                .ledger
+                .or_else(|| config.import_ledger().map(Path::to_owned)),
+            output: self.output,
+            source: self.source,
+        }
+    }
+
     fn build(self) -> Result<ImportCmd, InvalidFlagError> {
         let rules = match (self.rules, self.config) {
             (Some(rules), _) => rules,
@@ -112,7 +168,12 @@ impl ImportArgs {
                 eprintln!("warning: `--config` / `-c` is deprecated, use `--rules` / `-r` instead");
                 config
             }
-            (None, None) => return Err(InvalidFlagError("--rules is required".to_string())),
+            (None, None) => {
+                return Err(InvalidFlagError(
+                    "--rules is required, unless `rules` is set in the `[import]` table of the config file"
+                        .to_string(),
+                ));
+            }
         };
         let mode = match (self.interactive, self.ledger, self.output) {
             (false, _, _) => ImportMode::Batch,
@@ -211,23 +272,88 @@ impl EvalArgs {
     }
 }
 
+/// Ledger file of the commands that take nothing else positional.
+#[derive(Args, Debug)]
+struct LedgerFileArgs {
+    /// Path to the Ledger file.
+    ///
+    /// Defaults to `source` in the config file.
+    #[arg(short = 'f', long = "file", value_name = "FILE")]
+    file: Option<PathBuf>,
+
+    /// Path to the Ledger file, same as `--file`.
+    #[arg(value_name = "SOURCE", conflicts_with = "file")]
+    source: Option<PathBuf>,
+}
+
+impl LedgerFileArgs {
+    fn with_config(self, config: &Config) -> Self {
+        Self {
+            file: if self.file.is_none() && self.source.is_none() {
+                config.source.clone()
+            } else {
+                self.file
+            },
+            source: self.source,
+        }
+    }
+
+    fn build(self) -> Result<PathBuf, InvalidFlagError> {
+        self.file.or(self.source).ok_or_else(missing_ledger_file)
+    }
+}
+
+fn missing_ledger_file() -> InvalidFlagError {
+    InvalidFlagError(
+        "no Ledger file given; pass it with --file, or set `source` in the config file".to_string(),
+    )
+}
+
+/// The Ledger file of `balance` and `register`, whose positional arguments
+/// are account patterns.
+///
+/// Without `--file` (or `source` in the config file), the first positional
+/// argument is taken as the file instead, as before `--file` existed.
+fn report_file(
+    file: Option<PathBuf>,
+    account: &mut Vec<String>,
+) -> Result<PathBuf, InvalidFlagError> {
+    if let Some(file) = file {
+        return Ok(file);
+    }
+    if account.is_empty() {
+        return Err(missing_ledger_file());
+    }
+    eprintln!(
+        "warning: passing the Ledger file as the first argument is deprecated, use `--file` / `-f` instead"
+    );
+    Ok(PathBuf::from(account.remove(0)))
+}
+
 #[derive(Args, Debug)]
 struct AccountsArgs {
-    source: PathBuf,
+    #[command(flatten)]
+    file: LedgerFileArgs,
 }
 
 impl AccountsArgs {
-    fn build(self) -> AccountsCmd {
-        AccountsCmd {
-            source: self.source,
+    fn with_config(self, config: &Config) -> Self {
+        Self {
+            file: self.file.with_config(config),
         }
+    }
+
+    fn build(self) -> Result<AccountsCmd, InvalidFlagError> {
+        Ok(AccountsCmd {
+            source: self.file.build()?,
+        })
     }
 }
 
 #[derive(Args, Debug)]
 struct TagsArgs {
-    /// Path to the Ledger file.
-    source: PathBuf,
+    #[command(flatten)]
+    file: LedgerFileArgs,
 
     /// Print each tag as `key: value`, instead of the key alone.
     ///
@@ -237,11 +363,18 @@ struct TagsArgs {
 }
 
 impl TagsArgs {
-    fn build(self) -> TagsCmd {
-        TagsCmd {
-            source: self.source,
+    fn with_config(self, config: &Config) -> Self {
+        Self {
+            file: self.file.with_config(config),
             values: self.values,
         }
+    }
+
+    fn build(self) -> Result<TagsCmd, InvalidFlagError> {
+        Ok(TagsCmd {
+            source: self.file.build()?,
+            values: self.values,
+        })
     }
 }
 
@@ -251,7 +384,10 @@ struct BalanceArgs {
     eval_options: EvalOptionsArgs,
 
     /// Path to the Ledger file.
-    source: PathBuf,
+    ///
+    /// Defaults to `source` in the config file.
+    #[arg(short = 'f', long = "file", value_name = "FILE")]
+    file: Option<PathBuf>,
 
     /// [Optional] Accounts to report the balance.
     ///
@@ -261,14 +397,26 @@ struct BalanceArgs {
     /// If none are set, show all accounts.
     ///
     /// If any of them are non-existing accounts, those are simply skipped.
+    ///
+    /// Without `--file` or `source` in the config file, the first one is
+    /// taken as the Ledger file instead, which is deprecated.
+    #[arg(value_name = "ACCOUNT")]
     account: Vec<String>,
 }
 
 impl BalanceArgs {
-    fn build(self) -> Result<BalanceCmd, InvalidFlagError> {
+    fn with_config(self, config: &Config) -> Self {
+        Self {
+            eval_options: self.eval_options.with_config(&config.balance()),
+            file: self.file.or_else(|| config.source.clone()),
+            account: self.account,
+        }
+    }
+
+    fn build(mut self) -> Result<BalanceCmd, InvalidFlagError> {
         Ok(BalanceCmd {
             eval_options: self.eval_options.build()?,
-            source: self.source,
+            source: report_file(self.file, &mut self.account)?,
             account: self.account,
         })
     }
@@ -279,15 +427,22 @@ struct UiArgs {
     #[command(flatten)]
     eval_options: EvalOptionsArgs,
 
-    /// Path to the Ledger file.
-    source: PathBuf,
+    #[command(flatten)]
+    file: LedgerFileArgs,
 }
 
 impl UiArgs {
+    fn with_config(self, config: &Config) -> Self {
+        Self {
+            eval_options: self.eval_options.with_config(&config.ui()),
+            file: self.file.with_config(config),
+        }
+    }
+
     fn build(self) -> Result<UiCmd, InvalidFlagError> {
         Ok(UiCmd {
             eval_options: self.eval_options.build()?,
-            source: self.source,
+            source: self.file.build()?,
         })
     }
 }
@@ -298,11 +453,17 @@ struct RegisterArgs {
     eval_options: EvalOptionsArgs,
 
     /// Sort order for the register rows.
-    #[arg(long, value_enum, default_value_t)]
-    sort: SortKey,
+    ///
+    /// Defaults to `sort` in the `[register]` table of the config file,
+    /// then to `original`.
+    #[arg(long, value_enum)]
+    sort: Option<SortKey>,
 
     /// Path to the Ledger file.
-    source: PathBuf,
+    ///
+    /// Defaults to `source` in the config file.
+    #[arg(short = 'f', long = "file", value_name = "FILE")]
+    file: Option<PathBuf>,
 
     /// [Optional] Accounts to get register.
     ///
@@ -313,15 +474,28 @@ struct RegisterArgs {
     /// If none are set, show all accounts.
     ///
     /// If any of them are non-existing accounts, those are simply skipped.
+    ///
+    /// Without `--file` or `source` in the config file, the first one is
+    /// taken as the Ledger file instead, which is deprecated.
+    #[arg(value_name = "ACCOUNT")]
     account: Vec<String>,
 }
 
 impl RegisterArgs {
-    fn build(self) -> Result<RegisterCmd, InvalidFlagError> {
+    fn with_config(self, config: &Config) -> Self {
+        Self {
+            eval_options: self.eval_options.with_config(&config.register().report),
+            sort: self.sort.or_else(|| config.register().sort),
+            file: self.file.or_else(|| config.source.clone()),
+            account: self.account,
+        }
+    }
+
+    fn build(mut self) -> Result<RegisterCmd, InvalidFlagError> {
         Ok(RegisterCmd {
             eval_options: self.eval_options.build()?,
-            sort: self.sort,
-            source: self.source,
+            sort: self.sort.unwrap_or_default(),
+            source: report_file(self.file, &mut self.account)?,
             account: self.account,
         })
     }
@@ -332,6 +506,8 @@ impl RegisterArgs {
 #[derive(Args, Debug)]
 struct EvalOptionsArgs {
     /// Path to the Price DB.
+    ///
+    /// Defaults to `price-db` in the config file.
     #[arg(long)]
     price_db: Option<PathBuf>,
 
@@ -339,16 +515,13 @@ struct EvalOptionsArgs {
     ///
     /// When user specifies `--exchange=FOO`,
     /// all values in other commmodities are converted to FOO.
+    ///
+    /// Defaults to `exchange` in the config file.
     #[arg(short = 'X', long)]
     exchange: Option<String>,
 
-    /// Use historical rate for exchange.
-    ///
-    /// Option `--historical` to evaluate exchange rate at the date of transaction.
-    /// This is useful for evaluating income and expense,
-    /// while it's pointless for assets and liabilities.
-    #[arg(long, default_value_t)]
-    historical: bool,
+    #[command(flatten)]
+    conversion: ConversionArgs,
 
     /// Today's date in YYYY-mm-dd format.
     ///
@@ -377,12 +550,67 @@ struct EvalOptionsArgs {
 
     /// Controls the account filter mode.
     ///
-    /// By default, `regex` mode is used.
-    #[arg(long, value_enum, default_value_t)]
-    account_filter: AccountFilterMode,
+    /// Defaults to `account-filter` in the config file, then to `regex`.
+    #[arg(long, value_enum)]
+    account_filter: Option<AccountFilterMode>,
+}
+
+/// `--conversion` and its shorthands, of which at most one can be given.
+#[derive(Args, Debug)]
+#[group(multiple = false)]
+struct ConversionArgs {
+    /// Which date's rate `--exchange` converts at.
+    ///
+    /// Defaults to `conversion` in the config file, then to `up-to-date`.
+    #[arg(long, value_enum)]
+    conversion: Option<ConversionMode>,
+
+    /// Shorthand for `--conversion=historical`.
+    #[arg(long)]
+    historical: bool,
+
+    /// Shorthand for `--conversion=up-to-date`.
+    #[arg(long)]
+    up_to_date: bool,
+}
+
+impl ConversionArgs {
+    /// The mode given on the command line, in whichever spelling.
+    fn mode(&self) -> Option<ConversionMode> {
+        if self.historical {
+            Some(ConversionMode::Historical)
+        } else if self.up_to_date {
+            Some(ConversionMode::UpToDate)
+        } else {
+            self.conversion
+        }
+    }
+
+    /// Falls back to `default` when no mode was given on the command line.
+    fn or(self, default: Option<ConversionMode>) -> Self {
+        Self {
+            conversion: self.mode().or(default),
+            historical: false,
+            up_to_date: false,
+        }
+    }
 }
 
 impl EvalOptionsArgs {
+    /// Fills the flags not given on the command line from `table`.
+    fn with_config(self, table: &ReportTable) -> Self {
+        Self {
+            price_db: self.price_db.or_else(|| table.price_db.clone()),
+            exchange: self.exchange.or_else(|| table.exchange.clone()),
+            conversion: self.conversion.or(table.conversion),
+            today: self.today,
+            start: self.start,
+            end: self.end,
+            current: self.current,
+            account_filter: self.account_filter.or(table.account_filter),
+        }
+    }
+
     /// Resolves `--current` into the end of the date range, which is the only
     /// form the commands use.
     fn build(self) -> Result<EvalOptions, InvalidFlagError> {
@@ -400,13 +628,13 @@ impl EvalOptionsArgs {
         Ok(EvalOptions {
             price_db: self.price_db,
             exchange: self.exchange,
-            historical: self.historical,
+            conversion: self.conversion.mode().unwrap_or_default(),
             today: self.today,
             date_range: query::DateRange {
                 start: self.start,
                 end,
             },
-            account_filter: self.account_filter,
+            account_filter: self.account_filter.unwrap_or_default(),
         })
     }
 }
@@ -418,17 +646,214 @@ mod tests {
     use assert_matches::assert_matches;
     use clap::Parser as _;
 
+    use crate::cmd::config;
+
     #[test]
     fn verify_command() {
         use clap::CommandFactory;
         Cli::command().debug_assert();
     }
 
-    /// Parses `okane <args>` and builds the command.
-    fn build(args: &[&str]) -> Result<Command, InvalidFlagError> {
+    fn parse(args: &[&str]) -> Cli {
         Cli::try_parse_from(std::iter::once("okane").chain(args.iter().copied()))
             .expect("the flags must parse")
+    }
+
+    /// Parses `okane <args>` and builds the command with `config`.
+    fn build_with(args: &[&str], config: &Config) -> Result<Command, InvalidFlagError> {
+        parse(args).build(Some(config))
+    }
+
+    /// Parses `okane <args>` and builds the command, without a config file.
+    fn build(args: &[&str]) -> Result<Command, InvalidFlagError> {
+        parse(args).build(None)
+    }
+
+    fn balance(cmd: Result<Command, InvalidFlagError>) -> BalanceCmd {
+        assert_matches!(cmd, Ok(Command::Balance(cmd)) => cmd)
+    }
+
+    /// A config setting `conversion` and `account-filter` for every report.
+    fn report_config() -> Config {
+        Config::builder()
+            .report(ReportTable {
+                conversion: Some(ConversionMode::Historical),
+                account_filter: Some(AccountFilterMode::Exact),
+                ..ReportTable::default()
+            })
             .build()
+    }
+
+    #[test]
+    fn config_fills_flags_not_given() {
+        let cmd = balance(build_with(&["balance", "-f", "x.ledger"], &report_config()));
+        assert_eq!(cmd.eval_options.conversion, ConversionMode::Historical);
+        assert_eq!(cmd.eval_options.account_filter, AccountFilterMode::Exact);
+    }
+
+    #[test]
+    fn flags_win_over_config() {
+        let cmd = balance(build_with(
+            &[
+                "balance",
+                "-f",
+                "x.ledger",
+                "--up-to-date",
+                "--account-filter=regex",
+            ],
+            &report_config(),
+        ));
+        assert_eq!(cmd.eval_options.conversion, ConversionMode::UpToDate);
+        assert_eq!(cmd.eval_options.account_filter, AccountFilterMode::Regex);
+    }
+
+    #[test]
+    fn conversion_flag_and_shorthands_give_the_same_mode() {
+        let config = Config::default();
+        for (flag, want) in [
+            ("--conversion=historical", ConversionMode::Historical),
+            ("--historical", ConversionMode::Historical),
+            ("--conversion=up-to-date", ConversionMode::UpToDate),
+            ("--up-to-date", ConversionMode::UpToDate),
+        ] {
+            let cmd = balance(build_with(&["balance", "-f", "x.ledger", flag], &config));
+            assert_eq!(cmd.eval_options.conversion, want, "flag: {flag}");
+        }
+        let cmd = balance(build_with(&["balance", "-f", "x.ledger"], &config));
+        assert_eq!(cmd.eval_options.conversion, ConversionMode::UpToDate);
+    }
+
+    #[test]
+    fn conversion_flags_conflict_with_each_other() {
+        for args in [
+            ["--historical", "--up-to-date"],
+            ["--conversion=up-to-date", "--historical"],
+            ["--up-to-date", "--conversion=historical"],
+        ] {
+            let err = Cli::try_parse_from(
+                ["okane", "balance", "-f", "x.ledger"]
+                    .into_iter()
+                    .chain(args),
+            )
+            .expect_err("conflicting flags must not parse");
+            assert_eq!(
+                err.kind(),
+                clap::error::ErrorKind::ArgumentConflict,
+                "args: {args:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn report_file_comes_from_file_flag_then_config_then_first_positional() {
+        let config = Config::builder().source("config.ledger").build();
+        let cmd = balance(build_with(
+            &["balance", "-f", "x.ledger", "Assets"],
+            &config,
+        ));
+        assert_eq!(cmd.source, PathBuf::from("x.ledger"));
+        assert_eq!(cmd.account, ["Assets"]);
+
+        let cmd = balance(build_with(&["balance", "Assets"], &config));
+        assert_eq!(cmd.source, PathBuf::from("config.ledger"));
+        assert_eq!(cmd.account, ["Assets"]);
+
+        let cmd = balance(build(&["balance", "legacy.ledger", "Assets"]));
+        assert_eq!(cmd.source, PathBuf::from("legacy.ledger"));
+        assert_eq!(cmd.account, ["Assets"]);
+    }
+
+    #[test]
+    fn missing_ledger_file_is_a_flag_error() {
+        let expected = "invalid flag: no Ledger file given; pass it with --file, or set `source` in the config file";
+        assert_eq!(build(&["balance"]).unwrap_err().to_string(), expected);
+        assert_eq!(build(&["accounts"]).unwrap_err().to_string(), expected);
+    }
+
+    #[test]
+    fn register_sort_comes_from_config_then_defaults_to_date() {
+        let config = Config::builder()
+            .register(config::RegisterTable {
+                sort: Some(SortKey::Original),
+                ..Default::default()
+            })
+            .build();
+        let cmd = build_with(&["register", "-f", "x.ledger"], &config);
+        let cmd = assert_matches!(cmd, Ok(Command::Register(cmd)) => cmd);
+        assert_eq!(cmd.sort, SortKey::Original);
+        let cmd = build(&["register", "-f", "x.ledger"]);
+        let cmd = assert_matches!(cmd, Ok(Command::Register(cmd)) => cmd);
+        assert_eq!(cmd.sort, SortKey::Date);
+    }
+
+    #[test]
+    fn ledger_file_comes_from_flags_then_config() {
+        let config = Config::builder().source("config.ledger").build();
+        let source = |args: &[&str]| {
+            let cmd = build_with(args, &config);
+            assert_matches!(cmd, Ok(Command::Accounts(cmd)) => cmd.source)
+        };
+        assert_eq!(
+            source(&["accounts", "-f", "x.ledger"]),
+            Path::new("x.ledger")
+        );
+        assert_eq!(source(&["accounts", "y.ledger"]), Path::new("y.ledger"));
+        assert_eq!(source(&["accounts"]), Path::new("config.ledger"));
+    }
+
+    #[test]
+    fn ui_takes_source_and_ui_table_from_config() {
+        let config = Config::builder()
+            .source("config.ledger")
+            .report(ReportTable {
+                exchange: Some("JPY".to_owned()),
+                ..ReportTable::default()
+            })
+            .ui(ReportTable {
+                conversion: Some(ConversionMode::Historical),
+                ..ReportTable::default()
+            })
+            .build();
+        let cmd = build_with(&["ui"], &config);
+        let cmd = assert_matches!(cmd, Ok(Command::Ui(cmd)) => cmd);
+        assert_eq!(cmd.source, Path::new("config.ledger"));
+        assert_eq!(cmd.eval_options.exchange.as_deref(), Some("JPY"));
+        assert_eq!(cmd.eval_options.conversion, ConversionMode::Historical);
+    }
+
+    #[test]
+    fn commands_without_config_keys_ignore_config() {
+        let config = Config::builder().source("config.ledger").build();
+        let cmd = build_with(&["format", "x.ledger"], &config);
+        assert_matches!(cmd, Ok(Command::Format(cmd)) if cmd.source == Path::new("x.ledger"));
+        let cmd = build_with(&["primitive", "flatten", "x.ledger"], &config);
+        assert_matches!(
+            cmd,
+            Ok(Command::Primitive(PrimitiveCmd::Flatten(cmd))) if cmd.source == Path::new("x.ledger")
+        );
+    }
+
+    #[test]
+    fn import_rules_come_from_flags_then_config() {
+        let config = Config::builder()
+            .import(config::ImportTable {
+                rules: Some(PathBuf::from("config.yml")),
+                ledger: None,
+            })
+            .build();
+        let rules = |args: &[&str]| {
+            let cmd = build_with(args, &config);
+            assert_matches!(cmd, Ok(Command::Import(cmd)) => cmd.rules)
+        };
+        assert_eq!(
+            rules(&["import", "--rules", "cli.yml", "in.csv"]),
+            Path::new("cli.yml")
+        );
+        assert_eq!(
+            rules(&["import", "-c", "old.yml", "in.csv"]),
+            Path::new("old.yml")
+        );
+        assert_eq!(rules(&["import", "in.csv"]), Path::new("config.yml"));
     }
 
     fn import_args(interactive: bool, ledger: bool, output: bool) -> ImportArgs {
@@ -476,7 +901,10 @@ mod tests {
             ..import_args(false, false, false)
         };
         let err = args.build().unwrap_err();
-        assert_eq!(err.to_string(), "invalid flag: --rules is required");
+        assert_eq!(
+            err.to_string(),
+            "invalid flag: --rules is required, unless `rules` is set in the `[import]` table of the config file"
+        );
     }
 
     #[test]
@@ -488,8 +916,13 @@ mod tests {
 
     #[test]
     fn eval_options_resolve_current_to_the_day_after_today() {
-        let cmd = build(&["balance", "--today=2024-03-31", "--current", "a.ledger"]).unwrap();
-        let cmd = assert_matches!(cmd, Command::Balance(cmd) => cmd);
+        let cmd = balance(build(&[
+            "balance",
+            "--today=2024-03-31",
+            "--current",
+            "-f",
+            "a.ledger",
+        ]));
         assert_eq!(
             cmd.eval_options.date_range.end,
             NaiveDate::from_ymd_opt(2024, 4, 1)
@@ -502,6 +935,7 @@ mod tests {
             "register",
             "--start=2024-01-01",
             "--end=2024-02-01",
+            "-f",
             "a.ledger",
         ]);
         let cmd = assert_matches!(cmd, Ok(Command::Register(cmd)) => cmd);
@@ -517,7 +951,7 @@ mod tests {
 
     #[test]
     fn eval_options_reject_current_with_end() {
-        let err = build(&["ui", "--current", "--end=2024-02-01", "a.ledger"]).unwrap_err();
+        let err = build(&["ui", "--current", "--end=2024-02-01", "-f", "a.ledger"]).unwrap_err();
         assert_eq!(
             err.to_string(),
             "invalid flag: --current and --end cannot be set simultaneously"
@@ -527,7 +961,8 @@ mod tests {
     #[test]
     fn eval_options_reject_current_on_the_last_representable_day() {
         let today = NaiveDate::MAX.to_string();
-        let err = build(&["balance", "--today", &today, "--current", "a.ledger"]).unwrap_err();
+        let err =
+            build(&["balance", "--today", &today, "--current", "-f", "a.ledger"]).unwrap_err();
         assert_eq!(
             err.to_string(),
             format!("invalid flag: cannot compute one day after today {today}")
