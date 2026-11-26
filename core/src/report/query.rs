@@ -521,7 +521,9 @@ impl<'a, 'ctx> RegisterEntries<'a, 'ctx> {
                 }
                 if let Some(filter) = &self.filter {
                     let txn = self.current_txn.expect("current_txn set with current");
-                    let txn_value = self.txn_value.get_or_insert_with(|| TxnValue::new(txn));
+                    let txn_value = self
+                        .txn_value
+                        .get_or_insert_with(|| TxnValue::new(self.ctx, txn));
                     if !filter.matches(txn_value, i)? {
                         continue;
                     }
@@ -617,7 +619,7 @@ fn compute_balance<'a, 'ctx>(
 ) -> Result<Balance<'ctx>, QueryError> {
     let mut bal = Balance::default();
     for txn in txns {
-        let matcher = filter.map(|filter| (filter, TxnValue::new(txn)));
+        let matcher = filter.map(|filter| (filter, TxnValue::new(ctx, txn)));
         for (i, posting) in txn.postings.iter().enumerate() {
             if let Some((filter, txn_value)) = &matcher
                 && !filter.matches(txn_value, i)?
