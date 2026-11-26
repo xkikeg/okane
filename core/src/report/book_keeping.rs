@@ -22,6 +22,7 @@ use super::{
     context::ReportContext,
     eval::{Amount, Evaluable, OwnedEvalError, PostingAmount, SingleAmount},
     price_db::{PriceEvent, PriceRepositoryBuilder, PriceSource},
+    tag::{TagEntry, TagSet},
     transaction::{Posting, Transaction},
 };
 
@@ -61,6 +62,17 @@ pub enum BookKeepError {
         posting_amount: TrackedSpan,
         exchange: TrackedSpan,
     },
+    #[error("duplicated tag: {key}")]
+    DuplicateTag {
+        key: String,
+        /// Account of the posting with the duplicated tag, or `None` if it's
+        /// on the transaction.
+        posting: Option<TrackedSpan>,
+        /// Whether one of the duplicates comes from `apply tag`.
+        applied: bool,
+    },
+    #[error("end apply tag without matching apply tag")]
+    UnmatchedEndApplyTag,
 }
 
 impl BookKeepError {
@@ -137,6 +149,34 @@ impl BookKeepError {
                     .span(parsed_span.resolve(exchange))
                     .label("exchange cannot have the same commodity with posting"),
             ],
+            BookKeepError::DuplicateTag {
+                key,
+                posting: Some(posting),
+                ..
+            } => vec![
+                AnnotationKind::Primary
+                    .span(parsed_span.resolve(posting))
+                    .label(
+                        bumpalo::format!(in &bump, "tag {} appears more than once", key)
+                            .into_bump_str(),
+                    ),
+            ],
+            BookKeepError::DuplicateTag {
+                key,
+                posting: None,
+                applied,
+            } => {
+                let msg = if *applied {
+                    bumpalo::format!(in &bump, "tag {} is already given by apply tag", key)
+                } else {
+                    bumpalo::format!(in &bump, "tag {} appears more than once", key)
+                };
+                vec![
+                    AnnotationKind::Primary
+                        .span(0..text.len())
+                        .label(msg.into_bump_str()),
+                ]
+            }
             _ => {
                 // TODO: Add more detailed error into this.
                 // Also, put these logic into BookKeepError.
@@ -156,8 +196,16 @@ pub fn add_transaction<'ctx>(
     ctx: &mut ReportContext<'ctx>,
     price_repos: &mut PriceRepositoryBuilder<'ctx>,
     bal: &mut Balance<'ctx>,
+    applied_tags: &[TagEntry<'ctx>],
     txn: &syntax::tracked::Transaction,
 ) -> Result<Transaction<'ctx>, BookKeepError> {
+    let mut txn_tags = applied_tags.to_vec();
+    collect_tags(ctx, &txn.metadata, &mut txn_tags);
+    let txn_tags = TagSet::new(ctx.arena, txn_tags).map_err(|key| BookKeepError::DuplicateTag {
+        key: key.as_str().to_string(),
+        posting: None,
+        applied: applied_tags.iter().any(|t| t.key == key),
+    })?;
     // First, process all postings, except the one without balance and amount,
     // which must be deduced later. And that should appear at most once.
     let mut postings = bcc::Vec::with_capacity_in(txn.posts.len(), ctx.arena);
@@ -166,6 +214,14 @@ pub fn add_transaction<'ctx>(
     let txn_payee: &'ctx str = ctx.arena.alloc_str(&txn.payee);
     for (i, posting) in txn.posts.iter().enumerate() {
         let posting = posting.as_undecorated();
+        let mut posting_tags = Vec::new();
+        collect_tags(ctx, &posting.metadata, &mut posting_tags);
+        let posting_tags =
+            TagSet::new(ctx.arena, posting_tags).map_err(|key| BookKeepError::DuplicateTag {
+                key: key.as_str().to_string(),
+                posting: Some(posting.account.span()),
+                applied: false,
+            })?;
         let account_span = posting.account.span();
         let account = ctx.accounts.ensure(posting.account.as_undecorated());
         // Per-posting `; Payee: ...` metadata overrides the transaction payee.
@@ -201,6 +257,7 @@ pub fn add_transaction<'ctx>(
             account,
             payee,
             clear_state: effective_clear_state(txn.clear_state, posting.clear_state),
+            tags: posting_tags,
             amount: evaluated.amount.into(),
             converted_amount: evaluated.converted_amount,
         });
@@ -218,6 +275,7 @@ pub fn add_transaction<'ctx>(
         date: txn.date,
         payee: txn_payee,
         clear_state: txn.clear_state,
+        tags: txn_tags,
         postings: postings.into_boxed_slice(),
     })
 }
@@ -557,6 +615,45 @@ fn posting_lot_exchange<'a, 'ctx>(
 
 /// Returns the per-posting payee override (`; Payee: <name>` metadata), if any,
 /// interned into the report arena.
+/// Appends the tags in `metadata` to `out`.
+pub(super) fn collect_tags<'ctx>(
+    ctx: &mut ReportContext<'ctx>,
+    metadata: &[syntax::Metadata<'_>],
+    out: &mut Vec<TagEntry<'ctx>>,
+) {
+    for m in metadata {
+        match m {
+            syntax::Metadata::WordTags(tags) => {
+                for tag in tags {
+                    out.push(TagEntry {
+                        key: ctx.tags.ensure(tag),
+                        value: None,
+                    });
+                }
+            }
+            syntax::Metadata::KeyValueTag { key, value } => {
+                out.push(tag_entry(ctx, key, Some(value)))
+            }
+            syntax::Metadata::Comment(_) => (),
+        }
+    }
+}
+
+/// Builds a [`TagEntry`] out of the syntax.
+pub(super) fn tag_entry<'ctx>(
+    ctx: &mut ReportContext<'ctx>,
+    key: &str,
+    value: Option<&syntax::MetadataValue<'_>>,
+) -> TagEntry<'ctx> {
+    let value = value.map(|v| match v {
+        syntax::MetadataValue::Text(t) | syntax::MetadataValue::Expr(t) => &*ctx.arena.alloc_str(t),
+    });
+    TagEntry {
+        key: ctx.tags.ensure(key),
+        value,
+    }
+}
+
 /// Returns the clear state of a posting: its own state if marked,
 /// otherwise the state of the enclosing transaction.
 fn effective_clear_state(txn: ClearState, posting: ClearState) -> ClearState {
@@ -582,6 +679,20 @@ fn posting_payee_override<'ctx>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Tags of a posting with the `; Payee: {payee}` metadata only.
+    fn payee_tags<'ctx>(ctx: &mut ReportContext<'ctx>, payee: &str) -> TagSet<'ctx> {
+        let key = ctx.tags.ensure("Payee");
+        let value: &'ctx str = ctx.arena.alloc_str(payee);
+        TagSet::new(
+            ctx.arena,
+            vec![TagEntry {
+                key,
+                value: Some(value),
+            }],
+        )
+        .unwrap()
+    }
 
     use bumpalo::Bump;
     use chrono::NaiveDate;
@@ -617,7 +728,7 @@ mod tests {
         let txn = parse_transaction(input);
         let mut price_repos = PriceRepositoryBuilder::default();
 
-        let got_err = add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).unwrap_err();
+        let got_err = add_transaction(&mut ctx, &mut price_repos, &mut bal, &[], &txn).unwrap_err();
 
         assert!(
             matches!(got_err, BookKeepError::BalanceAssertionFailure { .. }),
@@ -643,7 +754,7 @@ mod tests {
         let txn = parse_transaction(input);
         let mut price_repos = PriceRepositoryBuilder::default();
 
-        let got_err = add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).unwrap_err();
+        let got_err = add_transaction(&mut ctx, &mut price_repos, &mut bal, &[], &txn).unwrap_err();
 
         assert!(
             matches!(got_err, BookKeepError::BalanceAssertionFailure { .. }),
@@ -685,7 +796,8 @@ mod tests {
         let txn = parse_transaction(input);
         let mut price_repos = PriceRepositoryBuilder::default();
 
-        let _ = add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
+        let _ =
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &[], &txn).expect("must succeed");
 
         let want_balance: Balance = hashmap! {
             ctx.accounts.ensure("Account 1") =>
@@ -726,15 +838,17 @@ mod tests {
         let mut price_repos = PriceRepositoryBuilder::default();
 
         let got =
-            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &[], &txn).expect("must succeed");
 
         let want = Transaction {
+            tags: TagSet::default(),
             payee: "Sample",
             clear_state: ClearState::Uncleared,
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 1"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 1"),
                         payee: "Posting 1",
@@ -742,6 +856,7 @@ mod tests {
                         converted_amount: None,
                     },
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 2"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 2"),
                         payee: "Posting 2",
@@ -749,6 +864,7 @@ mod tests {
                         converted_amount: None,
                     },
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 3"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 2"),
                         payee: "Posting 3",
@@ -801,15 +917,17 @@ mod tests {
         let mut price_repos = PriceRepositoryBuilder::default();
 
         let got =
-            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &[], &txn).expect("must succeed");
 
         let want = Transaction {
+            tags: TagSet::default(),
             payee: "Sample",
             clear_state: ClearState::Uncleared,
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 1"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 1"),
                         payee: "Posting 1",
@@ -817,6 +935,7 @@ mod tests {
                         converted_amount: None,
                     },
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 2"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 2"),
                         payee: "Posting 2",
@@ -824,6 +943,7 @@ mod tests {
                         converted_amount: None,
                     },
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 3"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 3"),
                         payee: "Posting 3",
@@ -831,6 +951,7 @@ mod tests {
                         converted_amount: None,
                     },
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 4"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 4"),
                         payee: "Posting 4",
@@ -863,14 +984,16 @@ mod tests {
         let txn = parse_transaction(input);
         let mut price_repos = PriceRepositoryBuilder::default();
         let got =
-            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &[], &txn).expect("must succeed");
         let want = Transaction {
+            tags: TagSet::default(),
             payee: "Sample",
             clear_state: ClearState::Uncleared,
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 1"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 1"),
                         payee: "Posting 1",
@@ -878,6 +1001,7 @@ mod tests {
                         converted_amount: None,
                     },
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 2"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 2"),
                         payee: "Posting 2",
@@ -885,6 +1009,7 @@ mod tests {
                         converted_amount: None,
                     },
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 3"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 3"),
                         payee: "Posting 3",
@@ -892,6 +1017,7 @@ mod tests {
                         converted_amount: None,
                     },
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 4"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 4"),
                         payee: "Posting 4",
@@ -923,8 +1049,8 @@ mod tests {
         let mut bal = Balance::default();
         let mut price_repos = PriceRepositoryBuilder::default();
 
-        let got =
-            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect_err("must fail");
+        let got = add_transaction(&mut ctx, &mut price_repos, &mut bal, &[], &txn)
+            .expect_err("must fail");
 
         assert_eq!(
             got,
@@ -947,8 +1073,8 @@ mod tests {
         let mut bal = Balance::default();
         let mut price_repos = PriceRepositoryBuilder::default();
 
-        let got =
-            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect_err("must fail");
+        let got = add_transaction(&mut ctx, &mut price_repos, &mut bal, &[], &txn)
+            .expect_err("must fail");
 
         assert_eq!(
             got,
@@ -971,17 +1097,19 @@ mod tests {
         let mut price_repos = PriceRepositoryBuilder::default();
 
         let got =
-            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &[], &txn).expect("must succeed");
 
         let okane = ctx.commodities.resolve("OKANE").unwrap();
         let jpy = ctx.commodities.resolve("JPY").unwrap();
         let want = Transaction {
+            tags: TagSet::default(),
             payee: "Sample",
             clear_state: ClearState::Uncleared,
             date,
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 1"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 1"),
                         payee: "Posting 1",
@@ -989,6 +1117,7 @@ mod tests {
                         converted_amount: Some(SingleAmount::from_value(jpy, dec!(1200))),
                     },
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 2"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 2"),
                         payee: "Posting 2",
@@ -1033,15 +1162,17 @@ mod tests {
         let jpy = ctx.commodities.ensure("JPY");
 
         let got =
-            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &[], &txn).expect("must succeed");
 
         let want = Transaction {
+            tags: TagSet::default(),
             payee: "Sample",
             clear_state: ClearState::Uncleared,
             date: NaiveDate::from_ymd_opt(2024, 8, 1).unwrap(),
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 1"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 1"),
                         payee: "Posting 1",
@@ -1049,6 +1180,7 @@ mod tests {
                         converted_amount: Some(SingleAmount::from_value(jpy, dec!(1200))),
                     },
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 2"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 2"),
                         payee: "Posting 2",
@@ -1079,17 +1211,19 @@ mod tests {
         let mut price_repos = PriceRepositoryBuilder::default();
 
         let got =
-            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &[], &txn).expect("must succeed");
 
         let okane = ctx.commodities.resolve("OKANE").unwrap();
         let jpy = ctx.commodities.resolve("JPY").unwrap();
         let want = Transaction {
+            tags: TagSet::default(),
             payee: "Sample",
             clear_state: ClearState::Uncleared,
             date,
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 1"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 1"),
                         payee: "Posting 1",
@@ -1097,6 +1231,7 @@ mod tests {
                         converted_amount: Some(SingleAmount::from_value(jpy, dec!(-1440))),
                     },
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 2"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 2"),
                         payee: "Posting 2",
@@ -1104,6 +1239,7 @@ mod tests {
                         converted_amount: None,
                     },
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 3"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Income"),
                         payee: "Posting 3",
@@ -1148,17 +1284,19 @@ mod tests {
         let mut price_repos = PriceRepositoryBuilder::default();
 
         let got =
-            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &[], &txn).expect("must succeed");
 
         let okane = ctx.commodities.resolve("OKANE").unwrap();
         let jpy = ctx.commodities.resolve("JPY").unwrap();
         let want = Transaction {
+            tags: TagSet::default(),
             payee: "Sample",
             clear_state: ClearState::Uncleared,
             date,
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 1"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 1"),
                         payee: "Posting 1",
@@ -1166,6 +1304,7 @@ mod tests {
                         converted_amount: Some(SingleAmount::from_value(jpy, dec!(-1440))),
                     },
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 2"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 2"),
                         payee: "Posting 2",
@@ -1176,6 +1315,7 @@ mod tests {
                         )),
                     },
                     Posting {
+                        tags: payee_tags(&mut ctx, "Posting 3"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Account 3"),
                         payee: "Posting 3",
@@ -1228,15 +1368,17 @@ mod tests {
         let mut price_repos = PriceRepositoryBuilder::default();
 
         let got =
-            add_transaction(&mut ctx, &mut price_repos, &mut bal, &txn).expect("must succeed");
+            add_transaction(&mut ctx, &mut price_repos, &mut bal, &[], &txn).expect("must succeed");
         let eur = ctx.commodities.resolve("EUR").unwrap();
         let want = Transaction {
+            tags: TagSet::default(),
             payee: "Petrol Station",
             clear_state: ClearState::Uncleared,
             date,
             postings: bcc::Vec::from_iter_in(
                 [
                     Posting {
+                        tags: TagSet::default(),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Expenses:Travel:Petrol"),
                         payee: "Petrol Station",
@@ -1244,6 +1386,7 @@ mod tests {
                         converted_amount: Some(SingleAmount::from_value(chf, dec!(33.065766))),
                     },
                     Posting {
+                        tags: payee_tags(&mut ctx, "Bank"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Expenses:Commissions"),
                         payee: "Bank",
@@ -1251,6 +1394,7 @@ mod tests {
                         converted_amount: None,
                     },
                     Posting {
+                        tags: payee_tags(&mut ctx, "Bank"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Expenses:Commissions"),
                         payee: "Bank",
@@ -1258,6 +1402,7 @@ mod tests {
                         converted_amount: Some(SingleAmount::from_value(chf, dec!(0.065412))),
                     },
                     Posting {
+                        tags: payee_tags(&mut ctx, "Bank"),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Expenses:Commissions"),
                         payee: "Bank",
@@ -1265,6 +1410,7 @@ mod tests {
                         converted_amount: None,
                     },
                     Posting {
+                        tags: TagSet::default(),
                         clear_state: ClearState::Uncleared,
                         account: ctx.accounts.ensure("Assets:Banks"),
                         payee: "Petrol Station",
