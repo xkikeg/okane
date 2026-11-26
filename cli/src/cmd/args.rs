@@ -4,12 +4,12 @@
 //! `build()`s the matching command in [`super`], which holds only valid states,
 //! so the commands never re-check their flags while running.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use chrono::NaiveDate;
 use clap::{Args, Subcommand};
 
-use okane_core::report::query;
+use okane_core::report::{PostingFilter, query};
 
 use super::{
     AccountFilterMode, AccountsCmd, BalanceCmd, Command, EvalCmd, EvalOptions, FlattenCmd,
@@ -250,6 +250,9 @@ struct BalanceArgs {
     #[command(flatten)]
     eval_options: EvalOptionsArgs,
 
+    #[command(flatten)]
+    filter: FilterArgs,
+
     /// Path to the Ledger file.
     source: PathBuf,
 
@@ -268,6 +271,7 @@ impl BalanceArgs {
     fn build(self) -> Result<BalanceCmd, InvalidFlagError> {
         Ok(BalanceCmd {
             eval_options: self.eval_options.build()?,
+            filter: self.filter.build()?,
             source: self.source,
             account: self.account,
         })
@@ -297,6 +301,9 @@ struct RegisterArgs {
     #[command(flatten)]
     eval_options: EvalOptionsArgs,
 
+    #[command(flatten)]
+    filter: FilterArgs,
+
     /// Sort order for the register rows.
     #[arg(long, value_enum, default_value_t)]
     sort: SortKey,
@@ -320,10 +327,39 @@ impl RegisterArgs {
     fn build(self) -> Result<RegisterCmd, InvalidFlagError> {
         Ok(RegisterCmd {
             eval_options: self.eval_options.build()?,
+            filter: self.filter.build()?,
             sort: self.sort,
             source: self.source,
             account: self.account,
         })
+    }
+}
+
+/// `--filter` of `balance` and `register`.
+#[derive(Args, Debug)]
+struct FilterArgs {
+    /// Only include postings for which this CEL expression is true.
+    ///
+    /// Variables: `date`, `payee`, `state` ("cleared", "pending" or
+    /// "uncleared") and `account` of the posting, and `transaction` (alias
+    /// `t`) with `date`, `payee`, `state` and `postings`. Each element of
+    /// `postings` has `account`, `payee` and `state`.
+    /// Use `date("YYYY-MM-DD")` to compare dates.
+    ///
+    /// Example: `--filter 't.postings.exists(p, p.account.startsWith("Expenses:Travel"))'`
+    #[arg(long, value_name = "EXPR")]
+    filter: Option<String>,
+}
+
+impl FilterArgs {
+    fn build(self) -> Result<Option<Arc<PostingFilter>>, InvalidFlagError> {
+        self.filter
+            .map(|expr| {
+                PostingFilter::new(&expr)
+                    .map(Arc::new)
+                    .map_err(|e| InvalidFlagError(format!("--filter: {e}")))
+            })
+            .transpose()
     }
 }
 
