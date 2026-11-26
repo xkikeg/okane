@@ -12,7 +12,10 @@
   posting; only postings it accepts are reported. The expression sees the posting's `date`, `payee`,
   `state` and `account`, and the enclosing `transaction` (alias `t`) with its `postings`, e.g.
   `--filter 't.postings.exists(p, p.account.startsWith("Expenses:Travel"))'`. Use
-  `date("2024-01-31")` to compare dates (https://github.com/xkikeg/okane/issues/619).
+  `date("2024-01-31")` to compare dates. `tags` is a `map<string, string>` of the transaction's
+  tags (including `apply tag`) overlaid by the posting's own, so `--filter '"business" in tags'` or
+  `--filter 'tags[?"trip"].orValue("") == "kyoto"'` select by tag
+  (https://github.com/xkikeg/okane/issues/619).
 
 ### Changed
 

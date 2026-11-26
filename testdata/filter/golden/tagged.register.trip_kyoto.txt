@@ -1,0 +1,4 @@
+2026-01-01 Train Expenses:Travel 120.00 CHF 120.00 CHF
+2026-01-01 Train Assets:Banks:Main -120.00 CHF 0.00 CHF
+2026-01-02 Hotel Expenses:Travel 300.00 CHF 300.00 CHF
+2026-01-02 Hotel Assets:Banks:Main -320.00 CHF -20.00 CHF
