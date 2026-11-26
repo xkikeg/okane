@@ -17,7 +17,9 @@
   `--filter 'tags[?"trip"].orValue("") == "kyoto"'` select by tag. `amount` is the posting amount,
   comparable with `amount("100 JPY")`; amounts are only partially ordered, so ordering two amounts
   that depend on exchange rates, such as `100 JPY` and `1 USD`, is an error. Wrap either side with
-  `partial()`, as in `partial(amount) < amount("100 JPY")`, to reject such postings instead
+  `partial()`, as in `partial(amount) < amount("100 JPY")`, to reject such postings instead, or
+  convert the amount first with `convert(amount, "JPY")`, which takes the rate as of the
+  transaction date, or as of the date given as its third argument
   (https://github.com/xkikeg/okane/issues/619).
 
 ### Changed

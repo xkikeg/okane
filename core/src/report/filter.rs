@@ -40,8 +40,15 @@
 //! be ordered makes the comparison *unknown*. As with `NULL` in SQL,
 //! `unknown || true` is `true`, `unknown && false` is `false`, and the
 //! posting is rejected if the whole expression is unknown.
+//!
+//! `convert(amount, "JPY")` converts an amount into the commodity, with the
+//! rate as of the transaction date. `convert(amount, "JPY", date("2024-01-31"))`
+//! takes the rate as of the given date instead. The result has the single
+//! commodity, so it's always ordered against an amount of that commodity.
+//! A commodity or a rate that isn't found is an error.
 
 mod amount;
+mod convert;
 
 use std::{collections::HashMap, fmt, sync::Arc};
 
@@ -59,10 +66,12 @@ use crate::syntax::ClearState;
 
 use super::{
     context::ReportContext,
+    price_db::PriceRepository,
     tag::TagSet,
     transaction::{Posting, Transaction},
 };
 use amount::AmountVal;
+use convert::Rates;
 
 /// Error on compiling or evaluating a [`PostingFilter`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -107,6 +116,7 @@ impl PostingFilter {
         let mut root = Context::with_env(env);
         root.add_function("date", parse_date)
             .expect("date() must not conflict with the standard library");
+        convert::register(&mut root);
         Ok(Self {
             source: source.to_string(),
             program,
@@ -120,9 +130,16 @@ impl PostingFilter {
     }
 
     /// Returns `true` if the posting at `index` of the transaction matches.
-    pub(super) fn matches(&self, txn: &TxnValue, index: usize) -> Result<bool, FilterError> {
+    pub(super) fn matches<'ctx>(
+        &self,
+        report_ctx: &ReportContext<'ctx>,
+        price_repos: &mut PriceRepository<'ctx>,
+        txn: &TxnValue,
+        index: usize,
+    ) -> Result<bool, FilterError> {
         let posting = &txn.postings[index];
         let mut ctx = self.root.new_inner_scope();
+        ctx.add_variable_as_val(convert::RATES_VARIABLE, txn.rates.clone_as_boxed());
         ctx.add_variable_as_val("date", txn.date.clone_as_boxed());
         ctx.add_variable_as_val("payee", posting.payee.clone_as_boxed());
         ctx.add_variable_as_val("state", posting.state.clone_as_boxed());
@@ -131,7 +148,15 @@ impl PostingFilter {
         ctx.add_variable_as_val("tags", posting.tags.clone_as_boxed());
         ctx.add_variable_as_val("transaction", txn.value.clone_as_boxed());
         ctx.add_variable_as_val("t", txn.value.clone_as_boxed());
-        match self.program.execute(&ctx) {
+        let result = loop {
+            let result = self.program.execute(&ctx);
+            // convert() missed a rate. Even if the evaluation went on without
+            // it, the outcome may differ once the rate is there.
+            if !txn.rates.resolve_pending(report_ctx, price_repos) {
+                break result;
+            }
+        };
+        match result {
             Ok(Value::Bool(b)) => Ok(b),
             Ok(other) => Err(FilterError::NotBool(format!("{:?}", other))),
             // An unknown result rejects the posting, like NULL in SQL WHERE.
@@ -148,6 +173,7 @@ pub(super) struct TxnValue {
     date: BoxVal,
     value: BoxVal,
     postings: Vec<PostingValue>,
+    rates: Rates,
 }
 
 struct PostingValue {
@@ -180,6 +206,7 @@ impl TxnValue {
             date,
             value,
             postings,
+            rates: Rates::new(txn.date),
         }
     }
 }
@@ -286,13 +313,13 @@ mod tests {
         let loader: load::Loader<load::FakeFileSystem> = load::Loader::new(path, fake.into());
         let arena = Bump::new();
         let mut ctx = ReportContext::new(&arena);
-        let ledger = process(&mut ctx, loader, &ProcessOptions::default()).unwrap();
+        let mut ledger = process(&mut ctx, loader, &ProcessOptions::default()).unwrap();
         let filter = PostingFilter::new(expr)?;
         let mut got = Vec::new();
-        for txn in ledger.transactions() {
+        for txn in &ledger.transactions {
             let value = TxnValue::new(&ctx, txn);
             for (i, posting) in txn.postings.iter().enumerate() {
-                if filter.matches(&value, i)? {
+                if filter.matches(&ctx, &mut ledger.price_repos, &value, i)? {
                     got.push((
                         posting.payee.to_string(),
                         posting.account.as_str().to_string(),
@@ -643,6 +670,119 @@ mod tests {
             eval_all(MULTI, r#"partial(amount) == amount("20 USD")"#).unwrap(),
             vec![pair("Book", "Expenses:Book")]
         );
+    }
+
+    const PRICED: &str = indoc! {"
+        2024/05/01 Rate
+            Equity:Rate                  0 USD @ 150 JPY
+            Equity:Rate                  0 JPY
+
+        2024/06/01 Rate
+            Equity:Rate                  0 USD @ 160 JPY
+            Equity:Rate                  0 JPY
+
+        2024/05/10 Book
+            Expenses:Book               20 USD
+            Assets:USD
+
+        2024/05/20 Coffee
+            Expenses:Food              500 JPY
+            Assets:JPY
+
+        2024/06/10 Hotel
+            Expenses:Travel             20 USD
+            Assets:USD
+    "};
+
+    #[test]
+    fn convert_uses_transaction_date() {
+        // 20 USD is 3,000 JPY in May, and 3,200 JPY in June.
+        assert_eq!(
+            eval_all(PRICED, r#"convert(amount, "JPY") > amount("3,100 JPY")"#).unwrap(),
+            vec![pair("Hotel", "Expenses:Travel")]
+        );
+        assert_eq!(
+            eval_all(PRICED, r#"convert(amount, "JPY") == amount("3,000 JPY")"#).unwrap(),
+            vec![pair("Book", "Expenses:Book")]
+        );
+    }
+
+    #[test]
+    fn convert_takes_date() {
+        assert_eq!(
+            eval_all(
+                PRICED,
+                r#"convert(amount, "JPY", date("2024-06-30")) == amount("3,200 JPY")"#
+            )
+            .unwrap(),
+            vec![
+                pair("Book", "Expenses:Book"),
+                pair("Hotel", "Expenses:Travel")
+            ]
+        );
+    }
+
+    #[test]
+    fn convert_keeps_amount_in_target_commodity() {
+        assert_eq!(
+            eval_all(PRICED, r#"convert(amount, "JPY") == amount("500 JPY")"#).unwrap(),
+            vec![pair("Coffee", "Expenses:Food")]
+        );
+    }
+
+    #[test]
+    fn convert_other_posting_amount() {
+        assert_eq!(
+            eval_all(
+                PRICED,
+                r#"account.startsWith("Assets:") && t.postings.exists(p, convert(p.amount, "JPY") >= amount("3,200 JPY"))"#
+            )
+            .unwrap(),
+            vec![pair("Hotel", "Assets:USD")]
+        );
+    }
+
+    #[test]
+    fn convert_resolves_rate_skipped_by_logical_operator() {
+        // For Hotel, the right side is unknown, which hides that the left
+        // side lacked its rate. The left side must still get it and decide.
+        assert_eq!(
+            eval_all(
+                PRICED,
+                r#"convert(amount, "JPY") > amount("3,100 JPY") || partial(amount) > amount("100 JPY")"#
+            )
+            .unwrap(),
+            vec![
+                pair("Coffee", "Expenses:Food"),
+                pair("Hotel", "Expenses:Travel")
+            ]
+        );
+    }
+
+    #[test]
+    fn convert_fails_without_rate() {
+        // No rate before the first price.
+        let err = eval_all(
+            PRICED,
+            r#"convert(amount, "JPY", date("2024-01-01")) > amount("0")"#,
+        )
+        .unwrap_err();
+        assert_matches!(err, FilterError::Eval(msg) if msg.contains("not found"));
+        let err = eval_all(PRICED, r#"convert(amount, "EUR") > amount("0")"#).unwrap_err();
+        assert_matches!(err, FilterError::Eval(msg) if msg.contains("commodity EUR not found"));
+    }
+
+    #[test]
+    fn convert_rejects_wrong_arguments() {
+        for expr in [
+            r#"convert(amount) == amount("0")"#,
+            r#"convert(amount, "JPY", date, 1) == amount("0")"#,
+            r#"convert("1 USD", "JPY") == amount("0")"#,
+            r#"convert(amount, 1) == amount("0")"#,
+            r#"convert(amount, "JPY", "2024-06-30") == amount("0")"#,
+        ] {
+            assert_matches!(eval_all(PRICED, expr), Err(FilterError::Eval(_)), "{expr}");
+        }
     }
 
     #[test]

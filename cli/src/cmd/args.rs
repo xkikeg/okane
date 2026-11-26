@@ -359,11 +359,17 @@ struct FilterArgs {
     /// such postings instead. Amounts also have `abs()`, `isZero()` and
     /// `commodities()`.
     ///
+    /// `convert(amount, "JPY")` converts an amount with the rate as of the
+    /// transaction date, and `convert(amount, "JPY", date("YYYY-MM-DD"))`
+    /// with the rate as of that date.
+    ///
     /// Example: `--filter 't.postings.exists(p, p.account.startsWith("Expenses:Travel"))'`
     ///
     /// Example: `--filter 'tags[?"trip"].orValue("") == "kyoto"'`
     ///
     /// Example: `--filter 'amount.abs() >= amount("1000 CHF")'`
+    ///
+    /// Example: `--filter 'convert(amount, "CHF") < amount("-1000 CHF")'`
     #[arg(long, value_name = "EXPR")]
     filter: Option<String>,
 }
